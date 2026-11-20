@@ -1,10 +1,24 @@
-//! Process-level Windows Shell identity; called before the GUI creates windows.
+//! Windows Shell application identity, package registration, and registered activation.
 
 #![allow(unsafe_code)]
 
 use std::io;
 
-use windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+use std::ptr::{null, null_mut};
+use windows_sys::Win32::{
+    Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS},
+    Storage::Packaging::Appx::GetPackagesByPackageFamily,
+    UI::{
+        Shell::{SetCurrentProcessExplicitAppUserModelID, ShellExecuteW},
+        WindowsAndMessaging::SW_SHOWNORMAL,
+    },
+};
+
+const HUB_FAMILY: &str = "UnityTechnologies.UnityHub_2vrhnee42bhxm";
+
+fn wide(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain([0]).collect()
+}
 
 /// Sets the current process's explicit taskbar identity before any UI is created.
 pub fn set_current_process_app_user_model_id(app_id: &str) -> io::Result<()> {
@@ -28,6 +42,50 @@ pub fn set_current_process_app_user_model_id(app_id: &str) -> io::Result<()> {
         return Err(io::Error::other(format!(
             "failed to set Windows application identity: HRESULT {result:#010x}"
         )));
+    }
+    Ok(())
+}
+
+pub(crate) fn unity_hub_msix_registered() -> io::Result<bool> {
+    let mut count = 0;
+    let mut length = 0;
+    // SAFETY: The family is terminated and count/length query outputs are writable.
+    let status = unsafe {
+        GetPackagesByPackageFamily(
+            wide(HUB_FAMILY).as_ptr(),
+            &mut count,
+            null_mut(),
+            &mut length,
+            null_mut(),
+        )
+    } as u32;
+    match status {
+        ERROR_SUCCESS | ERROR_INSUFFICIENT_BUFFER => Ok(count > 0),
+        status => Err(io::Error::from_raw_os_error(status as i32)),
+    }
+}
+
+pub(crate) fn activate_unity_hub_msix() -> io::Result<()> {
+    if !unity_hub_msix_registered()? {
+        return Err(io::ErrorKind::NotFound.into());
+    }
+    let app = wide(&format!(r"shell:AppsFolder\{HUB_FAMILY}!UnityHub"));
+    // SAFETY: The URI is fixed to Unity's registered AUMID and remains valid for the call.
+    // No command line, arguments or caller-controlled URI are passed.
+    let result = unsafe {
+        ShellExecuteW(
+            null_mut(),
+            null(),
+            app.as_ptr(),
+            null(),
+            null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if result as isize <= 32 {
+        return Err(io::Error::other(
+            "Windows did not accept Unity Hub activation",
+        ));
     }
     Ok(())
 }

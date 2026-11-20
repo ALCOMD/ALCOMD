@@ -637,13 +637,13 @@ fn unity_hub_open_has_separate_authority_and_closed_guarded_payloads() {
     };
     assert_eq!(alcomd_protocol::METHOD_UNITY_HUB_OPEN, "unity.hub.open");
     assert_eq!(
-        alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V1,
-        "unity.hub.open.v1"
+        alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V2,
+        "unity.hub.open.v2"
     );
     let contract = schema("m7-official-gui");
     assert_eq!(
         contract["x-alcomd-method-capabilities"],
-        json!({"unity.hub.open":"unity.hub.open.v1"})
+        json!({"unity.hub.open":"unity.hub.open.v2"})
     );
     let proposal: Value = serde_json::from_str(include_str!(
         "../../../specs/config/unity-hub-location.proposal.contract.json"
@@ -657,8 +657,8 @@ fn unity_hub_open_has_separate_authority_and_closed_guarded_payloads() {
         contract["$defs"]["hubOpenResult"],
         proposal["openActionProposal"]["schemaFragments"]["$defs"]["openResult"]
     );
-    for expected_path in [Value::Null, json!("C:\\Tools\\Unity Hub.exe")] {
-        let wire = json!({"expectedRevision": 7, "expectedPath": expected_path});
+    for expected_path in [Value::Null, json!("a".repeat(64))] {
+        let wire = json!({"expectedRevision": 7, "expectedTargetToken": expected_path});
         let parsed: UnityHubOpenParams =
             serde_json::from_value(wire.clone()).expect("guarded request");
         assert_eq!(
@@ -668,22 +668,22 @@ fn unity_hub_open_has_separate_authority_and_closed_guarded_payloads() {
     }
     for invalid in [
         json!({"expectedRevision":1}),
-        json!({"expectedPath":null}),
-        json!({"expectedRevision":0,"expectedPath":null}),
-        json!({"expectedRevision":1,"expectedPath":""}),
-        json!({"expectedRevision":1,"expectedPath":"line\nbreak"}),
-        json!({"expectedRevision":1,"expectedPath":"界".repeat(1366)}),
-        json!({"expectedRevision":1,"expectedPath":null,"arguments":["--projectPath","other"]}),
-        json!({"expectedRevision":1,"expectedPath":null,"url":"https://example.invalid"}),
+        json!({"expectedTargetToken":null}),
+        json!({"expectedRevision":0,"expectedTargetToken":null}),
+        json!({"expectedRevision":1,"expectedTargetToken":""}),
+        json!({"expectedRevision":1,"expectedTargetToken":"line\nbreak"}),
+        json!({"expectedRevision":1,"expectedTargetToken":"界".repeat(1366)}),
+        json!({"expectedRevision":1,"expectedTargetToken":null,"arguments":["--projectPath","other"]}),
+        json!({"expectedRevision":1,"expectedTargetToken":null,"url":"https://example.invalid"}),
     ] {
         assert!(serde_json::from_value::<UnityHubOpenParams>(invalid).is_err());
     }
     assert_eq!(
         serde_json::to_value(UnityHubOpenResult {
-            outcome: UnityHubOpenOutcome::Spawned
+            outcome: UnityHubOpenOutcome::LaunchRequested
         })
         .expect("spawn result"),
-        json!({"outcome":"spawned"})
+        json!({"outcome":"launch_requested"})
     );
     assert_eq!(
         serde_json::to_value(UnityHubOpenResult {
@@ -694,7 +694,8 @@ fn unity_hub_open_has_separate_authority_and_closed_guarded_payloads() {
     );
     assert!(serde_json::from_value::<UnityHubOpenResult>(json!({"outcome":"ready"})).is_err());
     assert!(
-        serde_json::from_value::<UnityHubOpenResult>(json!({"outcome":"spawned","pid":1})).is_err()
+        serde_json::from_value::<UnityHubOpenResult>(json!({"outcome":"launch_requested","pid":1}))
+            .is_err()
     );
     for (code, message) in [
         (
@@ -1272,7 +1273,7 @@ fn unity_hub_contract_preserves_nullable_preference_and_separate_evidence() {
     assert!(serde_json::from_value::<UnitySettings>(json!({"hubPath": 1})).is_err());
     let location = json!({
         "status": "available", "source": "discovered",
-        "path": "/opt/unityhub/unityhub", "configuredPathStatus": "invalid"
+        "path": "/opt/unityhub/unityhub", "targetToken": "a".repeat(64), "configuredPathStatus": "invalid"
     });
     let parsed: UnityHubLocation =
         serde_json::from_value(location.clone()).expect("derived evidence");
@@ -1281,9 +1282,9 @@ fn unity_hub_contract_preserves_nullable_preference_and_separate_evidence() {
         location
     );
     for invalid in [
-        json!({"status":"unknown", "source":"none", "path":null, "configuredPathStatus":"unset"}),
+        json!({"status":"unknown", "source":"none", "path":null, "targetToken":null, "configuredPathStatus":"unset"}),
         json!({"status":"not_found", "source":"none", "configuredPathStatus":"unset"}),
-        json!({"status":"not_found", "source":"none", "path":null, "configuredPathStatus":"unset", "launch":true}),
+        json!({"status":"not_found", "source":"none", "path":null, "targetToken":null, "configuredPathStatus":"unset", "launch":true}),
     ] {
         assert!(serde_json::from_value::<UnityHubLocation>(invalid).is_err());
     }

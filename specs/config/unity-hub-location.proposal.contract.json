@@ -7,7 +7,7 @@
         "methods": ["settings.get", "settings.update", "unity.hub.open"],
         "permissions": {"settings.get": ["settings.read"], "settings.update": ["settings.manage"], "unity.hub.open": ["settings.read", "unity.hub.open"]},
         "newMethod": "unity.hub.open",
-        "newCapability": "unity.hub.open.v1",
+        "newCapability": "unity.hub.open.v2",
         "newPermission": "unity.hub.open",
         "newConfigVersion": null,
         "configSchema": 10,
@@ -39,16 +39,14 @@
         "identityGuarantee": "Filesystem usability at observation time only; not proof that the file is genuine Unity Hub or remains unchanged"
     },
     "discovery": {
-        "precedence": ["usable configured executable", "first usable platform default candidate"],
-        "maxDefaultCandidates": 8,
-        "windows": ["ProgramFiles/Unity Hub/Unity Hub.exe", "ProgramFiles(x86)/Unity Hub/Unity Hub.exe", "LOCALAPPDATA/Programs/Unity Hub/Unity Hub.exe"],
-        "macos": ["/Applications/Unity Hub.app/Contents/MacOS/Unity Hub", "HOME/Applications/Unity Hub.app/Contents/MacOS/Unity Hub"],
-        "linux": ["HOME/Applications/Unity Hub.AppImage", "/usr/bin/unity-hub", "/opt/unityhub/unityhub", "XDG_DATA_HOME-or-HOME/.local/share/flatpak/exports/bin/com.unity.UnityHub", "/var/lib/flatpak/exports/bin/com.unity.UnityHub"],
-        "environment": "Daemon environment only; ignore missing or nonabsolute roots; deduplicate in listed order",
-        "invalidConfiguredPath": "Retain saved preference, try default candidates, report configuredPathStatus=invalid",
-        "inspectionFailure": "Permission or other I/O failure reports unavailable, without silently replacing configuration",
-        "constraints": ["No recursive scan", "No PATH-wide scan", "No registry API or dependency", "No Hub process or shell execution", "No writes"],
-        "v3Difference": "The v3 Windows registry install-location probe is not restored in this narrow increment; custom locations remain selectable. Discovery does not silently persist fallback paths."
+        "precedence": ["usable configured executable", "first usable registered desktop application"],
+        "windows": ["current-user MSIX package", "current-user and machine Win32 registrations"],
+        "macos": ["Launch Services application bundle registrations"],
+        "linux": ["XDG desktop registrations", "Debian and RPM installation databases", "installed Flatpak application"],
+        "invalidConfiguredPath": "Keep the preference and try system registrations",
+        "inspectionFailure": "Unresolved I/O failures are unavailable",
+        "constraints": ["No default installation directory scan", "Read-only"
+        ]
     },
     "ui": {
         "position": "Unity Hub Path section before Unity installations, using existing Settings section and MD3 controls",
@@ -64,11 +62,11 @@
         "refresh": "After confirmed save, invoke existing unity.installations.refresh once if unity.manage is granted, then reread installations; refresh failure is separate from saved-path success",
         "permissionBoundary": "settings.manage authorizes location save; unity.manage separately authorizes Editor discovery. Missing unity.manage does not reject a successful path save.",
         "evidence": "Display only evidence paired with accepted settings revision; optimistic pending path does not become an effective usable path",
-        "editorDiscoveryLimitation": "Existing refresh scans known Editor roots. This increment does not claim to restore Hub config/CLI discovery, custom Editor-root import, legacy Hub loading or missing-Editor installation links."
+        "editorDiscoveryLimitation": "Editor refresh reads Unity’s official installed list, then looks for additional system registrations."
     },
     "architecture": {
         "application": "Own permissions, validation, CAS and settings snapshot. Add a narrow injected Hub-location inspection port; no filesystem/path parsing in application.",
-        "platform": "Own normalization, bounded candidate paths and filesystem inspection; no new dependency, unsafe or native API",
+        "platform": "Own normalization, bounded application registration lookups and filesystem inspection",
         "store": "Own optional unity section, escaped path encoding/decoding, existing recovery and size bounds",
         "daemon": "Construct adapter and map typed DTO/evidence; evidence failure after commit must not report the successful update as failed",
         "gui": "Only system picker, presentation and RPC intents; no settings file access or authoritative localStorage",
@@ -85,16 +83,17 @@
             "partialUnityUpdate": {"type": "object", "additionalProperties": false, "minProperties": 1, "properties": {"hubPath": {"$ref": "#/$defs/hubPath"}}},
             "hubLocation": {
                 "type": "object", "additionalProperties": false,
-                "required": ["status", "source", "path", "configuredPathStatus"],
+                "required": ["status", "source", "path", "targetToken", "configuredPathStatus"],
                 "properties": {
                     "status": {"enum": ["available", "not_found", "unavailable"]},
                     "source": {"enum": ["configured", "discovered", "none"]},
                     "path": {"$ref": "#/$defs/hubPath"},
+                    "targetToken": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
                     "configuredPathStatus": {"enum": ["unset", "available", "invalid", "unavailable"]}
                 },
                 "allOf": [
-                    {"if": {"properties": {"status": {"const": "available"}}}, "then": {"properties": {"source": {"enum": ["configured", "discovered"]}, "path": {"type": "string"}}}, "else": {"properties": {"source": {"const": "none"}, "path": {"type": "null"}}}},
-                    {"if": {"properties": {"source": {"const": "configured"}}}, "then": {"properties": {"configuredPathStatus": {"const": "available"}}}},
+                    {"if": {"properties": {"status": {"const": "available"}}}, "then": {"properties": {"source": {"enum": ["configured", "discovered"]}, "targetToken": {"type": "string"}}}, "else": {"properties": {"source": {"const": "none"}, "path": {"type": "null"}, "targetToken": {"type": "null"}}}},
+                    {"if": {"properties": {"source": {"const": "configured"}}}, "then": {"properties": {"configuredPathStatus": {"const": "available"}, "path": {"type": "string"}}}},
                     {"if": {"properties": {"configuredPathStatus": {"const": "available"}}}, "then": {"properties": {"source": {"const": "configured"}, "status": {"const": "available"}}}},
                     {"if": {"properties": {"configuredPathStatus": {"const": "unavailable"}}}, "then": {"properties": {"status": {"const": "unavailable"}}}}
                 ]
@@ -109,14 +108,14 @@
         {"id": "null-container", "definition": "partialUnityUpdate", "value": null, "valid": false},
         {"id": "empty-container", "definition": "partialUnityUpdate", "value": {}, "valid": false},
         {"id": "unknown-field", "definition": "partialUnityUpdate", "value": {"hubPath": null, "launch": true}, "valid": false},
-        {"id": "manual", "definition": "hubLocation", "value": {"status": "available", "source": "configured", "path": "C:\\Tools\\Unity Hub.exe", "configuredPathStatus": "available"}, "valid": true},
-        {"id": "automatic", "definition": "hubLocation", "value": {"status": "available", "source": "discovered", "path": "/opt/unityhub/unityhub", "configuredPathStatus": "unset"}, "valid": true},
-        {"id": "stale-fallback", "definition": "hubLocation", "value": {"status": "available", "source": "discovered", "path": "/opt/unityhub/unityhub", "configuredPathStatus": "invalid"}, "valid": true},
-        {"id": "absent", "definition": "hubLocation", "value": {"status": "not_found", "source": "none", "path": null, "configuredPathStatus": "unset"}, "valid": true},
-        {"id": "io-error", "definition": "hubLocation", "value": {"status": "unavailable", "source": "none", "path": null, "configuredPathStatus": "unavailable"}, "valid": true},
-        {"id": "false-available", "definition": "hubLocation", "value": {"status": "available", "source": "none", "path": null, "configuredPathStatus": "unset"}, "valid": false},
-        {"id": "false-source", "definition": "hubLocation", "value": {"status": "not_found", "source": "configured", "path": "C:\\Tools\\Unity Hub.exe", "configuredPathStatus": "invalid"}, "valid": false},
-        {"id": "contradictory-config", "definition": "hubLocation", "value": {"status": "available", "source": "discovered", "path": "/opt/unityhub/unityhub", "configuredPathStatus": "available"}, "valid": false}
+        {"id": "manual", "definition": "hubLocation", "value": {"status": "available", "source": "configured", "path": "C:\\Tools\\Unity Hub.exe", "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "configuredPathStatus": "available"}, "valid": true},
+        {"id": "automatic", "definition": "hubLocation", "value": {"status": "available", "source": "discovered", "path": "/opt/unityhub/unityhub", "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "configuredPathStatus": "unset"}, "valid": true},
+        {"id": "stale-fallback", "definition": "hubLocation", "value": {"status": "available", "source": "discovered", "path": "/opt/unityhub/unityhub", "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "configuredPathStatus": "invalid"}, "valid": true},
+        {"id": "absent", "definition": "hubLocation", "value": {"status": "not_found", "source": "none", "path": null, "targetToken": null, "configuredPathStatus": "unset"}, "valid": true},
+        {"id": "io-error", "definition": "hubLocation", "value": {"status": "unavailable", "source": "none", "path": null, "targetToken": null, "configuredPathStatus": "unavailable"}, "valid": true},
+        {"id": "false-available", "definition": "hubLocation", "value": {"status": "available", "source": "none", "path": null, "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "configuredPathStatus": "unset"}, "valid": false},
+        {"id": "false-source", "definition": "hubLocation", "value": {"status": "not_found", "source": "configured", "path": "C:\\Tools\\Unity Hub.exe", "targetToken": null, "configuredPathStatus": "invalid"}, "valid": false},
+        {"id": "contradictory-config", "definition": "hubLocation", "value": {"status": "available", "source": "discovered", "path": "/opt/unityhub/unityhub", "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "configuredPathStatus": "available"}, "valid": false}
     ],
     "implementationTestPlan": [
         "platform: valid file, missing file, directory, relative path, permissions, macOS bundle, Windows exe, Linux executable, Unicode, normalized symlink, candidate ordering and bounds",
@@ -134,20 +133,20 @@
         "ownerRequest": "Move Auto detect into card header and add Open Unity Hub, or Download Unity Hub if no Hub is specified",
         "layout": "Card header actions at the right: existing Auto detect plus new Open/Download; Select remains beside the editable path. Header, input and Retry share the existing focus group.",
         "method": "unity.hub.open",
-        "capability": "unity.hub.open.v1",
+        "capability": "unity.hub.open.v2",
         "permissions": ["settings.read", "unity.hub.open"],
         "principal": "Authenticated builtin:local-owner only; check principal and permissions before configuration/filesystem/process access. No new third-party/extension grants.",
         "whyExistingAuthorityCannotBeReused": "unity.launch and unity.launch.v1 are Project/exact-Editor launch authority; settings.manage and unity.manage explicitly exclude process launch. Do not widen their meanings or execute the Hub inside Tauri.",
-        "input": "expectedRevision is the accepted settings revision; expectedPath is the accepted Core effective path or null. It is an equality/race guard only, never an executable/argv/URL instruction.",
+        "input": "expectedRevision is the accepted settings revision; expectedTargetToken is the accepted Core activation token or null. It is an equality/race guard only, never an executable/argv/URL instruction.",
         "authority": [
             "Core reads the current authoritative settings under its existing settings coordination, verifies expectedRevision, then inspects the Hub through the existing read-only port.",
-            "If current effective path differs from expectedPath, reject hub_path_changed with no process/browser action; do not auto-launch a different target.",
+            "If current effective target token differs from expectedTargetToken, reject hub_path_changed with no process/browser action; do not auto-launch a different target.",
             "available/configured and available/discovered both use the Core effective target, including the existing invalid-manual-path plus usable-default fallback. Do not alter preference or discovery precedence.",
-            "Only not_found with configured hubPath=null and expectedPath=null returns download_required. A broken explicit preference without a usable fallback returns hub_path_invalid; I/O inability returns hub_unavailable, never a fabricated missing-install diagnosis.",
-            "Revalidate the resolved executable just before dispatch; use only the Core-resolved path with std::process::Command, zero arguments and null standard streams, without user URL, project target or environment override. No shell means the application does not construct, invoke or execute through a shell, concatenate shell arguments or interpret shell syntax; operating-system ENOEXEC/interpreter fallback semantics are permitted.",
-            "Existing checks prove a usable executable at inspection time, not vendor identity, signature or immutable binary identity. expectedPath does not eliminate executable replacement races. This local-owner-only action can execute the file the owner selected as Hub."
+            "Only not_found with configured hubPath=null and expectedTargetToken=null returns download_required. A broken explicit preference without a usable fallback returns hub_path_invalid; I/O inability returns hub_unavailable, never a fabricated missing-install diagnosis.",
+            "Revalidate the Core-resolved target before dispatch. Use the registered application identity for MSIX or Flatpak. For a native executable pass no arguments. Do not execute any caller-supplied path, argument or URI.",
+            "Existing checks prove a usable executable at inspection time, not vendor identity, signature or immutable binary identity. expectedTargetToken does not eliminate executable replacement races. This local-owner-only action can execute the file the owner selected as Hub."
         ],
-        "result": "spawned means only that OS process creation was accepted; it does not prove successful child exit, a normally running Unity Hub or Hub window readiness. Synchronous OS rejection, subsequent child exit and owned-child reaping are separate outcomes. download_required means no process was started; GUI may open only the fixed official page.",
+        "result": "launch_requested means only that the OS accepted the requested activation or process creation; it does not prove successful child exit, a normally running Unity Hub or Hub window readiness. Synchronous OS rejection, subsequent child exit and owned-child reaping are separate outcomes. download_required means no process was started; GUI may open only the fixed official page.",
         "errors": ["invalid_request", "permission_denied", "revision_conflict", "hub_path_changed", "hub_path_invalid", "hub_unavailable", "hub_open_busy", "hub_open_failed", "internal_error with diagnosticId"],
         "processLifetime": {
             "newPort": "Separate UnityHubLauncher command port; keep UnityHubPlatform strictly read-only. Daemon wires both; application owns the decision.",
@@ -171,34 +170,34 @@
             "feedback": "No fleeting success label/status line. Keep explicit errors; unknown launch outcome instructs checking Hub before another intentional click."
         },
         "persistence": "No Config/State schema change, durable table, Plan, Apply, Operation or Event. Existing resolver, Editor launch, source rules and project files unchanged.",
-        "dependencies": "No new dependency, unsafe or native API; std process/thread facilities in platform and existing GUI open crate",
+        "dependencies": "Existing platform bindings and process ownership, with native registered activation for packaged Hub",
         "schemaFragments": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$defs": {
                 "openParams": {
                     "type": "object", "additionalProperties": false,
-                    "required": ["expectedRevision", "expectedPath"],
+                    "required": ["expectedRevision", "expectedTargetToken"],
                     "properties": {
                         "expectedRevision": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
-                        "expectedPath": {"type": ["string", "null"], "minLength": 1, "maxLength": 4096, "pattern": "^[^\\u0000-\\u001F\\u007F]+$"}
+                        "expectedTargetToken": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
                     }
                 },
                 "openResult": {
                     "type": "object", "additionalProperties": false, "required": ["outcome"],
-                    "properties": {"outcome": {"enum": ["spawned", "download_required"]}}
+                    "properties": {"outcome": {"enum": ["launch_requested", "download_required"]}}
                 }
             }
         },
         "shapeVectors": [
-            {"id": "resolved-path", "definition": "openParams", "value": {"expectedRevision": 153, "expectedPath": "C:\\Program Files\\Unity Hub\\Unity Hub.exe"}, "valid": true},
-            {"id": "no-path", "definition": "openParams", "value": {"expectedRevision": 153, "expectedPath": null}, "valid": true},
-            {"id": "missing-revision", "definition": "openParams", "value": {"expectedPath": null}, "valid": false},
+            {"id": "resolved-path", "definition": "openParams", "value": {"expectedRevision": 153, "expectedTargetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "valid": true},
+            {"id": "no-path", "definition": "openParams", "value": {"expectedRevision": 153, "expectedTargetToken": null}, "valid": true},
+            {"id": "missing-revision", "definition": "openParams", "value": {"expectedTargetToken": null}, "valid": false},
             {"id": "missing-path", "definition": "openParams", "value": {"expectedRevision": 153}, "valid": false},
-            {"id": "zero-revision", "definition": "openParams", "value": {"expectedRevision": 0, "expectedPath": null}, "valid": false},
-            {"id": "empty-path", "definition": "openParams", "value": {"expectedRevision": 153, "expectedPath": ""}, "valid": false},
-            {"id": "argv-injection", "definition": "openParams", "value": {"expectedRevision": 153, "expectedPath": null, "arguments": ["--projectPath", "other"]}, "valid": false},
-            {"id": "url-injection", "definition": "openParams", "value": {"expectedRevision": 153, "expectedPath": null, "url": "https://example.invalid"}, "valid": false},
-            {"id": "spawned", "definition": "openResult", "value": {"outcome": "spawned"}, "valid": true},
+            {"id": "zero-revision", "definition": "openParams", "value": {"expectedRevision": 0, "expectedTargetToken": null}, "valid": false},
+            {"id": "empty-path", "definition": "openParams", "value": {"expectedRevision": 153, "expectedTargetToken": ""}, "valid": false},
+            {"id": "argv-injection", "definition": "openParams", "value": {"expectedRevision": 153, "expectedTargetToken": null, "arguments": ["--projectPath", "other"]}, "valid": false},
+            {"id": "url-injection", "definition": "openParams", "value": {"expectedRevision": 153, "expectedTargetToken": null, "url": "https://example.invalid"}, "valid": false},
+            {"id": "launch_requested", "definition": "openResult", "value": {"outcome": "launch_requested"}, "valid": true},
             {"id": "download", "definition": "openResult", "value": {"outcome": "download_required"}, "valid": true},
             {"id": "false-ready", "definition": "openResult", "value": {"outcome": "window_ready"}, "valid": false},
             {"id": "returned-url", "definition": "openResult", "value": {"outcome": "download_required", "url": "https://example.invalid"}, "valid": false}

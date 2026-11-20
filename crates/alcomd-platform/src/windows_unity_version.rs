@@ -33,6 +33,11 @@ pub(super) fn is_unity_editor_product(path: &Path) -> io::Result<bool> {
     Ok(read_product_version(path)?.name == "Unity")
 }
 
+/// Unity CLI's signed executable declares a different ProductName from Unity Editor.
+pub(super) fn is_unity_cli_product(path: &Path) -> io::Result<bool> {
+    Ok(read_product_version(path)?.name == "unity")
+}
+
 struct ProductVersion {
     name: String,
     version: String,

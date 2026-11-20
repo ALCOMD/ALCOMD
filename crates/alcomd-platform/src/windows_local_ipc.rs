@@ -154,7 +154,7 @@ fn executable_path(process: HANDLE) -> io::Result<PathBuf> {
     )))
 }
 
-fn verify_publisher(path: &Path, publisher: &str) -> io::Result<()> {
+pub(crate) fn verify_publisher(path: &Path, publisher: &str) -> io::Result<()> {
     let image = OpenOptions::new()
         .read(true)
         .share_mode(FILE_SHARE_READ)

@@ -1235,8 +1235,8 @@ const fn source_order(source: UnitySourceKind) -> u8 {
     match source {
         UnitySourceKind::Manual => 0,
         UnitySourceKind::HubConfig => 1,
-        UnitySourceKind::KnownInstallRoot => 2,
-        UnitySourceKind::UnityCliHint => 3,
+        UnitySourceKind::UnityCliHint => 2,
+        UnitySourceKind::KnownInstallRoot => 3,
     }
 }
 

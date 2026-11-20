@@ -32,7 +32,7 @@ export const capabilities = {
     projectsCreate: "projects.create.v1",
     projectTemplates: "projectTemplates.v2",
     unityLaunch: "unity.launch.v1",
-    unityHubOpen: "unity.hub.open.v1",
+    unityHubOpen: "unity.hub.open.v2",
     unityManage: "unity.manage.v1",
     unityRead: "unity.read.v1"
 } as const;

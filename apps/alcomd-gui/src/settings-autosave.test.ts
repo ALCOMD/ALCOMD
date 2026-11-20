@@ -4,7 +4,7 @@ import { SettingsAutosave, StorageDirectoryConflictError, UnityArgumentsConflict
 const initial: SettingsGetResult = {
     configSchema: 13, revision: 7,
     directories: { projectDirectory: "C:\\Projects", backupDirectory: "C:\\Backups" },
-    unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
+    unityHub: { status: "not_found", source: "none", path: null, targetToken: null, configuredPathStatus: "unset" },
     settings: {
         projects: { autoDiscover: true },
         backups: { compressionMode: "fast", includeVpmPackages: true, includeLibrary: false },
@@ -212,7 +212,7 @@ async function idle(writer: SettingsAutosave) {
 
 {
     const fixture = model();
-    const fresh: SettingsGetResult = { ...structuredClone(initial), unityHub: { status: "available", source: "discovered", path: "C:\\Detected\\Unity Hub.exe", configuredPathStatus: "unset" } };
+    const fresh: SettingsGetResult = { ...structuredClone(initial), unityHub: { status: "available", source: "discovered", path: "C:\\Detected\\Unity Hub.exe", targetToken: "a".repeat(64), configuredPathStatus: "unset" } };
     fixture.writer.seed(fresh);
     equal(fixture.writer.getSnapshot().accepted!.unityHub, fresh.unityHub, "filesystem evidence refreshes at the same settings revision");
     fixture.writer.seed({ ...initial, revision: 6 });
@@ -226,7 +226,7 @@ async function idle(writer: SettingsAutosave) {
     const original = fixture.client.settingsGet;
     fixture.client.settingsGet = async () => {
         reads += 1;
-        return { ...await original(), unityHub: { status: "available", source: "discovered", path: "C:\\Detected\\Unity Hub.exe", configuredPathStatus: "unset" } };
+        return { ...await original(), unityHub: { status: "available", source: "discovered", path: "C:\\Detected\\Unity Hub.exe", targetToken: "a".repeat(64), configuredPathStatus: "unset" } };
     };
     await fixture.writer.saveUnityHub(null);
     equal(reads, 1, "automatic mode always rereads Core evidence");

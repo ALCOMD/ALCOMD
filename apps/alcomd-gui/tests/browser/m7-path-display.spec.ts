@@ -55,7 +55,7 @@ test("settings show supplied paths without rewriting them or sending edits on fo
     await hubField.focus();
     await page.getByRole("button", { name: "Open Unity Hub", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.unityRequests.find((request) => request.method === "unityHubOpen")?.params))
-        .toMatchObject({ expectedPath: hub });
+        .toMatchObject({ expectedTargetToken: "a".repeat(64) });
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
 });
 

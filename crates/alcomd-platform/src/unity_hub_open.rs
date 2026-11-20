@@ -100,6 +100,17 @@ impl UnityHubProcessLauncher {
     /// shell command, arguments, project target, or inherited standard streams.
     /// Operating-system executable/interpreter semantics still apply.
     pub fn launch(&self, resolved_path: &str) -> Result<(), UnityHubLaunchError> {
+        #[cfg(windows)]
+        if resolved_path == "msix:unity-hub" {
+            let _permit = self.reserve()?;
+            return crate::windows_app_identity::activate_unity_hub_msix().map_err(|error| {
+                if error.kind() == io::ErrorKind::NotFound {
+                    UnityHubLaunchError::PathChanged.with_source(error)
+                } else {
+                    UnityHubLaunchError::OpenFailed.with_source(error)
+                }
+            });
+        }
         self.launch_with_worker(resolved_path, |work| {
             thread::Builder::new()
                 .name("hub-process-reaper".to_owned())
@@ -137,6 +148,8 @@ impl UnityHubProcessLauncher {
 }
 
 fn validate_resolved_path(path: &str) -> Result<(), UnityHubLaunchError> {
+    #[cfg(target_os = "linux")]
+    let path = flatpak_target(path).map_or(path, |(_, launcher)| launcher);
     let normalized = normalize_unity_hub_path(path).map_err(|error| {
         let value = match error.kind() {
             UnityHubPathErrorKind::Invalid => UnityHubLaunchError::PathInvalid,
@@ -150,7 +163,28 @@ fn validate_resolved_path(path: &str) -> Result<(), UnityHubLaunchError> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn flatpak_target(target: &str) -> Option<(&str, &str)> {
+    let (scope, launcher) = target.strip_prefix("flatpak:")?.split_once(':')?;
+    let scope = match scope {
+        "user" => "--user",
+        "system" => "--system",
+        _ => return None,
+    };
+    Some((scope, launcher))
+}
+
 fn hub_command(path: &str) -> Command {
+    #[cfg(target_os = "linux")]
+    let mut command = match flatpak_target(path) {
+        Some((scope, launcher)) => {
+            let mut command = Command::new(launcher);
+            command.args(["run", scope, crate::unity_registration::FLATPAK_HUB_ID]);
+            command
+        }
+        None => Command::new(path),
+    };
+    #[cfg(not(target_os = "linux"))]
     let mut command = Command::new(path);
     command
         .stdin(Stdio::null())

@@ -187,7 +187,7 @@ const SUPPORTED_CAPABILITIES = [
     "state.check.v1",
     "projects.create.v1",
     "projectTemplates.v2",
-    "unity.hub.open.v1",
+    "unity.hub.open.v2",
     "unity.launch.v1",
     "unity.manage.v1",
     "unity.read.v1"
@@ -392,7 +392,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private settings: SettingsGetResult = {
         configSchema: 13,
         directories: { projectDirectory: query.get("project-directory") ?? (query.has("windows-paths") ? "\\\\?\\C:\\Projects" : "C:\\Fixture"), backupDirectory: "C:\\Fixture\\Backups" },
-        unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
+        unityHub: { status: "not_found", source: "none", path: null, targetToken: null, configuredPathStatus: "unset" },
         revision: 7,
         settings: {
             projects: { autoDiscover: true },
@@ -474,9 +474,10 @@ class DeterministicGuiClient implements GuiRpcClient {
         window.addEventListener("test-project-read-error", () => { this.projectReadFailurePending = true; });
         window.addEventListener("test-unity-read-error", () => { this.unityReadFailurePending = true; });
         const hubPath = query.get("hub-path");
+        if (query.has("hub-packaged")) this.settings.unityHub = this.hubLocation(null);
         if (hubPath !== null) {
             this.settings.settings.unity.hubPath = hubPath;
-            this.settings.unityHub = { status: "available", source: "configured", path: hubPath, configuredPathStatus: "available" };
+            this.settings.unityHub = { status: "available", source: "configured", path: hubPath, targetToken: "a".repeat(64), configuredPathStatus: "available" };
         }
         const motion = query.get("motion");
         if (motion === "system" || motion === "full" || motion === "reduced") this.settings.settings.appearance.motion = motion;
@@ -514,7 +515,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             state: "ready",
             capabilities: this.mode === "capabilities-missing"
                 ? [...CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING]
-                : SUPPORTED_CAPABILITIES.filter((capability) => !(query.has("noProjectRegistry") && capability === "projects.registry.v1") && !(query.get("noPlanV2") && capability === "packages.plan.v2") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v1") && !(query.has("noProjectTemplates") && capability === "projectTemplates.v2"))
+                : SUPPORTED_CAPABILITIES.filter((capability) => !(query.has("noProjectRegistry") && capability === "projects.registry.v1") && !(query.get("noPlanV2") && capability === "packages.plan.v2") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v2") && !(query.has("noProjectTemplates") && capability === "projectTemplates.v2"))
         });
     }
 
@@ -595,11 +596,12 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     private hubLocation(hubPath: string | null): SettingsGetResult["unityHub"] {
-        if (query.has("hub-unavailable")) return { status: "unavailable", source: "none", path: null, configuredPathStatus: hubPath === null ? "unset" : "unavailable" };
-        if (query.has("hub-missing") && hubPath === query.get("hub-path")) return { status: "not_found", source: "none", path: null, configuredPathStatus: "invalid" };
-        return hubPath !== null ? { status: "available", source: "configured", path: hubPath, configuredPathStatus: "available" }
-            : this.hubDefaultReady ? { status: "available", source: "discovered", path: "C:\\Program Files\\Unity Hub\\Unity Hub.exe", configuredPathStatus: "unset" }
-                : { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" };
+        if (query.has("hub-packaged")) return { status: "available", source: "discovered", path: null, targetToken: "b".repeat(64), configuredPathStatus: "unset" };
+        if (query.has("hub-unavailable")) return { status: "unavailable", source: "none", path: null, targetToken: null, configuredPathStatus: hubPath === null ? "unset" : "unavailable" };
+        if (query.has("hub-missing") && hubPath === query.get("hub-path")) return { status: "not_found", source: "none", path: null, targetToken: null, configuredPathStatus: "invalid" };
+        return hubPath !== null ? { status: "available", source: "configured", path: hubPath, targetToken: "a".repeat(64), configuredPathStatus: "available" }
+            : this.hubDefaultReady ? { status: "available", source: "discovered", path: "C:\\Program Files\\Unity Hub\\Unity Hub.exe", targetToken: "a".repeat(64), configuredPathStatus: "unset" }
+                : { status: "not_found", source: "none", path: null, targetToken: null, configuredPathStatus: "unset" };
     }
 
     async settingsGet(): ReturnType<GuiRpcClient["settingsGet"]> {
@@ -769,8 +771,8 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ project: value });
     }
     openProjectDirectory(projectId: string): ReturnType<GuiRpcClient["openProjectDirectory"]> { window.resourceRequests.push({ method: "openProjectDirectory", params: { projectId } }); return this.value(undefined); }
-    async unityHubOpen(expectedRevision: number, expectedPath: string | null): ReturnType<GuiRpcClient["unityHubOpen"]> {
-        window.unityRequests.push({ method: "unityHubOpen", params: { expectedRevision, expectedPath } });
+    async unityHubOpen(expectedRevision: number, expectedTargetToken: string | null): ReturnType<GuiRpcClient["unityHubOpen"]> {
+        window.unityRequests.push({ method: "unityHubOpen", params: { expectedRevision, expectedTargetToken } });
         if (query.get("hub-open") === "hold") await new Promise<void>((resolve) => window.addEventListener("test-hub-open-ready", () => resolve(), { once: true }));
         if (query.get("hub-open") === "stale") {
             this.settings.revision += 1;
@@ -786,7 +788,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.get("hub-open") === "failed") throw { code: "hub_open_failed" };
         if (query.get("hub-open") === "unknown") throw { code: "daemon_unavailable" };
         if (query.get("hub-open") === "denied") throw { code: "permission_denied" };
-        return this.value({ outcome: this.settings.unityHub.status === "available" ? "spawned" : "download_required" });
+        return this.value({ outcome: this.settings.unityHub.status === "available" ? "launch_requested" : "download_required" });
     }
     async openUnityHubDownload(): ReturnType<GuiRpcClient["openUnityHubDownload"]> {
         window.unityRequests.push({ method: "openUnityHubDownload", params: {} });

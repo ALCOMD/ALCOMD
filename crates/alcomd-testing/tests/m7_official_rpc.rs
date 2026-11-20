@@ -304,7 +304,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         &mut raw,
         "hub-open-without-capability",
         alcomd_protocol::METHOD_UNITY_HUB_OPEN,
-        json!({"expectedRevision": expected_clear.revision, "expectedPath": null}),
+        json!({"expectedRevision": expected_clear.revision, "expectedTargetToken": null}),
     )
     .await
     .expect_err("Hub open has an independent negotiated capability");
@@ -403,7 +403,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     let stale_open = client
         .unity_hub_open(alcomd_protocol::UnityHubOpenParams {
             expected_revision: missing.revision - 1,
-            expected_path: missing.unity_hub.path.clone(),
+            expected_target_token: missing.unity_hub.target_token.clone(),
         })
         .await
         .expect_err("stale Hub intent cannot launch anything");
@@ -411,12 +411,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     let changed_open = client
         .unity_hub_open(alcomd_protocol::UnityHubOpenParams {
             expected_revision: missing.revision,
-            expected_path: Some(
-                data.join("unselected Guard.exe")
-                    .to_str()
-                    .expect("UTF-8 guard")
-                    .to_owned(),
-            ),
+            expected_target_token: Some("a".repeat(64)),
         })
         .await
         .expect_err("mismatched target cannot launch anything");
@@ -431,7 +426,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         let invalid_open = client
             .unity_hub_open(alcomd_protocol::UnityHubOpenParams {
                 expected_revision: missing.revision,
-                expected_path: None,
+                expected_target_token: None,
             })
             .await
             .expect_err("broken manual location is not a download diagnosis");
@@ -481,7 +476,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         let download = client
             .unity_hub_open(alcomd_protocol::UnityHubOpenParams {
                 expected_revision: hub_cleared.revision,
-                expected_path: None,
+                expected_target_token: None,
             })
             .await
             .expect("no configured or discovered Hub returns download without launching");

@@ -1136,7 +1136,7 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_UNITY_READ_V1,
         alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1,
         alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1,
-        alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V1,
+        alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V2,
         alcomd_protocol::CAPABILITY_PROJECTS_CREATE_V1,
         alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V2,
         alcomd_protocol::CAPABILITY_TEMPLATE_EDIT_V1,

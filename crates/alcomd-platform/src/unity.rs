@@ -9,6 +9,8 @@ use std::process::{Command, Stdio};
 const MANIFEST_BYTE_LIMIT: u64 = 65_536;
 const DISCOVERY_ENTRY_LIMIT: usize = 256;
 
+use crate::unity_registration::{self, UnityApp, UnityAppTarget};
+
 #[cfg(windows)]
 #[path = "windows_unity_version.rs"]
 mod windows_version;
@@ -220,59 +222,157 @@ pub fn is_verified_non_editor_executable(
     Ok(!is_editor)
 }
 
-/// Returns validated candidates from bounded, conventional Unity Hub install roots.
-/// An existing candidate that cannot be verified is an error, never an empty success.
-pub fn discover_unity_executables() -> io::Result<Vec<ValidatedUnityExecutable>> {
-    discover_from_roots(known_install_roots())
+/// A validated Editor together with the source that provided its path.
+#[derive(Debug)]
+pub struct DiscoveredUnityExecutable {
+    pub executable: ValidatedUnityExecutable,
+    pub from_official_list: bool,
 }
 
-fn discover_from_roots(roots: Vec<PathBuf>) -> io::Result<Vec<ValidatedUnityExecutable>> {
-    let mut installations = Vec::new();
-    for root in roots {
-        let entries = match fs::read_dir(&root) {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(discovery_error(&root, error)),
+/// Query the official list first, then merge the OS registrations.
+pub fn discover_unity_executables() -> io::Result<Vec<DiscoveredUnityExecutable>> {
+    let official = official_editor_paths();
+    let system = unity_registration::query(UnityApp::Editor);
+    let system_paths = system
+        .targets
+        .into_iter()
+        .filter_map(|target| match target {
+            UnityAppTarget::Executable(path) => Some(path),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        });
+    let official_error = official.as_ref().err().map(|error| error.kind());
+    let paths = official
+        .unwrap_or_default()
+        .into_iter()
+        .take(DISCOVERY_ENTRY_LIMIT)
+        .map(|path| (editor_path(path), true))
+        .chain(
+            system_paths
+                .take(DISCOVERY_ENTRY_LIMIT)
+                .map(|path| (path, false)),
+        );
+    let found = discover_registered(paths)?;
+    if found.is_empty() && (system.unavailable || official_error.is_some()) {
+        return Err(io::Error::other(
+            "Unity installation registration could not be read",
+        ));
+    }
+    Ok(found)
+}
+
+fn editor_path(path: PathBuf) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    if path.extension().is_some_and(|extension| extension == "app") {
+        return path.join("Contents/MacOS/Unity");
+    }
+    path
+}
+
+fn official_editor_paths() -> io::Result<Vec<PathBuf>> {
+    #[cfg(windows)]
+    let name = "unity.exe";
+    #[cfg(not(windows))]
+    let name = "unity";
+    let Some(tool) =
+        unity_registration::unity_cli_candidates(name).find(|tool| valid_unity_cli(tool))
+    else {
+        return Ok(Vec::new());
+    };
+    let (status, stdout) = unity_registration::bounded_output(
+        &tool,
+        &[
+            "editors",
+            "--installed",
+            "--long",
+            "--json",
+            "--non-interactive",
+            "--no-banner",
+            "--no-pager",
+        ],
+    )?;
+    let output: serde_json::Value = serde_json::from_slice(&stdout)?;
+    let items = output
+        .pointer("/data/items")
+        .and_then(serde_json::Value::as_array)
+        .ok_or(io::ErrorKind::InvalidData)?;
+    if !status.success() && items.is_empty() {
+        return Err(io::ErrorKind::InvalidData.into());
+    }
+    Ok(items
+        .iter()
+        .filter_map(|item| item.get("location")?.as_str())
+        .map(PathBuf::from)
+        .collect())
+}
+
+fn valid_unity_cli(tool: &Path) -> bool {
+    #[cfg(windows)]
+    return windows_version::is_unity_cli_product(tool).unwrap_or(false)
+        && unity_registration::verify_cli(tool).is_ok();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let Ok(metadata) = fs::metadata(tool) else {
+            return false;
         };
-        let mut entries = entries
-            .take(DISCOVERY_ENTRY_LIMIT)
-            .collect::<io::Result<Vec<_>>>()
-            .map_err(|error| discovery_error(&root, error))?;
-        entries.sort_by_key(fs::DirEntry::file_name);
-        for entry in entries {
-            let file_type = entry
-                .file_type()
-                .map_err(|error| discovery_error(&entry.path(), error))?;
-            if file_type.is_symlink() || !file_type.is_dir() {
-                continue;
-            }
-            let path = editor_executable(&entry.path());
-            match fs::symlink_metadata(&path) {
-                Ok(_) => {}
-                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(discovery_error(&path, error)),
-            }
-            let installation =
-                inspect_unity_installation(&path).map_err(|error| discovery_error(&path, error))?;
-            if !installations
-                .iter()
-                .any(|existing: &ValidatedUnityExecutable| {
-                    existing.filesystem_identity == installation.filesystem_identity
-                })
+        metadata.is_file()
+            && locate_editor_manifest(tool).is_none()
+            && metadata.mode() & 0o111 != 0
+            && metadata.mode() & 0o022 == 0
+            && (metadata.uid() == 0 || metadata.uid() == rustix::process::geteuid().as_raw())
+    }
+    #[cfg(not(any(windows, unix)))]
+    false
+}
+
+fn discover_registered(
+    paths: impl IntoIterator<Item = (PathBuf, bool)>,
+) -> io::Result<Vec<DiscoveredUnityExecutable>> {
+    let mut installations = Vec::<DiscoveredUnityExecutable>::new();
+    let mut seen_paths = std::collections::HashSet::new();
+    let mut first_error = None;
+    for (path, from_official_list) in paths {
+        if !path.is_absolute() || !seen_paths.insert(path.clone()) {
+            continue;
+        }
+        let executable = match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => Err(error),
+            Ok(_) => inspect_unity_installation(&path),
+        };
+        match executable {
+            Ok(executable)
+                if !installations.iter().any(|candidate| {
+                    candidate.executable.filesystem_identity == executable.filesystem_identity
+                }) =>
             {
-                installations.push(installation);
+                installations.push(DiscoveredUnityExecutable {
+                    executable,
+                    from_official_list,
+                });
             }
+            Ok(_) => {}
+            Err(error) if first_error.is_none() => {
+                first_error = Some(io::Error::new(
+                    error.kind(),
+                    format!("Unity Editor discovery at {}: {error}", path.display()),
+                ));
+            }
+            Err(_) => {}
         }
     }
-    installations.sort_by(|left, right| left.executable_path.cmp(&right.executable_path));
+    if installations.is_empty()
+        && let Some(error) = first_error
+    {
+        return Err(error);
+    }
+    installations.sort_by(|left, right| {
+        left.executable
+            .executable_path
+            .cmp(&right.executable.executable_path)
+    });
     Ok(installations)
-}
-
-fn discovery_error(path: &Path, error: io::Error) -> io::Error {
-    io::Error::new(
-        error.kind(),
-        format!("Unity Editor discovery at {}: {error}", path.display()),
-    )
 }
 
 /// Spawns one validated Unity executable with an exact project selector and argv array.
@@ -328,45 +428,13 @@ fn locate_editor_manifest(executable: &Path) -> Option<PathBuf> {
     macos.is_file().then_some(macos)
 }
 
-fn editor_executable(version_root: &Path) -> PathBuf {
-    #[cfg(target_os = "macos")]
-    return version_root.join("Unity.app/Contents/MacOS/Unity");
-    #[cfg(windows)]
-    return version_root.join("Editor/Unity.exe");
-    #[cfg(all(unix, not(target_os = "macos")))]
-    return version_root.join("Editor/Unity");
-}
-
-fn known_install_roots() -> Vec<PathBuf> {
-    #[cfg(windows)]
-    {
-        std::env::var_os("ProgramFiles")
-            .map(PathBuf::from)
-            .into_iter()
-            .map(|path| path.join("Unity/Hub/Editor"))
-            .collect()
-    }
-    #[cfg(target_os = "macos")]
-    {
-        vec![PathBuf::from("/Applications/Unity/Hub/Editor")]
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .into_iter()
-            .map(|path| path.join("Unity/Hub/Editor"))
-            .collect()
-    }
-}
-
 #[cfg(all(test, windows))]
 #[path = "../test-support/windows_unity_editor.rs"]
 mod windows_editor_fixture;
 
 #[cfg(all(test, windows))]
 mod tests {
-    use super::{discover_from_roots, windows_editor_fixture};
+    use super::{discover_registered, windows_editor_fixture};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -390,7 +458,7 @@ mod tests {
         }
 
         fn editor(&self, directory: &str, product: &str) -> PathBuf {
-            let executable = super::editor_executable(&self.0.join(directory));
+            let executable = self.0.join(directory).join("Editor/Unity.exe");
             let catalog = executable
                 .parent()
                 .expect("Editor directory")
@@ -486,26 +554,48 @@ mod tests {
         let fixture = DiscoveryFixture::new();
         let executable = fixture.editor("directory-name-is-not-version", "Unity");
         let installations =
-            discover_from_roots(vec![fixture.root().to_owned(), fixture.root().to_owned()])
+            discover_registered([(executable.clone(), true), (executable.clone(), false)])
                 .expect("discover native metadata");
         assert_eq!(installations.len(), 1);
+        assert!(installations[0].from_official_list);
         assert_eq!(
-            installations[0].executable_path(),
+            installations[0].executable.executable_path(),
             std::fs::canonicalize(executable).expect("canonical executable")
         );
         assert_eq!(
-            installations[0].product_version(),
+            installations[0].executable.product_version(),
             "2022.3.22f1_887be4894c44"
+        );
+    }
+
+    #[test]
+    fn same_version_at_distinct_registered_locations_remains_selectable() {
+        let fixture = DiscoveryFixture::new();
+        let first = fixture.editor("first", "Unity");
+        let second = fixture.editor("second", "Unity");
+        let installations =
+            discover_registered([(first.clone(), true), (second, false), (first, false)])
+                .expect("registered Editors");
+        assert_eq!(installations.len(), 2);
+        assert_eq!(
+            installations
+                .iter()
+                .filter(|item| item.from_official_list)
+                .count(),
+            1
+        );
+        assert_eq!(
+            installations[0].executable.product_version(),
+            installations[1].executable.product_version()
         );
     }
 
     #[test]
     fn discovery_does_not_silently_drop_an_existing_rejected_editor() {
         let fixture = DiscoveryFixture::new();
-        fixture.editor("a-valid", "Unity");
         let rejected = fixture.editor("b-rejected", "Unity Hub");
-        let error = discover_from_roots(vec![fixture.root().to_owned()])
-            .expect_err("report rejected candidate");
+        let error =
+            discover_registered([(rejected.clone(), true)]).expect_err("report rejected candidate");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         assert!(
             error
@@ -524,11 +614,8 @@ mod tests {
         let fixture = DiscoveryFixture::new();
         std::fs::create_dir(fixture.root().join("unrelated-directory"))
             .expect("unrelated directory");
-        let installations = discover_from_roots(vec![
-            fixture.root().join("missing"),
-            fixture.root().to_owned(),
-        ])
-        .expect("no Editor candidates");
+        let installations = discover_registered([(fixture.root().join("missing"), false)])
+            .expect("no Editor candidates");
         assert!(installations.is_empty());
     }
 }

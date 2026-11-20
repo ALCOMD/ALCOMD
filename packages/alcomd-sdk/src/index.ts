@@ -26,7 +26,7 @@ export const RPC_CAPABILITIES = {
     logsRead: "logs.read.v1",
     repositoriesListFiles: "repositories.list-files.v1",
     repositoriesListImport: "repositories.list-import.v1",
-    unityHubOpen: "unity.hub.open.v1",
+    unityHubOpen: "unity.hub.open.v2",
     packagesCandidates: "packages.candidates.v2",
     extensionsRemoteInstall: "extensions.remote-install.v1",
     extensionsLifecycle: "extensions.lifecycle.v1",
