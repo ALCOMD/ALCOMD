@@ -1550,6 +1550,11 @@ fn spawn_daemon(config: &ClientConfig) -> Result<(), ClientError> {
 fn daemon_command(config: &ClientConfig) -> Result<Command, ClientError> {
     let mut command = if let Some(path) = &config.daemon_path {
         Command::new(path)
+    } else if config.data_directory.is_some() && !config.require_installation {
+        // The development data override can live under a shared temporary
+        // ancestor. It selects the sibling Core without trusting that
+        // directory as an installation registration source.
+        Command::new(sibling_daemon_path()?)
     } else {
         let data = config
             .data_directory
@@ -1683,6 +1688,36 @@ mod connection_reuse_tests {
             environment,
             [(std::ffi::OsStr::new(MCP_CREDENTIAL_ENVIRONMENT_KEY), None)]
         );
+    }
+
+    #[test]
+    fn development_data_override_uses_sibling_without_reading_installation_registration() {
+        // A relative temporary location would fail registration validation.
+        // Command construction alone never reads or modifies its contents.
+        let data = PathBuf::from("isolated-cli-fixture");
+        let development = ClientConfig::default().with_data_directory(data.clone());
+        let command = daemon_command(&development).expect("development sibling");
+        assert_eq!(
+            command.get_program(),
+            sibling_daemon_path()
+                .expect("sibling executable")
+                .as_os_str()
+        );
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [std::ffi::OsStr::new("--data-dir"), data.as_os_str()]
+        );
+
+        let explicit_daemon = PathBuf::from("explicit-daemon");
+        let command = daemon_command(&development.with_daemon_path(explicit_daemon.clone()))
+            .expect("explicit development executable");
+        assert_eq!(command.get_program(), explicit_daemon.as_os_str());
+
+        let installed = ClientConfig::for_installed_core().with_data_directory(data);
+        assert!(matches!(
+            daemon_command(&installed),
+            Err(ClientError::StartDaemon(error)) if error.kind() == io::ErrorKind::InvalidData
+        ));
     }
 
     #[cfg(unix)]
