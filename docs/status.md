@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-**M10 实施中。** 本阶段交付同一系统用户直连的 Rust 和 TypeScript SDK，覆盖官方 GUI 使用的完整 Core 业务，并加固原生 RPC 合同。[M10 实施计划](exec-plans/M10-native-sdk-and-rpc.md)
+**M10 已完成。** 签名候选 `dab76fcd` 的三平台 Hosted CI 和四项 CodeQL 均通过，Chromium 每平台 738 项通过。Rust 与 TypeScript SDK 共覆盖 94 个公开方法，含官方 GUI 的全部 93 个 Core 方法。三个平台的 npm 开发包已完成外部安装和真实 IPC 验收。[M10 验收记录](exec-plans/M10-native-sdk-and-rpc.md#2026-11-20-验收结果)
 
 **M9 已完成。** 第一方 Discord 扩展已通过公开 Extension API 接通 Core 和 Host，并沿用 v3 的 Discord 应用身份。主仓候选 `feca8df3` 的三平台 Hosted CI 和四语言 CodeQL 全部通过，Chromium 各 738 项通过。独立扩展候选 `0ff04bc` 已通过三平台构建及 Actions、Rust 和 Python CodeQL。Windows 已完成真实 Unity 与 Discord 的 IPC 验收，Ubuntu 和 macOS 的真实桌面验收按计划延期。[M9 收尾记录](exec-plans/M9-discord-first-party-extension.md#2026-11-20-m9-收尾)
 
@@ -361,6 +361,6 @@ H2-A/Visual Gate 2及H2-B、H3–H6已有签收和保留边界沿用，H7按所�
 - 最终功能证据绑定`c46f7544`；此前候选的失败、分轮结果和历史三平台基线分别保留，不替代本轮完整通过。收尾文档为后续独立提交，不声称其新CI已完成。
 - 14项原有`#[ignore]`未全部直接单跑；子进程入口部分由父回归调用，联网VRCFury、Windows单实例/注册表、显式公开仓库快照及专用HTTP/代理隔离项不计作本轮直接通过。
 - v3 真实工程差分夹具仍属 M11。原生安装、更新、卸载和完整发行验收仍属 M12。后续里程碑按各自授权推进。
-- M7 已正式完成，M8 已按所有者要求收尾，M9 已验收完成。Discord 启用状态迁移和随包装配分别归入 M11 和 M12。[M9 收尾记录](exec-plans/M9-discord-first-party-extension.md#2026-11-20-m9-收尾)
+- M7 已正式完成，M8 已按所有者要求收尾，M9 和 M10 已验收完成。Discord 启用状态迁移和随包装配分别归入 M11 和 M12。原生 Core 安装登记由 M12 安装器维护。[M10 验收记录](exec-plans/M10-native-sdk-and-rpc.md#2026-11-20-验收结果)
 
 [M7 状态与验收历史](testing/m7-status-history-through-20261107.md) 保存原状态页的候选、签收、遗留事项、失败轮次及证据链接。

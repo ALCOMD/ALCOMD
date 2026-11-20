@@ -64,8 +64,8 @@ id = "sdk.native-desktop-consumers"
 stage = "M10"
 kind = "end-to-end"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
-status = "planned"
-description = "用仓库外 Rust 和 TypeScript 消费者验证安装暂存的真实 Core 冷启动、并发直连、空闲重启、RPC 合同和官方 GUI 方法覆盖。"
+status = "implemented"
+description = "在同一候选的三个 Hosted 平台上，仓库外 Rust 和 TypeScript 消费者通过真实 IPC 验证安装暂存、并发冷启动、运行中直连、空闲重启、RPC 业务与官方 GUI 方法覆盖。"
 
 [[test]]
 id = "access.principal-revocation"
