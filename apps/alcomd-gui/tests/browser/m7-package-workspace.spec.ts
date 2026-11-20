@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { selectActionMenuItem } from "./material-menu-actions";
 import { requestErrorMessage } from "../../src/request-errors";
 
@@ -478,34 +478,50 @@ test("a changed visibility revision cannot reuse source metadata while the new C
 test("Inline version selection pins the chosen source and preserves installed state until Apply", async ({ page }) => {
     await openHarness(page, "package-multiple&versions=1");
     const trigger = page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" });
+    const versionControl = page.locator(".package-version-picker").filter({ has: trigger });
+    const source = page.getByRole("combobox", { name: "Source for Avatar tools", exact: true });
+    const sourceControl = page.locator(".package-source-picker").filter({ has: source });
+    const chooseOption = async (control: Locator, name: string) => {
+        const lifecycle = await control.evaluateHandle((element) => ({
+            opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),
+            closed: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+        }));
+        try {
+            await control.getByRole("combobox").click();
+            await lifecycle.evaluate((events) => events.opened);
+            await control.getByRole("option", { name, exact: true }).click();
+            await lifecycle.evaluate((events) => events.closed);
+        } finally {
+            await lifecycle.dispose();
+        }
+    };
     await trigger.click();
     await expect(page.getByRole("option", { name: "1.2.3", exact: true })).toHaveCount(1);
     await expect(page.locator("md-select-option").filter({ has: page.getByRole("option", { name: "1.2.3", exact: true }) })).toHaveJSProperty("selected", true);
     await expect(page.locator("md-select-option").filter({ hasText: "legacy" })).toHaveCount(0);
     await expect(page.locator("md-select-option").filter({ hasText: "9.0.0" })).toHaveCount(0);
     await expect(page.locator("md-select-option").filter({ hasText: "2.0.0-beta.1" })).toHaveCount(0);
-    const closed = await page.locator(".package-version-picker").first().evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true })) }));
+    const closed = await versionControl.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true })) }));
     await page.keyboard.press("Escape");
     await closed.evaluate(({ event }) => event);
     await closed.dispose();
     await expect(trigger).toBeFocused();
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 
-    await page.getByRole("combobox", { name: "Source for Avatar tools", exact: true }).click();
-    await page.getByRole("option", { name: "Local packages", exact: true }).click();
-    await trigger.click();
-    await page.getByRole("option", { name: "1.1.0", exact: true }).click();
+    await chooseOption(sourceControl, "Local packages");
+    await expect(sourceControl).toHaveJSProperty("displayText", "Local packages");
+    await chooseOption(versionControl, "1.1.0");
     const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
     await expect(review).toContainText("1.2.3 → 1.1.0");
     const requests = await page.evaluate(() => window.packageRequests);
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({ method: "downgrade", params: { projectId: PROJECT_ID, expectedRevision: 2, packageId: "com.example.avatar", version: "1.1.0", source: { kind: "repository", repositoryId: "00000000-0000-4000-8000-000000000112" } } });
     await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(review).toHaveCount(0);
     await expect(trigger).toBeVisible();
-    await page.getByRole("combobox", { name: "Source for Avatar tools", exact: true }).click();
-    await page.getByRole("option", { name: "Example packages", exact: true }).click();
-    await trigger.click();
-    await page.getByRole("option", { name: "1.10.0", exact: true }).click();
+    await chooseOption(sourceControl, "Example packages");
+    await expect(sourceControl).toHaveJSProperty("displayText", "Example packages");
+    await chooseOption(versionControl, "1.10.0");
     await expect(review).toContainText("1.2.3 → 1.10.0");
     expect(await page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual(["downgrade", "upgrade"]);
     expect(await page.evaluate(() => window.packageRequests[1]?.params)).toMatchObject({ versionRange: "=1.10.0" });
