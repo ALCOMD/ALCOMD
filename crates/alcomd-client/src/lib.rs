@@ -1291,6 +1291,14 @@ impl AlcomdClient {
             .await
     }
 
+    pub async fn repository_move(
+        &mut self,
+        params: alcomd_protocol::RepositoryMoveParams,
+    ) -> Result<alcomd_protocol::RepositoryMoveResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_REPOSITORIES_MOVE, params)
+            .await
+    }
+
     pub async fn repository_set_display_name(
         &mut self,
         params: alcomd_protocol::RepositorySetDisplayNameParams,

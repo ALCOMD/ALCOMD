@@ -978,11 +978,11 @@ mod tests {
             .prepare(vec![RepositoryListRecord {
                 repository_id: "fixture".to_owned(),
                 revision: 1,
+                order_key: 1,
                 source: source("index"),
                 credential_reference: Some(reference.0.clone()),
                 configuration: alcomd_application::RepositoryConfiguration {
                     display_name: None,
-                    priority: 1,
                     enabled: true,
                     disabled_package_ids: Vec::new(),
                 },

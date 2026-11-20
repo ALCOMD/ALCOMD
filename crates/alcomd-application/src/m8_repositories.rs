@@ -110,7 +110,7 @@ impl<S: M3RegistryStore + McpRepositoryStore, R: M3ReadAdapter> M3Application<S,
     pub async fn mcp_repositories_list(
         &self,
         access: &AccessContext,
-        cursor: Option<RegistryCursor<RepositoryId>>,
+        cursor: Option<RepositoryCursor>,
         limit: u32,
     ) -> Result<RepositoryPage, M3Error> {
         require_m3(access, Permission::RepositoriesRead)?;

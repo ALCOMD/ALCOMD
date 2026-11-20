@@ -279,8 +279,6 @@ fn prepare_list(
     if records.len() > REPOSITORY_LIST_MAX_ENTRIES {
         return Err(Error("repository_list_invalid"));
     }
-    let mut records: Vec<_> = records.iter().collect();
-    records.sort_by(|left, right| left.repository_id.cmp(&right.repository_id));
     let mut bytes = Vec::new();
     let mut excluded = Vec::new();
     let mut scope = Vec::new();
@@ -492,7 +490,6 @@ mod tests {
         let mut configured = remote("user", "https://repository.test/index.json");
         configured.configuration = alcomd_application::RepositoryConfiguration {
             display_name: Some("My renamed repository".into()),
-            priority: 7,
             enabled: false,
             disabled_package_ids: vec!["com.example.future".into(), "com.example.old".into()],
         };
@@ -523,6 +520,25 @@ mod tests {
         let inspection = parse_list(&prepared.bytes, &RepositoryListSnapshot::default())
             .expect("configuration import");
         assert_eq!(inspection.format, RepositoryListFormat::Native);
+        assert_eq!(
+            inspection.entries[0].source,
+            Some(configured.source.clone())
+        );
+        let mut document: serde_json::Value =
+            serde_json::from_slice(&prepared.bytes).expect("JSON");
+        assert!(
+            document["repositories"][0]["configuration"]
+                .get("priority")
+                .is_none()
+        );
+        document["repositories"][0]["configuration"]["priority"] = serde_json::json!(1);
+        assert!(
+            parse_list(
+                &serde_json::to_vec(&document).expect("JSON"),
+                &RepositoryListSnapshot::default()
+            )
+            .is_err()
+        );
         let entry = inspection
             .entries
             .iter()
@@ -625,11 +641,11 @@ mod tests {
         RepositoryListRecord {
             repository_id: id.into(),
             revision: 1,
+            order_key: 1,
             source: RepositorySource::Remote { url: url.into() },
             credential_reference: None,
             configuration: alcomd_application::RepositoryConfiguration {
                 display_name: None,
-                priority: 1,
                 enabled: true,
                 disabled_package_ids: Vec::new(),
             },
@@ -743,13 +759,13 @@ mod tests {
         snapshot.repositories.push(RepositoryListRecord {
             repository_id: "local".into(),
             revision: 1,
+            order_key: 1,
             source: RepositorySource::Local {
                 path: "/local".into(),
             },
             credential_reference: None,
             configuration: alcomd_application::RepositoryConfiguration {
                 display_name: None,
-                priority: 1,
                 enabled: true,
                 disabled_package_ids: Vec::new(),
             },
@@ -884,6 +900,7 @@ mod tests {
         async fn apply_repository_list_metadata(
             &self,
             _: alcomd_application::PrincipalId,
+            _: String,
             _: Vec<alcomd_application::RepositoryListMetadata>,
             _: u64,
         ) -> Result<(), alcomd_application::M3Error> {

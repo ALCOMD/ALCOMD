@@ -41,6 +41,7 @@ import type {
     ProjectListSort,
     ProjectSnapshot,
     RegistryCursor,
+    RepositoryCursor,
     RepositorySnapshot,
     UnityInstallation,
     UnityLaunchOptionsResult,
@@ -85,6 +86,7 @@ import { PagedItems } from "./PagedItems";
 import type { GuiRpcClient } from "./rpc";
 import { DialogCloseButton, Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField, type DialogOrigin } from "./Material";
 import { SplitButton } from "./SplitButton";
+import { RepositoryOrderControl, useRepositoryDrag } from "./RepositoryOrderControl";
 import { RepositoryToolbar } from "./RepositoryListDialog";
 import { isBuiltinRepository, repositoryDisplayName } from "./repository-display";
 import { useProjectUnityLaunch, type ProjectUnityLaunchAction } from "./ProjectUnityLaunch";
@@ -267,8 +269,8 @@ export function routePreloadRead(client: GuiRpcClient, events: CoreEvents, path:
             return { scopes: ["projects"], key: JSON.stringify(view), load: (signal) => loadProjectRows(client, events, view, signal) };
         }
         case "/repositories": return has(capabilities.repositoriesRead) ? { scopes: ["repositories"], load: async (signal) => {
-            const [repositories, display] = await Promise.all([listAllRepositories(client, signal), client.settingsGet().then((settings) => ({ settings }), (caught: unknown) => ({ error: normalizeRequestError(caught) }))]);
-            return { repositories, ...display };
+            const [list, display] = await Promise.all([readRepositoryList(client, signal), client.settingsGet().then((settings) => ({ settings }), (caught: unknown) => ({ error: normalizeRequestError(caught) }))]);
+            return { ...list, ...display };
         } } : undefined;
         case "/user-packages": return has(capabilities.packagesUserPackages) ? { scopes: ["user-packages"], load: (signal) => listAllUserPackages(client, signal) } : undefined;
         case "/templates": return has(capabilities.projectTemplates) ? { scopes: ["templates"], load: () => client.projectTemplatesList() } : undefined;
@@ -1444,15 +1446,31 @@ function PackageFilters({ client, settings, onChanged, filter, setFilter, source
 }
 
 async function listAllRepositories(client: GuiRpcClient, signal?: AbortSignal): Promise<RepositorySnapshot[]> {
+    return (await readRepositoryList(client, signal)).repositories;
+}
+
+async function readRepositoryList(client: GuiRpcClient, signal?: AbortSignal, retry = true): Promise<{
+    repositories: RepositorySnapshot[];
+    orderFingerprint: string;
+}> {
     const repositories: RepositorySnapshot[] = [];
-    let cursor: RegistryCursor | undefined;
-    do {
-        checkPreload(signal);
-        const page = await client.repositoriesList(cursor);
-        repositories.push(...page.repositories);
-        cursor = page.nextCursor;
-    } while (cursor !== undefined);
-    return repositories;
+    let cursor: RepositoryCursor | undefined;
+    let orderFingerprint: string;
+    try {
+        do {
+            checkPreload(signal);
+            const page = await client.repositoriesList(cursor);
+            repositories.push(...page.repositories);
+            orderFingerprint = page.orderFingerprint;
+            cursor = page.nextCursor;
+        } while (cursor !== undefined);
+    } catch (caught: unknown) {
+        if (retry && cursor !== undefined && normalizeRequestError(caught).code === "revision_conflict") {
+            return readRepositoryList(client, signal, false);
+        }
+        throw caught;
+    }
+    return { repositories, orderFingerprint };
 }
 
 const packageWorkspaceChanges = ["projects", "repositories", "user-packages", "unity"] as const;
@@ -1853,28 +1871,29 @@ function repositoryColumns(t: Translate): DesktopListColumn[] {
         { key: "visibility", header: <span className="visually-hidden">{t("Enabled")}</span>, width: 48 },
         { key: "repository", header: t("Repository"), width: "34%" },
         { key: "source", header: t("Source") },
-        { key: "actions", header: t("Actions"), width: 144 }
+        { key: "actions", header: t("Actions"), width: 184 }
     ];
 }
 
 export function RepositoriesPage({ client, navigate }: PageProps) {
     const { t } = useTranslation();
     const load = useCallback(async () => {
-        const [repositories, displaySettings] = await Promise.all([
-            listAllRepositories(client),
+        const [list, displaySettings] = await Promise.all([
+            readRepositoryList(client),
             client.settingsGet().then((settings) => ({ settings }), (caught: unknown) => ({ error: normalizeRequestError(caught) }))
         ]);
-        return { repositories, ...displaySettings };
+        return { ...list, ...displaySettings };
     }, [client]);
     return <UtilityWorkspace table loading={<TableLoading label={t("Repositories")} columns={repositoryColumns(t)} />} changes={["repositories"]} title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/repositories" navigate={navigate} />} tools={(_, refresh) => <RepositoryToolbar client={client} onChanged={refresh} />}>
         {(value, refresh) => <RepositoryTable client={client} onChanged={refresh} {...value} />}
     </UtilityWorkspace>;
 }
 
-function RepositoryTable({ client, onChanged, repositories, settings, error }: {
+function RepositoryTable({ client, onChanged, repositories, orderFingerprint, settings, error }: {
     client: GuiRpcClient;
     onChanged(): void;
     repositories: RepositorySnapshot[];
+    orderFingerprint: string;
     settings?: SettingsGetResult;
     error?: RpcError;
 }) {
@@ -1883,7 +1902,48 @@ function RepositoryTable({ client, onChanged, repositories, settings, error }: {
     const [selectedId, setSelectedId] = useState<string>();
     const selected = selectedId === undefined ? undefined : repositories.find((repository) => repository.repositoryId === selectedId);
     const failure = display.error ?? error;
+    const canManage = useCapability(capabilities.repositoriesRegistry);
+    const current = useActionScope(client);
+    const inFlight = useRef(false);
+    const [moving, setMoving] = useState(false);
+    const [orderError, setOrderError] = useState<RpcError>();
+    const [moved, setMoved] = useState<{ id: string; previousFingerprint: string; restoreFocus: boolean }>();
+    const movableIds = repositories.flatMap((repo) => !isBuiltinRepository(repo) && repo.repositoryId ? [repo.repositoryId] : []);
+    const move = async (id: string, before: string | null, restoreFocus = false) => {
+        const index = movableIds.indexOf(id);
+        if (!canManage || inFlight.current || index < 0
+            || before === (movableIds[index + 1] ?? null)) return;
+        inFlight.current = true;
+        setMoving(true);
+        setOrderError(undefined);
+        try {
+            const result = await client.repositoryMove(id, before, orderFingerprint);
+            if (!current()) return;
+            if (result.changed) {
+                setMoved({ id, previousFingerprint: orderFingerprint, restoreFocus });
+                onChanged();
+            }
+        } catch (caught: unknown) {
+            if (!current()) return;
+            const failure = normalizeRequestError(caught);
+            setOrderError(failure);
+            if (failure.code === "revision_conflict") onChanged();
+        } finally {
+            inFlight.current = false;
+            if (current()) setMoving(false);
+        }
+    };
+    const dragging = useRepositoryDrag((id, before) => { void move(id, before); });
+    const movedIndex = moved && moved.previousFingerprint !== orderFingerprint
+        ? repositories.findIndex((repository) => repository.repositoryId === moved.id)
+        : -1;
+    const movedRepository = repositories[movedIndex];
     return <>
+        <span className="visually-hidden" role="status">{movedRepository === undefined ? "" : t("{name} moved to position {position}", {
+            name: repositoryDisplayName(t, movedRepository, t("Repository")), position: movedIndex + 1
+        })}</span>
+        {orderError === undefined ? null : <p className="repository-order-error" role="alert">{t(orderError.code === "revision_conflict" ? "The repository list changed. Try moving the repository again." : requestErrorMessage(orderError.code))}</p>}
+
         {failure === undefined ? null : <>
             <Button onClick={display.reload} type="button" variant="text">{t("Reload filters")}</Button>
         </>}
@@ -1894,15 +1954,30 @@ function RepositoryTable({ client, onChanged, repositories, settings, error }: {
             minWidth={640}
             rows={repositories.map((repository) => {
                 const source = sourceText(t, locale, repository);
+                const id = repository.repositoryId;
+                const name = repositoryDisplayName(t, repository, t("Repository"));
+                const index = id === undefined ? -1 : movableIds.indexOf(id);
+                const reorderable = canManage && repository.actions?.canRemove === true && index >= 0 && movableIds.length > 1;
+                const marker = dragging.drop === id && id !== undefined ? " repository-order-before"
+                    : dragging.drop === null && index >= 0 && index === movableIds.length - 1 ? " repository-order-after" : "";
                 return {
-                    key: repository.repositoryId ?? source,
+                    key: id ?? source,
+                    className: reorderable ? "repository-order-movable" + marker : undefined,
                     cells: [
                         <RepositoryVisibility display={display} labelHidden repository={repository} />,
-                        <strong>{repositoryDisplayName(t, repository, t("Repository"))}</strong>,
+                        <strong>{name}</strong>,
                         <span title={source}>{source}</span>,
                         <div className="card-actions">
                             <IconButton disabled={repository.repositoryId === undefined} label={t("Browse packages")} onClick={() => setSelectedId(repository.repositoryId)} title={t("Browse packages")} type="button"><Icon asset={packagesIcon} /></IconButton>
                             <RepositoryActions client={client} onChanged={onChanged} repository={repository} />
+                            {reorderable && id !== undefined ? <RepositoryOrderControl
+                                label={t("Reorder {name}", { name })}
+                                busy={moving}
+                                focusAfterMove={moved?.restoreFocus === true && id === movedRepository?.repositoryId}
+                                up={index > 0 ? () => { void move(id, movableIds[index - 1]!, true); } : undefined}
+                                down={index < movableIds.length - 1 ? () => { void move(id, movableIds[index + 2] ?? null, true); } : undefined}
+                                drag={dragging.bindings(id, !moving)}
+                            /> : null}
                         </div>
                     ]
                 };

@@ -8,6 +8,8 @@
 
 软件包默认显示预发布版，安装和升级优先兼容稳定版。CLI 和 MCP 安装、升级均可省略版本。Windows 已通过真实 Core 的候选与设置重启测试、MCP 安装升级、27 项 VPM 回归和 74 项软件包浏览器测试。[配置规范](../specs/config/settings-v13.md)
 
+M11 仓库调序让列表顺序决定同版本包的仓库来源优先级。仓库移动、专用格式 v1 与验证记录见[仓库顺序与来源优先级](exec-plans/M11-repository-order.md)。
+
 **M10 已完成。** 签名候选 `dab76fcd` 的三平台 Hosted CI 和四项 CodeQL 均通过，Chromium 每平台 738 项通过。Rust 与 TypeScript SDK 共覆盖 94 个公开方法，含官方 GUI 的全部 93 个 Core 方法。三个平台的 npm 开发包已完成外部安装和真实 IPC 验收。[M10 验收记录](exec-plans/M10-native-sdk-and-rpc.md#2026-11-20-验收结果)
 
 **M9 已完成。** 第一方 Discord 扩展已通过公开 Extension API 接通 Core 和 Host，并沿用 v3 的 Discord 应用身份。主仓候选 `feca8df3` 的三平台 Hosted CI 和四语言 CodeQL 全部通过，Chromium 各 738 项通过。独立扩展候选 `0ff04bc` 已通过三平台构建及 Actions、Rust 和 Python CodeQL。Windows 已完成真实 Unity 与 Discord 的 IPC 验收，Ubuntu 和 macOS 的真实桌面验收按计划延期。[M9 收尾记录](exec-plans/M9-discord-first-party-extension.md#2026-11-20-m9-收尾)

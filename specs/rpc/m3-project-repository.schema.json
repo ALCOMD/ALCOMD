@@ -127,11 +127,13 @@
                 }
             }
         },
+        "repositoryOrderFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "registryCursor": {
-            "type": "object", "additionalProperties": false, "required": ["registeredAtMs", "id"],
+            "type": "object", "additionalProperties": false, "required": ["registeredAtMs", "id", "orderFingerprint"],
             "properties": {
                 "registeredAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
-                "id": {"$ref": "#/$defs/uuid"}
+                "id": {"$ref": "#/$defs/uuid"},
+                "orderFingerprint": {"$ref": "#/$defs/repositoryOrderFingerprint"}
             }
         },
         "projectRegistryCursor": {
@@ -266,6 +268,16 @@
                 "expectedRevision": {"$ref": "#/$defs/revision"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"},
                 "credentials": {"oneOf": [{"$ref": "#/$defs/repositoryCredentials"}, {"type": "null"}]}
+            }
+        },
+        "repositoryMoveParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["repositoryId", "beforeRepositoryId", "expectedOrderFingerprint", "idempotencyKey"],
+            "properties": {
+                "repositoryId": {"$ref": "#/$defs/uuid"},
+                "beforeRepositoryId": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+                "expectedOrderFingerprint": {"$ref": "#/$defs/repositoryOrderFingerprint"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
             }
         },
         "repositorySetDisplayNameParams": {

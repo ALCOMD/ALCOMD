@@ -411,8 +411,45 @@ pub struct ProjectViewPage {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RepositoryPage {
+    pub order_fingerprint: String,
     pub repositories: Vec<RepositoryRecord>,
-    pub next_cursor: Option<RegistryCursor<RepositoryId>>,
+    pub next_cursor: Option<RepositoryCursor>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryCursor {
+    pub registered_at_ms: u64,
+    pub id: RepositoryId,
+    pub order_fingerprint: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RepositoryMove {
+    pub id: RepositoryId,
+    pub before: Option<RepositoryId>,
+    pub expected_order_fingerprint: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryMoveResult {
+    pub changed: bool,
+    pub replayed: bool,
+}
+
+pub fn repository_order_fingerprint(ids: impl IntoIterator<Item = impl AsRef<str>>) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut digest = Sha256::new();
+    digest.update(b"alcomd-repository-order-v1\0");
+    for id in ids {
+        digest.update(id.as_ref().as_bytes());
+        digest.update(b"\0");
+    }
+    digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -734,10 +771,17 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
+    fn move_repository(
+        &self,
+        owner: PrincipalId,
+        movement: RepositoryMove,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<RepositoryMoveResult, M3Error>> + Send;
     fn list_repositories(
         &self,
         owner: PrincipalId,
-        cursor: Option<RegistryCursor<RepositoryId>>,
+        cursor: Option<RepositoryCursor>,
         limit: u32,
     ) -> impl Future<Output = Result<RepositoryPage, M3Error>> + Send;
     fn list_repository_packages(
@@ -2078,10 +2122,38 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         Ok(())
     }
 
+    pub async fn move_repository(
+        &self,
+        access: &AccessContext,
+        movement: RepositoryMove,
+        key: IdempotencyKey,
+    ) -> Result<RepositoryMoveResult, M3Error> {
+        require_m3(access, Permission::RepositoriesManage)?;
+        if access.principal() != &PrincipalId::local_owner() {
+            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+        }
+        if builtin_repository(movement.id).is_some()
+            || movement
+                .before
+                .is_some_and(|id| builtin_repository(id).is_some())
+            || movement.expected_order_fingerprint.len() != 64
+            || !movement
+                .expected_order_fingerprint
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(M3Error::new(M3ErrorCode::InvalidInput));
+        }
+        let _order = self.repository_import.lock().await;
+        self.store
+            .move_repository(access.principal().clone(), movement, key, m3_time_ms()?)
+            .await
+    }
+
     pub async fn list_repositories(
         &self,
         access: &AccessContext,
-        cursor: Option<RegistryCursor<RepositoryId>>,
+        cursor: Option<RepositoryCursor>,
         limit: u32,
     ) -> Result<RepositoryPage, M3Error> {
         require_m3(access, Permission::RepositoriesRead)?;

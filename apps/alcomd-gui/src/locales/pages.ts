@@ -593,6 +593,11 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "尚未添加项目",
         "ja-JP": "プロジェクトが登録されていません"
     },
+    "Reorder {name}": { "zh-CN": "调整 {name} 的顺序", "ja-JP": "{name} の順序を変更" },
+    "Move up": { "zh-CN": "上移", "ja-JP": "上に移動" },
+    "Move down": { "zh-CN": "下移", "ja-JP": "下に移動" },
+    "{name} moved to position {position}": { "zh-CN": "已将 {name} 移到第 {position} 位", "ja-JP": "{name} を {position} 番目に移動しました" },
+    "The repository list changed. Try moving the repository again.": { "zh-CN": "仓库列表已更改，请重新调整仓库顺序。", "ja-JP": "リポジトリ一覧が変更されました。もう一度移動してください。" },
     "No repositories registered": {
         "zh-CN": "尚未添加仓库",
         "ja-JP": "リポジトリが登録されていません"

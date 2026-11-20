@@ -75,7 +75,7 @@ MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档�
 
 ## 仓库管理
 
-`mcp.repositories.v1` 提供 [MCP 工具](repositories-v1.schema.json) 和 [Core RPC](../rpc/m8-mcp-repositories-v1.schema.json)。`alcomd_list_repositories` 用 `repositories.read` 浏览共用登记列表。`alcomd_inspect_repository` 检查远程地址，同时有 `repositories.manage` 时提供 60 秒有效、绑定到当前认证的预览 ID。`alcomd_register_repository` 要求显式确认原预览，Core 在提交前检查来源证据，变动时需要重新检查。`alcomd_refresh_repository` 和 `alcomd_remove_repository` 使用实际仓库 ID 和修订，移除另需显式确认与内置保护。三项写入均要求 `repositories.manage` 和幂等键，以原参数同键恢复。凭据及本地路径由本机入口管理，Core 在原规则下刷新这些已登记来源，安全响应省略来源地址与凭据。
+`mcp.repositories.v1` 提供 [MCP 工具](repositories-v1.schema.json) 和 [Core RPC](../rpc/m8-mcp-repositories-v1.schema.json)。`alcomd_list_repositories` 用 `repositories.read` 浏览共用仓库顺序。继续分页时使用返回的完整游标。仓库顺序或成员变化后，Core 对旧游标返回 `revision_conflict`，应从首页重读。`alcomd_inspect_repository` 检查远程地址，同时有 `repositories.manage` 时提供 60 秒有效、绑定到当前认证的预览 ID。`alcomd_register_repository` 要求显式确认原预览，Core 在提交前检查来源证据，变动时需要重新检查。`alcomd_refresh_repository` 和 `alcomd_remove_repository` 使用实际仓库 ID 和修订，移除另需显式确认与内置保护。三项写入均要求 `repositories.manage` 和幂等键，以原参数同键恢复。凭据及本地路径由本机入口管理，Core 在原规则下刷新这些已登记来源，安全响应省略来源地址与凭据。
 
 ## 项目和备份
 

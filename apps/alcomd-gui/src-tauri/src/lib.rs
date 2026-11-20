@@ -837,6 +837,20 @@ async fn gui_repository_set_credentials(
 }
 
 #[tauri::command]
+async fn gui_repository_move(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::RepositoryMoveParams,
+) -> Result<alcomd_protocol::RepositoryMoveResult, RpcError> {
+    let mut client = state.work.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.repository_move(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
 async fn gui_repository_set_display_name(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::RepositorySetDisplayNameParams,
@@ -1810,6 +1824,7 @@ pub fn run() {
             gui_open_package_link,
             gui_repository_register,
             gui_repository_set_credentials,
+            gui_repository_move,
             gui_repository_set_display_name,
             gui_repository_refresh,
             gui_repositories_refresh_all,

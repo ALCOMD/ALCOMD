@@ -75,6 +75,7 @@ export const SDK_METHODS = {
     "repositories.refreshAll": "write",
     "repositories.register": "write",
     "repositories.setCredentials": "write",
+    "repositories.move": "write",
     "repositories.setDisplayName": "write",
     "repositories.unregister": "write",
     "settings.get": "read",
@@ -149,7 +150,7 @@ export type ProjectsListParams = { cursor?: Types.RegistryCursor; limit?: number
 export type ProjectsPlanCopyParams = { sourceProjectId: string; expectedRevision: number; targetParentPath: string; targetLeaf: string; idempotencyKey: string };
 export type ProjectsPlanDeleteDirectoryParams = { projectId: string; expectedRevision: number; idempotencyKey: string };
 export type ProjectsPlanUnityMigrationParams = { projectId: string; targetInstallationId: string; expectedProjectRevision: number; idempotencyKey: string };
-export type RegistryListParams = { cursor?: Types.RegistryCursor; limit?: number };
+export type RegistryListParams = { cursor?: Types.RepositoryCursor; limit?: number };
 export type RepositoryIdParams = { repositoryId: string };
 export type RepositoryInspectParams = { source: Types.RepositorySource; credentials?: Types.RepositoryCredentials };
 export type RepositoryListExportParams = { format?: Types.RepositoryListFormat; targetPath: string; expectedFingerprint: string };
@@ -270,6 +271,7 @@ export interface NativeRpcMethods {
     "repositories.refreshAll": { params: Types.RepositoryRefreshAllParams; result: Types.RepositoryRefreshAllResult };
     "repositories.register": { params: RepositoryRegisterParams; result: NativeRepositoryWriteResult };
     "repositories.setCredentials": { params: RepositorySetCredentialsParams; result: NativeRepositoryWriteResult };
+    "repositories.move": { params: Types.RepositoryMoveParams; result: Types.RepositoryMoveResult };
     "repositories.setDisplayName": { params: Types.RepositorySetDisplayNameParams; result: NativeRepositoryWriteResult };
     "repositories.unregister": { params: RepositoryMutationParams; result: Types.RepositoryUnregisterResult };
     "settings.get": { params: EmptyParams; result: Types.SettingsGetResult };

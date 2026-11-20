@@ -365,11 +365,12 @@ impl alcomd_application::RepositoryListStore for StateStoreHandle {
     async fn apply_repository_list_metadata(
         &self,
         owner: PrincipalId,
+        expected_order: String,
         changes: Vec<alcomd_application::RepositoryListMetadata>,
         now_ms: u64,
     ) -> Result<(), M3Error> {
         self.request_m3(move |connection| {
-            m3::apply_repository_list_metadata(connection, &owner, changes, now_ms)
+            m3::apply_repository_list_metadata(connection, &owner, &expected_order, changes, now_ms)
         })
         .await
     }
@@ -633,10 +634,23 @@ impl M3RegistryStore for StateStoreHandle {
         .await
     }
 
+    async fn move_repository(
+        &self,
+        owner: PrincipalId,
+        movement: alcomd_application::RepositoryMove,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<alcomd_application::RepositoryMoveResult, M3Error> {
+        self.request_m3(move |connection| {
+            m3::move_repository(connection, &owner, movement, &key, now_ms)
+        })
+        .await
+    }
+
     async fn list_repositories(
         &self,
         owner: PrincipalId,
-        cursor: Option<RegistryCursor<RepositoryId>>,
+        cursor: Option<alcomd_application::RepositoryCursor>,
         limit: u32,
     ) -> Result<RepositoryPage, M3Error> {
         self.request_m3(move |connection| m3::list_repositories(connection, &owner, cursor, limit))

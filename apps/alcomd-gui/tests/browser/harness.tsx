@@ -325,8 +325,8 @@ class DeterministicGuiClient implements GuiRpcClient {
     repositoryListInspectFile(path: string): ReturnType<GuiRpcClient["repositoryListInspectFile"]> {
         window.resourceRequests.push({ method: "repositories.inspectListFile", params: { path } });
         if (query.has("native-list")) return this.value({ format:"native", ignoredLines:0, fingerprint:HASH, entries:[
-            {line:1,status:"duplicate",source:{kind:"remote",url:"https://list.example/existing.json"},configuration:{displayName:"My repository",priority:1,enabled:false,disabledPackageIds:["com.example.disabled"]}},
-            {line:2,status:"candidate",source:{kind:"local",path:"C:/local/repository.json"},configuration:{displayName:null,priority:2,enabled:true,disabledPackageIds:[]}}
+            {line:1,status:"duplicate",source:{kind:"remote",url:"https://list.example/existing.json"},configuration:{displayName:"My repository",enabled:false,disabledPackageIds:["com.example.disabled"]}},
+            {line:2,status:"candidate",source:{kind:"local",path:"C:/local/repository.json"},configuration:{displayName:null,enabled:true,disabledPackageIds:[]}}
         ] });
         const count = this.listFixtureCount();
         return this.value({ ignoredLines: 2, fingerprint: HASH, entries: [
@@ -428,6 +428,8 @@ class DeterministicGuiClient implements GuiRpcClient {
     private projectFavorites = new Map<string, boolean>();
     private repositoryRefreshCompleted = false;
     private repositoryRefreshAttempts = new Map<string, number>();
+    private orderedRepositories = [repository(), localRepository(), { ...localRepository(), repositoryId: "00000000-0000-4000-8000-000000000113", name: "Last repository" }];
+    private repositoryOrderRevision = 1;
     private refreshedRepositoryRevisions = new Map<string, number>();
     private userPackageRemoved = false;
     private userPackageRevision = 1;
@@ -872,12 +874,13 @@ class DeterministicGuiClient implements GuiRpcClient {
         const { repositoryId: _id, revision: _revision, ...preview } = this.resourceRepository(source);
         return this.value({ repository: preview });
     }
-    async repositoriesList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["repositoriesList"]> {
+    async repositoriesList(cursor?: Parameters<GuiRpcClient["repositoriesList"]>[0]): ReturnType<GuiRpcClient["repositoriesList"]> {
         window.repositoryListReads++;
+        const orderFingerprint = String(this.repositoryOrderRevision).padStart(64, "0");
         if (query.has("list-import")) window.resourceRequests.push({ method: "repositories.list", params: cursor ?? {} });
         if (query.has("resource-lifecycle")) {
             window.resourceRequests.push({ method: "repositories.list", params: cursor ?? {} });
-            return this.value({ repositories: [...this.lifecycleRepositories.values()] });
+            return this.value({ orderFingerprint, repositories: [...this.lifecycleRepositories.values()] });
         }
         if (query.has("holdRepositories")) {
             this.repositoriesReady ??= new Promise<void>((resolve, reject) => window.addEventListener("test-repositories-ready", (event) => {
@@ -886,23 +889,23 @@ class DeterministicGuiClient implements GuiRpcClient {
             }, { once: true }));
             await this.repositoriesReady;
         }
-        if (this.mode === "empty" || this.mode === "package-no-repositories") return this.value({ repositories: [] });
-        if (query.has("package-refresh-parallel")) return this.value({ repositories: Array.from({ length: 66 }, (_, index) => ({
+        if (this.mode === "empty" || this.mode === "package-no-repositories") return this.value({ orderFingerprint, repositories: [] });
+        if (query.has("package-refresh-parallel")) return this.value({ orderFingerprint, repositories: Array.from({ length: 66 }, (_, index) => ({
             ...repository(),
             repositoryId: `04000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
             name: `Repository ${index + 1}`
         })) });
-        if (query.has("builtin-repositories")) return this.value({ repositories: [
+        if (query.has("builtin-repositories")) return this.value({ orderFingerprint, repositories: [
             { ...repository(), repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101", builtin: "official" as const, actions: { canRemove: false, canEditAuthentication: false }, source: { kind: "remote" as const, url: "https://vrchat.github.io/packages/index.json" }, name: "Official", refreshedAtMs: 0 },
             { ...repository(), repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b102", builtin: "curated" as const, actions: { canRemove: false, canEditAuthentication: false }, source: { kind: "remote" as const, url: "https://vrchat-community.github.io/vpm-listing-curated/index.json" }, name: "Curated" },
-            repository(),
+            ...(query.has("repository-order") ? this.orderedRepositories : [repository()]),
         ].map((record) => this.lifecycleRepositories.get(record.repositoryId) ?? record) });
         if (["package-multiple", "package-partial-failure"].includes(this.mode) || query.get("twoInstalled")) {
             return cursor === undefined
-                ? this.value({ repositories: [this.refreshedRepository(repository())], nextCursor: { registeredAtMs: 1_690_000_000_000, id: REPOSITORY_ID } })
-                : this.value({ repositories: [this.refreshedRepository(localRepository())] });
+                ? this.value({ orderFingerprint, repositories: [this.refreshedRepository(repository())], nextCursor: { registeredAtMs: 1_690_000_000_000, id: REPOSITORY_ID, orderFingerprint } })
+                : this.value({ orderFingerprint, repositories: [this.refreshedRepository(localRepository())] });
         }
-        return this.value({ repositories: [this.refreshedRepository(repository())] });
+        return this.value({ orderFingerprint, repositories: [this.refreshedRepository(repository())] });
     }
     private refreshedRepository(repository: RepositorySnapshot): RepositorySnapshot {
         const revision = repository.repositoryId === undefined ? undefined : this.refreshedRepositoryRevisions.get(repository.repositoryId);
@@ -994,6 +997,23 @@ class DeterministicGuiClient implements GuiRpcClient {
         this.lifecycleRepositories.set(repositoryId, next);
         return this.value({ repository: next, replayed: false });
     }
+    async repositoryMove(repositoryId: string, beforeRepositoryId: string | null, expectedOrderFingerprint: string): ReturnType<GuiRpcClient["repositoryMove"]> {
+        window.resourceRequests.push({ method: "repositories.move", params: { repositoryId, beforeRepositoryId, expectedOrderFingerprint } });
+        if (query.has("repository-order-conflict") && this.repositoryOrderRevision === 1) {
+            this.orderedRepositories.reverse();
+            this.repositoryOrderRevision++;
+            throw { code: "revision_conflict" };
+        }
+        if (expectedOrderFingerprint !== String(this.repositoryOrderRevision).padStart(64, "0")) throw { code: "revision_conflict" };
+        const previous = this.orderedRepositories.findIndex((item) => item.repositoryId === repositoryId);
+        const [item] = this.orderedRepositories.splice(previous, 1);
+        if (!item) throw { code: "repository_not_registered" };
+        const next = beforeRepositoryId === null ? this.orderedRepositories.length : this.orderedRepositories.findIndex((item) => item.repositoryId === beforeRepositoryId);
+        this.orderedRepositories.splice(next, 0, item);
+        if (previous !== next) this.repositoryOrderRevision++;
+        return this.value({ changed: previous !== next, replayed: false });
+    }
+
     async repositorySetDisplayName(repositoryId: string, expectedRevision: number, displayName: string | null): ReturnType<GuiRpcClient["repositorySetDisplayName"]> {
         window.resourceRequests.push({ method: "repositories.setDisplayName", params: { repositoryId, expectedRevision, displayName } });
         const current = this.lifecycleRepositories.get(repositoryId) ?? (await this.repositoriesList()).repositories.find((record) => record.repositoryId === repositoryId);

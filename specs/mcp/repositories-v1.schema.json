@@ -270,11 +270,16 @@
                 },
                 "id": {
                     "$ref": "#/$defs/id"
+                },
+                "order_fingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
                 }
             },
             "required": [
                 "registered_at_ms",
-                "id"
+                "id",
+                "order_fingerprint"
             ]
         },
         "entry": {

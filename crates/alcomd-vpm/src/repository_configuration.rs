@@ -66,14 +66,11 @@ pub(super) fn parse(
     let mut package_groups = 0;
     let mut entries = Vec::new();
     for (index, mut entry) in document.repositories.into_iter().enumerate() {
-        if entry.configuration.priority == 0
-            || entry
-                .configuration
-                .display_name
-                .as_ref()
-                .is_some_and(|name| {
-                    name.chars().count() > 128 || name.chars().any(char::is_control)
-                })
+        if entry
+            .configuration
+            .display_name
+            .as_ref()
+            .is_some_and(|name| name.chars().count() > 128 || name.chars().any(char::is_control))
         {
             return Err(Error("repository_list_invalid"));
         }
@@ -165,13 +162,6 @@ pub(super) fn prepare(
     if records.len() > REPOSITORY_LIST_MAX_ENTRIES {
         return Err(Error("repository_list_invalid"));
     }
-    let mut records = records;
-    records.sort_by(|a, b| {
-        a.configuration
-            .priority
-            .cmp(&b.configuration.priority)
-            .then_with(|| a.repository_id.cmp(&b.repository_id))
-    });
     let mut repositories = Vec::new();
     for record in records {
         let credentials = record

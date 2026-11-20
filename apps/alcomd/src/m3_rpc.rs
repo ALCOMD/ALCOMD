@@ -261,12 +261,13 @@ pub(super) async fn dispatch(
                 Ok(page) => success_action(
                     request.id,
                     rpc::RepositoriesListResult {
+                        order_fingerprint: page.order_fingerprint,
                         repositories: page
                             .repositories
                             .into_iter()
                             .map(|record| repository_record(access, record))
                             .collect(),
-                        next_cursor: page.next_cursor.map(registry_cursor),
+                        next_cursor: page.next_cursor.map(repository_cursor_to_rpc),
                     },
                     None,
                 ),
@@ -452,6 +453,37 @@ pub(super) async fn dispatch(
                 Err(error) => m3_error(request.id, error),
             }
         }
+        rpc::METHOD_REPOSITORIES_MOVE => {
+            require!(request, state, rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1);
+            let params: rpc::RepositoryMoveParams = parse!(request);
+            let key = key!(request, params.idempotency_key);
+            let (Ok(id), Ok(before)) = (
+                app::RepositoryId::parse(&params.repository_id),
+                params
+                    .before_repository_id
+                    .as_deref()
+                    .map(app::RepositoryId::parse)
+                    .transpose(),
+            ) else {
+                return invalid(request.id);
+            };
+            let movement = app::RepositoryMove {
+                id,
+                before,
+                expected_order_fingerprint: params.expected_order_fingerprint,
+            };
+            match application.move_repository(access, movement, key).await {
+                Ok(result) => success_action(
+                    request.id,
+                    rpc::RepositoryMoveResult {
+                        changed: result.changed,
+                        replayed: result.replayed,
+                    },
+                    None,
+                ),
+                Err(error) => m3_error(request.id, error),
+            }
+        }
         rpc::METHOD_REPOSITORIES_SET_DISPLAY_NAME => {
             require!(request, state, rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1);
             let params: rpc::RepositorySetDisplayNameParams = parse!(request);
@@ -531,20 +563,19 @@ fn project_cursor(
     })
 }
 
-fn repository_cursor(
-    value: rpc::RegistryCursor,
-) -> Result<app::RegistryCursor<app::RepositoryId>, ()> {
-    Ok(app::RegistryCursor {
+pub(super) fn repository_cursor(value: rpc::RegistryCursor) -> Result<app::RepositoryCursor, ()> {
+    Ok(app::RepositoryCursor {
         registered_at_ms: value.registered_at_ms,
         id: app::RepositoryId::parse(&value.id).map_err(|_| ())?,
-        authorization_binding: None,
+        order_fingerprint: value.order_fingerprint,
     })
 }
 
-fn registry_cursor<I: ToString>(value: app::RegistryCursor<I>) -> rpc::RegistryCursor {
+pub(super) fn repository_cursor_to_rpc(value: app::RepositoryCursor) -> rpc::RegistryCursor {
     rpc::RegistryCursor {
         registered_at_ms: value.registered_at_ms,
         id: value.id.to_string(),
+        order_fingerprint: value.order_fingerprint,
     }
 }
 

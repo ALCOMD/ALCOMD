@@ -4,14 +4,14 @@ import type { LogsReadParams, LogsReadResult } from "@alcomd/sdk";
 import type { ProjectInventoryParams, ProjectInventoryResult, ProjectTemplateEditParams, ProjectTemplateGetParams, ProjectTemplateGetResult } from "@alcomd/sdk";
 import type { ProjectCandidateRequest, ProjectCandidatePage, ExtensionResult, ExtensionPermissionsListResult, ExtensionUiCloseParams, ExtensionUiCloseResult, ExtensionUiDispatchParams, ExtensionUiDispatchResult, ExtensionUiOpenParams, ExtensionUiOpenResult, ExtensionUiRefreshParams, ExtensionUiSnapshotResult, RpcError } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
-import type { RepositoryCredentials, RepositoryListCancelParams, RepositoryListCancelResult, RepositoryListExportResult, RepositoryListImportParams, RepositoryListImportResult, RepositoryListInspection, RepositoryListPreview, RepositoryRefreshAllParams, RepositoryRefreshAllResult, RepositorySetDisplayNameParams } from "@alcomd/sdk";
+import type { RepositoryCredentials, RepositoryListCancelParams, RepositoryListCancelResult, RepositoryListExportResult, RepositoryListImportParams, RepositoryListImportResult, RepositoryListInspection, RepositoryListPreview, RepositoryRefreshAllParams, RepositoryRefreshAllResult, RepositoryMoveParams, RepositoryMoveResult, RepositorySetDisplayNameParams } from "@alcomd/sdk";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { GuiEventsRequest, GuiEventMessage, GuiEventSubscription } from "./event-types";
 import type { GuiUnityWindows, UnityWindowSnapshot } from "./unity-window-observation";
 import type { ProjectListView } from "./core-models";
 
-import type { ExtensionGrantResult, ExtensionOperationResult, ExtensionPlanResult, ExtensionsListResult, Operation, OperationAccepted, OperationWriteResult, OperationsListResult, PackageApplyPlanParams, PackageCursor, PackagePlan, PackagePlanBulkParams, PackagePlanDowngradeParams, PackagePlanInstallParams, PackagePlanRemoveParams, PackagePlanResolveParams, PackagePlanReinstallParams, ProjectUnityLaunchConfigMutationResult, ProjectUnityLaunchConfigResult, ProjectResult, ProjectsApplyCopyResult, ProjectsApplyDeleteDirectoryResult, ProjectsPlanCopyResult, ProjectsPlanDeleteDirectoryResult, ProjectsApplyUnityMigrationResult, ProjectsPlanUnityMigrationResult, ProjectUnregisterResult, ProjectWriteResult, ProjectsListResult, RegistryCursor, RepositoriesListResult, RepositoryPackagesResult, RepositoryResult, RepositorySource, RepositoryUnregisterResult, RepositoryWriteResult, SettingsGetResult, SettingsUpdate, SystemStatus, UnityInstallationResult, UnityInstallationRemoveResult, UnityInstallationsListResult, UnityLaunchResult, UnityLaunchOptionsResult, UnityWriterState, UserPackageCursor, UserPackageRemoveResult, UserPackageResult, UserPackagesListResult, UserPackageWriteResult } from "./core-models";
+import type { ExtensionGrantResult, ExtensionOperationResult, ExtensionPlanResult, ExtensionsListResult, Operation, OperationAccepted, OperationWriteResult, OperationsListResult, PackageApplyPlanParams, PackageCursor, PackagePlan, PackagePlanBulkParams, PackagePlanDowngradeParams, PackagePlanInstallParams, PackagePlanRemoveParams, PackagePlanResolveParams, PackagePlanReinstallParams, ProjectUnityLaunchConfigMutationResult, ProjectUnityLaunchConfigResult, ProjectResult, ProjectsApplyCopyResult, ProjectsApplyDeleteDirectoryResult, ProjectsPlanCopyResult, ProjectsPlanDeleteDirectoryResult, ProjectsApplyUnityMigrationResult, ProjectsPlanUnityMigrationResult, ProjectUnregisterResult, ProjectWriteResult, ProjectsListResult, RegistryCursor, RepositoriesListResult, RepositoryCursor, RepositoryPackagesResult, RepositoryResult, RepositorySource, RepositoryUnregisterResult, RepositoryWriteResult, SettingsGetResult, SettingsUpdate, SystemStatus, UnityInstallationResult, UnityInstallationRemoveResult, UnityInstallationsListResult, UnityLaunchResult, UnityLaunchOptionsResult, UnityWriterState, UserPackageCursor, UserPackageRemoveResult, UserPackageResult, UserPackagesListResult, UserPackageWriteResult } from "./core-models";
 
 export type FileDrag = { type: "leave" } | { type: "hover"; x: number; y: number } | { type: "drop"; x: number; y: number; paths: string[] };
 export type NativeFileKind = "backupZip" | "backupZipDestination" | "repositoryManifest" | "unityEditor" | "extensionPackage" | "templateAttachment";
@@ -55,12 +55,13 @@ export interface GuiRpcClient {
     repositoryListCancelRegistration(idempotencyKey: string): Promise<RepositoryListCancelResult>;
     repositoryListPreviewExport(format?: import("@alcomd/sdk").RepositoryListFormat): Promise<RepositoryListPreview>;
     repositoryListExportFile(targetPath: string, expectedFingerprint: string, format?: import("@alcomd/sdk").RepositoryListFormat): Promise<RepositoryListExportResult>;
-    repositoriesList(cursor?: RegistryCursor): Promise<RepositoriesListResult>;
+    repositoriesList(cursor?: RepositoryCursor): Promise<RepositoriesListResult>;
     repositoryGet(repositoryId: string): Promise<RepositoryResult>;
     repositoryPackages(repositoryId: string, cursor?: PackageCursor): Promise<RepositoryPackagesResult>;
     openPackageLink(url: string): Promise<void>;
     repositoryRegister(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryWriteResult>;
     repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: RepositoryCredentials | null): Promise<RepositoryWriteResult>;
+    repositoryMove(repositoryId: string, beforeRepositoryId: string | null, expectedOrderFingerprint: string): Promise<RepositoryMoveResult>;
     repositorySetDisplayName(repositoryId: string, expectedRevision: number, displayName: string | null): Promise<RepositoryWriteResult>;
     repositoryRefresh(repositoryId: string, expectedRevision: number): Promise<RepositoryWriteResult>;
     repositoriesRefreshAll(): Promise<RepositoryRefreshAllResult>;
@@ -279,7 +280,7 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_repositories_inspect", { params: { source, credentials } });
     }
 
-    repositoriesList(cursor?: RegistryCursor): Promise<RepositoriesListResult> {
+    repositoriesList(cursor?: RepositoryCursor): Promise<RepositoriesListResult> {
         return invokeTyped("gui_repositories_list", { params: { cursor, limit: 100 } });
     }
 
@@ -301,6 +302,11 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: RepositoryCredentials | null): Promise<RepositoryWriteResult> {
         return invokeTyped("gui_repository_set_credentials", { params: { repositoryId, expectedRevision, credentials, idempotencyKey: crypto.randomUUID() } });
+    }
+
+    repositoryMove(repositoryId: string, beforeRepositoryId: string | null, expectedOrderFingerprint: string): Promise<RepositoryMoveResult> {
+        const params: RepositoryMoveParams = { repositoryId, beforeRepositoryId, expectedOrderFingerprint, idempotencyKey: crypto.randomUUID() };
+        return invokeTyped("gui_repository_move", { params });
     }
 
     repositorySetDisplayName(repositoryId: string, expectedRevision: number, displayName: string | null): Promise<RepositoryWriteResult> {

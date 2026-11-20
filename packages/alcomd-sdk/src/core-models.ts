@@ -198,7 +198,15 @@ export interface RepositorySnapshot {
 }
 
 export interface RepositoryResult { repository: RepositorySnapshot }
-export interface RepositoriesListResult { repositories: RepositorySnapshot[]; nextCursor?: RegistryCursor }
+export interface RepositoryCursor extends RegistryCursor { orderFingerprint: string }
+export interface RepositoriesListResult { repositories: RepositorySnapshot[]; nextCursor?: RepositoryCursor; orderFingerprint: string }
+export interface RepositoryMoveParams {
+    repositoryId: string;
+    beforeRepositoryId: string | null;
+    expectedOrderFingerprint: string;
+    idempotencyKey: string;
+}
+export interface RepositoryMoveResult { changed: boolean; replayed: boolean }
 export interface RepositoryWriteResult { repository: RepositorySnapshot; replayed: boolean }
 export interface RepositoryUnregisterResult { repositoryId: string; revision: number; unregistered: boolean; replayed: boolean }
 

@@ -2412,7 +2412,6 @@ fn repository_configuration_wire_extends_native_files_and_preserves_legacy_calls
     let entry = RepositoryListEntry {
         configuration: Some(RepositoryConfiguration {
             display_name: Some("Local source".into()),
-            priority: 2,
             enabled: false,
             disabled_package_ids: vec!["com.example.package".into()],
         }),
@@ -2427,7 +2426,7 @@ fn repository_configuration_wire_extends_native_files_and_preserves_legacy_calls
     let wire = serde_json::to_value(entry).expect("native configuration preview");
     assert_eq!(
         wire,
-        json!({"line":1,"status":"duplicate","source":{"kind":"local","path":"C:/owned/index.json"},"configuration":{"displayName":"Local source","priority":2,"enabled":false,"disabledPackageIds":["com.example.package"]}})
+        json!({"line":1,"status":"duplicate","source":{"kind":"local","path":"C:/owned/index.json"},"configuration":{"displayName":"Local source","enabled":false,"disabledPackageIds":["com.example.package"]}})
     );
     assert!(serde_json::from_value::<RepositoryListEntry>(json!({"line":1,"status":"candidate","credentials":{"headers":{"Authorization":"fixture"}}})).is_err(),"credentials have no preview wire field");
 }

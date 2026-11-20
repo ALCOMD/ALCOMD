@@ -139,10 +139,9 @@
         "configuration": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["displayName", "priority", "enabled", "disabledPackageIds"],
+            "required": ["displayName", "enabled", "disabledPackageIds"],
             "properties": {
                 "displayName": {"type": ["string", "null"], "maxLength": 128},
-                "priority": {"type": "integer", "minimum": 1},
                 "enabled": {"type": "boolean"},
                 "disabledPackageIds": {
                     "type": "array",
