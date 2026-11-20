@@ -1498,13 +1498,25 @@ pub(super) fn data_get(
     }
     validate_lease(connection, lease, now_ms)?;
     ensure_data_owner(connection, lease)?;
+    namespace_value(
+        connection,
+        (&lease.extension_id, &lease.publisher_fingerprint),
+        key,
+    )
+}
+
+fn namespace_value(
+    connection: &Connection,
+    (extension_id, publisher_fingerprint): (&str, &str),
+    key: &str,
+) -> Result<Option<ExtensionDataValue>, M6Error> {
     connection
         .query_row(
             "SELECT i.value, i.key_revision, n.revision
              FROM extension_data_items i JOIN extension_data_namespaces n
              ON n.extension_id=i.extension_id AND n.publisher_fingerprint=i.publisher_fingerprint
              WHERE i.extension_id=?1 AND i.publisher_fingerprint=?2 AND i.key=?3",
-            params![lease.extension_id, lease.publisher_fingerprint, key],
+            params![extension_id, publisher_fingerprint, key],
             |row| {
                 Ok(ExtensionDataValue {
                     value: row.get(0)?,
@@ -1531,11 +1543,80 @@ pub(super) fn data_set(
     let transaction = transaction(connection)?;
     validate_lease(&transaction, lease, now_ms)?;
     ensure_data_owner(&transaction, lease)?;
+    let result = write_namespace_value(
+        &transaction,
+        (&lease.extension_id, &lease.publisher_fingerprint),
+        key,
+        value,
+        expected,
+        now_ms,
+    )?;
+    transaction.commit().map_err(store_error)?;
+    Ok(result)
+}
+
+/// Imports bytes into the verified package's installed namespace without creating a guest lease.
+pub(super) fn migration_extension_value(
+    connection: &mut Connection,
+    extension_id: &str,
+    package_digest: [u8; 32],
+    key: &str,
+    seed: Option<(&[u8], u64)>,
+) -> Result<Option<Vec<u8>>, M6Error> {
+    if !valid_data_key(key) || seed.is_some_and(|(value, _)| value.len() > 65_536) {
+        return Err(error(M6ErrorCode::InvalidInput));
+    }
+    let transaction = transaction(connection)?;
+    let owner = PrincipalId::local_owner();
+    let record = get_extension(&transaction, &owner, extension_id)?;
+    if record.package_digest != package_digest
+        || record.runtime_state != ExtensionRuntimeState::Stopped
+        || seed.is_some() && record.desired_state != ExtensionDesiredState::InstalledDisabled
+    {
+        return Err(error(M6ErrorCode::PermissionDenied));
+    }
+    let has_run: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM extension_instances WHERE extension_id=?1)",
+            [extension_id],
+            |row| row.get(0),
+        )
+        .map_err(store_error)?;
+    if has_run {
+        return Err(error(M6ErrorCode::PermissionDenied));
+    }
+    let namespace = (extension_id, record.publisher_fingerprint.as_str());
+    let current = namespace_value(&transaction, namespace, key)?.map(|item| item.value);
+    let value = match seed {
+        Some((value, now_ms)) => {
+            if let Some(current) = current {
+                if current != value {
+                    return Err(error(M6ErrorCode::RevisionConflict));
+                }
+            } else {
+                write_namespace_value(&transaction, namespace, key, value, None, now_ms)?;
+            }
+            Some(value.to_vec())
+        }
+        None => current,
+    };
+    transaction.commit().map_err(store_error)?;
+    Ok(value)
+}
+
+fn write_namespace_value(
+    transaction: &Transaction<'_>,
+    (extension_id, publisher_fingerprint): (&str, &str),
+    key: &str,
+    value: &[u8],
+    expected: Option<Revision>,
+    now_ms: u64,
+) -> Result<ExtensionDataWriteResult, M6Error> {
     let existing = transaction
         .query_row(
             "SELECT key_revision, length(value) FROM extension_data_items
              WHERE extension_id=?1 AND publisher_fingerprint=?2 AND key=?3",
-            params![lease.extension_id, lease.publisher_fingerprint, key],
+            params![extension_id, publisher_fingerprint, key],
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
         )
         .optional()
@@ -1554,7 +1635,7 @@ pub(super) fn data_set(
         .query_row(
             "SELECT key_count, total_value_bytes, revision FROM extension_data_namespaces
              WHERE extension_id=?1 AND publisher_fingerprint=?2",
-            params![lease.extension_id, lease.publisher_fingerprint],
+            params![extension_id, publisher_fingerprint],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
@@ -1576,13 +1657,7 @@ pub(super) fn data_set(
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(extension_id, publisher_fingerprint, key)
              DO UPDATE SET value=excluded.value, key_revision=excluded.key_revision",
-            params![
-                lease.extension_id,
-                lease.publisher_fingerprint,
-                key,
-                value,
-                next_key
-            ],
+            params![extension_id, publisher_fingerprint, key, value, next_key],
         )
         .map_err(store_error)?;
     transaction
@@ -1595,12 +1670,11 @@ pub(super) fn data_set(
                 delta,
                 next_namespace,
                 now,
-                lease.extension_id,
-                lease.publisher_fingerprint
+                extension_id,
+                publisher_fingerprint
             ],
         )
         .map_err(store_error)?;
-    transaction.commit().map_err(store_error)?;
     Ok(ExtensionDataWriteResult {
         key_revision: Revision::new(u64::try_from(next_key).map_err(|_| internal())?)
             .ok_or_else(internal)?,

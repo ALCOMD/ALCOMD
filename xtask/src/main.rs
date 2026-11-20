@@ -37,6 +37,7 @@ const MEMBERS: &[Member] = &[
         &[
             "alcomd-application",
             "alcomd-extensions",
+            "alcomd-import",
             "alcomd-platform",
             "alcomd-protocol",
             "alcomd-store",
@@ -62,9 +63,13 @@ const MEMBERS: &[Member] = &[
     (
         "apps/alcomd-bootstrap",
         "alcomd-bootstrap",
-        &["alcomd-updater"],
+        &["alcomd-import", "alcomd-platform", "alcomd-updater"],
     ),
-    ("apps/alcomd-updater", "alcomd-updater", &[]),
+    (
+        "apps/alcomd-updater",
+        "alcomd-updater",
+        &["alcomd-platform"],
+    ),
     (
         "apps/alcomd-gui/src-tauri",
         "alcomd-gui",
@@ -103,7 +108,12 @@ const MEMBERS: &[Member] = &[
     (
         "migrations/v3/app/alcomd-migrate-v3",
         "alcomd-migrate-v3",
-        &[],
+        &[
+            "alcomd-client",
+            "alcomd-import",
+            "alcomd-platform",
+            "alcomd-protocol",
+        ],
     ),
     ("xtask", "xtask", &[]),
 ];

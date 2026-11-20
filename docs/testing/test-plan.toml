@@ -685,6 +685,15 @@ status = "planned"
 description = "验证 3.4.0 更新 API 发现、验签并启动完整 v4 bridge installer 的 JSON、频道、版本推进、资产摘要、签名和失败保持 v3 可恢复；3.4.0 不执行完整替换迁移。"
 
 [[test]]
+id = "migration.native-staging"
+stage = "M11"
+kind = "integration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "以隔离资料验证 3.4.0 数据解析、签名载荷、原生暂存、重开对账及缺少平台健康证据时的回滚。"
+evidence = ["migrations/v3/app/alcomd-migrate-v3/tests", "apps/alcomd/src/native_state_import_tests.rs", "apps/alcomd-bootstrap/src/tests.rs", "apps/alcomd-updater/src/tests.rs"]
+
+[[test]]
 id = "migration.fixture-chain"
 stage = "M11"
 kind = "migration"

@@ -151,6 +151,30 @@ impl Drop for StoreInner {
 }
 
 impl StateStoreHandle {
+    /// Read or seed a verified installed namespace before the extension has run.
+    /// Offline native import may insert a missing value or reuse identical bytes.
+    pub async fn migration_extension_value(
+        &self,
+        extension_id: String,
+        package_digest: [u8; 32],
+        key: String,
+        seed: Option<(Vec<u8>, u64)>,
+    ) -> Result<Option<Vec<u8>>, M6Error> {
+        self.request_worker(
+            move |connection| {
+                m6::migration_extension_value(
+                    connection,
+                    &extension_id,
+                    package_digest,
+                    &key,
+                    seed.as_ref().map(|(value, now)| (value.as_slice(), *now)),
+                )
+            },
+            m6::unavailable,
+        )
+        .await
+    }
+
     /// Holds the current grant through bounded side effects, ordered against durable revocation.
     pub async fn authorize_background_integration(
         &self,

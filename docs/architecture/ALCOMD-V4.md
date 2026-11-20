@@ -579,12 +579,10 @@ v4 正常运行时不读写 VCC `settings.json`，不与 VCC 双向同步，不�
 迁移入口固定为已于 2026-08-15 发布的 ALCOMD3 3.4.0：
 
 - 3.4.0 是 v3 迁移入口版本（v3 migration entry release），也是 v4 迁移链唯一接受的直接来源。
-- 3.4.0 不负责执行完整 v4 替换迁移；它只发现、验证并启动签名的 ALCOMD v4 bridge
-  installer。
+- Windows 3.4.0 更新器发现、验证并启动签名 bridge。macOS 和 AppImage 由用户主动启动独立 bridge，DEB 由包管理器交接。每个系统用户单独迁移自己的资料。
 - 更早的公开 v3.x 必须先通过原有更新链升级到 3.4.0，不得直接进入 v4 迁移。
 - 3.4.0 已将更新 JSON 源切换到 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 与 `https://alcomd.cqmhv.com/api/v1/updates/beta.json`。
-- ALCOMD v4 bridge installer 安装完整 v4 产品，包含或调用 `alcomd-bootstrap`；bootstrap 再
-  协调临时 `alcomd-migrate-v3`、健康检查、回滚、v3 清理与 Commit。
+- Bridge 运行 `alcomd-bootstrap`，由独立 `alcomd-migrate-v3` 生成原生数据包，Core 写入暂存环境并重新打开对账。经签名候选健康验收后才发布 v4 状态。产品部署与正式安装登记由 M12 接线。
 
 v4 首次发布直接初始化 State46 和 Config13。项目备份是普通 ZIP，恢复使用 Core 主机的绝对文件路径。具体合同和验收见 [M11 实施计划](../exec-plans/M11-v3-migration-and-zip.md)。
 

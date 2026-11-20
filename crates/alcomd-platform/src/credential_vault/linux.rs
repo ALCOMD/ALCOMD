@@ -5,7 +5,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
 fn system_helper() -> io::Result<PathBuf> {
-    let path = std::env::var_os("PATH").ok_or(io::ErrorKind::NotFound)?;
+    let path = std::env::var_os("PATH").ok_or(io::ErrorKind::Unsupported)?;
     std::env::split_paths(&path)
         .filter(|directory| directory.is_absolute())
         .filter_map(|directory| directory.join("secret-tool").canonicalize().ok())
@@ -17,7 +17,7 @@ fn system_helper() -> io::Result<PathBuf> {
                         .is_ok_and(|metadata| metadata.uid() == 0 && metadata.mode() & 0o022 == 0)
                 })
         })
-        .ok_or_else(|| io::ErrorKind::NotFound.into())
+        .ok_or_else(|| io::ErrorKind::Unsupported.into())
 }
 
 fn command(action: &str, reference: &str) -> io::Result<Command> {
@@ -71,9 +71,10 @@ pub(super) fn write(reference: &str, value: &[u8]) -> io::Result<()> {
 pub(super) fn read(reference: &str) -> io::Result<Vec<u8>> {
     let mut process = command("lookup", reference)?
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()?;
-    if !wait(&mut process)?.success() {
-        return Err(io::ErrorKind::PermissionDenied.into());
+    if !credential_found(&mut process)? {
+        return Err(io::ErrorKind::NotFound.into());
     }
     let mut bytes = Vec::new();
     process
@@ -89,10 +90,23 @@ pub(super) fn read(reference: &str) -> io::Result<Vec<u8>> {
 }
 
 pub(super) fn delete(reference: &str) -> io::Result<()> {
-    let mut process = command("clear", reference)?.spawn()?;
-    let status = wait(&mut process)?;
-    if !status.success() {
-        return Err(io::ErrorKind::PermissionDenied.into());
+    let mut process = command("clear", reference)?
+        .stderr(Stdio::piped())
+        .spawn()?;
+    credential_found(&mut process).map(|_| ())
+}
+
+fn credential_found(process: &mut Child) -> io::Result<bool> {
+    let status = wait(process)?;
+    if status.success() {
+        return Ok(true);
     }
-    Ok(())
+    // Both a missing item and a libsecret error exit with code 1. The tool
+    // writes a diagnostic only for the error, which must stay private.
+    let mut stderr = process.stderr.take().ok_or(io::ErrorKind::BrokenPipe)?;
+    let has_diagnostic = stderr.read(&mut [0; 1])? != 0;
+    if status.code() == Some(1) && !has_diagnostic {
+        return Ok(false);
+    }
+    Err(io::ErrorKind::PermissionDenied.into())
 }

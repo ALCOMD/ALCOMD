@@ -46,6 +46,7 @@ version = "4.0.0-alpha.0"
 dependencies = [
  "alcomd-application",
  "alcomd-extensions",
+ "alcomd-import",
  "alcomd-platform",
  "alcomd-protocol",
  "alcomd-store",
@@ -55,6 +56,7 @@ dependencies = [
  "getrandom 0.4.3",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tokio",
 ]
 
@@ -84,10 +86,15 @@ dependencies = [
 name = "alcomd-bootstrap"
 version = "4.0.0-alpha.0"
 dependencies = [
+ "alcomd-import",
+ "alcomd-platform",
  "alcomd-updater",
  "anyhow",
  "clap",
- "tokio",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "uuid",
 ]
 
 [[package]]
@@ -187,6 +194,11 @@ dependencies = [
 [[package]]
 name = "alcomd-import"
 version = "4.0.0-alpha.0"
+dependencies = [
+ "serde",
+ "sha2 0.11.0",
+ "uuid",
+]
 
 [[package]]
 name = "alcomd-mcp"
@@ -223,8 +235,22 @@ dependencies = [
 name = "alcomd-migrate-v3"
 version = "4.0.0-alpha.0"
 dependencies = [
+ "alcomd-client",
+ "alcomd-import",
+ "alcomd-platform",
+ "alcomd-protocol",
  "anyhow",
+ "chrono",
  "clap",
+ "flate2",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "toml 1.1.4+spec-1.1.0",
+ "url",
+ "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -288,6 +314,18 @@ dependencies = [
 [[package]]
 name = "alcomd-updater"
 version = "4.0.0-alpha.0"
+dependencies = [
+ "alcomd-platform",
+ "anyhow",
+ "clap",
+ "ed25519-dalek",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "toml 1.1.4+spec-1.1.0",
+ "uuid",
+]
 
 [[package]]
 name = "alcomd-vpm"
