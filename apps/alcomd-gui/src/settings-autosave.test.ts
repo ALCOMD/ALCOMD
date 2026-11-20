@@ -2,7 +2,7 @@ import type { SettingsGetResult, SettingsUpdate } from "./core-models.ts";
 import { SettingsAutosave, StorageDirectoryConflictError, UnityArgumentsConflictError, UnityHubConflictError } from "./settings-autosave.ts";
 
 const initial: SettingsGetResult = {
-    configSchema: 13, revision: 7,
+    configSchema: 1, revision: 7,
     directories: { projectDirectory: "C:\\Projects", backupDirectory: "C:\\Backups" },
     unityHub: { status: "not_found", source: "none", path: null, targetToken: null, configuredPathStatus: "unset" },
     settings: {
@@ -40,7 +40,7 @@ function model() {
             requests.push({ expectedRevision, update: structuredClone(update) });
             assert(expectedRevision === current.revision, "CAS expected current revision");
             current = {
-                configSchema: 13, revision: expectedRevision + 1,
+                configSchema: 1, revision: expectedRevision + 1,
                 directories: {
                     projectDirectory: update.paths?.projectDirectory ?? current.directories.projectDirectory,
                     backupDirectory: update.paths?.backupDirectory ?? current.directories.backupDirectory

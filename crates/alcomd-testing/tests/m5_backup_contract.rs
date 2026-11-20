@@ -1,5 +1,5 @@
 use alcomd_protocol::{
-    BackupCompression, BackupCreateParams, CAPABILITY_BACKUPS_CREATE_V2, METHOD_BACKUPS_CREATE,
+    BackupCompression, BackupCreateParams, CAPABILITY_BACKUPS_CREATE_V1, METHOD_BACKUPS_CREATE,
     OperationAccepted,
 };
 use alcomd_vpm::ArchiveLimits;
@@ -8,7 +8,7 @@ use serde_json::json;
 #[test]
 fn backup_create_wire_contract_has_optional_absolute_destination_and_operation_receipt() {
     assert_eq!(METHOD_BACKUPS_CREATE, "backups.create");
-    assert_eq!(CAPABILITY_BACKUPS_CREATE_V2, "backups.create.v2");
+    assert_eq!(CAPABILITY_BACKUPS_CREATE_V1, "backups.create.v1");
     let request = json!({
         "projectId": "abc",
         "expectedRevision": 1,

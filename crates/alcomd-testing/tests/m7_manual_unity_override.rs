@@ -19,7 +19,7 @@ struct Fixture {
     store: StateStoreHandle,
     reader: VpmReader,
     project: ProjectRecord,
-    repository: RepositoryRecord,
+    repository: RepositoryRefreshReceipt,
     packages: serde_json::Value,
 }
 
@@ -154,7 +154,6 @@ impl Fixture {
             version_range: Some("=1.0.0".into()),
             repository_id: None,
             include_prerelease: false,
-            plan_version: PackagePlanVersion::V2,
             source_selector: Some(PackageSourceSelector::Repository {
                 repository_id: self.repository.repository_id.to_string(),
             }),
@@ -233,15 +232,6 @@ async fn explicit_manual_root_override_is_default_denied_persisted_and_applied_w
         app.plan(&owner, invalid)
             .await
             .expect_err("resolve cannot opt in")
-            .code(),
-        M4ErrorCode::InvalidInput
-    );
-    let mut invalid = fixture.request(true);
-    invalid.plan_version = PackagePlanVersion::V1;
-    assert_eq!(
-        app.plan(&owner, invalid)
-            .await
-            .expect_err("old capability cannot opt in")
             .code(),
         M4ErrorCode::InvalidInput
     );

@@ -681,6 +681,11 @@ pub async fn execute(
         return workflows::execute(client, params).await;
     }
     if environment::recognized(params.name.as_ref()) {
+        if rpc::mcp_environment_tool_capability(params.name.as_ref())
+            .is_some_and(|capability| !client.supports_capability(capability))
+        {
+            return Err(super::unsupported_method());
+        }
         return environment::execute(client, params).await;
     }
     if packages::recognized(params.name.as_ref()) {

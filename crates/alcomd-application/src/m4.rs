@@ -26,19 +26,6 @@ pub enum PlanAction {
 
 impl PlanAction {
     #[must_use]
-    pub const fn uses_delegated_catalog(self) -> bool {
-        matches!(
-            self,
-            Self::Install
-                | Self::Upgrade
-                | Self::Downgrade
-                | Self::Resolve
-                | Self::Reinstall
-                | Self::Bulk
-        )
-    }
-
-    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Install => "install",
@@ -1030,6 +1017,19 @@ pub fn mcp_package_documentation_url(value: &str) -> bool {
     })
 }
 
+fn package_authentication(
+    access: &AccessContext,
+    authentication: Option<crate::ToolAuthentication>,
+) -> Result<Option<crate::ToolAuthentication>, M4Error> {
+    if access.is_mcp_client() && crate::tool_invocation().is_none() {
+        authentication
+            .map(Some)
+            .ok_or_else(|| M4Error::new(M4ErrorCode::PermissionDenied))
+    } else {
+        Ok(None)
+    }
+}
+
 #[derive(Clone)]
 pub struct M4Application<S, A> {
     store: S,
@@ -1072,31 +1072,32 @@ where
         Ok(())
     }
 
+    pub async fn get_plan(
+        &self,
+        access: &AccessContext,
+        plan_id: PlanId,
+    ) -> Result<PackagePlanRecord, M4Error> {
+        require(access, crate::Permission::ProjectsRead)?;
+        require(access, crate::Permission::RepositoriesRead)?;
+        require(access, crate::Permission::PackagesRead)?;
+        self.store
+            .get_package_plan(access.principal().clone(), plan_id)
+            .await
+    }
+
     pub async fn plan(
         &self,
         access: &AccessContext,
         request: PackagePlanRequest,
     ) -> Result<PackagePlanRecord, M4Error> {
-        self.plan_inner(access, request, None).await
-    }
-
-    pub async fn plan_delegated(
-        &self,
-        access: &AccessContext,
-        request: PackagePlanRequest,
-        authentication: crate::ToolAuthentication,
-    ) -> Result<PackagePlanRecord, M4Error> {
-        if !access.is_mcp_client() || !request.action.uses_delegated_catalog() {
-            return Err(M4Error::new(M4ErrorCode::PermissionDenied));
-        }
-        self.plan_inner(access, request, Some(authentication)).await
+        self.plan_authenticated(access, request, None).await
     }
 
     pub async fn package_source_settings(&self) -> Result<crate::ConfigPackageSettings, M4Error> {
         self.adapter.source_settings().await
     }
 
-    async fn plan_inner(
+    pub async fn plan_authenticated(
         &self,
         access: &AccessContext,
         request: PackagePlanRequest,
@@ -1105,6 +1106,10 @@ where
         require(access, crate::Permission::ProjectsRead)?;
         require(access, crate::Permission::RepositoriesRead)?;
         require(access, crate::Permission::PackagesRead)?;
+        let authentication = package_authentication(access, authentication)?;
+        if crate::tool_invocation().is_some() && request.action != PlanAction::Remove {
+            return Err(M4Error::new(M4ErrorCode::PermissionDenied));
+        }
         if request.allow_unity_incompatible
             && (!matches!(
                 request.action,
@@ -1235,16 +1240,14 @@ where
             .store
             .get_package_plan(access.principal().clone(), plan_id)
             .await?;
-        let delegated = access.is_mcp_client() && plan.action.uses_delegated_catalog();
-        if access.is_mcp_client()
-            && ((delegated && (authentication.is_none() || crate::tool_invocation().is_some()))
-                || (!delegated
-                    && (plan.action != PlanAction::Remove || !plan.source_set.is_empty())))
+        let authentication = package_authentication(access, authentication)?;
+        if crate::tool_invocation().is_some()
+            && (plan.action != PlanAction::Remove || !plan.source_set.is_empty())
         {
             return Err(M4Error::new(M4ErrorCode::PermissionDenied));
         }
         let accept = || async {
-            if let Some(authentication) = authentication.filter(|_| delegated) {
+            if let Some(authentication) = authentication.clone() {
                 self.store
                     .accept_delegated_package_plan(
                         access.principal().clone(),
@@ -1295,7 +1298,7 @@ where
         } else {
             self.store
                 .resolver_catalog(
-                    if delegated {
+                    if authentication.is_some() {
                         PrincipalId::local_owner()
                     } else {
                         access.principal().clone()

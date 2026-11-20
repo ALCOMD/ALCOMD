@@ -6,9 +6,9 @@
     "x-alcomd-method-capabilities": {"logs.read": "logs.read.v1"},
     "x-alcomd-method-params": {"logs.read": "#/$defs/params"},
     "x-alcomd-method-results": {"logs.read": "#/$defs/result"},
-    "x-alcomd-local-owner-only": true,
     "x-alcomd-max-encoded-frame-bytes": 4194304,
     "x-alcomd-max-encoded-entry-bytes": 524288,
+    "x-alcomd-interactive-clients": ["GUI", "CLI", "MCP"],
     "$defs": {
         "sequence": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
         "params": {

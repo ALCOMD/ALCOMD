@@ -1366,7 +1366,7 @@
             }
         },
         {
-            "id": "summary-presentation-v2",
+            "id": "summary-presentation",
             "definition": "Result",
             "valid": true,
             "value": {
@@ -1524,7 +1524,7 @@
             }
         },
         {
-            "id": "v1-result-is-not-v2",
+            "id": "summary-missing-presentation-completeness",
             "definition": "Result",
             "valid": false,
             "value": {
@@ -1674,7 +1674,8 @@
                         ],
                         "presentationState": "complete",
                         "description": "Installed package description",
-                        "installedYanked": true
+                        "installedYanked": true,
+                        "requestedRange": "^1.0.0"
                     }
                 ]
             }

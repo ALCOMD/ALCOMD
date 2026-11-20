@@ -231,10 +231,10 @@ test("cross-client project launch arguments update the current Unity page throug
     await expect(argumentsRow).toContainText("1 arguments");
     await pauseClock(page);
     const revision = await page.evaluate(async (id) => (await window.fixtureCore.unityProjectLaunchConfigGet(id)).config.revision, projectId);
-    await page.evaluate(async ({ id, revision }) => { await window.fixtureCore.unityProjectLaunchConfigSet(id, ["-force-d3d11", "-noUpm"], revision); }, { id: projectId, revision });
+    await page.evaluate(async ({ id, revision }) => { await window.fixtureCore.unityProjectLaunchConfigSet(id, ["-force-d3d11", "-noUpm"], revision, crypto.randomUUID()); }, { id: projectId, revision });
     await page.clock.runFor(500);
     await expect(argumentsRow).toContainText("2 arguments");
-    await page.evaluate(async ({ id, revision }) => { await window.fixtureCore.unityProjectLaunchConfigClear(id, revision + 1); }, { id: projectId, revision });
+    await page.evaluate(async ({ id, revision }) => { await window.fixtureCore.unityProjectLaunchConfigClear(id, revision + 1, crypto.randomUUID()); }, { id: projectId, revision });
     await page.clock.runFor(500);
     await expect(argumentsRow).toContainText("Use global defaults");
     const stable = await page.evaluate(() => window.coreEvents.rpcRequests.length);

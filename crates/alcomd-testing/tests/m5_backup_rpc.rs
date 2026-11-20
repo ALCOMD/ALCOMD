@@ -8,8 +8,8 @@ use std::time::Duration;
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{
-    BackupCompression, BackupCreateParams, BackupRestoreParams, McpBackupRestoreParams,
-    McpClientMutationParams, McpClientsCreateParams, OperationAccepted, OperationState,
+    BackupCompression, BackupCreateParams, BackupRestoreParams, McpClientMutationParams,
+    McpClientsCreateParams, OperationAccepted, OperationState,
 };
 
 const CRASH_ROOT_ENV: &str = "ALCOMD_M5_BACKUP_CRASH_ROOT";
@@ -146,19 +146,15 @@ async fn mcp_restores_a_zip_outside_the_configured_directory_and_rechecks_access
         _ => panic!("two clients required"),
     };
     let target = external.join("Restored project");
-    let input = McpBackupRestoreParams {
+    let input = BackupRestoreParams {
         archive_path: path_string(&archive),
         project_name: None,
         destination_path: Some(path_string(&target)),
         idempotency_key: "restore-external".to_owned(),
-        confirm: true,
     };
-    let mut unconfirmed = input.clone();
-    unconfirmed.confirm = false;
-    assert!(first.mcp_backup_restore(unconfirmed).await.is_err());
     assert!(!target.exists());
     let accepted = first
-        .mcp_backup_restore(input.clone())
+        .backup_restore(input.clone())
         .await
         .expect("absolute file restore");
     let completed = wait_for_operation(first, &accepted.operation_id).await;
@@ -174,13 +170,13 @@ async fn mcp_restores_a_zip_outside_the_configured_directory_and_rechecks_access
     );
 
     let same = first
-        .mcp_backup_restore(input.clone())
+        .backup_restore(input.clone())
         .await
         .expect("restore replay");
     assert!(same.replayed);
     assert_eq!(accepted.operation_id, same.operation_id);
     assert!(matches!(
-        second.mcp_backup_restore(input.clone()).await,
+        second.backup_restore(input.clone()).await,
         Err(ClientError::Remote(e)) if e.code == "backup_target_exists"
     ));
     owner
@@ -192,7 +188,7 @@ async fn mcp_restores_a_zip_outside_the_configured_directory_and_rechecks_access
         .await
         .expect("revoke existing connection");
     assert!(matches!(
-        first.mcp_backup_restore(input).await,
+        first.backup_restore(input).await,
         Err(ClientError::Remote(e)) if e.code == "permission_denied"
     ));
     shutdown.store(true, Ordering::Release);

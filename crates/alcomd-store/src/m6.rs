@@ -5,9 +5,9 @@ use alcomd_application::{
     ExtensionInstanceLease, ExtensionPackageEvidence, ExtensionPage, ExtensionPermissionGrant,
     ExtensionPermissionsCursor, ExtensionPermissionsPage, ExtensionPlanRecord,
     ExtensionProjectSummary, ExtensionQuarantineState, ExtensionRecord, ExtensionRuntimeState,
-    ExtensionSourceKind, ExtensionStartContext, ExtensionUiProtocol, ExtensionUninstallPlanDraft,
-    IdempotencyKey, M6Error, M6ErrorCode, OperationId, PACKAGED_MCP_EXTENSION_ID, PlanId,
-    PrincipalId, Revision,
+    ExtensionRuntimeTarget, ExtensionSourceKind, ExtensionStartContext, ExtensionUiProtocol,
+    ExtensionUninstallPlanDraft, IdempotencyKey, M6Error, M6ErrorCode, OperationId,
+    PACKAGED_MCP_EXTENSION_ID, PlanId, PrincipalId, Revision,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -345,11 +345,11 @@ pub(super) fn has_scoped_background_work(
         .query_row(
             "SELECT EXISTS(
                 SELECT 1 FROM extensions e JOIN extension_instances i USING (extension_id)
-                WHERE e.principal_id=?1 AND i.daemon_epoch=?2
+                WHERE i.daemon_epoch=?1
                   AND e.desired_state='enabled' AND e.quarantine_state='clear'
                   AND i.lifecycle_generation=e.lifecycle_generation
                   AND i.bound_grant_revision=e.grant_revision
-                  AND i.lease_expires_at_ms>?3
+                  AND i.lease_expires_at_ms>?2
                   AND (i.runtime_state='crashed' OR (i.runtime_state IN ('starting','running')
                        AND i.lease_cancelled=0))
                   AND EXISTS(SELECT 1 FROM extension_grants g WHERE g.extension_id=e.extension_id
@@ -365,7 +365,7 @@ pub(super) fn has_scoped_background_work(
                        AND g.permission_name='projects.read' AND g.resource_kind='Global'
                        AND g.resource_id='*' AND g.state='granted')
             )",
-            params![PrincipalId::LOCAL_OWNER, daemon_epoch, sqlite_integer(now_ms)?],
+            params![daemon_epoch, sqlite_integer(now_ms)?],
             |row| row.get(0),
         )
         .map_err(store_error)
@@ -2017,13 +2017,14 @@ pub(super) fn record_instance_crash(
             u64::try_from(*occurred_at_ms).is_ok_and(|value| value >= window_start)
         })
         .count();
-    let (desired_state, quarantine_state): (String, String) = transaction
+    let (desired_state, quarantine_state, owner): (String, String, String) = transaction
         .query_row(
-            "SELECT desired_state, quarantine_state FROM extensions WHERE extension_id=?1",
+            "SELECT desired_state, quarantine_state, principal_id FROM extensions WHERE extension_id=?1",
             [&lease.extension_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(store_error)?;
+    let owner = PrincipalId::parse(owner).map_err(|_| internal())?;
     let should_quarantine = crash_count >= 3 && quarantine_state == "clear";
     if should_quarantine {
         transaction
@@ -2052,7 +2053,10 @@ pub(super) fn record_instance_crash(
         };
     Ok((
         ExtensionCrashDecision {
-            extension_id: lease.extension_id.clone(),
+            target: ExtensionRuntimeTarget {
+                owner,
+                extension_id: lease.extension_id.clone(),
+            },
             restart_delay_ms,
             quarantined: should_quarantine || quarantine_state == "quarantined",
         },
@@ -2064,7 +2068,7 @@ pub(super) fn recover_instances(
     connection: &mut Connection,
     daemon_epoch: &str,
     now_ms: u64,
-) -> Result<(Vec<String>, bool), M6Error> {
+) -> Result<(Vec<ExtensionRuntimeTarget>, bool), M6Error> {
     let transaction = transaction(connection)?;
     let local_changed = transaction
         .query_row(
@@ -2085,8 +2089,8 @@ pub(super) fn recover_instances(
         .map_err(store_error)?;
     let mut statement = transaction
         .prepare(
-            "SELECT e.extension_id FROM extensions e
-             WHERE e.principal_id=?1 AND e.desired_state='enabled'
+            "SELECT e.extension_id, e.principal_id FROM extensions e
+             WHERE e.desired_state='enabled'
              AND e.quarantine_state='clear'
              AND EXISTS(SELECT 1 FROM extension_grants g WHERE g.extension_id=e.extension_id
                  AND g.permission_name='background.run' AND g.resource_kind='Extension'
@@ -2095,7 +2099,12 @@ pub(super) fn recover_instances(
         )
         .map_err(store_error)?;
     let extensions = statement
-        .query_map([PrincipalId::LOCAL_OWNER], |row| row.get::<_, String>(0))
+        .query_map([], |row| {
+            Ok(ExtensionRuntimeTarget {
+                extension_id: row.get(0)?,
+                owner: PrincipalId::parse(row.get::<_, String>(1)?).map_err(|_| invalid_query())?,
+            })
+        })
         .map_err(store_error)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(store_error)?;

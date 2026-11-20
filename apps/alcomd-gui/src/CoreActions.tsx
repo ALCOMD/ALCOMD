@@ -1,3 +1,4 @@
+import { useGuiWrite } from "./gui-write-attempt";
 import type { BackupCreateParams } from "@alcomd/sdk";
 import { requestErrorMessage } from "./request-errors";
 import { useCoreEvents } from "./core-events-ui";
@@ -102,6 +103,7 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
     const [authentication, setAuthentication] = useState<RepositoryAuthenticationDraft>(() => initial
         ? { headers: initial.headers } : EMPTY_REPOSITORY_AUTH);
     const [preview, setPreview] = useState<RepositorySnapshot>();
+    const writeRequest = useGuiWrite(client, preview, authentication);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     useUtilityDialogBusy(feedback.busy);
     const pending = useRef(false);
@@ -125,7 +127,7 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
         pending.current = true;
         setFeedback({ busy: true });
         try {
-            await client.repositoryRegister(preview.source,
+            await writeRequest("repositoryRegister", preview.source,
                 preview.source.kind === "remote" ? repositoryCredentials(authentication) : undefined);
             if (!current()) return;
             setPreview(undefined); setValue(""); setAuthentication(EMPTY_REPOSITORY_AUTH);
@@ -178,6 +180,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
     const [managing, setManaging] = useState(false);
     const [nameDraft, setNameDraft] = useState<{ revision: number; initial: string; value: string }>();
     const [authentication, setAuthentication] = useState(EMPTY_REPOSITORY_AUTH);
+    const writeRequest = useGuiWrite(client, managing || confirmRemove, authentication);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const pending = useRef<"remove" | "credentials" | "name" | undefined>(undefined);
     const ready = repository.repositoryId !== undefined && repository.revision !== undefined;
@@ -203,7 +206,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
         pending.current = "name";
         setFeedback({ busy: true });
         try {
-            await client.repositorySetDisplayName(repository.repositoryId, nameDraft.revision, nameDraft.value || null);
+            await writeRequest("repositorySetDisplayName", repository.repositoryId, nameDraft.revision, nameDraft.value || null);
             if (current()) { closeManagement(); onChanged?.(); }
         } catch (caught: unknown) {
             if (current()) {
@@ -221,7 +224,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
         try {
             const credentials = clear ? null : repositoryCredentials(authentication);
             if (credentials === undefined) return;
-            await client.repositorySetCredentials(repository.repositoryId!, repository.revision!, credentials);
+            await writeRequest("repositorySetCredentials", repository.repositoryId!, repository.revision!, credentials);
             if (current()) { closeManagement(); onChanged?.(); }
         } catch (caught: unknown) {
             if (current()) setFeedback({ busy: false, error: safeError(caught) });
@@ -232,7 +235,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
         pending.current = "remove";
         setFeedback({ busy: true });
         try {
-            await client.repositoryUnregister(repository.repositoryId!, repository.revision!);
+            await writeRequest("repositoryUnregister", repository.repositoryId!, repository.revision!);
             if (!current()) return;
             setFeedback(INITIAL_FEEDBACK);
             setConfirmRemove(false); onChanged?.();
@@ -293,8 +296,7 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
     const { t, locale } = useTranslation();
     const packageName = (packageId: string) => packageNames.get(packageId)?.trim() || packageId;
     const canApply = useCapability(capabilities.packagesApply);
-    const canPlanV1 = useCapability(capabilities.packagesPlanV1);
-    const canPlanV2 = useCapability(capabilities.packagesPlanV2);
+    const canPlan = useCapability(capabilities.packagesPlan);
     const [plan, setPlan] = useState<PackagePlan>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const [operationFinished, setOperationFinished] = useState(false);
@@ -305,9 +307,8 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
     const projectId = project.projectId;
     const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "", selectedSource?: PackageSourceSelector, includePrerelease?: boolean, allowUnityIncompatible = false) => {
         if (revision === undefined || projectId === undefined) return;
-        const requiresV2 = ((action === "install" || action === "upgrade") && selectedSource !== undefined) || action === "reinstall" || action === "reinstall-all" || action === "bulk-candidates" || action === "downgrade";
-        if ((requiresV2 && !canPlanV2) || (!requiresV2 && !canPlanV1)) {
-            setFeedback({ busy: false, error: { code: "capability_required", message: t("The connected daemon did not negotiate {capability}.", { capability: requiresV2 ? capabilities.packagesPlanV2 : capabilities.packagesPlanV1 }) } });
+        if (!canPlan) {
+            setFeedback({ busy: false, error: { code: "capability_required", message: t("The connected daemon did not negotiate {capability}.", { capability: capabilities.packagesPlan }) } });
             return;
         }
         setPlan(undefined);
@@ -340,7 +341,7 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
             if (safeError(caught).code === "package_candidate_evidence_stale") onEvidenceStale?.();
             setFeedback({ busy: false, error: safeError(caught) });
         }
-    }, [canPlanV1, canPlanV2, client, projectId, revision, selection, t]);
+    }, [canPlan, client, projectId, revision, selection, t]);
     useEffect(() => {
         if (selection === undefined) return;
         if (handledSelectionKey.current === selection.key) return;
@@ -352,10 +353,10 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
         void prepareChanges(selection.action, selection.packageId, selection.version, selection.source, selection.includePrerelease);
     }, [prepareChanges, selection]);
     const apply = async () => {
-        if (plan === undefined || feedback.busy || feedback.error !== undefined) return;
+        if (plan === undefined || feedback.busy || (feedback.error !== undefined && !operationRequestOutcomeUnknown(feedback.error))) return;
         setFeedback({ busy: true });
         try {
-            const result = await client.packageApplyPlan({ planId: plan.planId, expectedRevision: plan.projectRevision });
+            const result = await client.packageApplyPlan({ planId: plan.planId, expectedRevision: plan.projectRevision, idempotencyKey: plan.planId });
             setPlan(undefined);
             setFeedback({ busy: false, operationId: result.operationId });
             onChanged?.();
@@ -376,7 +377,7 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
         .filter((group) => group.items.length > 0);
     const reviewActions = <>
         <DialogCloseButton disabled={feedback.busy} variant="text">{t(hasChanges && feedback.error === undefined ? "Cancel" : "Close")}</DialogCloseButton>
-        {hasChanges ? <Button className={removalOnly ? "material-button--danger" : undefined} disabled={!canApply || feedback.busy || feedback.error !== undefined} onClick={() => void apply()} title={capabilityUnavailableTitle(canApply, capabilities.packagesApply, t)} type="button">{t("Apply changes")}</Button> : null}
+        {hasChanges ? <Button className={removalOnly ? "material-button--danger" : undefined} disabled={!canApply || feedback.busy || (feedback.error !== undefined && !operationRequestOutcomeUnknown(feedback.error))} onClick={() => void apply()} title={capabilityUnavailableTitle(canApply, capabilities.packagesApply, t)} type="button">{t("Apply changes")}</Button> : null}
     </>;
     return (
         <>
@@ -429,6 +430,7 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
     const [path, setPath] = useState("");
     const [remove, setRemove] = useState<UnityInstallation>();
     const [confirmRemove, setConfirmRemove] = useState(false);
+    const writeRequest = useGuiWrite(client, confirmRemove, path);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const pending = useRef(false);
     const isCurrent = useActionScope(client);
@@ -437,9 +439,9 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
         if (!available || pending.current || (action === "remove" && remove === undefined)) return;
         pending.current = true; setFeedback({ busy: true });
         try {
-            if (action === "register") { await client.unityInstallationRegister(path); setPath(""); }
-            else if (action === "refresh") await client.unityInstallationsRefresh();
-            else { await client.unityInstallationRemove(remove!.installationId, remove!.revision); setRemove(undefined); setConfirmRemove(false); }
+            if (action === "register") { await writeRequest("unityInstallationRegister", path); setPath(""); }
+            else if (action === "refresh") await writeRequest("unityInstallationsRefresh");
+            else { await writeRequest("unityInstallationRemove", remove!.installationId, remove!.revision); setRemove(undefined); setConfirmRemove(false); }
             if (!isCurrent()) return;
             setFeedback({ busy: false });
             onChanged?.();
@@ -487,6 +489,7 @@ export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, 
     const [snapshot, setSnapshot] = useState<ProjectUnityLaunchConfigResult>();
     const [arguments_, setArguments] = useState<string[]>([]);
     const [inherit, setInherit] = useState(true);
+    const writeRequest = useGuiWrite(client, arguments_, inherit);
     const [conflict, setConflict] = useState(false);
     const [unknown, setUnknown] = useState(false);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
@@ -514,8 +517,8 @@ export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, 
             const current = await client.unityProjectLaunchConfigGet(projectId);
             if (inherit ? current.config.revision === 0 : current.config.revision > 0 && JSON.stringify(current.config.arguments) === JSON.stringify(arguments_)) { finish(); return; }
             if (current.config.revision !== snapshot.config.revision) { setConflict(true); setFeedback(INITIAL_FEEDBACK); return; }
-            if (inherit) await client.unityProjectLaunchConfigClear(projectId, current.config.revision);
-            else await client.unityProjectLaunchConfigSet(projectId, arguments_, current.config.revision);
+            if (inherit) await writeRequest("unityProjectLaunchConfigClear", projectId, current.config.revision);
+            else await writeRequest("unityProjectLaunchConfigSet", projectId, arguments_, current.config.revision);
             finish();
         } catch (caught: unknown) {
             try {
@@ -547,6 +550,7 @@ export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, 
 
 export function ProjectUnityActions({ afterMigrationOpen = false, client, launchConfig, launchOptions, project, onChanged }: ActionProps & { afterMigrationOpen?: boolean; launchConfig: ProjectUnityLaunchConfigResult; launchOptions: UnityLaunchOptionsResult; project: ProjectSnapshot }) {
     const { t } = useTranslation();
+    const writeRequest = useGuiWrite(client, project.projectId);
     const canLaunch = useCapability(capabilities.unityLaunch);
     const canManage = useCapability(capabilities.unityManage);
     const canMigrate = useCapability(capabilities.projectsUnityMigration);
@@ -569,7 +573,7 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, launch
         if (projectId === undefined || launchInstallation === undefined) return;
         setFeedback({ busy: true });
         try {
-            await client.unityLaunch(projectId, launchInstallation.installationId, effectiveLaunchOptions.projectRevision);
+            await writeRequest("unityLaunch", projectId, launchInstallation.installationId, effectiveLaunchOptions.projectRevision);
             setFeedback(INITIAL_FEEDBACK);
         } catch (caught: unknown) {
             setFeedback({ busy: false, error: safeError(caught) });
@@ -585,7 +589,7 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, launch
         if (projectId === undefined || projectRevision === undefined || targetInstallationId.length === 0) return;
         setFeedback({ busy: true });
         try {
-            const result = await client.projectPlanUnityMigration(projectId, targetInstallationId, projectRevision);
+            const result = await writeRequest("projectPlanUnityMigration", projectId, targetInstallationId, projectRevision);
             if (result.kind === "no_change") {
                 setFeedback(INITIAL_FEEDBACK);
                 return;
@@ -600,7 +604,7 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, launch
         if (migrationPlan === undefined || !migrationPlan.classification.supportedForApply) return;
         setFeedback({ busy: true });
         try {
-            const result = await client.projectApplyUnityMigration(migrationPlan.planId);
+            const result = await client.projectApplyUnityMigration(migrationPlan.planId, migrationPlan.planId);
             setMigrationPlan(undefined);
             setFeedback({ busy: false, operationId: result.operationId });
         } catch (caught: unknown) {
@@ -631,7 +635,7 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, launch
                 setFeedback(INITIAL_FEEDBACK);
                 return;
             }
-            await client.unityLaunch(projectId, options.exactMatchingInstallations[0]!.installationId, freshProject.revision);
+            await writeRequest("unityLaunch", projectId, options.exactMatchingInstallations[0]!.installationId, freshProject.revision);
             setFeedback(INITIAL_FEEDBACK);
         } catch (caught: unknown) {
             setFeedback({ busy: false, error: safeError(caught) });
@@ -675,6 +679,7 @@ export function ProjectUnityWorkspaceActions({ client, launchOptions, navigate, 
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const unityLaunch = useProjectUnityLaunch({ client, initialOptions: launchOptions, navigate, onLaunchSettled: onChanged, project });
     const [migrationVersion, setMigrationVersion] = useState<string>();
+    const writeRequest = useGuiWrite(client, project.projectId, migrationVersion);
     const [migrationInstallationId, setMigrationInstallationId] = useState("");
     const [migrationChooserOpen, setMigrationChooserOpen] = useState(false);
     const [migrationPlan, setMigrationPlan] = useState<ProjectUnityMigrationPlan>();
@@ -691,7 +696,7 @@ export function ProjectUnityWorkspaceActions({ client, launchOptions, navigate, 
         pending.current = true;
         setFeedback({ busy: true });
         try {
-            const result = await client.projectPlanUnityMigration(projectId, installationId, projectRevision);
+            const result = await writeRequest("projectPlanUnityMigration", projectId, installationId, projectRevision);
             if (!isCurrent()) return;
             setSubmitted(false);
             setMigrationChooserOpen(false);
@@ -722,11 +727,11 @@ export function ProjectUnityWorkspaceActions({ client, launchOptions, navigate, 
         setMigrationChooserOpen(true);
     };
     const applyMigration = async () => {
-        if (!canMigrate || pending.current || submitted || migrationPlan === undefined || !migrationPlan.classification.supportedForApply) return;
+        if (!canMigrate || pending.current || (submitted && !operationRequestOutcomeUnknown(feedback.error)) || migrationPlan === undefined || !migrationPlan.classification.supportedForApply) return;
         pending.current = true; setSubmitted(true);
         setFeedback({ busy: true });
         try {
-            const result = await client.projectApplyUnityMigration(migrationPlan.planId);
+            const result = await client.projectApplyUnityMigration(migrationPlan.planId, migrationPlan.planId);
             if (!isCurrent()) return;
             setMigrationPlan(undefined);
             setFeedback({ busy: false, operationId: result.operationId });
@@ -758,9 +763,9 @@ export function ProjectUnityWorkspaceActions({ client, launchOptions, navigate, 
                     <Button disabled={migrationInstallationId.length === 0 || feedback.busy} onClick={() => void planMigration(migrationInstallationId)} type="button">{t("Review migration")}</Button>
                 </div>
             </ModalDialog>
-            <PlanDialog applyDisabled={submitted || migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => { setMigrationPlan(undefined); setMigrationVersion(undefined); setFeedback(INITIAL_FEEDBACK); }} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
+            <PlanDialog applyDisabled={(submitted && !operationRequestOutcomeUnknown(feedback.error)) || migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => { setMigrationPlan(undefined); setMigrationVersion(undefined); setFeedback(INITIAL_FEEDBACK); }} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
-                {feedback.error === undefined ? null : <div role="alert" data-notification-error={feedback.error.code}><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{submitted && operationRequestOutcomeUnknown(feedback.error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
+                {feedback.error === undefined ? null : <div role="alert" data-notification-error={feedback.error.code}><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{submitted && operationRequestOutcomeUnknown(feedback.error) ? t("The result of this request is unknown.") : undefined}</div>}
             </PlanDialog>
 
         </>
@@ -784,7 +789,9 @@ export function BackupCreatePanel({ client, onAccepted, project }: { client: Gui
     const { t } = useTranslation();
     const completeDialog = useUtilityDialogComplete();
     const available = useCapability(capabilities.backupsCreate);
-    const [options, setOptions] = useState<OfficialSettings["backups"]>();
+    const [defaults, setDefaults] = useState<OfficialSettings["backups"]>();
+    const [overrides, setOverrides] = useState<Partial<OfficialSettings["backups"]>>({});
+    const options = defaults === undefined ? undefined : { ...defaults, ...overrides };
     const [backupDirectory, setBackupDirectory] = useState<string>();
     const [destinationPath, setDestinationPath] = useState("");
     const attempt = useRef<BackupCreateParams | undefined>(undefined);
@@ -797,11 +804,12 @@ export function BackupCreatePanel({ client, onAccepted, project }: { client: Gui
     useUtilityDialogBusy(feedback.busy);
     useEffect(() => {
         let active = true;
-        setOptions(undefined);
+        setDefaults(undefined);
+        setOverrides({});
         setFeedback(INITIAL_FEEDBACK);
         void client.settingsGet().then((snapshot) => {
             if (active) {
-                setOptions(snapshot.settings.backups);
+                setDefaults(snapshot.settings.backups);
                 setBackupDirectory(snapshot.directories.backupDirectory);
             }
         }).catch((caught: unknown) => { if (active) setFeedback({ busy: false, error: safeError(caught) }); });
@@ -827,9 +835,9 @@ export function BackupCreatePanel({ client, onAccepted, project }: { client: Gui
         const params = unknown ? attempt.current : {
             projectId: project.projectId,
             expectedRevision: project.revision,
-            compressionMode: options.compressionMode,
-            excludeVpmPackages: !options.includeVpmPackages,
-            includeLibrary: options.includeLibrary,
+            ...(overrides.compressionMode === undefined ? {} : { compressionMode: overrides.compressionMode }),
+            ...(overrides.includeVpmPackages === undefined ? {} : { excludeVpmPackages: !overrides.includeVpmPackages }),
+            ...(overrides.includeLibrary === undefined ? {} : { includeLibrary: overrides.includeLibrary }),
             ...(destinationPath.trim().length === 0 ? {} : { destinationPath }),
             idempotencyKey: crypto.randomUUID(),
         };
@@ -849,10 +857,10 @@ export function BackupCreatePanel({ client, onAccepted, project }: { client: Gui
         <p><Translated message="Back up {name}." values={{ name: <strong>{project.displayName ?? t("Unity project")}</strong> }} /></p>
         {options === undefined ? showLoading ? <LoadingState title={t("Loading backup defaults…")} /> : null : <>
             <Select disabled={feedback.busy || unknown} id="backup-compression" label={t("Compression")}
-                onChange={(compressionMode) => setOptions({ ...options, compressionMode: compressionMode as typeof options.compressionMode })}
+                onChange={(compressionMode) => setOverrides({ ...overrides, compressionMode: compressionMode as typeof options.compressionMode })}
                 options={backupCompressionOptions(t)} value={options.compressionMode} />
-            <Checkbox disabled={feedback.busy || unknown} checked={options.includeVpmPackages} label={t("Keep packages in backups")} onChange={(includeVpmPackages) => setOptions({ ...options, includeVpmPackages })} />
-            <Checkbox disabled={feedback.busy || unknown} checked={options.includeLibrary} label={t("Keep Library cache in backups")} onChange={(includeLibrary) => setOptions({ ...options, includeLibrary })} />
+            <Checkbox disabled={feedback.busy || unknown} checked={options.includeVpmPackages} label={t("Keep packages in backups")} onChange={(includeVpmPackages) => setOverrides({ ...overrides, includeVpmPackages })} />
+            <Checkbox disabled={feedback.busy || unknown} checked={options.includeLibrary} label={t("Keep Library cache in backups")} onChange={(includeLibrary) => setOverrides({ ...overrides, includeLibrary })} />
             <div className="project-target-picker">
                 <PathField disabled={feedback.busy || unknown} label={t("Destination")} onInput={setDestinationPath} value={destinationPath} />
                 <Button disabled={feedback.busy || unknown} onClick={() => void chooseDestination()} type="button" variant="tonal">{t("Select")}</Button>
@@ -863,7 +871,7 @@ export function BackupCreatePanel({ client, onAccepted, project }: { client: Gui
         </div>
         {feedback.error === undefined ? null : options === undefined ? <div role="alert"><strong>{t("Backup defaults could not be loaded.")}</strong><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}
             <Button onClick={() => setReadGeneration((value) => value + 1)} type="button" variant="text">{t("Retry")}</Button>
-        </div> : <div role="alert" data-notification-error={feedback.error.code}><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{unknown ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
+        </div> : <div role="alert" data-notification-error={feedback.error.code}><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{unknown ? t("The result of this request is unknown.") : undefined}</div>}
     </ActionSection>;
 }
 
@@ -871,6 +879,7 @@ export function OperationActions({ client, operation, onChanged }: ActionProps &
     const { t } = useTranslation();
     const available = useCapability(capabilities.operations);
     const [confirm, setConfirm] = useState(false);
+    const writeRequest = useGuiWrite(client, confirm, operation.operationId);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const pending = useRef(false);
     const isCurrent = useActionScope(client);
@@ -879,7 +888,7 @@ export function OperationActions({ client, operation, onChanged }: ActionProps &
         if (!available || terminal || operation.state === "cancelling" || pending.current) return;
         pending.current = true; setFeedback({ busy: true });
         try {
-            await client.operationCancel(operation.operationId, operation.revision);
+            await writeRequest("operationCancel", operation.operationId, operation.revision);
             if (!isCurrent()) return;
             setConfirm(false); setFeedback({ busy: false }); onChanged?.();
         } catch (caught: unknown) {
@@ -931,7 +940,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted, sourceKin
             planFingerprint: reviewed.planFingerprint,
             installationTermsAccepted: acceptedTerms,
             requiredPermissionsAccepted: reviewed.requiredPermissions.length > 0
-        });
+        }, reviewed.planId);
         if (!current()) return;
         setApplying(false);
         setFeedback({ busy: false, operationId: result.operationId });
@@ -939,7 +948,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted, sourceKin
         completeDialog?.();
     };
     const run = async () => {
-        if (!available || pending.current || submitted || (plan === undefined && (mode === "local" ? path.trim().length === 0 : !remoteAvailable || source === undefined || version.length === 0))) return;
+        if (!available || pending.current || (submitted && !operationRequestOutcomeUnknown(feedback.error)) || (plan === undefined && (mode === "local" ? path.trim().length === 0 : !remoteAvailable || source === undefined || version.length === 0))) return;
         pending.current = true;
         setFeedback({ busy: true });
         setRefusal(undefined);
@@ -1026,7 +1035,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted, sourceKin
             </>}
             {reviewingTerms || reviewingPermissions ? <div className="dialog-actions"><Button disabled={feedback.busy || submitted} onClick={decline} type="button" variant="text">{t("Decline")}</Button><LoadingButton disabled={!available || submitted || (reviewingPermissions && !canGrant)} loading={feedback.busy} onClick={() => void run()} type="button">{t(reviewingTerms && plan.requiredPermissions.length > 0 ? "Agree and continue" : "Agree and install")}</LoadingButton></div> : feedback.error === undefined || submitted ? null : <div className="dialog-actions"><LoadingButton disabled={!available} loading={feedback.busy} onClick={() => void run()} type="button">{t("Retry")}</LoadingButton></div>}
         </>}
-        {submitted && operationRequestOutcomeUnknown(feedback.error) ? <div role="alert" data-notification-error={feedback.error!.code}><p>{t(requestErrorMessage(feedback.error!.code))}</p>{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div> : feedback.operationId !== undefined ? null : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
+        {submitted && operationRequestOutcomeUnknown(feedback.error) ? <div role="alert" data-notification-error={feedback.error!.code}><p>{t(requestErrorMessage(feedback.error!.code))}</p><p>{t("The result of this request is unknown.")}</p><Button disabled={feedback.busy} onClick={() => void run()} type="button">{t("Retry")}</Button></div> : feedback.operationId !== undefined ? null : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
     </section>;
 }
 
@@ -1044,6 +1053,7 @@ export function ExtensionActions({ client, extension, activationConsent, onChang
     const canManageLifecycle = useCapability(capabilities.extensionsLifecycle);
     const canGrant = useCapability(capabilities.extensionsPermissions);
     const [mode, setMode] = useState<"none" | "permissions" | "uninstall">("none");
+    const writeRequest = useGuiWrite(client, mode, extension.extensionId);
     const [plan, setPlan] = useState<ExtensionPlan>();
     const [deleteData, setDeleteData] = useState(false);
     const [permissionsBusy, setPermissionsBusy] = useState(false);
@@ -1055,7 +1065,7 @@ export function ExtensionActions({ client, extension, activationConsent, onChang
     const open = (next: "permissions" | "uninstall") => { if (!pending.current && !permissionsBusy && !operationActive) { setMode(next); setPlan(undefined); setSubmitted(false); setDeleteData(false); setFeedback(INITIAL_FEEDBACK); } };
     const run = async (kind: "enable" | "disable" | "plan" | "apply") => {
         if (pending.current || operationActive || !canManageLifecycle) return;
-        if (kind === "apply" && (plan === undefined || submitted)) return;
+        if (kind === "apply" && (plan === undefined || (submitted && !operationRequestOutcomeUnknown(feedback.error)))) return;
         pending.current = true;
         setFeedback({ busy: true });
         try {
@@ -1066,14 +1076,14 @@ export function ExtensionActions({ client, extension, activationConsent, onChang
                 setFeedback({ busy: false });
             } else if (kind === "apply" && plan !== undefined) {
                 setSubmitted(true);
-                const result = await client.extensionApplyUninstall(plan.planId);
+                const result = await client.extensionApplyUninstall(plan.planId, plan.planId);
                 if (!current()) return;
                 setPlan(undefined);
                 setMode("none");
                 setFeedback({ busy: false, operationId: result.operationId });
                 onAccepted?.(result.operationId);
             } else if (kind === "enable" || kind === "disable") {
-                await (kind === "enable" ? client.extensionEnable(extension.extensionId, extension.revision, activationConsent?.packageDigest) : client.extensionDisable(extension.extensionId, extension.revision));
+                await (kind === "enable" ? writeRequest("extensionEnable", extension.extensionId, extension.revision, activationConsent?.packageDigest) : writeRequest("extensionDisable", extension.extensionId, extension.revision));
                 if (!current()) return;
                 setFeedback({ busy: false });
                 onChanged?.();
@@ -1094,9 +1104,9 @@ export function ExtensionActions({ client, extension, activationConsent, onChang
                 <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy} variant="text">{t("Cancel")}</DialogCloseButton><Button disabled={!canManageLifecycle || feedback.busy} onClick={() => void run("plan")} type="button">{t("Create uninstall plan")}</Button></div>
             </> : <>
                 <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div><div><dt>{t("Data")}</dt><dd>{t(humanize(plan.dataDisposition))}</dd></div><div><dt>{t("Publisher")}</dt><dd><code>{plan.publisherFingerprint}</code></dd></div></dl>
-                <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy || submitted} variant="text">{t("Discard plan")}</DialogCloseButton><Button disabled={!canManageLifecycle || feedback.busy || submitted} onClick={() => void run("apply")} type="button">{t("Apply reviewed plan")}</Button></div>
+                <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy || submitted} variant="text">{t("Discard plan")}</DialogCloseButton><Button disabled={!canManageLifecycle || feedback.busy || (submitted && !operationRequestOutcomeUnknown(feedback.error))} onClick={() => void run("apply")} type="button">{t(submitted && operationRequestOutcomeUnknown(feedback.error) ? "Retry" : "Apply reviewed plan")}</Button></div>
             </>}
-            {mode === "none" ? null : submitted && operationRequestOutcomeUnknown(feedback.error) ? <><div role="alert" data-notification-error={feedback.error!.code}><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div><div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div></> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
+            {mode === "none" ? null : submitted && operationRequestOutcomeUnknown(feedback.error) ? <><div role="alert" data-notification-error={feedback.error!.code}><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}</div><div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div></> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
         </MaterialDialog>
     </ActionSection>;
 }

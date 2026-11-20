@@ -171,6 +171,42 @@ fn state1_initializes_and_reopens_preserving_current_rows_and_sequence() {
 }
 
 #[test]
+fn ddl_formatting_is_immaterial_but_constraints_and_indexes_are_required() {
+    let ddl = include_str!("../src/schema.sql");
+    let formatted = ddl
+        .replace("NOT NULL", "not /* required */\n NuLl")
+        .replace("CREATE TABLE projects ", "create TABLE PROJECTS ")
+        .replace("CREATE INDEX", "create  index");
+    for (sql, valid) in [
+        (formatted.clone(), true),
+        (formatted.replace("'queued'", "'QUEUED'"), false),
+        (
+            format!("{formatted}\nCREATE INDEX extra_event_time ON events(occurred_at_ms);"),
+            false,
+        ),
+    ] {
+        let fixture = Directory::new();
+        let path = fixture.database();
+        let db = Connection::open(&path).expect("isolated schema");
+        db.execute_batch(&sql).expect("valid SQLite DDL");
+        db.pragma_update(None, "user_version", CURRENT_DATA_SCHEMA)
+            .expect("schema number");
+        drop(db);
+        let before = fixture.snapshot();
+        assert_eq!(preflight_state_database(&path).is_ok(), valid);
+        assert_eq!(fixture.snapshot(), before, "preflight is read-only");
+        assert_eq!(StateStoreHandle::open(path).map(drop).is_ok(), valid);
+        if !valid {
+            assert_eq!(
+                fixture.snapshot(),
+                before,
+                "failed open preserved all files"
+            );
+        }
+    }
+}
+
+#[test]
 fn rejects_unsupported_schema_without_starting_sqlite_recovery() {
     for version in [0, 2, i32::MAX] {
         let fixture = Directory::new();

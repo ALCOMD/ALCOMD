@@ -3,7 +3,7 @@
 状态：首个六工具切片已验收。回环 HTTP Bearer、预登记 HTTPS/OAuth 和包目录增量各有独立合同及验证记录，按 [M8 当前状态](../../docs/status.md) 查对应候选与覆盖范围。
 冻结 MCP 规范基线：`2026-07-28`
 
-正式输入输出、错误枚举及annotations见[包卸载工具Schema](package-removal-v1.schema.json)，完整授权与执行边界见[M8 ExecPlan](../../docs/exec-plans/M8-mcp-protocol-and-management.md#首个真实业务工具合同项目包卸载闭环2026-11-13已批准实施中)。没有v3别名、通用RPC透传或无凭据业务调用。
+正式输入输出、错误枚举及annotations见[包卸载工具Schema](package-removal-v1.schema.json)，完整授权与执行边界见[M8 ExecPlan](../../docs/exec-plans/M8-mcp-protocol-and-management.md#工具与管理界面)。没有v3别名、通用RPC透传或无凭据业务调用。
 
 ## 架构
 
@@ -54,7 +54,7 @@ alcomd_cancel_operation
 2026-11-15所有者批准OAuth项目游标补充：`alcomd_list_projects`的cursor新增可选
 `authorization_binding`（64位小写hex），透传Core `authorizationBinding`，不由适配器签发。
 OAuth续页必须原样回传；缺失、篡改、换token或授权快照变化返回既有revision_conflict，
-重新读取第一页。绑定还覆盖token上限、resource和时间/ProjectId位置，不扩大权限。
+重新读取第一页。绑定覆盖认证的令牌、资源和时间 / ProjectId 位置。
 非OAuth继续省略该字段；没有新的工具、State、Config、权限、session或缓存。
 
 ## 长任务
@@ -89,7 +89,7 @@ MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档�
 
 Core 在接受任务前核对当前授权、路径身份及目的地可用性。已接受任务通过现有 Operation 查询或取消。写响应丢失时按原参数同键恢复。
 
-四项能力 `projects.manage`、`projects.create`、`backups.read` 和 `backups.manage` 默认关闭。工具目录按当前客户端授权及 OAuth 上限生成。共享资源归 Core 的本机所有者，Plan、Operation 和幂等记录归发起请求的实际客户端。对外结果只返回稳定 ID、必要的摘要和目标名称。
+已认证的 MCP 客户端与 GUI、CLI 使用相同的项目和备份权限。工具目录反映当前协商的 Core 能力。共享资源归 Core 的本机所有者，Plan、Operation 和幂等记录归发起请求的实际客户端。对外结果只返回稳定 ID、必要的摘要和目标名称。
 
 ## 读取设置和 Unity 环境
 
@@ -99,23 +99,23 @@ Core 在接受任务前核对当前授权、路径身份及目的地可用性。
 | `alcomd_list_unity_installations` | `unity.installations.list`。使用同一安装登记与游标，包含安装路径。 | `unity.read` |
 | `alcomd_get_project_launch_config` | `unity.projectLaunchConfig.get`。返回项目覆盖、默认值及实际有效的完整参数。 | `projects.read`、`unity.read` |
 
-三端由 Core 按当前调用者检查相同的读取权限。MCP 管理扩展可以显式授予这些既有权限，OAuth 另受当次同意的能力上限约束。MCP 工具仅将字段名转换为 snake_case，保留 Core 返回的值。 [工具 Schema](environment-v1.schema.json)
+三端由 Core 按当前调用者检查相同的读取权限。MCP 管理扩展负责登记与撤销连接，OAuth 使用连接 scope `mcp`。MCP 工具仅将字段名转换为 snake_case，保留 Core 返回的值。 [工具 Schema](environment-v1.schema.json)
 
 项目列表与详情在 `projects.read` 下返回同一 Core 登记路径 `root_path`。MCP 的项目操作继续使用稳定项目 ID。
 
 ## 客户端接入速查
 
-为每个客户端单独创建身份，打开实际需要的能力，再由本机所有者用 `alcomd-cli mcp client issue-credential` 签发 Bearer 或 STDIO 凭据。凭据交给客户端的受控秘密入口。每次轮换立即使旧凭据失效。
+为每个客户端单独创建身份，用 `alcomd-cli mcp client issue-credential` 签发 Bearer 或 STDIO 凭据。凭据交给客户端的受控秘密入口。每次轮换立即使旧凭据失效。
 
 | 传输 | 入口 |
 | --- | --- |
 | 回环 HTTP Bearer | 运行 `alcomd-mcp serve --port 0`，将报告的 `/mcp` 地址和该客户端独立 Bearer 配置到支持冻结协议的客户端。 |
 | STDIO | 将 `alcomd-mcp stdio` 配置为启动命令，并通过子进程环境提供 `ALCOMD_MCP_CLIENT_CREDENTIAL`。 |
-| 回环 HTTPS/OAuth | 预登记客户端和精确回调地址，运行 `alcomd-mcp serve-oauth --port <port> --tls-cert <cert> --tls-key <key>`，客户端使用 `https://localhost:<port>/mcp`。证书须由该客户端信任，OAuth 请求的能力还受注册上限和当前授权约束。 |
+| 回环 HTTPS/OAuth | 预登记客户端和精确回调地址，运行 `alcomd-mcp serve-oauth --port <port> --tls-cert <cert> --tls-key <key>`，客户端使用 `https://localhost:<port>/mcp`。证书须由该客户端信任，OAuth 使用预登记资源和连接 scope `mcp`。 |
 
 ### Codex CLI 0.153.4 的回环 HTTP 接入
 
-1. 在 MCP 管理扩展中创建独立客户端并授予所需能力。用 `alcomd-cli mcp client list` 核对 ID 和当前修订，再运行 `alcomd-cli mcp client issue-credential <id> --expected-revision <n> --idempotency-key <key>` 取得一次性凭据。用 `alcomd-mcp serve --port 0` 启动监听，记下实际报告的地址。
+1. 在 MCP 管理扩展中创建独立客户端。用 `alcomd-cli mcp client list` 核对 ID 和当前修订，再运行 `alcomd-cli mcp client issue-credential <id> --expected-revision <n> --idempotency-key <key>` 取得一次性凭据。用 `alcomd-mcp serve --port 0` 启动监听，记下实际报告的地址。
 2. 运行 `codex mcp get alcomd` 查看目标条目。确认该条目不存在时，核对下面的地址和环境变量名后执行添加。已有同名条目时，先确认要修改的字段，再手动合并该条目，或选择新名称。`codex mcp add` 会直接覆盖同名条目，读取配置出错时应先解决错误。
 
    ```powershell
@@ -142,7 +142,7 @@ Core 在接受任务前核对当前授权、路径身份及目的地可用性。
 
 ### Claude Code 2.1.327 的回环 HTTP 接入
 
-为 Claude Code 创建独立客户端，授予实际需要的能力并签发专用 Bearer。运行 `alcomd-mcp serve --port 0`，用它报告的地址替换示例。在专用 PowerShell 终端执行以下命令。
+为 Claude Code 创建独立客户端并签发专用 Bearer。运行 `alcomd-mcp serve --port 0`，用它报告的地址替换示例。在专用 PowerShell 终端执行以下命令。
 
 ```powershell
 @'
@@ -169,7 +169,7 @@ try {
 
 ### Cursor CLI 2026.11.17-f532c45
 
-Windows x64 具名版本在隔离配置实测 HTTP、STDIO 均发出 `2025-11-25` 的 `initialize`，无法接入当前冻结的 `2026-07-28` 服务。其他版本和 OAuth 未验证。 [实测记录](../../docs/exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-cursor-具名版本核对)
+Windows x64 具名版本在隔离配置实测 HTTP、STDIO 均发出 `2025-11-25` 的 `initialize`，无法接入当前冻结的 `2026-07-28` 服务。其他版本和 OAuth 未验证。 [实测记录](../../docs/exec-plans/M8-mcp-protocol-and-management.md#2026-11-20-m8-收尾)
 ## 项目已安装的包和模板编辑
 
 | MCP 工具 | 共享 Core 方法 | 所需 Core 权限 |

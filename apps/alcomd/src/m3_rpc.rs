@@ -715,17 +715,22 @@ fn issue(value: app::ReadIssue) -> rpc::ReadIssue {
 }
 
 fn repository_observation(value: app::RepositoryObservation) -> rpc::RepositorySnapshot {
-    repository_snapshot(None, value, None, false, None)
+    repository_snapshot(None, value.into(), None, false, None)
 }
 
 fn repository_record(
     access: &app::AccessContext,
-    value: app::RepositoryRecord,
+    value: impl Into<app::RepositoryRefreshReceipt>,
 ) -> rpc::RepositorySnapshot {
+    let value = value.into();
     let builtin = app::builtin_repository(value.repository_id);
     let actions = rpc::RepositoryActions {
         can_remove: app::can_remove_repository(access, value.repository_id),
-        can_edit_authentication: app::can_edit_repository_authentication(access, &value),
+        can_edit_authentication: app::can_edit_repository_authentication(
+            access,
+            value.repository_id,
+            &value.observation.source,
+        ),
     };
     let mut snapshot = repository_snapshot(
         Some(value.repository_id.to_string()),
@@ -744,7 +749,7 @@ fn repository_record(
 
 fn repository_snapshot(
     repository_id: Option<String>,
-    value: app::RepositoryObservation,
+    value: app::RepositoryMetadata,
     revision: Option<u64>,
     credentials_configured: bool,
     display_name: Option<String>,

@@ -322,7 +322,7 @@ fn visible_action_gate_separates_m7_completeness_from_m11_release_blockers() {
     for capability in [
         "projects.delete.v1",
         "projects.copy.v1",
-        "packages.plan.v2",
+        "packages.plan.v1",
         "packages.user-packages.v1",
         "extensions.ui.portable.v1",
     ] {
@@ -350,7 +350,7 @@ fn p7_delete_directory_contract_is_implemented_and_active() {
         "projects.delete-directory"
     );
     assert_eq!(schema["x-alcomd-plan-expiry-ms"], 900_000);
-    assert_eq!(schema["x-alcomd-filesystem-writer"], "builtin:local-owner");
+    assert_eq!(schema["x-alcomd-filesystem-writer"], "Core");
     assert_eq!(schema["x-alcomd-extension-grantable"], false);
     assert_eq!(
         schema["x-alcomd-method-permissions"]["projects.planDeleteDirectory"],

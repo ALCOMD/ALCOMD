@@ -685,7 +685,7 @@ impl M3RegistryStore for StateStoreHandle {
         id: RepositoryId,
         expected: Revision,
         key: IdempotencyKey,
-    ) -> Result<Option<SyncWrite<RepositoryRecord>>, M3Error> {
+    ) -> Result<Option<SyncWrite<alcomd_application::RepositoryRefreshReceipt>>, M3Error> {
         let access = m3::RepositoryRefreshAccess::new(caller)?;
         self.request_m3(move |db| m3::replay_repository_refresh(db, &access, id, expected, &key))
             .await
@@ -699,7 +699,7 @@ impl M3RegistryStore for StateStoreHandle {
         observation: RepositoryObservation,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+    ) -> Result<SyncWrite<alcomd_application::RepositoryRefreshReceipt>, M3Error> {
         let access = m3::RepositoryRefreshAccess::new(owner)?;
         self.request_m3(move |connection| {
             m3::refresh_repository(connection, &access, id, expected, observation, &key, now_ms)
@@ -715,7 +715,7 @@ impl M3RegistryStore for StateStoreHandle {
         validators: RepositoryValidators,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+    ) -> Result<SyncWrite<alcomd_application::RepositoryRefreshReceipt>, M3Error> {
         let access = m3::RepositoryRefreshAccess::new(owner)?;
         self.request_m3(move |connection| {
             m3::update_repository_validators(
@@ -1611,7 +1611,7 @@ impl M6Store for StateStoreHandle {
         &self,
         daemon_epoch: String,
         now_ms: u64,
-    ) -> Result<Vec<String>, M6Error> {
+    ) -> Result<Vec<alcomd_application::ExtensionRuntimeTarget>, M6Error> {
         self.request_extension_write(move |connection| {
             m6::recover_instances(connection, &daemon_epoch, now_ms)
         })

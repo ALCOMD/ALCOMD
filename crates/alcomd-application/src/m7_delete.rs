@@ -378,6 +378,18 @@ where
         Ok(())
     }
 
+    pub async fn get_plan(
+        &self,
+        access: &AccessContext,
+        plan_id: PlanId,
+    ) -> Result<ProjectDeletePlanRecord, M7DeleteError> {
+        require(access, Permission::ProjectsRead)?;
+        require(access, Permission::ProjectsDelete)?;
+        self.store
+            .get_project_delete_plan(access.principal().clone(), plan_id)
+            .await
+    }
+
     pub async fn plan_delete(
         &self,
         access: &AccessContext,
@@ -390,7 +402,10 @@ where
         require_interactive_client(access)?;
         let project = self
             .store
-            .get_project(access.principal().clone(), project_id)
+            .get_project(
+                crate::workflow_resource_owner(access.principal()),
+                project_id,
+            )
             .await
             .map_err(map_m3)?;
         if project.revision != expected_revision {
@@ -400,7 +415,10 @@ where
             Some(writer) => writer,
             None => self
                 .writer
-                .observe_backup_source(access, project_id)
+                .observe_backup_source(
+                    &AccessContext::new(crate::workflow_resource_owner(access.principal()), []),
+                    project_id,
+                )
                 .await
                 .map_err(|cause| error(M7DeleteErrorCode::Internal).with_source(cause))?,
         };
@@ -447,7 +465,10 @@ where
         let _guard = self.locks.acquire(self.adapter.resources(&plan)).await;
         let current = self
             .store
-            .get_project(access.principal().clone(), plan.draft.project.project_id)
+            .get_project(
+                crate::workflow_resource_owner(access.principal()),
+                plan.draft.project.project_id,
+            )
             .await
             .map_err(map_m3)?;
         if current.revision != expected_revision || current.revision != plan.draft.project.revision
@@ -458,7 +479,10 @@ where
             Some(writer) => writer,
             None => self
                 .writer
-                .observe_backup_source(access, current.project_id)
+                .observe_backup_source(
+                    &AccessContext::new(crate::workflow_resource_owner(access.principal()), []),
+                    current.project_id,
+                )
                 .await
                 .map_err(|cause| error(M7DeleteErrorCode::Internal).with_source(cause))?,
         };
@@ -567,7 +591,7 @@ where
                     .writer
                     .observe_backup_source(
                         &AccessContext::new(
-                            operation.plan.owner.clone(),
+                            crate::workflow_resource_owner(&operation.plan.owner),
                             [crate::Permission::ProjectsRead],
                         ),
                         operation.plan.draft.project.project_id,

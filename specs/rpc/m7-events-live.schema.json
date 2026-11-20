@@ -6,11 +6,11 @@
     "x-alcomd-method-capabilities": {"events.subscribe": "events.live.v1"},
     "x-alcomd-method-params": {"events.subscribe": "#/$defs/subscribeParams"},
     "x-alcomd-method-results": {"events.subscribe": "#/$defs/subscribeResult"},
-    "x-alcomd-local-owner-only": true,
     "x-alcomd-max-encoded-frame-bytes": 4194304,
     "x-alcomd-default-batch-limit": 100,
     "x-alcomd-ready-timeout-ms": 5000,
     "x-alcomd-send-ack-timeout-ms": 10000,
+    "x-alcomd-interactive-clients": ["GUI", "CLI", "MCP"],
     "$defs": {
         "sequence": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
         "identity": {"type": "string", "format": "uuid"},

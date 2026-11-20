@@ -160,8 +160,8 @@ type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "s
 const SUPPORTED_CAPABILITIES = [
     RPC_CAPABILITIES.extensionsRemoteInstall,
     RPC_CAPABILITIES.logsRead,
-    "backups.create.v2",
-    "backups.restore.v2",
+    "backups.create.v1",
+    "backups.restore.v1",
     RPC_CAPABILITIES.extensionsLifecycle,
     RPC_CAPABILITIES.extensionsPermissions,
     RPC_CAPABILITIES.extensionsPermissionsRead,
@@ -169,9 +169,8 @@ const SUPPORTED_CAPABILITIES = [
     "operations.v1",
     "events.live.v1",
     "packages.apply.v1",
-    "packages.candidates.v2",
+    "packages.candidates.v1",
     "packages.plan.v1",
-    "packages.plan.v2",
     "packages.project-inventory.v1",
     "project-templates.edit.v1",
     "packages.user-packages.v1",
@@ -186,8 +185,8 @@ const SUPPORTED_CAPABILITIES = [
     RPC_CAPABILITIES.repositoriesListImport,
     "state.check.v1",
     "projects.create.v1",
-    "projectTemplates.v2",
-    "unity.hub.open.v2",
+    "projectTemplates.v1",
+    "unity.hub.open.v1",
     "unity.launch.v1",
     "unity.manage.v1",
     "unity.read.v1"
@@ -329,7 +328,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             {line:2,status:"candidate",source:{kind:"local",path:"C:/local/repository.json"},configuration:{displayName:null,enabled:true,disabledPackageIds:[]}}
         ] });
         const count = this.listFixtureCount();
-        return this.value({ ignoredLines: 2, fingerprint: HASH, entries: [
+        return this.value({ format: "legacy", ignoredLines: 2, fingerprint: HASH, entries: [
             ...Array.from({ length: count }, (_, index) => ({ line: index + 1, status: "candidate" as const, source: { kind: "remote" as const, url: "https://list.example/" + (index + 1) + ".json?z=2&a=1" } })),
             { line: count + 1, status: "duplicate", source: { kind: "remote", url: "https://list.example/1.json?z=2&a=1" }, reason: "duplicate_source" },
             { line: count + 2, status: "invalid", reason: "source_invalid" },
@@ -390,7 +389,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private manuallyRegisteredUnity?: ReturnType<typeof installation>;
     private removedUnityInstallations = new Set<string>();
     private settings: SettingsGetResult = {
-        configSchema: 13,
+        configSchema: 1,
         directories: { projectDirectory: query.get("project-directory") ?? (query.has("windows-paths") ? "\\\\?\\C:\\Projects" : "C:\\Fixture"), backupDirectory: "C:\\Fixture\\Backups" },
         unityHub: { status: "not_found", source: "none", path: null, targetToken: null, configuredPathStatus: "unset" },
         revision: 7,
@@ -515,7 +514,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             state: "ready",
             capabilities: this.mode === "capabilities-missing"
                 ? [...CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING]
-                : SUPPORTED_CAPABILITIES.filter((capability) => !(query.has("noProjectRegistry") && capability === "projects.registry.v1") && !(query.get("noPlanV2") && capability === "packages.plan.v2") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v2") && !(query.has("noProjectTemplates") && capability === "projectTemplates.v2"))
+                : SUPPORTED_CAPABILITIES.filter((capability) => !(query.has("noProjectRegistry") && capability === "projects.registry.v1") && !(query.get("noPackagePlan") && capability === "packages.plan.v1") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v1") && !(query.has("noProjectTemplates") && capability === "projectTemplates.v1"))
         });
     }
 
@@ -667,7 +666,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (expectedRevision !== this.settings.revision) return Promise.reject({ code: "revision_conflict" });
         if (update.unity?.hubPath && query.has("hub-normalize")) update = { ...update, unity: { hubPath: "C:\\Normalized\\Unity Hub.exe" } };
         this.settings = {
-            configSchema: 13,
+            configSchema: 1,
             directories: {
                 projectDirectory: update.paths?.projectDirectory === undefined ? this.settings.directories.projectDirectory : update.paths.projectDirectory ?? "C:\\Fixture",
                 backupDirectory: update.paths?.backupDirectory === undefined ? this.settings.directories.backupDirectory : update.paths.backupDirectory ?? "C:\\Fixture\\Backups"
@@ -1182,6 +1181,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         });
         if (query.has("reverse-candidate-order")) items.reverse();
         if (params.view.bulkPackageIds !== undefined) {
+            const sources = params.view.sources;
             const selected = new Set(params.view.bulkPackageIds);
             const selectedItems = items.filter((item) => selected.has(item.packageId));
             const validSelection = selected.size > 0 && selected.size <= 256 && selectedItems.length === selected.size;
@@ -1195,7 +1195,8 @@ class DeterministicGuiClient implements GuiRpcClient {
                 if (target?.eligibility !== "eligible" || target.relation === "unknown") return [];
                 return [{
                     kind: installed ? "upgrade" : "install", packageId: item.packageId,
-                    versionRange: `=${target.version}`, source: target.source, includePrerelease: !stable
+                    ...(stable ? { includePrerelease: false } : {}),
+                    ...(sources?.some((override) => override.packageId === item.packageId) ? { source: target.source } : {})
                 }];
             };
             const updateAllFor = (stable: boolean): CandidateBulkAction => {
@@ -1222,8 +1223,16 @@ class DeterministicGuiClient implements GuiRpcClient {
             const updateAllStable = updateAllFor(true);
             const installUpdate = installUpdateFor(false);
             const installUpdateStable = installUpdateFor(true);
-            const differs = (left: CandidateBulkAction, right: CandidateBulkAction) => left.targetCount !== right.targetCount || JSON.stringify(left.intents, (key, value) => key === "includePrerelease" ? undefined : value) !== JSON.stringify(right.intents, (key, value) => key === "includePrerelease" ? undefined : value);
-            const sources = params.view.sources;
+            const differs = (left: CandidateBulkAction, right: CandidateBulkAction) => left.targetCount !== right.targetCount || left.intents.some(({ packageId }) => {
+                const item = items.find((row) => row.packageId === packageId);
+                if (!item) return false;
+                const selected = (stable: boolean) => {
+                    const choice = stable ? item.projectLatestStable : item.recommended;
+                    const update = stable ? item.stableUpdate : item.update;
+                    return item.installed.kind === "locked" && update.kind === "target" ? update.candidate : choice.kind === "candidate" ? choice.candidate : undefined;
+                };
+                return JSON.stringify(selected(false)) !== JSON.stringify(selected(true));
+            });
             const bulk: CandidateBulkActions = {
                 updateAll, ...(differs(updateAll, updateAllStable) ? { updateAllStable } : {}),
                 installUpdate, ...(differs(installUpdate, installUpdateStable) ? { installUpdateStable } : {}),
@@ -1260,9 +1269,9 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.get("delayPackagePlan") === "1") await new Promise<void>((resolve) => { window.resumePackagePlan = resolve; });
         if (query.has("planError")) return Promise.reject({ code: query.get("planError") === "1" ? "package_source_ambiguous" : query.get("planError") });
         const plan = packagePlan("install");
-        plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.versionRange ?? "1.3.0" }];
+        plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, source: null, fromVersion: "1.2.3", toVersion: params.versionRange ?? "1.3.0" }];
         if (query.has("legacy-removals")) {
-            plan.changeSet.formatVersion = 4;
+
             plan.changeSet.legacyRemovals = [
                 { path: "Assets/OldTools", kind: "directory", packageId: params.packageId },
                 { path: "Assets/OldTools.meta", kind: "file", packageId: params.packageId }
@@ -1282,16 +1291,16 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.get("delayPackagePlan") === "1") await new Promise<void>((resolve) => { window.resumePackagePlan = resolve; });
         if (query.has("planError")) return Promise.reject({ code: query.get("planError") === "1" ? "package_source_ambiguous" : query.get("planError") });
         const plan = packagePlan("upgrade");
-        plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.versionRange?.replace(/^=/, "") ?? "1.10.0" }];
+        plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, source: null, fromVersion: "1.2.3", toVersion: params.versionRange?.replace(/^=/, "") ?? "1.10.0" }];
         return this.value(plan);
     }
     packagePlanDowngrade(params: Parameters<GuiRpcClient["packagePlanDowngrade"]>[0]): ReturnType<GuiRpcClient["packagePlanDowngrade"]> {
         window.packageRequests.push({ method: "downgrade", params });
         if (query.has("planError")) return Promise.reject({ code: query.get("planError") });
         const plan = packagePlan("downgrade");
-        plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.version }];
+        plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, source: null, fromVersion: "1.2.3", toVersion: params.version }];
         if (params.allowUnityIncompatible) {
-            plan.changeSet.formatVersion = 4;
+
             plan.changeSet.unityCompatibilityOverrides = [{ packageId: params.packageId, version: params.version }];
         }
         return this.value(plan);
@@ -1301,7 +1310,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     packagePlanBulk(params: Parameters<GuiRpcClient["packagePlanBulk"]>[0]): ReturnType<GuiRpcClient["packagePlanBulk"]> {
         window.packageRequests.push({ method: "bulk", params });
         const plan = query.has("removal-sdk") ? sdkRemovalPlan("bulk", params.intents.map((intent) => intent.packageId)) : packagePlan("bulk");
-        plan.changeSet.mutations = params.intents.map((intent) => ({ kind: intent.kind === "remove" ? "remove" : "replace", packageId: intent.packageId, fromVersion: "1.2.3", toVersion: intent.kind === "remove" ? null : "1.2.3" }));
+        plan.changeSet.mutations = params.intents.map((intent) => ({ kind: intent.kind === "remove" ? "remove" : "replace", packageId: intent.packageId, source: null, fromVersion: "1.2.3", toVersion: intent.kind === "remove" ? null : "1.2.3" }));
         return this.value(plan);
     }
     packageApplyPlan(): ReturnType<GuiRpcClient["packageApplyPlan"]> {
@@ -1779,7 +1788,7 @@ function catalogTemplate(index: number) {
 }
 
 function runningOperation(): Operation { return { operationId: OPERATION_ID, kind: "packages.apply", state: "running", revision: 3, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000, progress: { phase: "extracting" } }; }
-function packagePlan(action: PackagePlan["action"]): PackagePlan { return { planId: PLAN_ID, action, state: "unapplied", projectId: PROJECT_ID, projectRevision: 2, changeSetFingerprint: HASH, changeSet: { formatVersion: 3, mutations: [{ kind: action === "remove" ? "remove" : "install", packageId: "com.example.avatar", ...(action === "remove" ? { fromVersion: "1.2.3", toVersion: null } : { fromVersion: null, toVersion: "1.2.3" }) }], dependencyEdges: [], vpmManifestSha256: HASH } }; }
+function packagePlan(action: PackagePlan["action"]): PackagePlan { return { planId: PLAN_ID, action, state: "unapplied", projectId: PROJECT_ID, projectRevision: 2, changeSetFingerprint: HASH, changeSet: { formatVersion: 1, mutations: [{ kind: action === "remove" ? "remove" : "install", packageId: "com.example.avatar", source: null, ...(action === "remove" ? { fromVersion: "1.2.3", toVersion: null } : { fromVersion: null, toVersion: "1.2.3" }) }], dependencyEdges: [], vpmManifestSha256: HASH } }; }
 function extension(extensionId: string): ExtensionRecord { return { extensionId, version: "1.0.0", apiMajor: 1, packageDigest: HASH, publisherFingerprint: `ed25519-sha256:${HASH}`, desiredState: "enabled", quarantineState: "clear", runtimeState: "running", grantRevision: 3, lifecycleGeneration: 2, revision: 4, ui: { protocol: "portable-v1" } }; }
 function extensionPlan(action: string) { return { mcpTools: [], planId: PLAN_ID, action, state: "unapplied", sourceKind: "local_owner_selected", extensionId: DISCORD_ID, version: "1.0.0", apiMajor: 1, profileVersion: 1, packageDigest: HASH, publisherFingerprint: `ed25519-sha256:${HASH}`, dataDisposition: "retain_data", planFingerprint: HASH, uiProtocol: "portable-v1", requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"] }; }
 
@@ -1839,8 +1848,8 @@ ReactDOM.createRoot(root).render(
 
 function sdkRemovalPlan(action: "remove" | "bulk", packageIds: string[]): PackagePlan {
     const plan = packagePlan(action);
-    plan.changeSet.formatVersion = 4;
-    plan.changeSet.mutations = packageIds.map((packageId) => ({ kind: "remove", packageId, fromVersion: "3.10.6", toVersion: null }));
+
+    plan.changeSet.mutations = packageIds.map((packageId) => ({ kind: "remove", packageId, source: null, fromVersion: "3.10.6", toVersion: null }));
     plan.changeSet.removalConflicts = packageIds.map((packageId) => ({ packageId, requiredBy: [
         ...(packageId === "com.vrchat.base" && !packageIds.includes("com.vrchat.avatars") ? [{ packageId: "com.vrchat.avatars", range: "3.10.6" }] : []),
         { packageId: "com.example.dependent", range: ">=3.10.0" }

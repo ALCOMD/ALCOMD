@@ -21,11 +21,11 @@ export interface GuiRpcClient {
     subscribeEvents(request: GuiEventsRequest, receive: (message: GuiEventMessage) => void): Promise<GuiEventSubscription>;
     packageQueryProjectCandidates(params: ProjectCandidateRequest): Promise<ProjectCandidatePage>;
     systemStatus(): Promise<SystemStatus>;
-    stateCheck(): Promise<OperationAccepted>;
+    stateCheck(idempotencyKey?: string): Promise<OperationAccepted>;
     operationsList(cursor?: OperationsListResult["nextCursor"], activeOnly?: boolean): Promise<OperationsListResult>;
     logsRead(params: LogsReadParams): Promise<LogsReadResult>;
     operationGet(operationId: string): Promise<Operation>;
-    operationCancel(operationId: string, expectedRevision: number): Promise<OperationWriteResult>;
+    operationCancel(operationId: string, expectedRevision: number, idempotencyKey: string): Promise<OperationWriteResult>;
     settingsGet(): Promise<SettingsGetResult>;
     settingsUpdate(expectedRevision: number, update: SettingsUpdate): Promise<SettingsGetResult>;
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult>;
@@ -40,13 +40,13 @@ export interface GuiRpcClient {
     selectUnityHub(currentPath: string | null): Promise<string | undefined>;
     unityHubOpen(expectedRevision: number, expectedTargetToken: string | null): Promise<UnityHubOpenResult>;
     openUnityHubDownload(): Promise<void>;
-    projectRegister(path: string): Promise<ProjectWriteResult>;
-    projectRefresh(projectId: string, expectedRevision: number): Promise<ProjectWriteResult>;
-    projectSetFavorite(projectId: string, favorite: boolean, expectedRevision: number): Promise<ProjectWriteResult>;
-    projectUnregister(projectId: string, expectedRevision: number): Promise<ProjectUnregisterResult>;
-    projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string): Promise<ProjectsPlanCopyResult>;
+    projectRegister(path: string, idempotencyKey: string): Promise<ProjectWriteResult>;
+    projectRefresh(projectId: string, expectedRevision: number, idempotencyKey?: string): Promise<ProjectWriteResult>;
+    projectSetFavorite(projectId: string, favorite: boolean, expectedRevision: number, idempotencyKey: string): Promise<ProjectWriteResult>;
+    projectUnregister(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectUnregisterResult>;
+    projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string, idempotencyKey: string): Promise<ProjectsPlanCopyResult>;
     projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult>;
-    projectPlanDeleteDirectory(projectId: string, expectedRevision: number): Promise<ProjectsPlanDeleteDirectoryResult>;
+    projectPlanDeleteDirectory(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectsPlanDeleteDirectoryResult>;
     projectApplyDeleteDirectory(planId: string, expectedRevision: number): Promise<ProjectsApplyDeleteDirectoryResult>;
     repositoriesInspect(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryResult>;
     selectRepositoryListFile(mode: "open" | "save", fileName?: string, currentPath?: string): Promise<string | undefined>;
@@ -59,13 +59,13 @@ export interface GuiRpcClient {
     repositoryGet(repositoryId: string): Promise<RepositoryResult>;
     repositoryPackages(repositoryId: string, cursor?: PackageCursor): Promise<RepositoryPackagesResult>;
     openPackageLink(url: string): Promise<void>;
-    repositoryRegister(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryWriteResult>;
-    repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: RepositoryCredentials | null): Promise<RepositoryWriteResult>;
-    repositoryMove(repositoryId: string, beforeRepositoryId: string | null, expectedOrderFingerprint: string): Promise<RepositoryMoveResult>;
-    repositorySetDisplayName(repositoryId: string, expectedRevision: number, displayName: string | null): Promise<RepositoryWriteResult>;
-    repositoryRefresh(repositoryId: string, expectedRevision: number): Promise<RepositoryWriteResult>;
-    repositoriesRefreshAll(): Promise<RepositoryRefreshAllResult>;
-    repositoryUnregister(repositoryId: string, expectedRevision: number): Promise<RepositoryUnregisterResult>;
+    repositoryRegister(source: RepositorySource, credentials: RepositoryCredentials | undefined, idempotencyKey: string): Promise<RepositoryWriteResult>;
+    repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: RepositoryCredentials | null, idempotencyKey: string): Promise<RepositoryWriteResult>;
+    repositoryMove(repositoryId: string, beforeRepositoryId: string | null, expectedOrderFingerprint: string, idempotencyKey: string): Promise<RepositoryMoveResult>;
+    repositorySetDisplayName(repositoryId: string, expectedRevision: number, displayName: string | null, idempotencyKey: string): Promise<RepositoryWriteResult>;
+    repositoryRefresh(repositoryId: string, expectedRevision: number, idempotencyKey: string): Promise<RepositoryWriteResult>;
+    repositoriesRefreshAll(idempotencyKey: string): Promise<RepositoryRefreshAllResult>;
+    repositoryUnregister(repositoryId: string, expectedRevision: number, idempotencyKey: string): Promise<RepositoryUnregisterResult>;
     packagePlanInstall(params: PackagePlanInstallParams): Promise<PackagePlan>;
     packagePlanRemove(params: PackagePlanRemoveParams): Promise<PackagePlan>;
     packagePlanUpgrade(params: PackagePlanInstallParams): Promise<PackagePlan>;
@@ -73,25 +73,25 @@ export interface GuiRpcClient {
     packagePlanResolve(params: PackagePlanResolveParams): Promise<PackagePlan>;
     packagePlanReinstall(params: PackagePlanReinstallParams): Promise<PackagePlan>;
     packagePlanBulk(params: PackagePlanBulkParams): Promise<PackagePlan>;
-    packageApplyPlan(params: Omit<PackageApplyPlanParams, "idempotencyKey">): Promise<{ operationId: string; replayed: boolean }>;
+    packageApplyPlan(params: PackageApplyPlanParams): Promise<{ operationId: string; replayed: boolean }>;
     userPackagesList(cursor?: UserPackageCursor): Promise<UserPackagesListResult>;
     userPackageGet(userPackageId: string): Promise<UserPackageResult>;
-    userPackageEnroll(sourcePath: string): Promise<UserPackageWriteResult>;
-    userPackageRefresh(userPackageId: string, expectedRevision: number): Promise<UserPackageWriteResult>;
-    userPackageRemove(userPackageId: string, expectedRevision: number): Promise<UserPackageRemoveResult>;
+    userPackageEnroll(sourcePath: string, idempotencyKey: string): Promise<UserPackageWriteResult>;
+    userPackageRefresh(userPackageId: string, expectedRevision: number, idempotencyKey: string): Promise<UserPackageWriteResult>;
+    userPackageRemove(userPackageId: string, expectedRevision: number, idempotencyKey: string): Promise<UserPackageRemoveResult>;
     unityInstallationsList(cursor?: string, includeVersionOptions?: boolean): Promise<UnityInstallationsListResult>;
     unityInstallationGet(installationId: string): Promise<UnityInstallationResult>;
-    unityInstallationRegister(executablePath: string): Promise<UnityInstallationResult>;
-    unityInstallationRemove(installationId: string, expectedRevision: number): Promise<UnityInstallationRemoveResult>;
-    unityInstallationsRefresh(): Promise<UnityInstallationsListResult>;
+    unityInstallationRegister(executablePath: string, idempotencyKey: string): Promise<UnityInstallationResult>;
+    unityInstallationRemove(installationId: string, expectedRevision: number, idempotencyKey: string): Promise<UnityInstallationRemoveResult>;
+    unityInstallationsRefresh(idempotencyKey: string): Promise<UnityInstallationsListResult>;
     unityProjectLaunchConfigGet(projectId: string): Promise<ProjectUnityLaunchConfigResult>;
-    unityProjectLaunchConfigSet(projectId: string, arguments_: string[], expectedRevision: number): Promise<ProjectUnityLaunchConfigMutationResult>;
-    unityProjectLaunchConfigClear(projectId: string, expectedRevision: number): Promise<ProjectUnityLaunchConfigMutationResult>;
+    unityProjectLaunchConfigSet(projectId: string, arguments_: string[], expectedRevision: number, idempotencyKey: string): Promise<ProjectUnityLaunchConfigMutationResult>;
+    unityProjectLaunchConfigClear(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectUnityLaunchConfigMutationResult>;
     unityWriterState(projectId: string): Promise<UnityWriterState>;
     unityLaunchOptions(projectId: string, expectedProjectRevision: number, includeMigrationVersionOptions?: boolean): Promise<UnityLaunchOptionsResult>;
-    unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): Promise<UnityLaunchResult>;
-    projectPlanUnityMigration(projectId: string, targetInstallationId: string, expectedProjectRevision: number): Promise<ProjectsPlanUnityMigrationResult>;
-    projectApplyUnityMigration(planId: string): Promise<ProjectsApplyUnityMigrationResult>;
+    unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number, idempotencyKey: string): Promise<UnityLaunchResult>;
+    projectPlanUnityMigration(projectId: string, targetInstallationId: string, expectedProjectRevision: number, idempotencyKey: string): Promise<ProjectsPlanUnityMigrationResult>;
+    projectApplyUnityMigration(planId: string, idempotencyKey: string): Promise<ProjectsApplyUnityMigrationResult>;
     projectsCreate(params: ProjectsCreateParams): Promise<ProjectsCreateResult>;
     projectTemplatesList(cursor?: string): Promise<ProjectTemplatesListResult>;
     projectTemplateGet(params: ProjectTemplateGetParams): Promise<ProjectTemplateGetResult>;
@@ -107,13 +107,13 @@ export interface GuiRpcClient {
     extensionInspectSource(url: string): Promise<import("@alcomd/sdk").ExtensionSourcePreview>;
     extensionPlanInstallFromSource(url: string, version: string, expectedSourceFingerprint: string): Promise<ExtensionPlanResult>;
     extensionPlanInstall(packagePath: string, expectedRevision: number): Promise<ExtensionPlanResult>;
-    extensionApplyInstall(planId: string, consent: import("@alcomd/sdk").ExtensionInstallConsent): Promise<ExtensionOperationResult>;
-    extensionEnable(extensionId: string, expectedRevision: number, activationPackageDigest?: string): Promise<ExtensionResult>;
-    extensionDisable(extensionId: string, expectedRevision: number): Promise<ExtensionResult>;
+    extensionApplyInstall(planId: string, consent: import("@alcomd/sdk").ExtensionInstallConsent, idempotencyKey: string): Promise<ExtensionOperationResult>;
+    extensionEnable(extensionId: string, expectedRevision: number, activationPackageDigest: string | undefined, idempotencyKey: string): Promise<ExtensionResult>;
+    extensionDisable(extensionId: string, expectedRevision: number, idempotencyKey: string): Promise<ExtensionResult>;
     extensionPlanUninstall(extensionId: string, expectedRevision: number, dataDisposition: "retain_data" | "delete_data"): Promise<ExtensionPlanResult>;
-    extensionApplyUninstall(planId: string): Promise<ExtensionOperationResult>;
-    extensionSetGrant(extensionId: string, permission: string, resourceKind: string, resourceId: string, expectedGrantRevision: number): Promise<ExtensionGrantResult>;
-    extensionRevokeGrant(extensionId: string, permission: string, resourceKind: string, resourceId: string, expectedGrantRevision: number): Promise<ExtensionGrantResult>;
+    extensionApplyUninstall(planId: string, idempotencyKey: string): Promise<ExtensionOperationResult>;
+    extensionSetGrant(extensionId: string, permission: string, resourceKind: string, resourceId: string, expectedGrantRevision: number, idempotencyKey: string): Promise<ExtensionGrantResult>;
+    extensionRevokeGrant(extensionId: string, permission: string, resourceKind: string, resourceId: string, expectedGrantRevision: number, idempotencyKey: string): Promise<ExtensionGrantResult>;
     extensionUiOpen(params: ExtensionUiOpenParams): Promise<ExtensionUiOpenResult>;
     extensionUiRefresh(params: ExtensionUiRefreshParams): Promise<ExtensionUiSnapshotResult>;
     extensionUiDispatch(params: ExtensionUiDispatchParams): Promise<ExtensionUiDispatchResult>;
@@ -172,10 +172,10 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_repository_list_cancel_registration", { params });
     }
     repositoryListPreviewExport(format?: import("@alcomd/sdk").RepositoryListFormat): Promise<RepositoryListPreview> {
-        return invokeTyped("gui_repository_list_preview_export", { format: format ?? "native" });
+        return invokeTyped("gui_repository_list_preview_export", { format });
     }
     repositoryListExportFile(targetPath: string, expectedFingerprint: string, format?: import("@alcomd/sdk").RepositoryListFormat): Promise<RepositoryListExportResult> {
-        return invokeTyped("gui_repository_list_export_file", { targetPath, expectedFingerprint, format: format ?? "native" });
+        return invokeTyped("gui_repository_list_export_file", { targetPath, expectedFingerprint, format });
     }
     packageQueryProjectCandidates(params: ProjectCandidateRequest): Promise<ProjectCandidatePage> {
         return invokeTyped("gui_package_query_project_candidates", { params });
@@ -184,8 +184,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_system_status", {});
     }
 
-    stateCheck(): Promise<OperationAccepted> {
-        return invokeTyped("gui_state_check", { idempotencyKey: crypto.randomUUID() });
+    stateCheck(idempotencyKey: string = crypto.randomUUID()): Promise<OperationAccepted> {
+        return invokeTyped("gui_state_check", { idempotencyKey });
     }
 
     logsRead(params: LogsReadParams): Promise<LogsReadResult> {
@@ -200,8 +200,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_operation_get", { operationId });
     }
 
-    operationCancel(operationId: string, expectedRevision: number): Promise<OperationWriteResult> {
-        return invokeTyped("gui_operation_cancel", { operationId, expectedRevision, idempotencyKey: crypto.randomUUID() });
+    operationCancel(operationId: string, expectedRevision: number, idempotencyKey: string): Promise<OperationWriteResult> {
+        return invokeTyped("gui_operation_cancel", { operationId, expectedRevision, idempotencyKey });
     }
 
     settingsGet(): Promise<SettingsGetResult> {
@@ -244,36 +244,36 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_open_unity_hub_download", {});
     }
 
-    projectRegister(path: string): Promise<ProjectWriteResult> {
-        return invokeTyped("gui_project_register", { path, idempotencyKey: crypto.randomUUID() });
+    projectRegister(path: string, idempotencyKey: string): Promise<ProjectWriteResult> {
+        return invokeTyped("gui_project_register", { path, idempotencyKey });
     }
 
-    projectRefresh(projectId: string, expectedRevision: number): Promise<ProjectWriteResult> {
-        return invokeTyped("gui_project_refresh", { projectId, expectedRevision, idempotencyKey: crypto.randomUUID() });
+    projectRefresh(projectId: string, expectedRevision: number, idempotencyKey: string = crypto.randomUUID()): Promise<ProjectWriteResult> {
+        return invokeTyped("gui_project_refresh", { projectId, expectedRevision, idempotencyKey });
     }
 
-    projectSetFavorite(projectId: string, favorite: boolean, expectedRevision: number): Promise<ProjectWriteResult> {
-        return invokeTyped("gui_project_set_favorite", { params: { projectId, favorite, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+    projectSetFavorite(projectId: string, favorite: boolean, expectedRevision: number, idempotencyKey: string): Promise<ProjectWriteResult> {
+        return invokeTyped("gui_project_set_favorite", { params: { projectId, favorite, expectedRevision, idempotencyKey } });
     }
 
-    projectUnregister(projectId: string, expectedRevision: number): Promise<ProjectUnregisterResult> {
-        return invokeTyped("gui_project_unregister", { projectId, expectedRevision, idempotencyKey: crypto.randomUUID() });
+    projectUnregister(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectUnregisterResult> {
+        return invokeTyped("gui_project_unregister", { projectId, expectedRevision, idempotencyKey });
     }
 
-    projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string): Promise<ProjectsPlanCopyResult> {
-        return invokeTyped("gui_project_plan_copy", { params: { sourceProjectId, expectedRevision, targetParentPath, targetLeaf, idempotencyKey: crypto.randomUUID() } });
+    projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string, idempotencyKey: string): Promise<ProjectsPlanCopyResult> {
+        return invokeTyped("gui_project_plan_copy", { params: { sourceProjectId, expectedRevision, targetParentPath, targetLeaf, idempotencyKey } });
     }
 
     projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult> {
-        return invokeTyped("gui_project_apply_copy", { params: { planId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+        return invokeTyped("gui_project_apply_copy", { params: { planId, expectedRevision, idempotencyKey: planId } });
     }
 
-    projectPlanDeleteDirectory(projectId: string, expectedRevision: number): Promise<ProjectsPlanDeleteDirectoryResult> {
-        return invokeTyped("gui_project_plan_delete_directory", { params: { projectId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+    projectPlanDeleteDirectory(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectsPlanDeleteDirectoryResult> {
+        return invokeTyped("gui_project_plan_delete_directory", { params: { projectId, expectedRevision, idempotencyKey } });
     }
 
     projectApplyDeleteDirectory(planId: string, expectedRevision: number): Promise<ProjectsApplyDeleteDirectoryResult> {
-        return invokeTyped("gui_project_apply_delete_directory", { params: { planId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+        return invokeTyped("gui_project_apply_delete_directory", { params: { planId, expectedRevision, idempotencyKey: planId } });
     }
 
     repositoriesInspect(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryResult> {
@@ -296,35 +296,35 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_open_package_link", { url });
     }
 
-    repositoryRegister(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryWriteResult> {
-        return invokeTyped("gui_repository_register", { source, credentials, idempotencyKey: crypto.randomUUID() });
+    repositoryRegister(source: RepositorySource, credentials: RepositoryCredentials | undefined, idempotencyKey: string): Promise<RepositoryWriteResult> {
+        return invokeTyped("gui_repository_register", { source, credentials, idempotencyKey });
     }
 
-    repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: RepositoryCredentials | null): Promise<RepositoryWriteResult> {
-        return invokeTyped("gui_repository_set_credentials", { params: { repositoryId, expectedRevision, credentials, idempotencyKey: crypto.randomUUID() } });
+    repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: RepositoryCredentials | null, idempotencyKey: string): Promise<RepositoryWriteResult> {
+        return invokeTyped("gui_repository_set_credentials", { params: { repositoryId, expectedRevision, credentials, idempotencyKey } });
     }
 
-    repositoryMove(repositoryId: string, beforeRepositoryId: string | null, expectedOrderFingerprint: string): Promise<RepositoryMoveResult> {
-        const params: RepositoryMoveParams = { repositoryId, beforeRepositoryId, expectedOrderFingerprint, idempotencyKey: crypto.randomUUID() };
+    repositoryMove(repositoryId: string, beforeRepositoryId: string | null, expectedOrderFingerprint: string, idempotencyKey: string): Promise<RepositoryMoveResult> {
+        const params: RepositoryMoveParams = { repositoryId, beforeRepositoryId, expectedOrderFingerprint, idempotencyKey };
         return invokeTyped("gui_repository_move", { params });
     }
 
-    repositorySetDisplayName(repositoryId: string, expectedRevision: number, displayName: string | null): Promise<RepositoryWriteResult> {
-        const params: RepositorySetDisplayNameParams = { repositoryId, expectedRevision, displayName, idempotencyKey: crypto.randomUUID() };
+    repositorySetDisplayName(repositoryId: string, expectedRevision: number, displayName: string | null, idempotencyKey: string): Promise<RepositoryWriteResult> {
+        const params: RepositorySetDisplayNameParams = { repositoryId, expectedRevision, displayName, idempotencyKey };
         return invokeTyped("gui_repository_set_display_name", { params });
     }
 
-    repositoryRefresh(repositoryId: string, expectedRevision: number): Promise<RepositoryWriteResult> {
-        return invokeTyped("gui_repository_refresh", { repositoryId, expectedRevision, idempotencyKey: crypto.randomUUID() });
+    repositoryRefresh(repositoryId: string, expectedRevision: number, idempotencyKey: string): Promise<RepositoryWriteResult> {
+        return invokeTyped("gui_repository_refresh", { repositoryId, expectedRevision, idempotencyKey });
     }
 
-    repositoriesRefreshAll(): Promise<RepositoryRefreshAllResult> {
-        const params: RepositoryRefreshAllParams = { idempotencyKey: crypto.randomUUID() };
+    repositoriesRefreshAll(idempotencyKey: string): Promise<RepositoryRefreshAllResult> {
+        const params: RepositoryRefreshAllParams = { idempotencyKey };
         return invokeTyped("gui_repositories_refresh_all", { params });
     }
 
-    repositoryUnregister(repositoryId: string, expectedRevision: number): Promise<RepositoryUnregisterResult> {
-        return invokeTyped("gui_repository_unregister", { repositoryId, expectedRevision, idempotencyKey: crypto.randomUUID() });
+    repositoryUnregister(repositoryId: string, expectedRevision: number, idempotencyKey: string): Promise<RepositoryUnregisterResult> {
+        return invokeTyped("gui_repository_unregister", { repositoryId, expectedRevision, idempotencyKey });
     }
 
     packagePlanInstall(params: PackagePlanInstallParams): Promise<PackagePlan> {
@@ -355,8 +355,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_package_plan_bulk", { params });
     }
 
-    packageApplyPlan(params: Omit<PackageApplyPlanParams, "idempotencyKey">): Promise<{ operationId: string; replayed: boolean }> {
-        return invokeTyped("gui_package_apply_plan", { params: { ...params, idempotencyKey: crypto.randomUUID() } });
+    packageApplyPlan(params: PackageApplyPlanParams): Promise<{ operationId: string; replayed: boolean }> {
+        return invokeTyped("gui_package_apply_plan", { params });
     }
 
     userPackagesList(cursor?: UserPackageCursor): Promise<UserPackagesListResult> {
@@ -367,16 +367,16 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_user_package_get", { userPackageId });
     }
 
-    userPackageEnroll(sourcePath: string): Promise<UserPackageWriteResult> {
-        return invokeTyped("gui_user_package_enroll", { sourcePath, idempotencyKey: crypto.randomUUID() });
+    userPackageEnroll(sourcePath: string, idempotencyKey: string): Promise<UserPackageWriteResult> {
+        return invokeTyped("gui_user_package_enroll", { sourcePath, idempotencyKey });
     }
 
-    userPackageRefresh(userPackageId: string, expectedRevision: number): Promise<UserPackageWriteResult> {
-        return invokeTyped("gui_user_package_refresh", { userPackageId, expectedRevision, idempotencyKey: crypto.randomUUID() });
+    userPackageRefresh(userPackageId: string, expectedRevision: number, idempotencyKey: string): Promise<UserPackageWriteResult> {
+        return invokeTyped("gui_user_package_refresh", { userPackageId, expectedRevision, idempotencyKey });
     }
 
-    userPackageRemove(userPackageId: string, expectedRevision: number): Promise<UserPackageRemoveResult> {
-        return invokeTyped("gui_user_package_remove", { userPackageId, expectedRevision, idempotencyKey: crypto.randomUUID() });
+    userPackageRemove(userPackageId: string, expectedRevision: number, idempotencyKey: string): Promise<UserPackageRemoveResult> {
+        return invokeTyped("gui_user_package_remove", { userPackageId, expectedRevision, idempotencyKey });
     }
 
     unityInstallationsList(cursor?: string, includeVersionOptions?: boolean): Promise<UnityInstallationsListResult> {
@@ -387,28 +387,28 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_unity_installation_get", { installationId });
     }
 
-    unityInstallationRegister(executablePath: string): Promise<UnityInstallationResult> {
-        return invokeTyped("gui_unity_installation_register", { executablePath, idempotencyKey: crypto.randomUUID() });
+    unityInstallationRegister(executablePath: string, idempotencyKey: string): Promise<UnityInstallationResult> {
+        return invokeTyped("gui_unity_installation_register", { executablePath, idempotencyKey });
     }
 
-    unityInstallationRemove(installationId: string, expectedRevision: number): Promise<UnityInstallationRemoveResult> {
-        return invokeTyped("gui_unity_installation_remove", { installationId, expectedRevision, idempotencyKey: crypto.randomUUID() });
+    unityInstallationRemove(installationId: string, expectedRevision: number, idempotencyKey: string): Promise<UnityInstallationRemoveResult> {
+        return invokeTyped("gui_unity_installation_remove", { installationId, expectedRevision, idempotencyKey });
     }
 
-    unityInstallationsRefresh(): Promise<UnityInstallationsListResult> {
-        return invokeTyped("gui_unity_installations_refresh", { idempotencyKey: crypto.randomUUID() });
+    unityInstallationsRefresh(idempotencyKey: string): Promise<UnityInstallationsListResult> {
+        return invokeTyped("gui_unity_installations_refresh", { idempotencyKey });
     }
 
     unityProjectLaunchConfigGet(projectId: string): Promise<ProjectUnityLaunchConfigResult> {
         return invokeTyped("gui_unity_project_launch_config_get", { projectId });
     }
 
-    unityProjectLaunchConfigSet(projectId: string, arguments_: string[], expectedRevision: number): Promise<ProjectUnityLaunchConfigMutationResult> {
-        return invokeTyped("gui_unity_project_launch_config_set", { params: { projectId, arguments: arguments_, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+    unityProjectLaunchConfigSet(projectId: string, arguments_: string[], expectedRevision: number, idempotencyKey: string): Promise<ProjectUnityLaunchConfigMutationResult> {
+        return invokeTyped("gui_unity_project_launch_config_set", { params: { projectId, arguments: arguments_, expectedRevision, idempotencyKey } });
     }
 
-    unityProjectLaunchConfigClear(projectId: string, expectedRevision: number): Promise<ProjectUnityLaunchConfigMutationResult> {
-        return invokeTyped("gui_unity_project_launch_config_clear", { params: { projectId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+    unityProjectLaunchConfigClear(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectUnityLaunchConfigMutationResult> {
+        return invokeTyped("gui_unity_project_launch_config_clear", { params: { projectId, expectedRevision, idempotencyKey } });
     }
 
     unityWriterState(projectId: string): Promise<UnityWriterState> {
@@ -421,16 +421,16 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return result;
     }
 
-    unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): Promise<UnityLaunchResult> {
-        return invokeTyped("gui_unity_launch", { params: { projectId, installationId, expectedProjectRevision, idempotencyKey: crypto.randomUUID() } });
+    unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number, idempotencyKey: string): Promise<UnityLaunchResult> {
+        return invokeTyped("gui_unity_launch", { params: { projectId, installationId, expectedProjectRevision, idempotencyKey } });
     }
 
-    projectPlanUnityMigration(projectId: string, targetInstallationId: string, expectedProjectRevision: number): Promise<ProjectsPlanUnityMigrationResult> {
-        return invokeTyped("gui_project_plan_unity_migration", { params: { projectId, targetInstallationId, expectedProjectRevision, idempotencyKey: crypto.randomUUID() } });
+    projectPlanUnityMigration(projectId: string, targetInstallationId: string, expectedProjectRevision: number, idempotencyKey: string): Promise<ProjectsPlanUnityMigrationResult> {
+        return invokeTyped("gui_project_plan_unity_migration", { params: { projectId, targetInstallationId, expectedProjectRevision, idempotencyKey } });
     }
 
-    projectApplyUnityMigration(planId: string): Promise<ProjectsApplyUnityMigrationResult> {
-        return invokeTyped("gui_project_apply_unity_migration", { params: { planId, idempotencyKey: crypto.randomUUID() } });
+    projectApplyUnityMigration(planId: string, idempotencyKey: string): Promise<ProjectsApplyUnityMigrationResult> {
+        return invokeTyped("gui_project_apply_unity_migration", { params: { planId, idempotencyKey } });
     }
 
     projectsCreate(params: ProjectsCreateParams): Promise<ProjectsCreateResult> {
@@ -497,32 +497,32 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_extension_plan_install", { params: { sourceKind: "local_owner_selected", packagePath, expectedRevision } });
     }
 
-    extensionApplyInstall(planId: string, consent: import("@alcomd/sdk").ExtensionInstallConsent): Promise<ExtensionOperationResult> {
-        return invokeTyped("gui_extension_apply_install", { params: { planId, consent, idempotencyKey: crypto.randomUUID() } });
+    extensionApplyInstall(planId: string, consent: import("@alcomd/sdk").ExtensionInstallConsent, idempotencyKey: string): Promise<ExtensionOperationResult> {
+        return invokeTyped("gui_extension_apply_install", { params: { planId, consent, idempotencyKey } });
     }
 
-    extensionEnable(extensionId: string, expectedRevision: number, activationPackageDigest?: string): Promise<ExtensionResult> {
-        return invokeTyped("gui_extension_enable", { params: { extensionId, expectedRevision, activationPackageDigest, idempotencyKey: crypto.randomUUID() } });
+    extensionEnable(extensionId: string, expectedRevision: number, activationPackageDigest: string | undefined, idempotencyKey: string): Promise<ExtensionResult> {
+        return invokeTyped("gui_extension_enable", { params: { extensionId, expectedRevision, activationPackageDigest, idempotencyKey } });
     }
 
-    extensionDisable(extensionId: string, expectedRevision: number): Promise<ExtensionResult> {
-        return invokeTyped("gui_extension_disable", { params: { extensionId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+    extensionDisable(extensionId: string, expectedRevision: number, idempotencyKey: string): Promise<ExtensionResult> {
+        return invokeTyped("gui_extension_disable", { params: { extensionId, expectedRevision, idempotencyKey } });
     }
 
     extensionPlanUninstall(extensionId: string, expectedRevision: number, dataDisposition: "retain_data" | "delete_data"): Promise<ExtensionPlanResult> {
         return invokeTyped("gui_extension_plan_uninstall", { params: { extensionId, expectedRevision, dataDisposition } });
     }
 
-    extensionApplyUninstall(planId: string): Promise<ExtensionOperationResult> {
-        return invokeTyped("gui_extension_apply_uninstall", { params: { planId, idempotencyKey: crypto.randomUUID() } });
+    extensionApplyUninstall(planId: string, idempotencyKey: string): Promise<ExtensionOperationResult> {
+        return invokeTyped("gui_extension_apply_uninstall", { params: { planId, idempotencyKey } });
     }
 
-    extensionSetGrant(extensionId: string, permission: string, resourceKind: string, resourceId: string, expectedGrantRevision: number): Promise<ExtensionGrantResult> {
-        return invokeTyped("gui_extension_set_grant", { params: { extensionId, permission, resourceKind, resourceId, expectedGrantRevision, idempotencyKey: crypto.randomUUID() } });
+    extensionSetGrant(extensionId: string, permission: string, resourceKind: string, resourceId: string, expectedGrantRevision: number, idempotencyKey: string): Promise<ExtensionGrantResult> {
+        return invokeTyped("gui_extension_set_grant", { params: { extensionId, permission, resourceKind, resourceId, expectedGrantRevision, idempotencyKey } });
     }
 
-    extensionRevokeGrant(extensionId: string, permission: string, resourceKind: string, resourceId: string, expectedGrantRevision: number): Promise<ExtensionGrantResult> {
-        return invokeTyped("gui_extension_revoke_grant", { params: { extensionId, permission, resourceKind, resourceId, expectedGrantRevision, idempotencyKey: crypto.randomUUID() } });
+    extensionRevokeGrant(extensionId: string, permission: string, resourceKind: string, resourceId: string, expectedGrantRevision: number, idempotencyKey: string): Promise<ExtensionGrantResult> {
+        return invokeTyped("gui_extension_revoke_grant", { params: { extensionId, permission, resourceKind, resourceId, expectedGrantRevision, idempotencyKey } });
     }
 
     extensionUiOpen(params: ExtensionUiOpenParams): Promise<ExtensionUiOpenResult> {
@@ -543,10 +543,21 @@ class TauriGuiRpcClient implements GuiRpcClient {
 }
 
 async function invokeTyped<Result>(command: string, args: Record<string, unknown>): Promise<Result> {
+    const request = isRecord(args.params) ? args.params : args;
     try {
         return await invoke<Result>(command, args);
     } catch (error: unknown) {
-        throw normalizeRpcError(error);
+        const failure = normalizeRpcError(error);
+        const replayable = typeof request.idempotencyKey === "string"
+            || (command === "gui_extension_ui_dispatch" && typeof request.requestId === "string");
+        if (failure.code !== "daemon_unavailable" || !replayable) {
+            throw failure;
+        }
+        try {
+            return await invoke<Result>(command, args);
+        } catch (retryError: unknown) {
+            throw normalizeRpcError(retryError);
+        }
     }
 }
 

@@ -684,7 +684,6 @@
         "packages.planDowngrade": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v1",
                 "packages.plan.v1"
             ],
             "rustMethod": "package_plan_downgrade",
@@ -699,7 +698,6 @@
         "packages.planInstall": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v1",
                 "packages.plan.v1"
             ],
             "rustMethod": "package_plan_install",
@@ -728,7 +726,6 @@
         "packages.planRemove": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v1",
                 "packages.plan.v1"
             ],
             "rustMethod": "package_plan_remove",
@@ -743,7 +740,6 @@
         "packages.planResolve": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v1",
                 "packages.plan.v1"
             ],
             "rustMethod": "package_plan_resolve",
@@ -758,7 +754,6 @@
         "packages.planUpgrade": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v1",
                 "packages.plan.v1"
             ],
             "rustMethod": "package_plan_upgrade",
@@ -866,6 +861,27 @@
             "resultSchema": "native-sdk-v1.schema.json#/$defs/UserPackageRemoveResult",
             "errorProfiles": [
                 "userPackage"
+            ]
+        },
+        "plans.get": {
+            "kind": "read",
+            "capabilities": [],
+            "capabilityByKind": {
+                "package": "packages.plan.v1",
+                "project_copy": "projects.copy.v1",
+                "project_delete_directory": "projects.delete.v1",
+                "project_unity_migration": "projects.unity-migration.v1"
+            },
+            "rustMethod": "get_plan",
+            "requestType": "PlansGetParams",
+            "resultType": "PlansGetResult",
+            "requestSchema": "plans-get.schema.json#/$defs/params",
+            "resultSchema": "plans-get.schema.json#/$defs/result",
+            "errorProfiles": [
+                "packageTransaction",
+                "projectCopy",
+                "projectDelete",
+                "unityMigration"
             ]
         },
         "projectTemplates.edit": {
@@ -1247,6 +1263,20 @@
                 "repositoryRegistry"
             ]
         },
+        "repositories.move": {
+            "kind": "write",
+            "capabilities": [
+                "repositories.registry.v1"
+            ],
+            "rustMethod": "repository_move",
+            "requestType": "RepositoryMoveParams",
+            "resultType": "RepositoryMoveResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryMoveParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryMoveResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
         "repositories.packages": {
             "kind": "read",
             "capabilities": [
@@ -1327,20 +1357,6 @@
             "resultType": "RepositoryWriteResult",
             "requestSchema": "m3-project-repository.schema.json#/$defs/repositorySetCredentialsParams",
             "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryWriteResult",
-            "errorProfiles": [
-                "repositoryRegistry"
-            ]
-        },
-        "repositories.move": {
-            "kind": "write",
-            "capabilities": [
-                "repositories.registry.v1"
-            ],
-            "rustMethod": "repository_move",
-            "requestType": "RepositoryMoveParams",
-            "resultType": "RepositoryMoveResult",
-            "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryMoveParams",
-            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryMoveResult",
             "errorProfiles": [
                 "repositoryRegistry"
             ]

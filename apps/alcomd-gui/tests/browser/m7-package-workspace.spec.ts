@@ -558,7 +558,7 @@ test("Inline prerelease selection uses daemon classification and shows planning 
     await expect(page.getByRole("dialog", { name: "Package filters", exact: true })).toBeHidden();
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
     await page.getByRole("option", { name: "2.0.0-beta.1", exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { versionRange: "=2.0.0-beta.1", includePrerelease: true } }]);
+    await expect.poll(() => page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { versionRange: "=2.0.0-beta.1" } }]);
     const failure = page.locator("md-dialog[open]").filter({ hasText: "Could not prepare package changes" });
     await expect(failure.getByRole("alert")).toContainText("package_source_ambiguous");
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);

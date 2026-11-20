@@ -938,7 +938,10 @@
             },
             "required": [
                 "kind",
-                "package_id"
+                "package_id",
+                "from_version",
+                "to_version",
+                "source"
             ]
         },
         "planChanges": {
@@ -946,8 +949,7 @@
             "additionalProperties": false,
             "properties": {
                 "format_version": {
-                    "type": "integer",
-                    "minimum": 1
+                    "const": 1
                 },
                 "mutations": {
                     "type": "array",
@@ -1236,8 +1238,7 @@
                     },
                     "required": [
                         "kind",
-                        "package_id",
-                        "include_prerelease"
+                        "package_id"
                     ]
                 },
                 {
@@ -1262,8 +1263,7 @@
                     },
                     "required": [
                         "kind",
-                        "package_id",
-                        "include_prerelease"
+                        "package_id"
                     ]
                 },
                 {

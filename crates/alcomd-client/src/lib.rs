@@ -942,6 +942,13 @@ impl AlcomdClient {
         .await
     }
 
+    pub async fn get_plan(
+        &mut self,
+        params: alcomd_protocol::PlansGetParams,
+    ) -> Result<alcomd_protocol::PlansGetResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PLANS_GET, params).await
+    }
+
     pub async fn project_plan_copy(
         &mut self,
         params: alcomd_protocol::ProjectsPlanCopyParams,

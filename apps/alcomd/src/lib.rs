@@ -109,6 +109,7 @@ mod m8_tools_rpc;
 mod m8_transport_rpc;
 mod m8_workflows_rpc;
 mod m9_runtime;
+mod plans_rpc;
 mod project_create_rpc;
 mod project_discovery_platform;
 mod repository_list_rpc;
@@ -1396,6 +1397,9 @@ async fn dispatch_m2(
         ) =>
         {
             m7_official_rpc::dispatch(request, state, &applications.official_gui, access).await
+        }
+        alcomd_protocol::METHOD_PLANS_GET => {
+            plans_rpc::get(request, state, applications, access).await
         }
         alcomd_protocol::METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES => {
             m7_candidates_rpc::dispatch(request, state, &applications.candidates, access).await

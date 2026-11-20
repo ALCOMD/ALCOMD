@@ -104,6 +104,18 @@ async fn confirmed_manual_unity_override_round_trips_through_rpc_and_apply() {
         .await
         .expect("manual exact plan");
     assert_eq!(
+        client
+            .get_plan(alcomd_protocol::PlansGetParams {
+                kind: alcomd_protocol::PlanKind::Package,
+                plan_id: plan.plan_id.clone(),
+            })
+            .await
+            .expect("read the persisted plan"),
+        alcomd_protocol::PlansGetResult::Package {
+            plan: Box::new(plan.clone()),
+        }
+    );
+    assert_eq!(
         plan.change_set.unity_compatibility_overrides,
         vec![alcomd_protocol::PackageUnityCompatibilityOverride {
             package_id: "com.example.fixture".into(),

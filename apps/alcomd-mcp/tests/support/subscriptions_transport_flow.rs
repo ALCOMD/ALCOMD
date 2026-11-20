@@ -493,9 +493,7 @@ async fn flow(http: bool) {
     let mut cb = AlcomdClient::connect(config.clone().with_mcp_credential(tb.credential.clone()))
         .await
         .expect("actual B auth");
-    assert!(
-        matches!(ca.mcp_transport_snapshot(Default::default()).await,Err(alcomd_client::ClientError::Remote(e)) if e.code=="permission_denied")
-    );
+    assert!(ca.mcp_transport_snapshot(Default::default()).await.is_ok());
     let mut observer = AlcomdClient::connect(config.clone().with_transport_observer())
         .await
         .expect("restricted reporter hello");

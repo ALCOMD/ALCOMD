@@ -210,7 +210,7 @@ async fn actual_configured_directory_controls_new_zip_without_redirecting_accept
     settings
         .initialize_settings()
         .await
-        .expect("Config13 initialized");
+        .expect("Config1 initialized");
     let access = AccessContext::new(
         PrincipalId::local_owner(),
         [

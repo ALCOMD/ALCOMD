@@ -146,22 +146,19 @@ fn builtin_entries(capabilities: &HashSet<String>) -> Result<Vec<Entry>, E> {
         &mut entries,
         include_str!("../../../specs/mcp/project-workflows-v1.schema.json"),
     )?;
-    if capabilities.contains(rpc::CAPABILITY_PROJECT_INVENTORY_V1) {
-        append_builtin_tools(
-            &mut entries,
-            include_str!("../../../specs/mcp/project-inventory-v1.schema.json"),
-        )?;
-    }
-    if capabilities.contains(rpc::CAPABILITY_TEMPLATE_EDIT_V1) {
-        append_builtin_tools(
-            &mut entries,
-            include_str!("../../../specs/mcp/template-edit-v1.schema.json"),
-        )?;
-    }
+    append_builtin_tools(
+        &mut entries,
+        include_str!("../../../specs/mcp/project-inventory-v1.schema.json"),
+    )?;
+    append_builtin_tools(
+        &mut entries,
+        include_str!("../../../specs/mcp/template-edit-v1.schema.json"),
+    )?;
     entries.retain(|entry| {
         let name = &entry.descriptor.name;
         rpc::mcp_workflows_tool_capability(name)
             .or_else(|| rpc::mcp_repositories_tool_capability(name))
+            .or_else(|| rpc::mcp_environment_tool_capability(name))
             .is_none_or(|capability| capabilities.contains(capability))
     });
     Ok(entries)
@@ -657,6 +654,41 @@ mod connection_access_tests {
     use super::*;
 
     #[test]
+    fn catalog_uses_the_same_negotiated_capability_as_each_native_method() {
+        for (capability, published, absent) in [
+            (
+                rpc::CAPABILITY_PROJECT_TEMPLATES_V1,
+                "alcomd_create_project_template",
+                "alcomd_edit_project_template",
+            ),
+            (
+                rpc::CAPABILITY_TEMPLATE_EDIT_V1,
+                "alcomd_edit_project_template",
+                "alcomd_remove_project_template",
+            ),
+            (
+                rpc::CAPABILITY_PROJECTS_COPY_V1,
+                "alcomd_apply_project_copy",
+                "alcomd_plan_project_copy",
+            ),
+            (
+                rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1,
+                "alcomd_refresh_repository",
+                "alcomd_inspect_repository",
+            ),
+        ] {
+            let entries =
+                builtin_entries(&HashSet::from([capability.to_owned()])).expect("tool catalog");
+            assert!(
+                entries
+                    .iter()
+                    .any(|entry| entry.descriptor.name == published)
+            );
+            assert!(!entries.iter().any(|entry| entry.descriptor.name == absent));
+        }
+    }
+
+    #[test]
     fn connection_authorizes_every_published_builtin_tool() {
         let client_id = app::McpClientId::new();
         let client = app::McpClient {
@@ -680,6 +712,7 @@ mod connection_access_tests {
                 rpc::CAPABILITY_PROJECT_TEMPLATES_V1,
                 rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1,
                 rpc::CAPABILITY_TEMPLATE_EDIT_V1,
+                rpc::CAPABILITY_UNITY_READ_V1,
             ]
             .into_iter()
             .map(str::to_owned)

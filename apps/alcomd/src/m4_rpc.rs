@@ -30,7 +30,11 @@ pub(super) async fn dispatch(
         Ok(value) => value,
         Err(()) => return invalid(request.id),
     };
-    match application.plan(access, plan_request).await {
+    let authentication = super::m8_tools_rpc::auth(state, access).ok();
+    match application
+        .plan_authenticated(access, plan_request, authentication)
+        .await
+    {
         Ok(plan) => success_action(request.id, plan_to_rpc(plan), None),
         Err(error) => m4_error(request.id, error),
     }

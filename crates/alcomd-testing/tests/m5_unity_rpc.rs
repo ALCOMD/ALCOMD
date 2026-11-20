@@ -1,3 +1,6 @@
+#[path = "support/mcp_actor.rs"]
+mod mcp_actor;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -39,13 +42,10 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
     )
     .await
     .expect("start owned test daemon");
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        assert_removed_manual_query(&query_ipc),
-    )
-    .await
-    .expect("withdrawn method check must finish");
-    let mut client = connect_with_retry(config).await;
+    tokio::time::timeout(Duration::from_secs(5), assert_unknown_query(&query_ipc))
+        .await
+        .expect("unknown method check must finish");
+    let mut client = connect_with_retry(config.clone()).await;
     let capabilities = client
         .system_status()
         .await
@@ -208,6 +208,47 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         migration[0].default_installation_id.as_deref(),
         Some(alternate.installation_id.as_str())
     );
+    let issued = mcp_actor::issue_actor(&mut client, "migration-reader").await;
+    let mut actor = connect_with_retry(config.with_mcp_credential(issued.credential)).await;
+    let migration_request = alcomd_protocol::ProjectsPlanUnityMigrationParams {
+        project_id: project_id.clone(),
+        target_installation_id: alternate.installation_id.clone(),
+        expected_project_revision: project.project.revision.expect("project revision"),
+        idempotency_key: "read-original-unity-plan".to_owned(),
+    };
+    let migration = actor
+        .project_plan_unity_migration(migration_request.clone())
+        .await
+        .expect("plan for a different editor version");
+    let alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned { plan, .. } = migration else {
+        panic!("distinct editor versions must produce a plan");
+    };
+    assert_eq!(
+        actor.project_plan_unity_migration(migration_request).await.expect("replay original request"),
+        alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned { plan: plan.clone(), replayed: true },
+    );
+    assert_eq!(
+        actor
+            .get_plan(alcomd_protocol::PlansGetParams {
+                kind: alcomd_protocol::PlanKind::ProjectUnityMigration,
+                plan_id: plan.plan_id.clone(),
+            })
+            .await
+            .expect("read the persisted plan"),
+        alcomd_protocol::PlansGetResult::ProjectUnityMigration {
+            plan: Box::new(plan.clone()),
+        }
+    );
+    assert!(
+        client
+            .get_plan(alcomd_protocol::PlansGetParams {
+                kind: alcomd_protocol::PlanKind::ProjectUnityMigration,
+                plan_id: plan.plan_id,
+            })
+            .await
+            .is_err()
+    );
+    drop(actor);
     let config = client
         .unity_project_launch_config_set(ProjectUnityLaunchConfigSetParams {
             project_id: project_id.clone(),
@@ -375,7 +416,7 @@ fn create_project(root: &Path) {
     .expect("write vpm manifest");
 }
 
-async fn assert_removed_manual_query(ipc: &IpcConfig) {
+async fn assert_unknown_query(ipc: &IpcConfig) {
     let mut stream = alcomd_platform::connect(ipc)
         .await
         .expect("owned test connection");
@@ -390,17 +431,17 @@ async fn assert_removed_manual_query(ipc: &IpcConfig) {
     let removed = raw_request(
         &mut stream,
         serde_json::json!({
-            "id": "withdrawn-query", "method": "unity.launchStatus",
+            "id": "unknown-query", "method": "unity.unknownQuery",
             "params": { "launchId": uuid::Uuid::new_v4().to_string() }
         }),
     )
     .await;
-    assert_eq!(removed["id"], "withdrawn-query");
+    assert_eq!(removed["id"], "unknown-query");
     assert_eq!(removed["error"]["code"], "method_not_found");
     let next = raw_request(
         &mut stream,
         serde_json::json!({
-            "id": "after-withdrawn-query", "method": "system.status", "params": {}
+            "id": "after-unknown-query", "method": "system.status", "params": {}
         }),
     )
     .await;

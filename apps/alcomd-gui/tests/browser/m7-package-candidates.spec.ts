@@ -121,7 +121,7 @@ async function packageMenuLifecycle(row: Locator, selector: string) {
 
 for (const entry of ["primary Install", "primary Update", "version menu"]) {
     test(`Package review restores the ${entry} origin after asynchronous planning and Escape`, async ({ page }) => {
-        await open(page, "versions=1&delaySource=1&delayPackagePlan=1");
+        await open(page, "versions=1&delayPackagePlan=1");
         const method = entry === "primary Update" ? "upgrade" : "install";
         const packageName = entry === "primary Update" ? "Avatar tools" : "com.example.remote";
         const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: `Select ${packageName}`, exact: true }) });
@@ -141,12 +141,14 @@ for (const entry of ["primary Install", "primary Update", "version menu"]) {
             await page.keyboard.press("Enter");
         }
         await expect.poll(() => page.evaluate(() => typeof window.resumePackagePlan)).toBe("function");
-        await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateSource)).toBe("function");
-        if (entry === "primary Update") await expect(trigger).toHaveCount(0);
-        else if (entry === "version menu") await expect(menu).toHaveJSProperty("disabled", true);
+        if (entry === "version menu") await expect(menu).toHaveJSProperty("disabled", true);
         else await expect(trigger).toBeDisabled();
         expect(await page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual([method]);
-        await page.evaluate(() => window.resumeCandidateSource?.());
+        if (entry !== "version menu") {
+            expect(await page.evaluate(() => window.packageRequests[0]?.params)).not.toHaveProperty("source");
+            expect(await page.evaluate(() => window.candidateRequests.some((request) =>
+                request.view.kind === "summary" && Boolean(request.view.sources?.length)))).toBe(false);
+        }
         await expect(row).not.toContainText("Evidence unavailable");
         const opened = await page.locator("md-dialog").filter({ hasText: "Packages are up to date" }).evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
         await page.evaluate(() => window.resumePackagePlan?.());
@@ -241,7 +243,7 @@ test("Core candidate order and relation drive update; all locked IDs ignore sear
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).not.toContainText("Remote tools: installed newer");
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).not.toContainText("Not included in this update:");
-    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: { intents: [{ kind: "upgrade", packageId: "com.example.avatar", versionRange: "=1.10.0", source: { kind: "repository" } }] } }]);
+    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: expect.objectContaining({ intents: [{ kind: "upgrade", packageId: "com.example.avatar" }] }) }]);
     expect(await page.evaluate(() => window.candidateRequests.some((request) => request.view.kind === "summary" && request.view.packageIds?.join() === "com.example.avatar,com.example.remote"))).toBe(false);
 });
 
@@ -489,8 +491,8 @@ test("Closing a loading version selector stops paging and reopening resumes with
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
-test("Candidate source actions never drop the source when plan.v2 is missing", async ({ page }) => {
-    await open(page, "noPlanV2=1");
+test("Package mutations require the negotiated plan capability", async ({ page }) => {
+    await open(page, "noPackagePlan=1");
     await expect(page.getByRole("button", { name: "Update", exact: true })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Update All (1)", exact: true })).toBeDisabled();
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
@@ -642,7 +644,7 @@ test("Stable bulk actions use the distinct Core stable target and one explicit A
     await page.getByRole("button", { name: "Update All Stable (1)", exact: true }).click();
     const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
     await expect(review).toBeVisible();
-    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: { intents: [{ kind: "upgrade", packageId: "com.example.avatar", versionRange: "=1.10.0", includePrerelease: false }] } }]);
+    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: expect.objectContaining({ intents: [{ kind: "upgrade", packageId: "com.example.avatar", includePrerelease: false }] }) }]);
     await review.getByRole("button", { name: "Apply changes", exact: true }).click();
     await expect(review).toBeHidden();
     await expect(page.getByRole("main").locator(".operation-follow")).toHaveCount(0);

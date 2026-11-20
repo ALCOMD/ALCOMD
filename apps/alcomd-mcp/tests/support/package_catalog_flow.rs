@@ -139,6 +139,16 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
             && !public.contains("source_root_path")
     );
     assert_eq!(plan["plan"]["action"], "install");
+    let changes = &plan["plan"]["change_set"];
+    assert_eq!(changes["format_version"], 1);
+    for mutation in changes["mutations"]
+        .as_array()
+        .expect("reviewable mutations")
+    {
+        assert!(mutation.get("from_version").is_some());
+        assert!(mutation.get("to_version").is_some());
+        assert_eq!(mutation.get("source"), Some(&serde_json::Value::Null));
+    }
     assert_eq!(
         plan["sources"]
             .as_array()
@@ -273,7 +283,7 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
                     version_range: Some("^2.0.0".into()),
                     repository_id: None,
                     source,
-                    include_prerelease: false,
+                    include_prerelease: Some(false),
                     allow_unity_incompatible: false,
                 })
                 .await
@@ -364,7 +374,7 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
         .package_plan_resolve(alcomd_protocol::PackagePlanResolveParams {
             project_id: project_id.clone(),
             expected_revision: revision,
-            include_prerelease: false,
+            include_prerelease: Some(false),
         })
         .await
         .expect("native resolve");
@@ -406,6 +416,44 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
         )
         .get("operations"),
         Some(&json!([]))
+    );
+    let mut authenticated = AlcomdClient::connect(
+        core.client
+            .clone()
+            .with_mcp_credential(ca.credential.clone()),
+    )
+    .await
+    .expect("same MCP principal over native IPC");
+    let native_plan = authenticated
+        .package_plan_resolve(alcomd_protocol::PackagePlanResolveParams {
+            project_id: project_id.clone(),
+            expected_revision: revision,
+            include_prerelease: Some(false),
+        })
+        .await
+        .expect("native MCP principal plans against the same catalog");
+    assert_eq!(
+        native_plan.change_set_fingerprint,
+        native.change_set_fingerprint
+    );
+    let apply_native = alcomd_protocol::PackageApplyPlanParams {
+        plan_id: native_plan.plan_id,
+        expected_revision: revision,
+        idempotency_key: "catalog-native-apply".into(),
+    };
+    let receipt = authenticated
+        .package_apply_plan(apply_native.clone())
+        .await
+        .expect("native MCP principal applies its reviewed plan");
+    let replay = authenticated
+        .package_apply_plan(apply_native)
+        .await
+        .expect("same principal recovers its receipt");
+    assert!(replay.replayed);
+    assert_eq!(receipt.operation_id, replay.operation_id);
+    assert_eq!(
+        terminal(&sa, &mut trace, &receipt.operation_id).await["state"],
+        "succeeded"
     );
     owner
         .mcp_client_revoke(McpClientMutationParams {

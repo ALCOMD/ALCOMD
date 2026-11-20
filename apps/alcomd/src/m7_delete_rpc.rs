@@ -78,7 +78,7 @@ pub(super) async fn dispatch(
     }
 }
 
-fn plan(value: app::ProjectDeletePlanRecord) -> rpc::ProjectDeletePlan {
+pub(super) fn plan(value: app::ProjectDeletePlanRecord) -> rpc::ProjectDeletePlan {
     let project = &value.draft.project;
     rpc::ProjectDeletePlan {
         plan_id: value.draft.plan_id.to_string(),
@@ -137,7 +137,7 @@ fn writer_evidence(value: app::UnityWriterEvidenceKind) -> &'static str {
     }
 }
 
-fn delete_error(id: String, source: app::M7DeleteError) -> DispatchAction {
+pub(super) fn delete_error(id: String, source: app::M7DeleteError) -> DispatchAction {
     let diagnostic_id = source.diagnostic_id().map(str::to_owned);
     let mut error = match source.code() {
         app::M7DeleteErrorCode::InvalidInput => rpc::RpcError::invalid_request(),

@@ -1,3 +1,4 @@
+import { useGuiWrite } from "./gui-write-attempt";
 import { withActionNotification } from "./app-notifications";
 import { requestErrorMessage } from "./request-errors";
 import { useTranslation } from "./i18n";
@@ -86,6 +87,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
     project: ProjectSnapshot;
 }) {
     const { t } = useTranslation();
+    const writeRequest = useGuiWrite(client, project.projectId);
     const canLaunch = useCapability(capabilities.unityLaunch);
     const canMigrate = useCapability(capabilities.projectsUnityMigration);
     const [busy, setBusy] = useState(false);
@@ -117,7 +119,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
     const launch = async (snapshot: UnityLaunchOptionsResult, selected: string, current: number) => {
         if (projectId === undefined) return;
         try {
-            await client.unityLaunch(projectId, selected, snapshot.projectRevision);
+            await writeRequest("unityLaunch", projectId, selected, snapshot.projectRevision);
             if (current !== generation.current) return;
             setDialog(undefined); setInstallationId("");
         } finally {

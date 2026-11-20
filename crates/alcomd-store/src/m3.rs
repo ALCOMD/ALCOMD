@@ -133,11 +133,11 @@ pub(super) fn replay_repository_refresh(
     id: RepositoryId,
     expected: Revision,
     key: &IdempotencyKey,
-) -> Result<Option<SyncWrite<RepositoryRecord>>, M3Error> {
+) -> Result<Option<SyncWrite<app::RepositoryRefreshReceipt>>, M3Error> {
     let scope = access.scope();
     let transaction = connection.unchecked_transaction().map_err(sql_failure)?;
     scope.require(&transaction)?;
-    let mut result = existing_response::<SyncWrite<RepositoryRecord>>(
+    let mut result = existing_response::<SyncWrite<app::RepositoryRefreshReceipt>>(
         &transaction,
         scope.caller(),
         REPOSITORY_REFRESH,
@@ -2154,35 +2154,20 @@ pub(super) fn refresh_repository(
     observation: RepositoryObservation,
     key: &IdempotencyKey,
     now_ms: u64,
-) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
-    refresh_repository_projected(
-        connection,
-        access.scope(),
-        id,
-        expected,
-        observation,
-        key,
-        now_ms,
-    )
-}
-
-fn refresh_repository_projected<T: From<RepositoryRecord> + Serialize + DeserializeOwned>(
-    connection: &mut Connection,
-    scope: RepositoryWriteScope<'_>,
-    id: RepositoryId,
-    expected: Revision,
-    mut observation: RepositoryObservation,
-    key: &IdempotencyKey,
-    now_ms: u64,
-) -> Result<SyncWrite<T>, M3Error> {
+) -> Result<SyncWrite<app::RepositoryRefreshReceipt>, M3Error> {
+    let scope = access.scope();
     let (method, fingerprint) =
         scope.identity(REPOSITORY_REFRESH, || aggregate_fingerprint(id, expected))?;
     let owner = scope.owner;
     let transaction = begin(connection)?;
     scope.require(&transaction)?;
-    if let Some(mut response) =
-        existing_response::<SyncWrite<T>>(&transaction, scope.caller(), method, key, &fingerprint)?
-    {
+    if let Some(mut response) = existing_response::<SyncWrite<app::RepositoryRefreshReceipt>>(
+        &transaction,
+        scope.caller(),
+        method,
+        key,
+        &fingerprint,
+    )? {
         response.replayed = true;
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
@@ -2261,7 +2246,6 @@ fn refresh_repository_projected<T: From<RepositoryRecord> + Serialize + Deserial
             now_ms,
         )?;
     }
-    observation.packages.clear();
     let record = RepositoryRecord {
         repository_id: id,
         display_name: current.display_name,
@@ -2307,37 +2291,20 @@ pub(super) fn update_repository_validators(
     validators: RepositoryValidators,
     key: &IdempotencyKey,
     now_ms: u64,
-) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
-    update_repository_validators_projected(
-        connection,
-        access.scope(),
-        id,
-        expected,
-        validators,
-        key,
-        now_ms,
-    )
-}
-
-fn update_repository_validators_projected<
-    T: From<RepositoryRecord> + Serialize + DeserializeOwned,
->(
-    connection: &mut Connection,
-    scope: RepositoryWriteScope<'_>,
-    id: RepositoryId,
-    expected: Revision,
-    validators: RepositoryValidators,
-    key: &IdempotencyKey,
-    now_ms: u64,
-) -> Result<SyncWrite<T>, M3Error> {
+) -> Result<SyncWrite<app::RepositoryRefreshReceipt>, M3Error> {
+    let scope = access.scope();
     let (method, fingerprint) =
         scope.identity(REPOSITORY_REFRESH, || aggregate_fingerprint(id, expected))?;
     let owner = scope.owner;
     let transaction = begin(connection)?;
     scope.require(&transaction)?;
-    if let Some(mut response) =
-        existing_response::<SyncWrite<T>>(&transaction, scope.caller(), method, key, &fingerprint)?
-    {
+    if let Some(mut response) = existing_response::<SyncWrite<app::RepositoryRefreshReceipt>>(
+        &transaction,
+        scope.caller(),
+        method,
+        key,
+        &fingerprint,
+    )? {
         response.replayed = true;
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);

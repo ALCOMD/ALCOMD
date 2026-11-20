@@ -87,7 +87,6 @@ fn p6_methods_capabilities_errors_and_source_shapes_are_exact() {
         contract["properties"]["capabilities"]["const"],
         serde_json::json!([
             "packages.plan.v1",
-            "packages.plan.v2",
             "packages.apply.v1",
             "packages.user-packages.v1"
         ])
@@ -105,15 +104,6 @@ fn p6_methods_capabilities_errors_and_source_shapes_are_exact() {
             "user_package_manifest_invalid",
             "user_package_limit_exceeded"
         ])
-    );
-    let repository_required = contract["$defs"]["repositorySourcePinV1"]["required"]
-        .as_array()
-        .expect("repository pin required fields");
-    assert!(!repository_required.iter().any(|field| field == "kind"));
-    assert!(
-        contract["$defs"]["userPackageSourcePinV2"]["properties"]
-            .get("artifactUrl")
-            .is_none()
     );
 }
 

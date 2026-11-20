@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use alcomd_application::{BackupCancellation, M5BackupAdapter, M5BackupErrorCode, OperationId};
-use alcomd_protocol::{BackupRestoreParams, CAPABILITY_BACKUPS_RESTORE_V2, METHOD_BACKUPS_RESTORE};
+use alcomd_protocol::{BackupRestoreParams, CAPABILITY_BACKUPS_RESTORE_V1, METHOD_BACKUPS_RESTORE};
 use alcomd_vpm::BackupEngine;
 use serde_json::json;
 use zip::write::SimpleFileOptions;
@@ -52,7 +52,7 @@ fn zip_project(path: &Path, prefix: &str, contents: &[u8]) {
 #[test]
 fn restore_wire_contract_uses_the_selected_archive_and_project_destination() {
     assert_eq!(METHOD_BACKUPS_RESTORE, "backups.restore");
-    assert_eq!(CAPABILITY_BACKUPS_RESTORE_V2, "backups.restore.v2");
+    assert_eq!(CAPABILITY_BACKUPS_RESTORE_V1, "backups.restore.v1");
     let request = json!({
         "archivePath": "/other drive/项目.zip",
         "destinationPath": "/work/还 原",

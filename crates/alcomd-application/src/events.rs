@@ -83,12 +83,13 @@ impl<S: StateStore> Application<S> {
         if include_logs {
             access.require(Permission::OperationsRead)?;
         }
+        if !access.is_interactive_client() {
+            return Err(ApplicationError::PermissionDenied);
+        }
         let authentication = if access.is_mcp_client() {
             Some(crate::workflow_authentication().ok_or(ApplicationError::PermissionDenied)?)
-        } else if access.principal() == &PrincipalId::local_owner() {
-            None
         } else {
-            return Err(ApplicationError::PermissionDenied);
+            None
         };
         if !(1..=1_000).contains(&limit)
             || cursor.as_ref().is_some_and(|value| {

@@ -23,7 +23,13 @@
             "name": "project",
             "aliases": ["projects"],
             "commands": [
+                {"name": "apply-copy", "aliases": []},
+                {"name": "apply-delete-directory", "aliases": []},
+                {"name": "apply-unity-migration", "aliases": []},
+                {"name": "copy", "aliases": []},
                 {"name": "create", "aliases": []},
+                {"name": "delete-directory", "aliases": []},
+                {"name": "migrate-unity", "aliases": []},
                 {"name": "inspect", "aliases": []},
                 {"name": "list", "aliases": []},
                 {"name": "get", "aliases": ["info"]},
@@ -41,6 +47,7 @@
                 {"name": "get", "aliases": ["info"]},
                 {"name": "packages", "aliases": []},
                 {"name": "register", "aliases": ["add"]},
+                {"name": "set-credentials", "aliases": []},
                 {"name": "refresh", "aliases": []},
                 {"name": "unregister", "aliases": ["remove"]}
             ]
@@ -49,6 +56,7 @@
             "name": "package",
             "aliases": ["packages"],
             "commands": [
+                {"name": "inventory", "aliases": []},
                 {"name": "install", "aliases": ["i"]},
                 {"name": "remove", "aliases": ["rm"]},
                 {"name": "upgrade", "aliases": []},
@@ -66,19 +74,18 @@
                 {"name": "refresh", "aliases": []},
                 {"name": "register", "aliases": ["add"]},
                 {"name": "remove", "aliases": []},
-                {"name": "project-get", "aliases": []},
-                {"name": "project-set-editor", "aliases": []},
-                {"name": "project-set-args", "aliases": []},
+                {"name": "project-launch-config-get", "aliases": []},
+                {"name": "project-launch-config-set", "aliases": []},
+                {"name": "project-launch-config-clear", "aliases": []},
                 {"name": "writer-state", "aliases": []},
-                {"name": "launch", "aliases": []}
+                {"name": "launch", "aliases": []},
+                {"name": "launch-options", "aliases": []}
             ]
         },
         {
             "name": "backup",
             "aliases": [],
             "commands": [
-                {"name": "list", "aliases": []},
-                {"name": "get", "aliases": ["info"]},
                 {"name": "create", "aliases": []},
                 {"name": "restore", "aliases": []}
             ]
@@ -87,6 +94,32 @@
             "name": "completion",
             "aliases": [],
             "commands": []
+        },
+        {
+            "name": "template",
+            "aliases": [],
+            "commands": [
+                {"name": "list", "aliases": []},
+                {"name": "get", "aliases": []},
+                {"name": "edit", "aliases": []},
+                {"name": "save", "aliases": []},
+                {"name": "export", "aliases": []},
+                {"name": "remove", "aliases": []}
+            ]
+        },
+        {
+            "name": "mcp",
+            "aliases": [],
+            "commands": [
+                {"name": "client list", "aliases": ["clients list"]},
+                {"name": "client issue-credential", "aliases": ["clients issue-credential"]},
+                {"name": "oauth registration list", "aliases": []},
+                {"name": "oauth registration set", "aliases": []},
+                {"name": "oauth registration revoke", "aliases": []},
+                {"name": "oauth request show", "aliases": []},
+                {"name": "oauth request approve", "aliases": []},
+                {"name": "oauth request deny", "aliases": []}
+            ]
         }
     ]
 }

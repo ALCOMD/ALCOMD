@@ -61,8 +61,8 @@
         },
         {
             "name": "alcomd_apply_package_changes",
-            "title": "Apply a reviewed removal plan",
-            "description": "Only call after the operator has reviewed the complete plan and confirmed its risks. Applies that original removal plan; never replans. An accepted operation is not completed work.",
+            "title": "Apply a reviewed package plan",
+            "description": "Only call after the operator has reviewed the complete plan and confirmed its risks. Submits the reviewed package plan using its original plan ID. An accepted operation is not completed work.",
             "inputSchema": {
                 "type": "object",
                 "$ref": "#/$defs/apply_package_changesInput"
@@ -133,36 +133,10 @@
         }
     ],
     "$defs": {
-        "methodName": {
-            "enum": [
-                "packages.planInstall",
-                "packages.planRemove",
-                "packages.planUpgrade",
-                "packages.planDowngrade",
-                "packages.planResolve",
-                "packages.applyPlan"
-            ]
-        },
-        "capability": {
-            "enum": [
-                "packages.plan.v1",
-                "packages.apply.v1"
-            ]
-        },
-        "uuid": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-        },
         "revision": {
             "type": "integer",
             "minimum": 1,
             "maximum": 9007199254740991
-        },
-        "idempotencyKey": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[!-~]+$"
         },
         "packageId": {
             "type": "string",
@@ -178,163 +152,6 @@
         "sha256": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"
-        },
-        "packageAuthor": {
-            "type": "object",
-            "additionalProperties": true,
-            "required": [
-                "name"
-            ],
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4096
-                },
-                "email": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4096
-                }
-            }
-        },
-        "packageManifest": {
-            "type": "object",
-            "additionalProperties": true,
-            "required": [
-                "name",
-                "display_name",
-                "version",
-                "url",
-                "author"
-            ],
-            "properties": {
-                "name": {
-                    "$ref": "#/$defs/packageId"
-                },
-                "display_name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4096
-                },
-                "version": {
-                    "$ref": "#/$defs/versionText"
-                },
-                "url": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 32768,
-                    "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://"
-                },
-                "zip_sha256": {
-                    "description": "Optional publisher digest. Exactly 64 hexadecimal characters, in either case, are verified against the archive. Other values are treated as absent."
-                },
-                "author": {
-                    "$ref": "#/$defs/packageAuthor"
-                },
-                "unity": {
-                    "type": "string",
-                    "pattern": "^[0-9]+\\.[0-9]+$",
-                    "maxLength": 32
-                },
-                "unity_release": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 64
-                },
-                "yanked": {
-                    "type": "boolean",
-                    "default": false
-                },
-                "vpm_dependencies": {
-                    "type": "object",
-                    "maxProperties": 4096,
-                    "propertyNames": {
-                        "$ref": "#/$defs/packageId"
-                    },
-                    "additionalProperties": {
-                        "$ref": "#/$defs/versionText"
-                    }
-                },
-                "legacy_folders": {
-                    "type": "object",
-                    "maxProperties": 4096,
-                    "propertyNames": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 1024
-                    },
-                    "additionalProperties": {
-                        "type": "string",
-                        "pattern": "^(?:[0-9a-fA-F]{32})?$"
-                    }
-                },
-                "legacy_files": {
-                    "type": "object",
-                    "maxProperties": 4096,
-                    "propertyNames": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 1024
-                    },
-                    "additionalProperties": {
-                        "type": "string",
-                        "pattern": "^(?:[0-9a-fA-F]{32})?$"
-                    }
-                },
-                "legacy_packages": {
-                    "type": "array",
-                    "maxItems": 4096,
-                    "items": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 1024
-                    }
-                }
-            }
-        },
-        "sourcePin": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "repository_id",
-                "repository_revision",
-                "source_identity",
-                "manifest_fingerprint",
-                "package_id",
-                "version",
-                "artifact_url"
-            ],
-            "properties": {
-                "repository_id": {
-                    "$ref": "#/$defs/uuid"
-                },
-                "repository_revision": {
-                    "$ref": "#/$defs/revision"
-                },
-                "source_identity": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 2048
-                },
-                "manifest_fingerprint": {
-                    "$ref": "#/$defs/sha256"
-                },
-                "package_id": {
-                    "$ref": "#/$defs/packageId"
-                },
-                "version": {
-                    "$ref": "#/$defs/versionText"
-                },
-                "artifact_url": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 32768
-                },
-                "archive_sha256": {
-                    "$ref": "#/$defs/sha256"
-                }
-            }
         },
         "packageMutation": {
             "type": "object",
@@ -374,14 +191,7 @@
                     "maxLength": 1024
                 },
                 "source": {
-                    "oneOf": [
-                        {
-                            "$ref": "#/$defs/sourcePin"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ]
+                    "type": "null"
                 }
             }
         },
@@ -420,55 +230,22 @@
             ],
             "if": {
                 "required": [
-                    "legacy_removals"
+                    "removal_conflicts"
                 ]
             },
             "then": {
                 "properties": {
-                    "format_version": {
-                        "const": 4
-                    }
-                }
-            },
-            "allOf": [
-                {
-                    "if": {
-                        "required": [
-                            "unity_compatibility_overrides"
-                        ]
-                    },
-                    "then": {
-                        "properties": {
-                            "format_version": {
-                                "const": 4
-                            }
-                        }
-                    }
-                },
-                {
-                    "if": {
-                        "required": [
-                            "removal_conflicts"
-                        ]
-                    },
-                    "then": {
-                        "properties": {
-                            "format_version": {
-                                "const": 4
-                            },
-                            "mutations": {
-                                "items": {
-                                    "properties": {
-                                        "kind": {
-                                            "const": "remove"
-                                        }
-                                    }
+                    "mutations": {
+                        "items": {
+                            "properties": {
+                                "kind": {
+                                    "const": "remove"
                                 }
                             }
                         }
                     }
                 }
-            ],
+            },
             "properties": {
                 "removal_conflicts": {
                     "type": "array",
@@ -531,12 +308,7 @@
                     }
                 },
                 "format_version": {
-                    "enum": [
-                        1,
-                        2,
-                        3,
-                        4
-                    ]
+                    "const": 1
                 },
                 "mutations": {
                     "type": "array",
@@ -585,234 +357,6 @@
                     "$ref": "#/$defs/sha256"
                 }
             }
-        },
-        "plan": {
-            "type": "object",
-            "additionalProperties": true,
-            "required": [
-                "plan_id",
-                "action",
-                "state",
-                "project_id",
-                "project_revision",
-                "change_set_fingerprint",
-                "change_set"
-            ],
-            "properties": {
-                "plan_id": {
-                    "$ref": "#/$defs/uuid"
-                },
-                "action": {
-                    "enum": [
-                        "install",
-                        "remove",
-                        "upgrade",
-                        "downgrade",
-                        "resolve"
-                    ]
-                },
-                "state": {
-                    "enum": [
-                        "unapplied",
-                        "applied"
-                    ]
-                },
-                "project_id": {
-                    "$ref": "#/$defs/uuid"
-                },
-                "project_revision": {
-                    "$ref": "#/$defs/revision"
-                },
-                "change_set_fingerprint": {
-                    "$ref": "#/$defs/sha256"
-                },
-                "change_set": {
-                    "$ref": "#/$defs/changeSet"
-                }
-            }
-        },
-        "planBaseParams": {
-            "type": "object",
-            "required": [
-                "project_id",
-                "expected_revision"
-            ],
-            "properties": {
-                "project_id": {
-                    "$ref": "#/$defs/uuid"
-                },
-                "expected_revision": {
-                    "$ref": "#/$defs/revision"
-                }
-            }
-        },
-        "planInstallParams": {
-            "allOf": [
-                {
-                    "$ref": "#/$defs/planBaseParams"
-                },
-                {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                        "project_id",
-                        "expected_revision",
-                        "package_id"
-                    ],
-                    "properties": {
-                        "project_id": {
-                            "$ref": "#/$defs/uuid"
-                        },
-                        "expected_revision": {
-                            "$ref": "#/$defs/revision"
-                        },
-                        "package_id": {
-                            "$ref": "#/$defs/packageId"
-                        },
-                        "version_range": {
-                            "$ref": "#/$defs/versionText"
-                        },
-                        "repository_id": {
-                            "$ref": "#/$defs/uuid"
-                        },
-                        "include_prerelease": {
-                            "type": "boolean",
-                            "default": false
-                        },
-                        "allow_unity_incompatible": {
-                            "type": "boolean",
-                            "default": false
-                        }
-                    }
-                }
-            ]
-        },
-        "planRemoveParams": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "project_id",
-                "expected_revision",
-                "package_id"
-            ],
-            "properties": {
-                "project_id": {
-                    "$ref": "#/$defs/uuid"
-                },
-                "expected_revision": {
-                    "$ref": "#/$defs/revision"
-                },
-                "package_id": {
-                    "$ref": "#/$defs/packageId"
-                }
-            }
-        },
-        "planUpgradeParams": {
-            "allOf": [
-                {
-                    "$ref": "#/$defs/planInstallParams"
-                }
-            ]
-        },
-        "planDowngradeParams": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "project_id",
-                "expected_revision",
-                "package_id",
-                "version"
-            ],
-            "properties": {
-                "project_id": {
-                    "$ref": "#/$defs/uuid"
-                },
-                "expected_revision": {
-                    "$ref": "#/$defs/revision"
-                },
-                "package_id": {
-                    "$ref": "#/$defs/packageId"
-                },
-                "version": {
-                    "$ref": "#/$defs/versionText"
-                },
-                "allow_unity_incompatible": {
-                    "type": "boolean",
-                    "default": false
-                },
-                "repository_id": {
-                    "$ref": "#/$defs/uuid"
-                }
-            }
-        },
-        "planResolveParams": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "project_id",
-                "expected_revision"
-            ],
-            "properties": {
-                "project_id": {
-                    "$ref": "#/$defs/uuid"
-                },
-                "expected_revision": {
-                    "$ref": "#/$defs/revision"
-                },
-                "include_prerelease": {
-                    "type": "boolean",
-                    "default": false
-                }
-            }
-        },
-        "applyPlanParams": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "plan_id",
-                "expected_revision",
-                "idempotency_key"
-            ],
-            "properties": {
-                "plan_id": {
-                    "$ref": "#/$defs/uuid"
-                },
-                "expected_revision": {
-                    "$ref": "#/$defs/revision"
-                },
-                "idempotency_key": {
-                    "$ref": "#/$defs/idempotencyKey"
-                }
-            }
-        },
-        "applyPlanResult": {
-            "type": "object",
-            "additionalProperties": true,
-            "required": [
-                "operation_id",
-                "replayed"
-            ],
-            "properties": {
-                "operation_id": {
-                    "$ref": "#/$defs/uuid"
-                },
-                "replayed": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "planStaleReason": {
-            "enum": [
-                "project_revision_changed",
-                "project_identity_changed",
-                "project_snapshot_changed",
-                "repository_revision_changed",
-                "source_identity_changed",
-                "manifest_fingerprint_changed",
-                "artifact_url_changed",
-                "archive_digest_changed",
-                "plan_already_applied"
-            ]
         },
         "operationProgress": {
             "type": "object",

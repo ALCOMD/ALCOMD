@@ -20,6 +20,16 @@ use alcomd_vpm::ProjectCopyEngine;
 
 static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+fn copy_destination(parent: &Path, leaf: String) -> alcomd_application::ProjectDestination {
+    let (parent, identity) =
+        alcomd_platform::resolve_plain_storage_directory(parent).expect("resolve test destination");
+    alcomd_application::ProjectDestination {
+        parent,
+        identity,
+        leaf,
+    }
+}
+
 const RPC_STAGE_TIMEOUT: Duration = Duration::from_secs(30);
 const RPC_TEST_LOCK_TIMEOUT: Duration = Duration::from_secs(90);
 const CLIENT_CONNECT_TEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -156,14 +166,32 @@ async fn project_copy_plan_expiry_and_all_writer_states_are_fail_closed() {
                 &access,
                 project.project_id,
                 project.revision,
-                destination.clone(),
-                format!("WriterState{index}"),
+                copy_destination(&destination, format!("WriterState{index}")),
                 key(&format!("m7-copy-writer-{index}")),
             )
             .await
             .expect("advisory writer state permits bounded Plan");
         assert_eq!(outcome.plan.draft.writer_evidence.state, state);
     }
+
+    let mut different_parent = copy_destination(&destination, "ChangedParent".into());
+    different_parent.identity.push(0);
+    let stale = M7CopyApplication::with_locks(
+        store.clone(),
+        ProjectCopyEngine,
+        FixedWriter(UnityWriterStateKind::NotObserved),
+        Arc::new(ResourceLockCoordinator::default()),
+    )
+    .plan_copy(
+        &access,
+        project.project_id,
+        project.revision,
+        different_parent,
+        key("copy-changed-parent"),
+    )
+    .await
+    .expect_err("the same checked parent must survive planning");
+    assert_eq!(stale.code(), M7CopyErrorCode::ProjectCopyPlanStale);
 
     let confirmed = M7CopyApplication::with_locks(
         store.clone(),
@@ -175,8 +203,7 @@ async fn project_copy_plan_expiry_and_all_writer_states_are_fail_closed() {
         &access,
         project.project_id,
         project.revision,
-        destination.clone(),
-        "RunningConfirmed".to_owned(),
+        copy_destination(&destination, "RunningConfirmed".to_owned()),
         key("m7-copy-writer-confirmed"),
     )
     .await
@@ -250,8 +277,7 @@ async fn project_copy_apply_rechecks_confirmed_writer_without_publishing_or_acce
         &access,
         project.project_id,
         project.revision,
-        destination.clone(),
-        "MustNotPublish".into(),
+        copy_destination(&destination, "MustNotPublish".into()),
         key("copy-writer-recheck-plan"),
     )
     .await
@@ -364,6 +390,18 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
     )
     .await
     .expect("plan copy");
+    assert_eq!(
+        client
+            .get_plan(alcomd_protocol::PlansGetParams {
+                kind: alcomd_protocol::PlanKind::ProjectCopy,
+                plan_id: plan.plan.plan_id.clone(),
+            })
+            .await
+            .expect("read the persisted plan"),
+        alcomd_protocol::PlansGetResult::ProjectCopy {
+            plan: Box::new(plan.plan.clone()),
+        }
+    );
     assert_eq!(plan.plan.profile.version, 1);
     assert_eq!(plan.plan.writer_evidence.state, expected_writer_state);
     assert!(plan.plan.writer_evidence.observed_at_ms > 0);

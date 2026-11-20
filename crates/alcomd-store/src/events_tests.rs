@@ -425,6 +425,87 @@ async fn dropped_reply_receiver_does_not_drop_a_committed_notification() {
 }
 
 #[tokio::test]
+async fn authenticated_subscription_filters_by_owner_and_rechecks_revocation() {
+    use alcomd_application::{
+        ApplicationError, McpIdentityApplication, McpIdentityWrite, ToolAuthentication,
+        with_workflow_authentication,
+    };
+
+    let directory = Directory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("isolated event store");
+    let app = Application::new(store.clone());
+    let identities = McpIdentityApplication::new(store.clone());
+    let owner = AccessContext::local_owner();
+    let client = identities
+        .write(
+            &owner,
+            "create-reader".into(),
+            McpIdentityWrite::Create {
+                name: "Reader".into(),
+            },
+            1,
+        )
+        .await
+        .expect("create reader")
+        .client;
+    let hash = [7; 32];
+    let issued = identities
+        .write(
+            &owner,
+            "issue-reader".into(),
+            McpIdentityWrite::Issue {
+                id: client.client_id,
+                expected: client.revision,
+                hash,
+            },
+            2,
+        )
+        .await
+        .expect("issue reader credential")
+        .client;
+    let actor = identities
+        .authenticate(hash)
+        .await
+        .expect("authenticate reader");
+    let mut subscription =
+        with_workflow_authentication(ToolAuthentication::Credential(hash), async {
+            app.subscribe_events(&actor, None, 100, true)
+        })
+        .await
+        .expect("authenticated subscription with logs");
+    store
+        .create_state_check(owner.principal().clone(), key("private"), 3)
+        .await
+        .expect("owner task");
+    let visible = store
+        .create_state_check(actor.principal().clone(), key("visible"), 4)
+        .await
+        .expect("reader task");
+    let page = subscription.next_page().await.expect("read owned events");
+    assert_eq!(page.events.len(), 1);
+    assert_eq!(
+        page.events[0].aggregate_id,
+        visible.operation_id.to_string()
+    );
+    identities
+        .write(
+            &owner,
+            "revoke-reader".into(),
+            McpIdentityWrite::Revoke {
+                id: issued.client_id,
+                expected: issued.revision,
+            },
+            5,
+        )
+        .await
+        .expect("revoke subscription owner");
+    assert!(matches!(
+        subscription.next_page().await,
+        Err(ApplicationError::PermissionDenied)
+    ));
+}
+
+#[tokio::test]
 async fn live_subscription_resumes_prefixes_and_resets_a_new_instance() {
     let directory = Directory::new();
     let store = StateStoreHandle::open(directory.database()).expect("open isolated store");

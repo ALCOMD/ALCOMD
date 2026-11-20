@@ -16,7 +16,7 @@ def check_reference(reference):
         raise ValueError(f"unsupported native SDK Schema reference {reference}")
     value = json.loads(path.read_text(encoding="utf-8"))
     for segment in pointer.split("/")[1:]:
-        value = value[segment.replace("~1", "/").replace("~0", "~")]
+        value = value[int(segment)] if isinstance(value, list) else value[segment.replace("~1", "/").replace("~0", "~")]
     if not isinstance(value, dict):
         raise ValueError(f"expected a Schema object at {reference}")
     return value

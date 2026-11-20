@@ -1,3 +1,4 @@
+import { useGuiWrite } from "./gui-write-attempt";
 import { BLANK_PROJECT_TEMPLATE_ID } from "@alcomd/sdk";
 import { requestErrorMessage } from "./request-errors";
 import type { BackupRestoreParams, ProjectsCreateParams, ProjectTemplateRef, ProjectTemplatesListResult, RpcError } from "@alcomd/sdk";
@@ -33,6 +34,7 @@ const ACTIVE_OPERATION_STATES = new Set([
 
 export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, open }: ProjectDialogProps & { onChanged(): Promise<void> }) {
     const { t } = useTranslation();
+    const writeRequest = useGuiWrite(client, open);
     const events = useCoreEvents();
     const canUseTemplates = useCapability(capabilities.projectTemplates);
     const [catalog, setCatalog] = useState<ProjectTemplatesListResult>();
@@ -198,7 +200,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
     });
     const cancelOperation = () => run(async () => {
         if (operation === undefined) return;
-        const result = await client.operationCancel(operation.operationId, operation.revision);
+        const result = await writeRequest("operationCancel", operation.operationId, operation.revision);
         if (result.operation.operationId !== operation.operationId) throw { code: "internal_error" };
     });
 
@@ -262,6 +264,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
 
 export function RestoreProjectDialog({ client, onClose, onCompleted, onViewOperation, open }: ProjectDialogProps & { onViewOperation?(operationId: string): void }) {
     const { t } = useTranslation();
+    const writeRequest = useGuiWrite(client, open);
     const [archivePath, setArchivePath] = useState("");
     const [projectName, setProjectName] = useState("");
     const [destinationPath, setDestinationPath] = useState("");
@@ -329,7 +332,7 @@ export function RestoreProjectDialog({ client, onClose, onCompleted, onViewOpera
         inFlight.current = true;
         setBusy(true);
         try {
-            const result = await client.operationCancel(operation.operationId, operation.revision);
+            const result = await writeRequest("operationCancel", operation.operationId, operation.revision);
             if (isCurrent()) setOperation(result.operation);
         } catch (caught: unknown) {
             if (isCurrent()) setError(safeError(caught));

@@ -964,15 +964,20 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
     error(call(&writer,&mut trace,"remove_repository",json!({"repository_id":builtin_id.to_string(),"expected_revision":1,"idempotency_key":"protected-remove","confirm":true})).await.expect("protected built-in ID, even with builtin seeding disabled in the test"),"permission_denied");
     let refresh = json!({"repository_id":id,"expected_revision":registered["revision"],"idempotency_key":"refresh-registered"});
     source.set_changed(false);
+    let requests_before_refresh = source.requests.lock().await.len();
     let refreshed = data(
         call(&writer, &mut trace, "refresh_repository", refresh.clone())
             .await
             .expect("refresh existing source"),
     );
+    assert_eq!(
+        source.requests.lock().await.len(),
+        requests_before_refresh + 1
+    );
     assert_eq!(refreshed["repository"]["display_name"], "M8 VPM fixture");
     assert_eq!(
         data(
-            call(&writer, &mut trace, "refresh_repository", refresh)
+            call(&writer, &mut trace, "refresh_repository", refresh.clone())
                 .await
                 .expect("refresh recovery")
         )["replayed"],
@@ -995,6 +1000,20 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         true
     );
     assert!(owner.repository_get(id.to_owned()).await.is_err());
+    let mut expected_replay = refreshed;
+    expected_replay["replayed"] = Value::Bool(true);
+    assert_eq!(
+        data(
+            call(&writer, &mut trace, "refresh_repository", refresh)
+                .await
+                .expect("replay after removal")
+        ),
+        expected_replay
+    );
+    assert_eq!(
+        source.requests.lock().await.len(),
+        requests_before_refresh + 1
+    );
     owner
         .mcp_client_revoke(McpClientMutationParams {
             client_id: a.client_id.clone(),
@@ -1020,22 +1039,36 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )
         .expect("inspect only the disposable idempotency database");
-        let mut rows = db.prepare("SELECT principal_id, request_fingerprint, response_json FROM idempotency_records WHERE method LIKE 'mcp.repositories.%'").expect("registry receipts");
+        let mut rows = db.prepare("SELECT principal_id, request_fingerprint, response_json, method FROM idempotency_records WHERE method IN ('mcp.repositories.register', 'repositories.refresh', 'mcp.repositories.remove')").expect("registry receipts");
         let snapshots = rows
             .query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
                 ))
             })
             .expect("receipt rows")
             .collect::<Result<Vec<_>, _>>()
             .expect("complete receipt evidence");
         assert_eq!(snapshots.len(), 3);
-        for (principal, input, result) in snapshots {
+        for (principal, input, result, method) in snapshots {
             assert_eq!(principal, format!("mcp:{}", a.client_id));
-            assert!(!input.contains(&source.base) && !result.contains(&source.base));
+            assert!(!input.contains(&source.base));
+            if method == "repositories.refresh" {
+                assert!(result.contains(&source.base));
+                for private in [
+                    "packages",
+                    "manifest_fingerprint",
+                    "validators",
+                    "source_identity_key",
+                ] {
+                    assert!(!result.contains(private), "{private}");
+                }
+            } else {
+                assert!(!result.contains(&source.base));
+            }
             assert!(!result.contains("credentialReference") && !result.contains("downloadHeaders"));
         }
     }
@@ -1130,7 +1163,7 @@ async fn oauth_package_catalog_and_https_download(protected: bool) {
             source: Some(PackageSourceSelector::Repository {
                 repository_id: repository_id.clone(),
             }),
-            include_prerelease: false,
+            include_prerelease: Some(false),
             allow_unity_incompatible: false,
         })
         .await
@@ -2101,7 +2134,10 @@ async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
     .expect("live OAuth backend connection");
     assert!(persistent.project_get(selected.clone()).await.is_ok());
     assert!(
-        matches!(persistent.mcp_clients_list(McpClientsListParams::default()).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
+        persistent
+            .mcp_clients_list(McpClientsListParams::default())
+            .await
+            .is_ok()
     );
     let mut names: Vec<_> = sa
         .list_all_tools()

@@ -117,7 +117,7 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
         .expect("explicit append reuses the single remote response");
     server.await.expect("server");
     let old_preview = client
-        .repository_list_preview_export()
+        .repository_configuration_preview_export(alcomd_protocol::RepositoryListFormat::Legacy)
         .await
         .expect("preview");
     assert_eq!(old_preview.exportable_count, 1);
@@ -135,9 +135,10 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     let output = fixture.0.join("export.txt");
     assert_code(
         client
-            .repository_list_export_file(
+            .repository_configuration_export_file(
                 output.to_str().expect("path").into(),
                 old_preview.fingerprint,
+                alcomd_protocol::RepositoryListFormat::Legacy,
             )
             .await
             .expect_err("stale preview"),
@@ -145,15 +146,16 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     );
     assert!(!output.exists());
     let preview = client
-        .repository_list_preview_export()
+        .repository_configuration_preview_export(alcomd_protocol::RepositoryListFormat::Legacy)
         .await
         .expect("fresh preview");
     assert_eq!(preview.exportable_count, 1);
     assert_eq!(preview.excluded.len(), 1);
     let exported = client
-        .repository_list_export_file(
+        .repository_configuration_export_file(
             output.to_str().expect("path").into(),
             preview.fingerprint.clone(),
+            alcomd_protocol::RepositoryListFormat::Legacy,
         )
         .await
         .expect("export");
@@ -164,9 +166,10 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     );
     assert_code(
         client
-            .repository_list_export_file(
+            .repository_configuration_export_file(
                 output.to_str().expect("path").into(),
                 preview.fingerprint.clone(),
+                alcomd_protocol::RepositoryListFormat::Legacy,
             )
             .await
             .expect_err("no overwrite"),
@@ -178,9 +181,10 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     );
     assert_code(
         client
-            .repository_list_export_file(
+            .repository_configuration_export_file(
                 data.join("blocked.txt").to_str().expect("path").into(),
                 preview.fingerprint,
+                alcomd_protocol::RepositoryListFormat::Legacy,
             )
             .await
             .expect_err("protected data"),

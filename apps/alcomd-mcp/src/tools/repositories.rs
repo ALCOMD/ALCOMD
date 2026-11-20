@@ -28,7 +28,14 @@ async fn refresh(
     client: &mut AlcomdClient,
     input: rpc::RepositoryMutationParams,
 ) -> Result<Value, Failure> {
-    let result = client.repository_refresh(input).await.map_err(write)?;
+    let result = client
+        .repository_refresh(
+            input.repository_id,
+            input.expected_revision,
+            input.idempotency_key,
+        )
+        .await
+        .map_err(write)?;
     let record = result.repository;
     let repository_id = record.repository_id.ok_or(Failure::InvalidCore)?;
     let revision = record.revision.ok_or(Failure::InvalidCore)?;

@@ -1,11 +1,14 @@
+#[path = "support/mcp_actor.rs"]
+mod mcp_actor;
+
 use std::{fs, path::Path, path::PathBuf, time::Duration};
 
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{
-    McpClientMutationParams, McpClientsCreateParams, McpProjectSource, McpProjectTarget,
-    McpProjectsApplyCopyParams, McpProjectsCreateParams, McpProjectsPlanCopyParams,
-    McpProjectsRegisterParams, OperationState, ProjectTemplateRef,
+    McpClientMutationParams, McpProjectSource, McpProjectTarget, McpProjectsCreateParams,
+    McpProjectsPlanCopyParams, McpProjectsRegisterParams, OperationState, ProjectTemplateRef,
+    ProjectsApplyCopyParams,
 };
 use tokio::sync::oneshot;
 
@@ -59,8 +62,8 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
         )
         .await
         .expect("configured projects root");
-    let issued = issue_actor(&mut owner, "first").await;
-    let other = issue_actor(&mut owner, "second").await;
+    let issued = mcp_actor::issue_actor(&mut owner, "first").await;
+    let other = mcp_actor::issue_actor(&mut owner, "second").await;
     let actor_config = config.clone().with_mcp_credential(issued.credential);
     let mut actor = AlcomdClient::connect(actor_config.clone())
         .await
@@ -200,22 +203,36 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
             .plan_id,
         plan.plan_id
     );
-    let mut apply = McpProjectsApplyCopyParams {
+    let lookup = alcomd_protocol::PlansGetParams {
+        kind: alcomd_protocol::PlanKind::ProjectCopy,
+        plan_id: plan.plan_id.clone(),
+    };
+    let saved = actor
+        .get_plan(lookup.clone())
+        .await
+        .expect("read own copy plan");
+    let alcomd_protocol::PlansGetResult::ProjectCopy { plan: original } = &saved else {
+        panic!("expected a copy plan");
+    };
+    assert_eq!(original.plan_id, plan.plan_id);
+    assert!(second.get_plan(lookup.clone()).await.is_err());
+    assert!(owner.get_plan(lookup.clone()).await.is_err());
+    assert!(
+        actor
+            .get_plan(alcomd_protocol::PlansGetParams {
+                kind: alcomd_protocol::PlanKind::Package,
+                plan_id: plan.plan_id.clone(),
+            })
+            .await
+            .is_err()
+    );
+    let apply = ProjectsApplyCopyParams {
         plan_id: plan.plan_id,
         expected_revision: plan.expected_revision,
-        confirm: false,
         idempotency_key: "apply-absolute-copy".into(),
     };
-    assert_code(
-        actor
-            .mcp_project_apply_copy(apply.clone())
-            .await
-            .expect_err("confirmation"),
-        "invalid_request",
-    );
-    apply.confirm = true;
     assert!(
-        second.mcp_project_apply_copy(apply.clone()).await.is_err(),
+        second.project_apply_copy(apply.clone()).await.is_err(),
         "plan owner binding"
     );
 
@@ -239,30 +256,28 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
         std::os::unix::fs::symlink(&original, &movable).expect("link to original parent");
         assert_code(
             actor
-                .mcp_project_apply_copy(McpProjectsApplyCopyParams {
+                .project_apply_copy(ProjectsApplyCopyParams {
                     plan_id: changed.plan_id.clone(),
                     expected_revision: changed.expected_revision,
-                    confirm: true,
                     idempotency_key: "linked-parent".into(),
                 })
                 .await
                 .expect_err("reject a link even to the original parent"),
-            "permission_denied",
+            "project_copy_target_unsafe",
         );
         fs::remove_file(&movable).expect("remove test link");
     }
     fs::create_dir(&movable).expect("replace parent");
     assert_code(
         actor
-            .mcp_project_apply_copy(McpProjectsApplyCopyParams {
+            .project_apply_copy(ProjectsApplyCopyParams {
                 plan_id: changed.plan_id,
                 expected_revision: changed.expected_revision,
-                confirm: true,
                 idempotency_key: "parent-change-apply".into(),
             })
             .await
             .expect_err("reject changed parent identity"),
-        "revision_conflict",
+        "project_copy_plan_stale",
     );
     assert!(!target.exists() && !original.join("never created").exists());
 
@@ -281,11 +296,21 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
     )
     .await
     .expect("reopen durable plan");
+    let mut reader = AlcomdClient::connect(actor_config.clone())
+        .await
+        .expect("plan reader IPC");
     let mut actor = AlcomdClient::connect(actor_config)
         .await
         .expect("reconnect actor");
+    assert_eq!(
+        actor
+            .get_plan(lookup.clone())
+            .await
+            .expect("reopen original plan"),
+        saved
+    );
     let copied = actor
-        .mcp_project_apply_copy(apply.clone())
+        .project_apply_copy(apply.clone())
         .await
         .expect("apply persisted plan");
     succeeded(&mut actor, &copied.operation_id).await;
@@ -294,7 +319,7 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
         b"fixture source"
     );
     let replay = actor
-        .mcp_project_apply_copy(apply.clone())
+        .project_apply_copy(apply.clone())
         .await
         .expect("apply replay");
     assert!(replay.replayed);
@@ -302,6 +327,33 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
     let mut owner = AlcomdClient::connect(config)
         .await
         .expect("owner reconnect");
+    let delete = actor
+        .project_plan_delete_directory(alcomd_protocol::ProjectsPlanDeleteDirectoryParams {
+            project_id: copied.target_project_id.clone(),
+            expected_revision: 1,
+            idempotency_key: "plan-delete-copy".into(),
+        })
+        .await
+        .expect("plan deletion of a shared project")
+        .plan;
+    let apply_delete = alcomd_protocol::ProjectsApplyDeleteDirectoryParams {
+        plan_id: delete.plan_id,
+        expected_revision: 1,
+        idempotency_key: "apply-delete-copy".into(),
+    };
+    assert!(
+        owner
+            .project_apply_delete_directory(apply_delete.clone())
+            .await
+            .is_err()
+    );
+    let deleted = actor
+        .project_apply_delete_directory(apply_delete)
+        .await
+        .expect("apply own delete plan");
+    succeeded(&mut actor, &deleted.operation_id).await;
+    assert!(!external.join("已 复制").exists());
+    assert!(owner.project_get(copied.target_project_id).await.is_err());
     owner
         .mcp_client_revoke(McpClientMutationParams {
             client_id: issued.client_id,
@@ -311,35 +363,21 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
         .await
         .expect("revoke actor");
     assert_code(
+        reader
+            .get_plan(lookup)
+            .await
+            .expect_err("revoked plan read"),
+        "permission_denied",
+    );
+    assert_code(
         actor
-            .mcp_project_apply_copy(apply)
+            .project_apply_copy(apply)
             .await
             .expect_err("recheck authorization"),
         "permission_denied",
     );
     stop.send(()).expect("stop");
     daemon.await.expect("join").expect("shutdown");
-}
-
-async fn issue_actor(
-    owner: &mut AlcomdClient,
-    name: &str,
-) -> alcomd_protocol::McpClientCredentialResult {
-    let record = owner
-        .mcp_client_create(McpClientsCreateParams {
-            display_name: name.to_owned(),
-            idempotency_key: format!("create-{name}"),
-        })
-        .await
-        .expect("create MCP client");
-    owner
-        .mcp_client_issue_credential(McpClientMutationParams {
-            client_id: record.client_id,
-            expected_revision: record.revision,
-            idempotency_key: format!("issue-{name}"),
-        })
-        .await
-        .expect("issue credential")
 }
 
 async fn succeeded(client: &mut AlcomdClient, id: &str) {

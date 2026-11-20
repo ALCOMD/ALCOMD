@@ -42,18 +42,19 @@ pub(super) async fn dispatch(
                     app::M7CopyError::new(app::M7CopyErrorCode::ProjectCopyTargetUnsafe),
                 );
             };
-            match app::with_workflow_parent_identity(
-                identity,
-                application.plan_copy(
+            match application
+                .plan_copy(
                     access,
                     project_id,
                     revision,
-                    parent,
-                    params.target_leaf,
+                    app::ProjectDestination {
+                        parent,
+                        identity,
+                        leaf: params.target_leaf,
+                    },
                     key,
-                ),
-            )
-            .await
+                )
+                .await
             {
                 Ok(value) => success_action(
                     request.id,

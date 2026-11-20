@@ -253,8 +253,14 @@ fn lease_revocation_data_and_runtime_limits_are_exact() {
     assert!(HOST_PROTOCOL.contains("dedicated piped stdin/stdout"));
     assert!(HOST_PROTOCOL.contains("1-524,288 bytes"));
     assert!(HOST_PROTOCOL.contains("不得携带或覆盖 PrincipalId、ExtensionId"));
-    assert!(PERMISSIONS.contains("specific ProjectId"));
-    assert!(PERMISSIONS.contains("`mcp.sessions.read` 已由 A-023 拒绝"));
+    assert!(PERMISSIONS.contains("扩展的`projects.read`只接受`Global/*`"));
+    for permission in [
+        "mcp.requests.read",
+        "mcp.connections.read",
+        "mcp.subscription-streams.read",
+    ] {
+        assert!(PERMISSIONS.contains(permission), "{permission}");
+    }
 }
 
 #[test]
@@ -462,7 +468,7 @@ fn assert_production_keeps_m6_authority_inside_the_approved_boundary() {
     let daemon = fs::read_to_string(root.join("apps/alcomd/src/lib.rs")).expect("daemon source");
     let protocol = fs::read_to_string(root.join("crates/alcomd-protocol/src/lib.rs"))
         .expect("protocol source");
-    assert!(daemon.contains("HelloResult::m7"));
+    assert!(daemon.contains("HelloResult::ready"));
     assert!(daemon.contains("CAPABILITY_EXTENSIONS_LIFECYCLE_V1"));
     assert!(daemon.contains("CAPABILITY_EXTENSIONS_UI_PORTABLE_V1"));
     assert!(protocol.contains("extensions.lifecycle.v1"));

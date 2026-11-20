@@ -344,13 +344,15 @@ pub(super) fn create_package_plan_inner(
     )
     .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
     if let Some(authentication) = authentication {
-        if tool_guard.is_some() || !draft.action.uses_delegated_catalog() {
+        if tool_guard.is_some() {
             return Err(denied());
         }
         require_delegated_access(&transaction, owner, authentication, false)?;
         delegated_project_revision(&transaction, draft.project_id)?;
         validate_delegated_pins(&transaction, &draft.source_set)?;
-    } else if owner.as_str().starts_with("mcp:") && draft.action != PlanAction::Remove {
+    } else if owner.as_str().starts_with("mcp:")
+        && (tool_guard.is_none() || draft.action != PlanAction::Remove)
+    {
         return Err(denied());
     }
     let project_revision = transaction
@@ -491,7 +493,7 @@ pub(super) fn accept_package_plan_inner(
     }
     let delegated_revision = if let Some(authentication) = authentication {
         let plan = load_plan(&transaction, owner, plan_id)?;
-        if tool_guard.is_some() || !plan.action.uses_delegated_catalog() {
+        if tool_guard.is_some() {
             return Err(denied());
         }
         require_delegated_access(&transaction, owner, authentication, true)?;
@@ -500,6 +502,9 @@ pub(super) fn accept_package_plan_inner(
         }
         Some(delegated_project_revision(&transaction, plan.project_id)?)
     } else if owner.as_str().starts_with("mcp:") {
+        if tool_guard.is_none() {
+            return Err(denied());
+        }
         let plan = load_plan(&transaction, owner, plan_id)?;
         if let Some(guard) = guard {
             let now = super::m8_oauth::wall_time().map_err(|_| internal())?;

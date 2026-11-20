@@ -4,21 +4,6 @@ use std::future::Future;
 
 tokio::task_local! {
     static WORKFLOW_AUTHENTICATION: ToolAuthentication;
-    static WORKFLOW_PARENT_IDENTITY: Vec<u8>;
-}
-
-/// Binds a delegated plan to the parent checked by its RPC entry point.
-pub async fn with_workflow_parent_identity<T>(
-    expected_parent: Vec<u8>,
-    work: impl Future<Output = T>,
-) -> T {
-    WORKFLOW_PARENT_IDENTITY.scope(expected_parent, work).await
-}
-
-pub(crate) fn workflow_parent_matches(identity: &[u8]) -> bool {
-    WORKFLOW_PARENT_IDENTITY
-        .try_with(|parent| parent == identity)
-        .unwrap_or(false)
 }
 
 /// Carries the verified transport credential to the workflow acceptance transaction.

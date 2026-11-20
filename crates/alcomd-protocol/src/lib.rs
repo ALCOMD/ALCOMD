@@ -149,6 +149,7 @@ pub const METHOD_PROJECT_TEMPLATES_EXPORT: &str = "projectTemplates.export";
 pub const METHOD_PROJECT_TEMPLATES_REMOVE: &str = "projectTemplates.remove";
 pub const METHOD_BACKUPS_CREATE: &str = "backups.create";
 pub const METHOD_BACKUPS_RESTORE: &str = "backups.restore";
+pub const METHOD_PLANS_GET: &str = "plans.get";
 pub const METHOD_PROJECTS_PLAN_COPY: &str = "projects.planCopy";
 pub const METHOD_PROJECTS_APPLY_COPY: &str = "projects.applyCopy";
 pub const METHOD_PROJECTS_PLAN_DELETE_DIRECTORY: &str = "projects.planDeleteDirectory";
@@ -1728,6 +1729,39 @@ pub struct PackageChangeSet {
 pub struct PackageUnityCompatibilityOverride {
     pub package_id: String,
     pub version: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanKind {
+    Package,
+    ProjectCopy,
+    ProjectDeleteDirectory,
+    ProjectUnityMigration,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlansGetParams {
+    pub kind: PlanKind,
+    pub plan_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PlansGetResult {
+    Package {
+        plan: Box<PackagePlan>,
+    },
+    ProjectCopy {
+        plan: Box<ProjectCopyPlan>,
+    },
+    ProjectDeleteDirectory {
+        plan: Box<ProjectDeletePlan>,
+    },
+    ProjectUnityMigration {
+        plan: Box<ProjectUnityMigrationPlan>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -3772,10 +3806,10 @@ mod tests {
 
     #[test]
     fn hello_requires_current_schema_versions() {
-        let hello = serde_json::to_value(HelloResult::ready(Vec::new(), 1)).unwrap();
+        let hello = serde_json::to_value(HelloResult::ready(Vec::new(), 1)).expect("serialize handshake");
         for field in ["dataSchema", "configSchema"] {
             let mut missing = hello.clone();
-            missing.as_object_mut().unwrap().remove(field);
+            missing.as_object_mut().expect("handshake fields").remove(field);
             assert!(serde_json::from_value::<HelloResult>(missing).is_err());
             for invalid in [json!(0), json!(2), json!(-1), Value::Null, json!(1.5)] {
                 let mut wire = hello.clone();

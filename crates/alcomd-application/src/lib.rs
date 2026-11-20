@@ -259,10 +259,11 @@ pub fn can_remove_repository(access: &AccessContext, id: RepositoryId) -> bool {
 
 pub fn can_edit_repository_authentication(
     access: &AccessContext,
-    record: &RepositoryRecord,
+    id: RepositoryId,
+    source: &RepositorySource,
 ) -> bool {
-    builtin_repository(record.repository_id).is_none()
-        && repository_supports_authentication(&record.observation.source)
+    builtin_repository(id).is_none()
+        && repository_supports_authentication(source)
         && require_repository_credentials(access).is_ok()
 }
 
@@ -329,6 +330,53 @@ pub struct RepositoryObservation {
     pub packages: Vec<RepositoryPackageVersion>,
     pub validators: RepositoryValidators,
     pub refreshed_at_ms: u64,
+}
+
+/// Repository metadata returned by inspection and frozen in a refresh receipt.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepositoryMetadata {
+    pub source: RepositorySource,
+    pub declared_id: Option<String>,
+    pub name: Option<String>,
+    pub declared_url: Option<String>,
+    pub issues: Vec<ReadIssue>,
+    pub refreshed_at_ms: u64,
+}
+
+impl From<RepositoryObservation> for RepositoryMetadata {
+    fn from(value: RepositoryObservation) -> Self {
+        Self {
+            source: value.source,
+            declared_id: value.declared_id,
+            name: value.name,
+            declared_url: value.declared_url,
+            issues: value.issues,
+            refreshed_at_ms: value.refreshed_at_ms,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepositoryRefreshReceipt {
+    pub repository_id: RepositoryId,
+    pub observation: RepositoryMetadata,
+    pub display_name: Option<String>,
+    pub revision: Revision,
+    pub credentials_configured: bool,
+}
+
+impl From<RepositoryRecord> for RepositoryRefreshReceipt {
+    fn from(record: RepositoryRecord) -> Self {
+        Self {
+            repository_id: record.repository_id,
+            observation: record.observation.into(),
+            display_name: record.display_name,
+            revision: record.revision,
+            credentials_configured: record.credentials_configured,
+        }
+    }
 }
 
 /// Result of a conditional repository read.
@@ -797,7 +845,7 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         id: RepositoryId,
         expected: Revision,
         key: IdempotencyKey,
-    ) -> impl Future<Output = Result<Option<SyncWrite<RepositoryRecord>>, M3Error>> + Send;
+    ) -> impl Future<Output = Result<Option<SyncWrite<RepositoryRefreshReceipt>>, M3Error>> + Send;
     fn refresh_repository(
         &self,
         owner: PrincipalId,
@@ -806,7 +854,7 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         observation: RepositoryObservation,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
+    ) -> impl Future<Output = Result<SyncWrite<RepositoryRefreshReceipt>, M3Error>> + Send;
     fn update_repository_validators(
         &self,
         owner: PrincipalId,
@@ -815,7 +863,7 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         validators: RepositoryValidators,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
+    ) -> impl Future<Output = Result<SyncWrite<RepositoryRefreshReceipt>, M3Error>> + Send;
     fn unregister_repository(
         &self,
         owner: PrincipalId,
@@ -2514,7 +2562,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         id: RepositoryId,
         expected: Revision,
         key: IdempotencyKey,
-    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+    ) -> Result<SyncWrite<RepositoryRefreshReceipt>, M3Error> {
         require_m3(access, Permission::RepositoriesManage)?;
         let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
         self.refresh_repository_locked(access, id, expected, key)
@@ -2551,7 +2599,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         id: RepositoryId,
         expected: Revision,
         key: IdempotencyKey,
-    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+    ) -> Result<SyncWrite<RepositoryRefreshReceipt>, M3Error> {
         if let Some(receipt) = self
             .store
             .replay_repository_refresh(access.principal().clone(), id, expected, key.clone())

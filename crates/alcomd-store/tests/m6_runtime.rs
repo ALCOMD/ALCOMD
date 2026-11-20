@@ -1046,9 +1046,17 @@ async fn uninstall_begin_durably_revokes_grants_before_filesystem_mutation() {
 
 #[tokio::test]
 async fn leases_renew_and_three_crashes_quarantine_without_losing_enabled_intent() {
+    for owner in [
+        PrincipalId::local_owner(),
+        PrincipalId::parse("mcp:a57cbe02-7ae2-41b4-812c-5582a103d1c8").expect("client principal"),
+    ] {
+        check_crash_recovery(owner).await;
+    }
+}
+
+async fn check_crash_recovery(owner: PrincipalId) {
     let path = database_path("crash-quarantine");
     let store = StateStoreHandle::open(path.clone()).expect("open store");
-    let owner = PrincipalId::local_owner();
     let package = evidence();
     let plan = store
         .create_install_plan(
@@ -1099,6 +1107,14 @@ async fn leases_renew_and_three_crashes_quarantine_without_losing_enabled_intent
     assert!(connection.query_row("SELECT EXISTS(SELECT 1 FROM extension_grants WHERE extension_id=?1 AND permission_name='background.run' AND state='granted')", [&package.extension_id], |row| row.get::<_, bool>(0)).expect("consented install grant"));
     drop(connection);
 
+    let targets = store
+        .recover_instances("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb".into(), 199)
+        .await
+        .expect("recover enabled extensions with their recorded owners");
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].owner, owner);
+    assert_eq!(targets[0].extension_id, package.extension_id);
+
     let mut context = store
         .prepare_instance(
             owner.clone(),
@@ -1142,6 +1158,8 @@ async fn leases_renew_and_three_crashes_quarantine_without_losing_enabled_intent
             )
             .await
             .expect("record crash");
+        assert_eq!(decision.target.owner, owner);
+        assert_eq!(decision.target.extension_id, package.extension_id);
         assert_eq!(decision.restart_delay_ms, expected_delay);
         assert_eq!(decision.quarantined, crash_index == 2);
     }

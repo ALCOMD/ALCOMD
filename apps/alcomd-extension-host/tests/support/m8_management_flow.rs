@@ -276,10 +276,20 @@ async fn runtime_snapshot_rpc_tracks_authoritative_ids_disconnect_revocation_and
     assert!(
         matches!(owner.mcp_runtime_snapshot(alcomd_protocol::McpRuntimeSnapshotParams {client_id:None,limit:Some(0)}).await,Err(ClientError::Remote(error)) if error.code=="invalid_request")
     );
-    assert!(
-        matches!(connections[0].mcp_runtime_snapshot(Default::default()).await,Err(ClientError::Remote(error)) if error.code=="permission_denied"),
-        "business identity cannot read administrative observations"
-    );
+    let observed = connections[0]
+        .mcp_runtime_snapshot(Default::default())
+        .await
+        .expect("authenticated clients can read the same Core observation groups");
+    let mut observed_ids: Vec<_> = observed
+        .connections
+        .expect("connection group")
+        .items
+        .into_iter()
+        .map(|row| row.client_id)
+        .collect();
+    observed_ids.sort();
+    assert_eq!(observed_ids, expected);
+    assert!(observed.requests.is_some());
     drop(connections.pop());
     wait_runtime_connections(&mut owner, 1).await;
     owner

@@ -4,12 +4,6 @@ use std::path::{Component, Path, PathBuf};
 
 use super::{Applications, ConnectionState, DispatchAction, error_action, invalid, success_action};
 
-struct Destination {
-    parent: PathBuf,
-    identity: Vec<u8>,
-    leaf: String,
-}
-
 fn ordinary_leaf(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 255
@@ -46,11 +40,14 @@ fn absolute_path(text: &str) -> Result<PathBuf, rpc::RpcError> {
     Ok(path.to_owned())
 }
 
-async fn resolve(directory: PathBuf, leaf: String) -> Result<Destination, rpc::RpcError> {
+async fn resolve(
+    directory: PathBuf,
+    leaf: String,
+) -> Result<app::ProjectDestination, rpc::RpcError> {
     tokio::task::spawn_blocking(move || {
         let (parent, identity) = alcomd_platform::resolve_plain_storage_directory(&directory)
             .map_err(|_| rpc::RpcError::permission_denied())?;
-        Ok(Destination {
+        Ok(app::ProjectDestination {
             parent,
             identity,
             leaf,
@@ -60,7 +57,7 @@ async fn resolve(directory: PathBuf, leaf: String) -> Result<Destination, rpc::R
     .map_err(|_| rpc::RpcError::store_unavailable())?
 }
 
-fn destination_input(destination: &Destination) -> String {
+fn destination_input(destination: &app::ProjectDestination) -> String {
     destination.parent.to_string_lossy().into_owned()
 }
 
@@ -270,7 +267,7 @@ fn create_action(
 async fn project_target(
     apps: &Applications,
     target: rpc::McpProjectTarget,
-) -> Result<Destination, rpc::RpcError> {
+) -> Result<app::ProjectDestination, rpc::RpcError> {
     let (parent, leaf) = match target {
         rpc::McpProjectTarget::Default { name } => {
             let directories = apps
@@ -318,18 +315,10 @@ async fn plan_copy(
         Ok(value) => value,
         Err(error) => return error_action(Some(id), error, false),
     };
-    let result = app::with_workflow_parent_identity(
-        destination.identity,
-        apps.project_copy.plan_copy(
-            access,
-            source,
-            revision,
-            destination.parent,
-            destination.leaf,
-            key,
-        ),
-    )
-    .await;
+    let result = apps
+        .project_copy
+        .plan_copy(access, source, revision, destination, key)
+        .await;
     let result = match result {
         Ok(value) => value,
         Err(error) => return super::m7_copy_rpc::copy_error(id, error),

@@ -26,7 +26,7 @@ const SQLITE_HEADER: &[u8; 16] = b"SQLite format 3\0";
 const USER_VERSION_OFFSET: usize = 60;
 const SQLITE_HEADER_BYTES: usize = 100;
 
-type SchemaObject = (String, String, String);
+type SchemaObject = (String, String, Vec<u8>);
 static CURRENT_SCHEMA: OnceLock<Vec<SchemaObject>> = OnceLock::new();
 
 /// Checks that an existing state database opens with the current on-disk schema.
@@ -129,10 +129,72 @@ fn require_current(version: u32) -> Result<(), StoreOpenError> {
 fn schema_objects(connection: &Connection) -> rusqlite::Result<Vec<SchemaObject>> {
     connection
         .prepare(
-            "SELECT type, name, sql FROM sqlite_schema WHERE sql IS NOT NULL ORDER BY type, name",
+            "SELECT type, lower(name), sql FROM sqlite_schema WHERE sql IS NOT NULL ORDER BY type, lower(name)",
         )?
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .query_map([], |row| {
+            let sql: String = row.get(2)?;
+            Ok((row.get(0)?, row.get(1)?, ddl_tokens(sql.as_bytes())))
+        })?
         .collect()
+}
+
+// Compare the tokens of SQLite's stored DDL. Whitespace, comments and the case
+// of unquoted identifiers/keywords have no effect. Literal bytes, token
+// boundaries, multi-character operators and quoted content remain significant.
+fn ddl_tokens(mut sql: &[u8]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(sql.len());
+    while let Some(&first) = sql.first() {
+        if first.is_ascii_whitespace() {
+            sql = &sql[1..];
+            continue;
+        }
+        if sql.starts_with(b"--") {
+            sql = &sql[sql.iter().position(|&b| b == b'\n').unwrap_or(sql.len())..];
+            continue;
+        }
+        if sql.starts_with(b"/*") {
+            sql = &sql[sql[2..]
+                .windows(2)
+                .position(|part| part == b"*/")
+                .map_or(sql.len(), |i| i + 4)..];
+            continue;
+        }
+        let word = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'$' | 128..=255);
+        let len = if matches!(first, b'\'' | b'"' | b'`' | b'[') {
+            let end = if first == b'[' { b']' } else { first };
+            let mut i = 1;
+            while i < sql.len() {
+                i += 1;
+                if sql[i - 1] == end {
+                    if first == b'[' || sql.get(i) != Some(&end) {
+                        break;
+                    }
+                    i += 1; // doubled quote
+                }
+            }
+            i
+        } else if word(first) {
+            sql.iter().position(|&b| !word(b)).unwrap_or(sql.len())
+        } else if sql.starts_with(b"->>") {
+            3
+        } else if matches!(
+            sql.get(..2),
+            Some(b"||" | b"->" | b"==" | b"!=" | b"<>" | b"<=" | b">=" | b"<<" | b">>")
+        ) {
+            2
+        } else {
+            1
+        };
+        let (token, rest) = sql.split_at(len);
+        if word(first) {
+            output.extend(token.iter().map(u8::to_ascii_lowercase));
+        } else {
+            output.extend_from_slice(token);
+        }
+        output.push(0);
+        sql = rest;
+    }
+    output
 }
 
 fn verify_schema(connection: &Connection) -> Result<(), StoreOpenError> {

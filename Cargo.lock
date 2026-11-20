@@ -107,6 +107,7 @@ dependencies = [
  "alcomd-protocol",
  "anyhow",
  "clap",
+ "serde",
  "serde_json",
  "tokio",
 ]

@@ -21,6 +21,10 @@ export const formMessages: TranslationTable = {
         "zh-CN": "归档 SHA-256",
         "ja-JP": "アーカイブ SHA-256"
     },
+    "The result of this request is unknown.": {
+        "zh-CN": "无法确认此次请求的结果。",
+        "ja-JP": "このリクエストの結果を確認できません。"
+    },
     "The result of this request is unknown. Check Tasks and refresh before reviewing it again.": {
         "zh-CN": "无法确认此次请求的结果。请先检查任务并刷新，再重新审查。",
         "ja-JP": "このリクエストの結果を確認できません。タスクを確認して更新してから、再度確認してください。"

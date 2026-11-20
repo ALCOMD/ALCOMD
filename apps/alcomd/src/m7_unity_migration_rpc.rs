@@ -82,7 +82,9 @@ pub(super) async fn dispatch(
     }
 }
 
-fn migration_plan(value: app::UnityMigrationPlanRecord) -> rpc::ProjectUnityMigrationPlan {
+pub(super) fn migration_plan(
+    value: app::UnityMigrationPlanRecord,
+) -> rpc::ProjectUnityMigrationPlan {
     rpc::ProjectUnityMigrationPlan {
         plan_id: value.draft.plan_id.to_string(),
         project_id: value.draft.project.project_id.to_string(),
@@ -113,7 +115,7 @@ fn migration_plan(value: app::UnityMigrationPlanRecord) -> rpc::ProjectUnityMigr
     }
 }
 
-fn migration_error(id: String, source: app::M7UnityMigrationError) -> DispatchAction {
+pub(super) fn migration_error(id: String, source: app::M7UnityMigrationError) -> DispatchAction {
     let diagnostic_id = source.diagnostic_id().map(str::to_owned);
     let mut error = match source.code() {
         app::M7UnityMigrationErrorCode::InvalidInput => rpc::RpcError::invalid_request(),

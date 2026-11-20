@@ -58,6 +58,7 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     const pending = useRef(false);
     const cancelRead = useRef(false);
     const activeImport = useRef<string | undefined>(undefined);
+    const unacknowledgedImport = useRef<{ key: string; preview: typeof preview; overwrite: boolean | undefined } | undefined>(undefined);
     useEffect(() => () => {
         cancelRead.current = true;
         if (activeImport.current !== undefined) void client.repositoryListCancelRegistration(activeImport.current).catch(() => {});
@@ -78,6 +79,7 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     const end = () => { pending.current = false; if (current()) setBusyAction(undefined); };
     const read = async (selectedPath: string) => {
         if (pending.current || selectedPath.trim() === "") return;
+        unacknowledgedImport.current = undefined;
         setPath(selectedPath);
         setPreview(undefined);
         setResults(undefined);
@@ -93,18 +95,25 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     const register = async () => {
         if (pending.current || finished || !preview || candidateCount === 0) return;
         begin("adding");
-        const key = crypto.randomUUID();
+        const overwrite = native ? overwriteExisting : undefined;
+        const previous = unacknowledgedImport.current;
+        const key = previous?.preview === preview && previous.overwrite === overwrite ? previous.key : crypto.randomUUID();
+        unacknowledgedImport.current = undefined;
         activeImport.current = key;
         try {
-            const { items } = await client.repositoryListImportFile(preview.path, preview.inspection.fingerprint, key, native ? overwriteExisting : undefined);
+            const { items } = await client.repositoryListImportFile(preview.path, preview.inspection.fingerprint, key, overwrite);
             if (current()) setResults(items);
         } catch (caught) {
-            if (current()) setError(normalizeRequestError(caught));
+            const failure = normalizeRequestError(caught);
+            if (failure.code === "daemon_unavailable" || failure.code === "internal_error") {
+                unacknowledgedImport.current = { key, preview, overwrite };
+            }
+            if (current()) setError(failure);
         } finally {
             activeImport.current = undefined;
             end();
             if (current()) {
-                setFinished(true);
+                setFinished(unacknowledgedImport.current === undefined);
                 if (native && events) events.invalidate("repositories", true);
                 else onChanged();
             }
@@ -137,7 +146,7 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     const actions = busy ? <Button disabled={stopping} onClick={() => void stop()} type="button" variant="text">{busyAction === "adding" ? t("Stop import") : t("Stop after current request")}</Button>
         : finished ? <DialogCloseButton variant="text">{t("Close")}</DialogCloseButton>
         : inspection ? <>
-            <Button onClick={() => setPreview(undefined)} type="button" variant="text">{t("Back")}</Button>
+            <Button onClick={() => { unacknowledgedImport.current = undefined; setPreview(undefined); }} type="button" variant="text">{t("Back")}</Button>
             <Button disabled={candidateCount === 0} onClick={() => void register()} type="button">{t(native ? "Apply {count} repository configurations" : "Add {count} repositories", { count: candidateCount })}</Button>
         </> : <>
             <DialogCloseButton disabled={choosing} variant="text">{t("Cancel")}</DialogCloseButton>
@@ -152,7 +161,7 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
         </>}
         {error ? <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
         {inspection ? <>
-            {native && !finished ? <Checkbox checked={overwriteExisting} disabled={busy} label={t("Overwrite existing repository configuration")} onChange={setOverwriteExisting} /> : null}
+            {native && !finished ? <Checkbox checked={overwriteExisting} disabled={busy} label={t("Overwrite existing repository configuration")} onChange={(value) => { unacknowledgedImport.current = undefined; setOverwriteExisting(value); }} /> : null}
             <p>{native ? t(overwriteExisting ? "{count} repository configurations will be applied. Repositories absent from the file are kept." : "{count} new repositories will be added. Existing repository configuration is kept.", {count: candidateCount}) : t("{count} entries · {ignored} blank or comment lines", { count: entries.length, ignored: inspection.ignoredLines })}</p>
             {results === undefined ? null : <div aria-live="polite" data-notification-result="repositoryListImportFile repositoryRegister">
                 <p>{t(native ? "Added: {added} · Updated: {updated} · Failed: {failed} · Unknown: {unknown} · Not processed: {pending}" : "Added: {added} · Failed: {failed} · Unknown: {unknown} · Not processed: {pending}", { added: counts.added, updated: counts.updated, failed: counts.failed, unknown: counts.unknown, pending: counts.unprocessed })}</p>

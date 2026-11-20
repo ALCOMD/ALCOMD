@@ -42,7 +42,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     let defaults = client.settings_get().await.expect("read default settings");
     assert!(defaults.settings.packages.show_prerelease);
     assert!(!defaults.settings.packages.prefer_prerelease);
-    assert_eq!(defaults.config_schema, 13);
+    assert_eq!(defaults.config_schema, 1);
     assert_eq!(defaults.revision, 1);
     assert!(defaults.settings.projects.auto_discover);
     assert_eq!(
@@ -567,7 +567,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         fs::read_to_string(data.join("config/settings.toml")).expect("read durable settings file");
     assert_eq!(
         settings_file,
-        r#"schema = 13
+        r#"schema = 1
 revision = 14
 locale = "ja-JP"
 
@@ -606,7 +606,7 @@ proxy_mode = "direct"
 "#
     );
     let settings_path = data.join("config/settings.toml");
-    let unsupported = settings_file.replacen("schema = 13\n", "schema = 9\n", 1);
+    let unsupported = settings_file.replacen("schema = 1\n", "schema = 9\n", 1);
     fs::write(&settings_path, &unsupported).expect("isolated unsupported settings");
     let database_path = data.join("state.db");
     let database_before = fs::read(&database_path).expect("database before refusing settings");
@@ -642,7 +642,7 @@ proxy_mode = "direct"
     .expect("reopen current daemon");
     let mut reopened = connect_with_retry(config).await;
     let persisted = reopened.settings_get().await.expect("reopened settings");
-    assert_eq!(persisted.config_schema, 13);
+    assert_eq!(persisted.config_schema, 1);
     assert_eq!(persisted.revision, 14);
     assert_eq!(persisted.settings, hub_cleared.settings);
     assert!(!persisted.settings.window.fullscreen);
@@ -678,7 +678,7 @@ async fn fullscreen_settings_survive_daemon_restart_and_narrow_changes_preserve_
     let defaults = client.settings_get().await.expect("defaults");
     assert!(defaults.settings.packages.show_prerelease);
     assert!(!defaults.settings.packages.prefer_prerelease);
-    assert_eq!(defaults.config_schema, 13);
+    assert_eq!(defaults.config_schema, 1);
     assert!(!defaults.settings.window.fullscreen);
     let enabled = client
         .settings_update(SettingsUpdateParams {

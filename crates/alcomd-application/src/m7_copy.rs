@@ -15,6 +15,13 @@ use crate::{
 
 pub const PROJECT_COPY_PLAN_EXPIRY_MS: u64 = 900_000;
 
+/// The RPC entry has resolved the parent directory and recorded its filesystem identity.
+pub struct ProjectDestination {
+    pub parent: PathBuf,
+    pub identity: Vec<u8>,
+    pub leaf: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectCopyPlanDraft {
@@ -385,19 +392,30 @@ where
         Ok(())
     }
 
+    pub async fn get_plan(
+        &self,
+        access: &AccessContext,
+        plan_id: PlanId,
+    ) -> Result<ProjectCopyPlanRecord, M7CopyError> {
+        require(access, Permission::ProjectsRead)?;
+        require(access, Permission::ProjectsCreate)?;
+        self.store
+            .get_project_copy_plan(access.principal().clone(), plan_id)
+            .await
+    }
+
     pub async fn plan_copy(
         &self,
         access: &AccessContext,
         source_project_id: ProjectId,
         expected_revision: Revision,
-        target_parent: PathBuf,
-        target_leaf: String,
+        destination: ProjectDestination,
         key: IdempotencyKey,
     ) -> Result<ProjectCopyPlanOutcome, M7CopyError> {
         require(access, Permission::ProjectsRead)?;
         require(access, Permission::ProjectsCreate)?;
-        if !access.is_mcp_client() {
-            local_owner(access)?;
+        if !access.is_interactive_client() {
+            return Err(error(M7CopyErrorCode::PermissionDenied));
         }
         let resource_owner = crate::workflow_resource_owner(access.principal());
         let source = self
@@ -421,13 +439,18 @@ where
             "projects.copy",
             "inspect_project",
             Some(target),
-            self.adapter
-                .plan(source, target_parent, target_leaf, writer, key, now_ms()?),
+            self.adapter.plan(
+                source,
+                destination.parent,
+                destination.leaf,
+                writer,
+                key,
+                now_ms()?,
+            ),
             |error| error.path().map(str::to_owned),
         )
         .await?;
-        if access.is_mcp_client() && !crate::workflow_parent_matches(&draft.target_parent_identity)
-        {
+        if draft.target_parent_identity != destination.identity {
             return Err(error(M7CopyErrorCode::ProjectCopyPlanStale));
         }
         self.store
@@ -444,8 +467,8 @@ where
     ) -> Result<ProjectCopyApplyOutcome, M7CopyError> {
         require(access, Permission::ProjectsRead)?;
         require(access, Permission::ProjectsCreate)?;
-        if !access.is_mcp_client() {
-            local_owner(access)?;
+        if !access.is_interactive_client() {
+            return Err(error(M7CopyErrorCode::PermissionDenied));
         }
         if let Some(outcome) = self
             .store
@@ -696,12 +719,6 @@ where
         project_copy_kill_gate(ProjectCopyPhase::CleanupComplete.as_str());
         Ok(())
     }
-}
-
-fn local_owner(access: &AccessContext) -> Result<(), M7CopyError> {
-    (access.principal() == &PrincipalId::local_owner())
-        .then_some(())
-        .ok_or_else(|| error(M7CopyErrorCode::PermissionDenied))
 }
 
 fn require(access: &AccessContext, permission: Permission) -> Result<(), M7CopyError> {

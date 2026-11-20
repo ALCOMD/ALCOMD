@@ -3,6 +3,7 @@ import { OperationLogsRoute } from "./OperationLogsRoute";
 import { createTranslator, LocaleProvider, preferredLocale, useTranslation } from "./i18n";
 import type {
     ExtensionRecord,
+    ExtensionUiDispatchParams,
     RpcError,
     UiAction,
     UiSnapshot
@@ -588,6 +589,7 @@ interface ExtensionUiSessionScope {
     busy: boolean;
     sessionId?: string;
     sequence: number;
+    pendingAction?: ExtensionUiDispatchParams;
 }
 
 function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: ExtensionUiPageProps) {
@@ -707,18 +709,24 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
         setBusy(true);
         setError(undefined);
         try {
-            const result = await scope.client.extensionUiDispatch({
-                sessionId: snapshot.sessionId,
-                expectedSnapshotRevision: snapshot.snapshotRevision,
-                sequence,
-                requestId: crypto.randomUUID(),
-                action
-            });
+            const pending = scope.pendingAction;
+            const request = pending?.sequence === sequence && pending.expectedSnapshotRevision === snapshot.snapshotRevision
+                && JSON.stringify(pending.action) === JSON.stringify(action) ? pending : {
+                    sessionId: snapshot.sessionId,
+                    expectedSnapshotRevision: snapshot.snapshotRevision,
+                    sequence,
+                    requestId: crypto.randomUUID(),
+                    action: structuredClone(action)
+                };
+            scope.pendingAction = request;
+            const result = await scope.client.extensionUiDispatch(request);
+            scope.pendingAction = undefined;
             if (!isCurrent(scope)) return;
             setSnapshot(acceptSnapshot(snapshot, result.snapshot, result.replayed));
             scope.sequence = sequence + 1;
             updateDirty(false);
         } catch (caught: unknown) {
+            if (safeError(caught).code !== "internal_error") scope.pendingAction = undefined;
             handleSessionError(scope, caught);
         } finally {
             if (isCurrent(scope)) {

@@ -100,9 +100,32 @@ struct Arguments {
     command: Command,
 }
 
+#[derive(Debug, clap::Args)]
+#[group(multiple = false)]
+struct PackageSourceOptions {
+    /// Restrict the selected version to this repository.
+    #[arg(long)]
+    repository_id: Option<String>,
+    /// Restrict the selected version to this enrolled user package.
+    #[arg(long)]
+    user_package_id: Option<String>,
+}
+
+impl PackageSourceOptions {
+    fn selector(self) -> Option<alcomd_protocol::PackageSourceSelector> {
+        use alcomd_protocol::PackageSourceSelector;
+        self.repository_id
+            .map(|repository_id| PackageSourceSelector::Repository { repository_id })
+            .or_else(|| {
+                self.user_package_id
+                    .map(|user_package_id| PackageSourceSelector::UserPackage { user_package_id })
+            })
+    }
+}
+
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Manage MCP clients using the existing local-owner Core authority.
+    /// Manage authenticated MCP connections.
     Mcp {
         #[command(subcommand)]
         command: McpCommand,
@@ -200,6 +223,8 @@ enum McpClientCommand {
 enum OperationCommand {
     List {
         #[arg(long)]
+        active_only: bool,
+        #[arg(long, requires = "cursor_operation_id")]
         cursor_created_at_ms: Option<u64>,
         #[arg(long, requires = "cursor_created_at_ms")]
         cursor_operation_id: Option<String>,
@@ -287,6 +312,28 @@ fn read_template_json(path: PathBuf) -> Result<serde_json::Value, CliError> {
 
 #[derive(Debug, Subcommand)]
 enum ProjectCommand {
+    /// Apply the previously reviewed copy plan using its original revision.
+    ApplyCopy {
+        plan_id: String,
+        #[arg(long)]
+        expected_revision: Option<u64>,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    /// Apply the previously reviewed directory deletion plan.
+    ApplyDeleteDirectory {
+        plan_id: String,
+        #[arg(long)]
+        expected_revision: Option<u64>,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    /// Apply the previously reviewed Unity migration plan.
+    ApplyUnityMigration {
+        plan_id: String,
+        #[arg(long)]
+        idempotency_key: String,
+    },
     Copy {
         project_id: String,
         target_parent: PathBuf,
@@ -295,8 +342,8 @@ enum ProjectCommand {
         expected_revision: u64,
         #[arg(long)]
         plan_idempotency_key: String,
-        #[arg(long)]
-        idempotency_key: String,
+        #[arg(long, required_unless_present = "dry_run")]
+        idempotency_key: Option<String>,
     },
     Create {
         target_parent: PathBuf,
@@ -313,6 +360,10 @@ enum ProjectCommand {
     DeleteDirectory {
         #[arg(long)]
         project_id: String,
+        #[arg(long)]
+        plan_idempotency_key: String,
+        #[arg(long, required_unless_present = "dry_run")]
+        idempotency_key: Option<String>,
     },
     MigrateUnity {
         project_id: String,
@@ -321,8 +372,8 @@ enum ProjectCommand {
         expected_revision: u64,
         #[arg(long)]
         plan_idempotency_key: String,
-        #[arg(long)]
-        idempotency_key: String,
+        #[arg(long, required_unless_present = "dry_run")]
+        idempotency_key: Option<String>,
     },
     Inspect {
         path: PathBuf,
@@ -330,6 +381,9 @@ enum ProjectCommand {
         search_parents: bool,
     },
     List {
+        /// JSON nextCursor from the preceding page.
+        #[arg(long, value_parser = parse_cursor::<alcomd_protocol::ProjectRegistryCursor>)]
+        cursor: Option<alcomd_protocol::ProjectRegistryCursor>,
         #[arg(long)]
         limit: Option<u32>,
     },
@@ -366,12 +420,17 @@ enum RepositoryCommand {
         credentials_stdin: bool,
     },
     List {
+        /// JSON nextCursor from the preceding page.
+        #[arg(long, value_parser = parse_cursor::<alcomd_protocol::RegistryCursor>)]
+        cursor: Option<alcomd_protocol::RegistryCursor>,
         #[arg(long)]
         limit: Option<u32>,
     },
     #[command(visible_alias = "info")]
     Get { repository_id: String },
     Packages {
+        #[arg(long, value_parser = parse_cursor::<alcomd_protocol::PackageCursor>)]
+        cursor: Option<alcomd_protocol::PackageCursor>,
         repository_id: String,
         #[arg(long)]
         limit: Option<u32>,
@@ -428,7 +487,7 @@ enum PackageCommand {
         #[arg(long)]
         limit: Option<usize>,
     },
-    #[command(name = "install", visible_alias = "i", alias = "plan-install")]
+    #[command(name = "install", visible_alias = "i")]
     Install {
         project_id: String,
         package_id: String,
@@ -440,23 +499,23 @@ enum PackageCommand {
         /// Allow this exact package version despite its Unity requirement (requires --version-range "=X.Y.Z").
         #[arg(long, requires = "version_range")]
         allow_unity_incompatible: bool,
-        #[arg(long)]
-        repository_id: Option<String>,
-        #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true", default_value_t = true)]
-        include_prerelease: bool,
-        #[arg(long)]
-        idempotency_key: String,
+        #[command(flatten)]
+        source: PackageSourceOptions,
+        #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true")]
+        include_prerelease: Option<bool>,
+        #[arg(long, required_unless_present = "dry_run")]
+        idempotency_key: Option<String>,
     },
-    #[command(name = "remove", visible_alias = "rm", alias = "plan-remove")]
+    #[command(name = "remove", visible_alias = "rm")]
     Remove {
         project_id: String,
         package_id: String,
         #[arg(long)]
         expected_revision: u64,
-        #[arg(long)]
-        idempotency_key: String,
+        #[arg(long, required_unless_present = "dry_run")]
+        idempotency_key: Option<String>,
     },
-    #[command(name = "upgrade", alias = "plan-upgrade")]
+    #[command(name = "upgrade")]
     Upgrade {
         project_id: String,
         package_id: String,
@@ -468,14 +527,14 @@ enum PackageCommand {
         /// Allow this exact package version despite its Unity requirement (requires --version-range "=X.Y.Z").
         #[arg(long, requires = "version_range")]
         allow_unity_incompatible: bool,
-        #[arg(long)]
-        repository_id: Option<String>,
-        #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true", default_value_t = true)]
-        include_prerelease: bool,
-        #[arg(long)]
-        idempotency_key: String,
+        #[command(flatten)]
+        source: PackageSourceOptions,
+        #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true")]
+        include_prerelease: Option<bool>,
+        #[arg(long, required_unless_present = "dry_run")]
+        idempotency_key: Option<String>,
     },
-    #[command(name = "downgrade", alias = "plan-downgrade")]
+    #[command(name = "downgrade")]
     Downgrade {
         project_id: String,
         package_id: String,
@@ -485,25 +544,25 @@ enum PackageCommand {
         allow_unity_incompatible: bool,
         #[arg(long)]
         expected_revision: u64,
-        #[arg(long)]
-        repository_id: Option<String>,
-        #[arg(long)]
-        idempotency_key: String,
+        #[command(flatten)]
+        source: PackageSourceOptions,
+        #[arg(long, required_unless_present = "dry_run")]
+        idempotency_key: Option<String>,
     },
-    #[command(name = "resolve", alias = "plan-resolve")]
+    #[command(name = "resolve")]
     Resolve {
         project_id: String,
         #[arg(long)]
         expected_revision: u64,
-        #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true", default_value_t = true)]
-        include_prerelease: bool,
-        #[arg(long)]
-        idempotency_key: String,
+        #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true")]
+        include_prerelease: Option<bool>,
+        #[arg(long, required_unless_present = "dry_run")]
+        idempotency_key: Option<String>,
     },
     ApplyPlan {
         plan_id: String,
         #[arg(long)]
-        expected_revision: u64,
+        expected_revision: Option<u64>,
         #[arg(long)]
         idempotency_key: String,
     },
@@ -742,11 +801,35 @@ fn validate_mcp_output(
     Ok(())
 }
 
+fn parse_cursor<T: serde::de::DeserializeOwned>(value: &str) -> Result<T, String> {
+    serde_json::from_str(value).map_err(|err| format!("invalid nextCursor: {err}"))
+}
+
+fn supports_preview(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Project {
+            command: ProjectCommand::Copy { .. }
+                | ProjectCommand::DeleteDirectory { .. }
+                | ProjectCommand::MigrateUnity { .. }
+        } | Command::Package {
+            command: PackageCommand::Install { .. }
+                | PackageCommand::Upgrade { .. }
+                | PackageCommand::Downgrade { .. }
+                | PackageCommand::Remove { .. }
+                | PackageCommand::Resolve { .. }
+        }
+    )
+}
+
 async fn execute(
     config: alcomd_client::ClientConfig,
     command: Command,
     options: ExecutionOptions,
 ) -> Result<serde_json::Value, CliError> {
+    if options.dry_run && !supports_preview(&command) {
+        return Err(CliError::Usage("this command does not support --dry-run"));
+    }
     validate_mcp_output(&command, options, io::stdout().is_terminal())?;
     let mut client = alcomd_client::AlcomdClient::connect(config).await?;
     let value = match command {
@@ -777,6 +860,7 @@ async fn execute(
         } => serde_json::to_value(client.system_status().await?),
         Command::Operation { command } => match command {
             OperationCommand::List {
+                active_only,
                 cursor_created_at_ms,
                 cursor_operation_id,
                 limit,
@@ -790,7 +874,7 @@ async fn execute(
                     }
                     _ => None,
                 };
-                serde_json::to_value(client.operations_list(cursor, limit, false).await?)
+                serde_json::to_value(client.operations_list(cursor, limit, active_only).await?)
             }
             OperationCommand::Get { operation_id } => {
                 serde_json::to_value(client.operation_get(operation_id).await?)
@@ -850,6 +934,33 @@ async fn execute(
             }
         },
         Command::Project { command } => match command {
+            ProjectCommand::ApplyCopy { plan_id, expected_revision, idempotency_key } => {
+                let expected_revision = confirm_frozen_plan(&mut client, alcomd_protocol::PlanKind::ProjectCopy, &plan_id, expected_revision, options).await?.ok_or(alcomd_client::ClientError::InvalidResponse)?;
+                let accepted = client.project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
+                    plan_id, expected_revision, idempotency_key,
+                }).await?;
+                if options.no_wait { serde_json::to_value(accepted) } else {
+                    serde_json::to_value(wait_for_operation(&mut client, accepted.operation_id, options.output_mode).await?)
+                }
+            }
+            ProjectCommand::ApplyDeleteDirectory { plan_id, expected_revision, idempotency_key } => {
+                let expected_revision = confirm_frozen_plan(&mut client, alcomd_protocol::PlanKind::ProjectDeleteDirectory, &plan_id, expected_revision, options).await?.ok_or(alcomd_client::ClientError::InvalidResponse)?;
+                let accepted = client.project_apply_delete_directory(alcomd_protocol::ProjectsApplyDeleteDirectoryParams {
+                    plan_id, expected_revision, idempotency_key,
+                }).await?;
+                if options.no_wait { serde_json::to_value(accepted) } else {
+                    serde_json::to_value(wait_for_operation(&mut client, accepted.operation_id, options.output_mode).await?)
+                }
+            }
+            ProjectCommand::ApplyUnityMigration { plan_id, idempotency_key } => {
+                confirm_frozen_plan(&mut client, alcomd_protocol::PlanKind::ProjectUnityMigration, &plan_id, None, options).await?;
+                let accepted = client.project_apply_unity_migration(alcomd_protocol::ProjectsApplyUnityMigrationParams {
+                    plan_id, idempotency_key,
+                }).await?;
+                if options.no_wait { serde_json::to_value(accepted) } else {
+                    serde_json::to_value(wait_for_operation(&mut client, accepted.operation_id, options.output_mode).await?)
+                }
+            }
             ProjectCommand::Copy {
                 project_id,
                 target_parent,
@@ -872,12 +983,15 @@ async fn execute(
                 if options.dry_run {
                     serde_json::to_value(plan)
                 } else {
+                    if !options.yes && options.output_mode == OutputMode::Human {
+                        show_copy_plan(&plan.plan);
+                    }
                     confirm_high_impact(options)?;
                     let accepted = client
                         .project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
                             plan_id: plan.plan.plan_id,
                             expected_revision,
-                            idempotency_key,
+                            idempotency_key: idempotency_key.ok_or(CliError::Usage("Apply requires --idempotency-key"))?,
                         })
                         .await?;
                     if options.no_wait {
@@ -925,7 +1039,7 @@ async fn execute(
                     )
                 }
             }
-            ProjectCommand::DeleteDirectory { project_id } => {
+            ProjectCommand::DeleteDirectory { project_id, plan_idempotency_key, idempotency_key } => {
                 let project = client.project_get(project_id.clone()).await?.project;
                 let expected_revision = project
                     .revision
@@ -935,20 +1049,21 @@ async fn execute(
                         alcomd_protocol::ProjectsPlanDeleteDirectoryParams {
                             project_id,
                             expected_revision,
-                            idempotency_key: generated_idempotency_key("project-delete-plan"),
+                            idempotency_key: plan_idempotency_key,
                         },
                     )
                     .await?;
                 if options.dry_run {
                     serde_json::to_value(plan)
                 } else {
-                    confirm_project_directory_delete(&plan.plan, options)?;
+                    show_directory_delete(&plan.plan, options);
+                    confirm_high_impact(options)?;
                     let accepted = client
                         .project_apply_delete_directory(
                             alcomd_protocol::ProjectsApplyDeleteDirectoryParams {
                                 plan_id: plan.plan.plan_id,
                                 expected_revision,
-                                idempotency_key: generated_idempotency_key("project-delete-apply"),
+                                idempotency_key: idempotency_key.ok_or(CliError::Usage("Apply requires --idempotency-key"))?,
                             },
                         )
                         .await?;
@@ -1001,12 +1116,15 @@ async fn execute(
                         },
                     ),
                     alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned { plan, .. } => {
+                        if !options.yes && options.output_mode == OutputMode::Human {
+                            show_unity_migration_plan(&plan);
+                        }
                         confirm_high_impact(options)?;
                         let accepted = client
                             .project_apply_unity_migration(
                                 alcomd_protocol::ProjectsApplyUnityMigrationParams {
                                     plan_id: plan.plan_id,
-                                    idempotency_key,
+                                    idempotency_key: idempotency_key.ok_or(CliError::Usage("Apply requires --idempotency-key"))?,
                                 },
                             )
                             .await?;
@@ -1043,8 +1161,8 @@ async fn execute(
                         .await?,
                 )
             }
-            ProjectCommand::List { limit } => {
-                serde_json::to_value(client.projects_list(None, limit).await?)
+            ProjectCommand::List { cursor, limit } => {
+                serde_json::to_value(client.projects_list(cursor, limit).await?)
             }
             ProjectCommand::Get { project_id } => {
                 serde_json::to_value(client.project_get(project_id).await?)
@@ -1087,18 +1205,19 @@ async fn execute(
                     )
                     .await?,
             ),
-            RepositoryCommand::List { limit } => {
-                serde_json::to_value(client.repositories_list(None, limit).await?)
+            RepositoryCommand::List { cursor, limit } => {
+                serde_json::to_value(client.repositories_list(cursor, limit).await?)
             }
             RepositoryCommand::Get { repository_id } => {
                 serde_json::to_value(client.repository_get(repository_id).await?)
             }
             RepositoryCommand::Packages {
+                cursor,
                 repository_id,
                 limit,
             } => serde_json::to_value(
                 client
-                    .repository_packages(repository_id, None, limit)
+                    .repository_packages(repository_id, cursor, limit)
                     .await?,
             ),
             RepositoryCommand::Register {
@@ -1162,7 +1281,7 @@ async fn execute(
                 package_id,
                 expected_revision,
                 version_range,
-                repository_id,
+                source,
                 allow_unity_incompatible,
                 include_prerelease,
                 idempotency_key,
@@ -1174,8 +1293,8 @@ async fn execute(
                         expected_revision,
                         package_id,
                         version_range,
-                        repository_id,
-                        source: None,
+                        repository_id: None,
+                        source: source.selector(),
                         include_prerelease,
                     })
                     .await?;
@@ -1215,7 +1334,7 @@ async fn execute(
                 package_id,
                 expected_revision,
                 version_range,
-                repository_id,
+                source,
                 allow_unity_incompatible,
                 include_prerelease,
                 idempotency_key,
@@ -1227,8 +1346,8 @@ async fn execute(
                         expected_revision,
                         package_id,
                         version_range,
-                        repository_id,
-                        source: None,
+                        repository_id: None,
+                        source: source.selector(),
                         include_prerelease,
                     })
                     .await?;
@@ -1246,7 +1365,7 @@ async fn execute(
                 package_id,
                 version,
                 expected_revision,
-                repository_id,
+                source,
                 allow_unity_incompatible,
                 idempotency_key,
             } => {
@@ -1257,8 +1376,8 @@ async fn execute(
                         expected_revision,
                         package_id,
                         version,
-                        repository_id,
-                        source: None,
+                        repository_id: None,
+                        source: source.selector(),
                     })
                     .await?;
                 Ok(apply_or_return_package_plan(
@@ -1297,7 +1416,7 @@ async fn execute(
                 expected_revision,
                 idempotency_key,
             } => {
-                confirm_high_impact(options)?;
+                let expected_revision = confirm_frozen_plan(&mut client, alcomd_protocol::PlanKind::Package, &plan_id, expected_revision, options).await?.ok_or(alcomd_client::ClientError::InvalidResponse)?;
                 let accepted = client
                     .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
                         plan_id,
@@ -1432,9 +1551,6 @@ async fn execute(
                 destination,
                 idempotency_key,
             } => {
-                if options.dry_run {
-                    return Err(CliError::Usage("backup create does not support --dry-run"));
-                }
                 let accepted = client
                     .backup_create(alcomd_protocol::BackupCreateParams {
                         project_id,
@@ -1465,9 +1581,6 @@ async fn execute(
                 }
             }
             BackupCommand::Restore { archive, name, destination, idempotency_key } => {
-                if options.dry_run {
-                    return Err(CliError::Usage("backup restore does not support --dry-run"));
-                }
                 let archive_path = absolute_path(archive).map_err(CliError::LocalIo)?;
                 let destination_path = destination.map(absolute_path).transpose().map_err(CliError::LocalIo)?;
                 confirm_high_impact(options)?;
@@ -1520,6 +1633,9 @@ impl Command {
                 TemplateCommand::Remove { .. } => "template remove",
             },
             Self::Project { command } => match command {
+                ProjectCommand::ApplyCopy { .. } => "project apply-copy",
+                ProjectCommand::ApplyDeleteDirectory { .. } => "project apply-delete-directory",
+                ProjectCommand::ApplyUnityMigration { .. } => "project apply-unity-migration",
                 ProjectCommand::Copy { .. } => "project copy",
                 ProjectCommand::Create { .. } => "project create",
                 ProjectCommand::DeleteDirectory { .. } => "project delete-directory",
@@ -1578,19 +1694,23 @@ async fn apply_or_return_package_plan(
     client: &mut alcomd_client::AlcomdClient,
     plan: alcomd_protocol::PackagePlan,
     expected_revision: u64,
-    idempotency_key: String,
+    idempotency_key: Option<String>,
     options: ExecutionOptions,
 ) -> Result<serde_json::Value, CliError> {
     if options.dry_run {
         return serde_json::to_value(plan)
             .map_err(|_| CliError::Client(alcomd_client::ClientError::InvalidResponse));
     }
+    if options.output_mode == OutputMode::Human && !options.yes {
+        show_package_plan(&plan);
+    }
     confirm_high_impact(options)?;
     let accepted = client
         .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
             plan_id: plan.plan_id,
             expected_revision,
-            idempotency_key,
+            idempotency_key: idempotency_key
+                .ok_or(CliError::Usage("Apply requires --idempotency-key"))?,
         })
         .await?;
     if options.no_wait {
@@ -1690,11 +1810,115 @@ fn absolute_path(path: PathBuf) -> std::io::Result<String> {
     })
 }
 
+fn show_package_plan(plan: &alcomd_protocol::PackagePlan) {
+    eprintln!(
+        "Package plan {:?} for project {:?}",
+        plan.plan_id, plan.project_id
+    );
+    for change in &plan.change_set.mutations {
+        eprintln!(
+            "  {:?} {:?}  {:?} -> {:?}",
+            change.kind, change.package_id, change.from_version, change.to_version
+        );
+    }
+    for removal in &plan.change_set.legacy_removals {
+        eprintln!("  Remove {:?} {:?}", removal.kind, removal.path);
+    }
+    for conflict in &plan.change_set.removal_conflicts {
+        eprintln!(
+            "  {:?} required by {:?}",
+            conflict.package_id, conflict.required_by
+        );
+    }
+    for exception in &plan.change_set.unity_compatibility_overrides {
+        eprintln!(
+            "  Unity compatibility exception for {:?} {:?}",
+            exception.package_id, exception.version
+        );
+    }
+}
+
+fn show_copy_plan(plan: &alcomd_protocol::ProjectCopyPlan) {
+    eprintln!(
+        "Copy {:?} to {:?} / {:?} using Unity {:?}",
+        plan.source_canonical_root_path,
+        plan.target_parent_canonical_path,
+        plan.normalized_target_leaf,
+        plan.expected_unity_version
+    );
+}
+
+fn show_unity_migration_plan(plan: &alcomd_protocol::ProjectUnityMigrationPlan) {
+    eprintln!(
+        "Migrate project {:?} from Unity {:?} to {:?} using installation {:?}",
+        plan.project_id,
+        plan.source_unity_version,
+        plan.target_unity_version,
+        plan.target_installation_id
+    );
+}
+
+async fn confirm_frozen_plan(
+    client: &mut alcomd_client::AlcomdClient,
+    kind: alcomd_protocol::PlanKind,
+    plan_id: &str,
+    expected_revision: Option<u64>,
+    options: ExecutionOptions,
+) -> Result<Option<u64>, CliError> {
+    use alcomd_protocol::{PlanKind, PlansGetResult};
+    if options.yes && (expected_revision.is_some() || kind == PlanKind::ProjectUnityMigration) {
+        return Ok(expected_revision);
+    }
+    if !options.yes
+        && (options.output_mode != OutputMode::Human
+            || !io::stdin().is_terminal()
+            || !io::stderr().is_terminal())
+    {
+        return Err(CliError::ConfirmationRequired);
+    }
+    let frozen = client
+        .get_plan(alcomd_protocol::PlansGetParams {
+            kind,
+            plan_id: plan_id.to_owned(),
+        })
+        .await?;
+    let revision = match frozen {
+        PlansGetResult::Package { plan } if kind == PlanKind::Package => {
+            if !options.yes {
+                show_package_plan(&plan);
+            }
+            Some(plan.project_revision)
+        }
+        PlansGetResult::ProjectCopy { plan } if kind == PlanKind::ProjectCopy => {
+            if !options.yes {
+                show_copy_plan(&plan);
+            }
+            Some(plan.source_project_revision)
+        }
+        PlansGetResult::ProjectDeleteDirectory { plan }
+            if kind == PlanKind::ProjectDeleteDirectory =>
+        {
+            show_directory_delete(&plan, options);
+            Some(plan.project_revision)
+        }
+        PlansGetResult::ProjectUnityMigration { plan }
+            if kind == PlanKind::ProjectUnityMigration =>
+        {
+            if !options.yes {
+                show_unity_migration_plan(&plan);
+            }
+            None
+        }
+        _ => return Err(alcomd_client::ClientError::InvalidResponse.into()),
+    };
+    confirm_high_impact(options)?;
+    Ok(expected_revision.or(revision))
+}
+
 fn confirm_high_impact(options: ExecutionOptions) -> Result<(), CliError> {
     if options.yes {
         return Ok(());
     }
-    use std::io::IsTerminal;
     if options.output_mode != OutputMode::Human
         || !std::io::stdin().is_terminal()
         || !std::io::stderr().is_terminal()
@@ -1713,10 +1937,7 @@ fn confirm_high_impact(options: ExecutionOptions) -> Result<(), CliError> {
     Ok(())
 }
 
-fn confirm_project_directory_delete(
-    plan: &alcomd_protocol::ProjectDeletePlan,
-    options: ExecutionOptions,
-) -> Result<(), CliError> {
+fn show_directory_delete(plan: &alcomd_protocol::ProjectDeletePlan, options: ExecutionOptions) {
     if !options.yes && options.output_mode == OutputMode::Human {
         eprintln!("Delete Project Directory");
         eprintln!("Project: {}", plan.normalized_leaf);
@@ -1727,15 +1948,6 @@ fn confirm_project_directory_delete(
         eprintln!("No automatic Backup will be created.");
         eprintln!("Use Remove from list to keep the project directory.");
     }
-    confirm_high_impact(options)
-}
-
-fn generated_idempotency_key(prefix: &str) -> String {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|value| value.as_nanos())
-        .unwrap_or_default();
-    format!("{prefix}-{}-{timestamp}", std::process::id())
 }
 
 async fn wait_for_operation(
@@ -1938,15 +2150,20 @@ fn output_error_exit(result: io::Result<()>) -> ExitCode {
 }
 
 fn write_completion(shell: CompletionShell) -> ExitCode {
-    const COMMANDS: &str =
-        "system operation project repository package unity backup mcp completion";
+    use clap::CommandFactory;
+    let root = Arguments::command();
+    let commands = root
+        .get_subcommands()
+        .map(|group| group.get_name())
+        .collect::<Vec<_>>()
+        .join(" ");
     let script = match shell {
-        CompletionShell::Bash => format!("complete -W '{COMMANDS}' alcomd-cli\n"),
+        CompletionShell::Bash => format!("complete -W '{commands}' alcomd-cli\n"),
         CompletionShell::Zsh => {
-            format!("#compdef alcomd-cli\n_arguments '1:command:({COMMANDS})'\n")
+            format!("#compdef alcomd-cli\n_arguments '1:command:({commands})'\n")
         }
         CompletionShell::PowerShell => format!(
-            "Register-ArgumentCompleter -Native -CommandName alcomd-cli -ScriptBlock {{ param($wordToComplete) '{COMMANDS}'.Split(' ') | Where-Object {{ $_ -like \"$wordToComplete*\" }} }}\n"
+            "Register-ArgumentCompleter -Native -CommandName alcomd-cli -ScriptBlock {{ param($wordToComplete) '{commands}'.Split(' ') | Where-Object {{ $_ -like \"$wordToComplete*\" }} }}\n"
         ),
     };
     output_exit(io::stdout().lock().write_all(script.as_bytes()))
@@ -2237,6 +2454,63 @@ mod tests {
     }
 
     #[test]
+    fn command_catalog_matches_reachable_commands_and_aliases() {
+        use clap::CommandFactory;
+        use std::collections::BTreeSet;
+
+        fn leaves(group: &clap::Command, prefix: &str, result: &mut BTreeSet<String>) {
+            for child in group.get_subcommands() {
+                for spelling in std::iter::once(child.get_name()).chain(child.get_all_aliases()) {
+                    let path = format!("{prefix}{spelling}");
+                    if child.has_subcommands() {
+                        leaves(child, &format!("{path} "), result);
+                    } else {
+                        assert!(result.insert(path), "ambiguous command alias");
+                    }
+                }
+            }
+        }
+
+        let catalog: serde_json::Value =
+            serde_json::from_str(include_str!("../../../specs/cli/command-catalog-v1.json"))
+                .expect("valid CLI contract");
+        let root = Arguments::command();
+        let groups = catalog["groups"].as_array().expect("command groups");
+        assert_eq!(groups.len(), root.get_subcommands().count());
+        for entry in groups {
+            let group = root
+                .find_subcommand(entry["name"].as_str().expect("group name"))
+                .expect("implemented CLI group");
+            let aliases = entry["aliases"]
+                .as_array()
+                .expect("group aliases")
+                .iter()
+                .map(|alias| alias.as_str().expect("group alias"))
+                .collect::<BTreeSet<_>>();
+            assert_eq!(group.get_all_aliases().collect::<BTreeSet<_>>(), aliases);
+            let mut actual = BTreeSet::new();
+            leaves(group, "", &mut actual);
+            let expected = entry["commands"]
+                .as_array()
+                .expect("command list")
+                .iter()
+                .flat_map(|command| {
+                    std::iter::once(command["name"].as_str().expect("command name"))
+                        .chain(
+                            command["aliases"]
+                                .as_array()
+                                .expect("command aliases")
+                                .iter()
+                                .map(|alias| alias.as_str().expect("command alias")),
+                        )
+                        .map(str::to_owned)
+                })
+                .collect::<BTreeSet<_>>();
+            assert_eq!(actual, expected, "{}", group.get_name());
+        }
+    }
+
+    #[test]
     fn core_catalog_groups_and_aliases_are_reachable() {
         assert!(Arguments::try_parse_from(["alcomd-cli", "operations", "list"]).is_ok());
         assert!(
@@ -2255,15 +2529,61 @@ mod tests {
             .is_ok()
         );
         assert!(Arguments::try_parse_from(["alcomd-cli", "unity", "list"]).is_ok());
-        let removed = Arguments::try_parse_from([
-            "alcomd-cli",
-            "unity",
-            "launch-status",
-            "00000000-0000-4000-8000-000000000001",
-        ])
-        .expect_err("removed manual launch query is not a CLI command");
-        assert_eq!(removed.kind(), clap::error::ErrorKind::InvalidSubcommand);
         assert!(Arguments::try_parse_from(["alcomd-cli", "completion", "powershell"]).is_ok());
+    }
+
+    #[test]
+    fn package_source_flags_produce_one_explicit_source_constraint() {
+        for (flag, expected) in [
+            (
+                "--repository-id",
+                alcomd_protocol::PackageSourceSelector::Repository {
+                    repository_id: "source".into(),
+                },
+            ),
+            (
+                "--user-package-id",
+                alcomd_protocol::PackageSourceSelector::UserPackage {
+                    user_package_id: "source".into(),
+                },
+            ),
+        ] {
+            let mut args = vec![
+                "alcomd-cli",
+                "package",
+                "install",
+                "project",
+                "pkg",
+                "--expected-revision",
+                "1",
+                "--idempotency-key",
+                "key",
+                flag,
+                "source",
+            ];
+            let parsed = Arguments::try_parse_from(&args).expect("one selected source");
+            let Command::Package {
+                command: PackageCommand::Install { source, .. },
+            } = parsed.command
+            else {
+                panic!("expected an install");
+            };
+            assert_eq!(source.selector(), Some(expected));
+            args.extend([
+                if flag == "--repository-id" {
+                    "--user-package-id"
+                } else {
+                    "--repository-id"
+                },
+                "other",
+            ]);
+            assert_eq!(
+                Arguments::try_parse_from(args)
+                    .expect_err("only one source may constrain the plan")
+                    .kind(),
+                clap::error::ErrorKind::ArgumentConflict
+            );
+        }
     }
 
     #[test]
@@ -2286,12 +2606,12 @@ mod tests {
                 Command::Package {
                     command: PackageCommand::Install {
                         version_range: None,
-                        include_prerelease: true,
+                        include_prerelease: None,
                         allow_unity_incompatible: false,
                         ..
                     } | PackageCommand::Upgrade {
                         version_range: None,
-                        include_prerelease: true,
+                        include_prerelease: None,
                         allow_unity_incompatible: false,
                         ..
                     }
@@ -2342,13 +2662,15 @@ mod tests {
     }
 
     #[test]
-    fn project_delete_directory_accepts_only_project_identity_and_global_execution_controls() {
+    fn project_delete_directory_accepts_project_identity_and_replay_key() {
         let arguments = Arguments::try_parse_from([
             "alcomd-cli",
             "project",
             "delete-directory",
             "--project-id",
             "00000000-0000-4000-8000-000000000001",
+            "--plan-idempotency-key",
+            "frozen-delete-preview",
             "--dry-run",
             "--no-wait",
         ])
@@ -2368,6 +2690,9 @@ mod tests {
                 "delete-directory",
                 "--project-id",
                 "00000000-0000-4000-8000-000000000001",
+                "--plan-idempotency-key",
+                "frozen-delete-preview",
+                "--dry-run",
                 "--path",
                 "C:/arbitrary",
             ])

@@ -1,5 +1,5 @@
 {
-    "contractVersion": 2,
+    "contractVersion": 1,
     "commands": [
         {
             "path": ["backup", "create"],

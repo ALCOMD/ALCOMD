@@ -3,6 +3,22 @@ use serde::{Deserialize, Serialize};
 
 pub const CAPABILITY_PROJECT_INVENTORY_V1: &str = "packages.project-inventory.v1";
 pub const CAPABILITY_TEMPLATE_EDIT_V1: &str = "project-templates.edit.v1";
+pub fn mcp_environment_tool_capability(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "alcomd_list_unity_installations" | "alcomd_get_project_launch_config" => {
+            crate::CAPABILITY_UNITY_READ_V1
+        }
+        "alcomd_list_installed_packages" => CAPABILITY_PROJECT_INVENTORY_V1,
+        "alcomd_get_project_template" | "alcomd_edit_project_template" => {
+            CAPABILITY_TEMPLATE_EDIT_V1
+        }
+        "alcomd_create_project_template"
+        | "alcomd_export_project_template"
+        | "alcomd_remove_project_template" => crate::CAPABILITY_PROJECT_TEMPLATES_V1,
+        _ => return None,
+    })
+}
+
 pub const METHOD_PROJECT_INVENTORY: &str = "packages.projectInventory";
 pub const METHOD_TEMPLATE_GET: &str = "projectTemplates.get";
 pub const METHOD_TEMPLATE_EDIT: &str = "projectTemplates.edit";

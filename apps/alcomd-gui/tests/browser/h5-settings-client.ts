@@ -117,7 +117,7 @@ export function withH5SettingsClient(base: GuiRpcClient, query: URLSearchParams)
             });
         },
         selectUnityHub(currentPath) { return response("selectUnityHub", { currentPath }, () => H5_HUB_PATH); },
-        unityInstallationsRefresh() { return response("unity.installations.refresh", {}, () => base.unityInstallationsRefresh()); },
+        unityInstallationsRefresh(idempotencyKey) { return response("unity.installations.refresh", {}, () => base.unityInstallationsRefresh(idempotencyKey)); },
         repositoriesList(cursor) {
             return response("repositories.list", cursor === undefined ? {} : { cursor }, () => cursor === undefined
                 ? { orderFingerprint: H5_REPOSITORY_CURSOR.orderFingerprint, repositories: [repository(H5_HIDDEN_ID, "H5 hidden source")], nextCursor: H5_REPOSITORY_CURSOR }

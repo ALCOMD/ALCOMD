@@ -454,3 +454,11 @@ export interface ExtensionPlan {
 export interface ExtensionPlanResult { plan: ExtensionPlan }
 export interface ExtensionOperationResult { operationId: string; replayed: boolean }
 export interface ExtensionGrantResult { extensionId: string; grantRevision: number; state: string; replayed: boolean }
+
+export type PlansGetResult =
+    | { kind: "package"; plan: PackagePlan }
+    | { kind: "project_copy"; plan: ProjectCopyPlan }
+    | { kind: "project_delete_directory"; plan: ProjectDeletePlan }
+    | { kind: "project_unity_migration"; plan: ProjectUnityMigrationPlan };
+
+export interface PlansGetParams { kind: PlansGetResult["kind"]; planId: string }

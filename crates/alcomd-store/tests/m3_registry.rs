@@ -4,11 +4,11 @@ use std::thread;
 use std::time::Duration;
 
 use alcomd_application::{
-    CandidateStore, DependencyIdentity, IdempotencyKey, M3ErrorCode, M3RegistryStore, M4ErrorCode,
-    M4Store, ManifestState, PrincipalId, ProjectObservation, ProjectType,
-    RepositoryArchivePinStore, RepositoryId, RepositoryObservation, RepositoryPackageLinks,
-    RepositoryPackageSourcePin, RepositoryPackageVersion, RepositorySource, RepositoryValidators,
-    ResolverCatalogSource, ResolverPackageMetadata, Revision, StateStore,
+    AccessContext, CandidateStore, DependencyIdentity, IdempotencyKey, M3ErrorCode,
+    M3RegistryStore, M4ErrorCode, M4Store, ManifestState, PrincipalId, ProjectObservation,
+    ProjectType, RepositoryArchivePinStore, RepositoryId, RepositoryObservation,
+    RepositoryPackageLinks, RepositoryPackageSourcePin, RepositoryPackageVersion, RepositorySource,
+    RepositoryValidators, ResolverCatalogSource, ResolverPackageMetadata, Revision, StateStore,
     VRCHAT_CURATED_REPOSITORY_ID, VRCHAT_OFFICIAL_REPOSITORY_ID,
 };
 use alcomd_store::StateStoreHandle;
@@ -257,7 +257,7 @@ async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
         descending: true,
     };
     let first = store
-        .list_project_view(owner.clone(), None, 2, view.clone(), None)
+        .list_project_view(AccessContext::local_owner(), None, 2, view.clone(), None)
         .await
         .expect("first view page");
     assert_eq!(
@@ -271,7 +271,7 @@ async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
     );
     let second = store
         .list_project_view(
-            owner.clone(),
+            AccessContext::local_owner(),
             first.page.next_cursor.clone(),
             2,
             view.clone(),
@@ -291,7 +291,7 @@ async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
     assert!(second.page.next_cursor.is_none());
     let ascending = store
         .list_project_view(
-            owner.clone(),
+            AccessContext::local_owner(),
             None,
             10,
             ProjectListView {
@@ -318,7 +318,7 @@ async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
     );
     let by_name = store
         .list_project_view(
-            owner.clone(),
+            AccessContext::local_owner(),
             None,
             10,
             ProjectListView {
@@ -346,7 +346,7 @@ async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
     );
     let by_unity = store
         .list_project_view(
-            owner.clone(),
+            AccessContext::local_owner(),
             None,
             2,
             ProjectListView {
@@ -374,7 +374,13 @@ async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
         .await
         .expect("invalidate the ordered view");
     let stale = store
-        .list_project_view(owner, first.page.next_cursor, 2, view, Some(first.sequence))
+        .list_project_view(
+            AccessContext::local_owner(),
+            first.page.next_cursor,
+            2,
+            view,
+            Some(first.sequence),
+        )
         .await
         .expect_err("reordered view must restart at the beginning");
     assert_eq!(stale.code(), M3ErrorCode::RevisionConflict);
@@ -744,7 +750,14 @@ async fn repository_refresh_preserves_snapshot_on_error_and_304_is_no_op() {
         .expect("304 refresh");
     assert_eq!(not_modified.value.revision.get(), 1);
     assert_eq!(
-        not_modified.value.observation.validators.etag.as_deref(),
+        store
+            .get_repository(owner.clone(), first.value.repository_id)
+            .await
+            .expect("updated conditional retrieval metadata")
+            .observation
+            .validators
+            .etag
+            .as_deref(),
         Some("\"two\"")
     );
 
@@ -1016,6 +1029,16 @@ async fn large_repository_write_replays_keep_metadata_and_paginate_package_versi
     let store = StateStoreHandle::open(directory.database()).expect("open store");
     let owner = PrincipalId::local_owner();
     let mut index = repository(1, 10);
+    index.declared_url = Some("https://example.invalid/public-index.json".into());
+    index.issues.push(alcomd_application::ReadIssue {
+        code: "invalid_metadata".into(),
+        component: "repository".into(),
+        item: "display name".into(),
+        line: Some(3),
+        column: Some(8),
+    });
+    let mut small_index = index.clone();
+    small_index.refreshed_at_ms = 50;
     let package = index.packages.pop().expect("fixture package");
     index.packages = (0..1100)
         .map(|version| RepositoryPackageVersion {
@@ -1047,7 +1070,12 @@ async fn large_repository_write_replays_keep_metadata_and_paginate_package_versi
         .await
         .expect("refresh index above replay budget");
     assert_eq!(refreshed.value.revision.get(), 2);
-    assert!(refreshed.value.observation.packages.is_empty());
+    assert_eq!(refreshed.value.observation.issues, refreshed_index.issues);
+    assert_eq!(
+        refreshed.value.observation.declared_url,
+        refreshed_index.declared_url
+    );
+    assert_eq!(refreshed.value.observation.refreshed_at_ms, 20);
 
     let not_modified = store
         .update_repository_validators(
@@ -1062,7 +1090,6 @@ async fn large_repository_write_replays_keep_metadata_and_paginate_package_versi
         .expect("record 304 without serializing the index");
     assert_eq!(not_modified.value.revision, refreshed.value.revision);
     assert_eq!(not_modified.value.observation.refreshed_at_ms, 30);
-    assert!(not_modified.value.observation.packages.is_empty());
 
     let register_replay = store
         .register_repository(owner.clone(), index, key("large-register"), 40)
@@ -1090,20 +1117,20 @@ async fn large_repository_write_replays_keep_metadata_and_paginate_package_versi
         )
         .await
         .expect("replay original 304");
-    for (original, replay) in [
-        (first, register_replay),
-        (refreshed, refresh_replay),
-        (not_modified, validator_replay),
-    ] {
-        assert!(replay.replayed);
-        assert_eq!(replay.value.repository_id, original.value.repository_id);
-        assert_eq!(replay.value.revision, original.value.revision);
-        assert_eq!(
-            replay.value.registered_at_ms,
-            original.value.registered_at_ms
-        );
-        assert_eq!(replay.value.observation, original.value.observation);
-    }
+    assert!(register_replay.replayed);
+    assert_eq!(
+        register_replay.value.repository_id,
+        first.value.repository_id
+    );
+    assert_eq!(register_replay.value.revision, first.value.revision);
+    assert_eq!(
+        register_replay.value.registered_at_ms,
+        first.value.registered_at_ms
+    );
+    assert_eq!(register_replay.value.observation, first.value.observation);
+    assert!(refresh_replay.replayed && validator_replay.replayed);
+    assert_eq!(refresh_replay.value, refreshed.value);
+    assert_eq!(validator_replay.value, not_modified.value);
 
     let mut cursor = None;
     let mut count = 0;
@@ -1122,6 +1149,64 @@ async fn large_repository_write_replays_keep_metadata_and_paginate_package_versi
         }
     }
     assert_eq!(count, 1100);
+    let small = store
+        .refresh_repository(
+            owner.clone(),
+            id,
+            refreshed.value.revision,
+            small_index,
+            key("small-refresh"),
+            50,
+        )
+        .await
+        .expect("refresh with one package");
+    store
+        .unregister_repository(
+            owner.clone(),
+            id,
+            small.value.revision,
+            key("remove-before-replay"),
+            60,
+        )
+        .await
+        .expect("remove the registered repository");
+    for (name, expected_revision, original) in [
+        ("large-refresh", first.value.revision, refreshed.value),
+        (
+            "large-304",
+            refresh_replay.value.revision,
+            not_modified.value,
+        ),
+    ] {
+        let restored = store
+            .replay_repository_refresh(owner.clone(), id, expected_revision, key(name))
+            .await
+            .expect("lookup after removal")
+            .expect("durable refresh receipt");
+        assert!(restored.replayed);
+        assert_eq!(restored.value, original);
+    }
+    let db = rusqlite::Connection::open(directory.database()).expect("receipt database");
+    let receipt = |key: &str| -> String {
+        db.query_row(
+            "SELECT response_json FROM idempotency_records WHERE method='repositories.refresh' AND idempotency_key=?1",
+            [key],
+            |row| row.get(0),
+        ).expect("frozen receipt")
+    };
+    let large = receipt("large-refresh");
+    assert_eq!(large.len(), receipt("small-refresh").len());
+    for value in [large, receipt("large-304")] {
+        for private in [
+            "com.example.package",
+            "packages",
+            "manifest_fingerprint",
+            "validators",
+            "source_identity_key",
+        ] {
+            assert!(!value.contains(private), "{private}");
+        }
+    }
 }
 
 fn resolver_index_fixture() -> RepositoryObservation {
@@ -1455,7 +1540,13 @@ async fn only_unindexed_snapshots_block_catalog_and_require_a_full_refresh() {
         .await
         .expect("accept unchanged full index under current rules")
         .value;
-    assert!(fresh.resolver_indexed);
+    assert!(
+        store
+            .get_repository(owner.clone(), registered.repository_id)
+            .await
+            .expect("current registry")
+            .resolver_indexed
+    );
     assert_eq!(fresh.revision, registered.revision);
     let current = store
         .candidate_snapshot(

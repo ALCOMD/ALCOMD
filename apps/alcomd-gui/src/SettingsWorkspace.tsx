@@ -1,3 +1,4 @@
+import { useGuiWrite } from "./gui-write-attempt";
 import { requestErrorMessage } from "./request-errors";
 import type { RpcError } from "@alcomd/sdk";
 import { Suspense, use, useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEventHandler, type ReactNode, type Ref } from "react";
@@ -311,6 +312,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
 }) {
     const { t } = useTranslation();
     const events = useCoreEvents();
+    const refreshInstallations = useGuiWrite(events?.client ?? client);
     const resetting = useSettingsResetPending();
     const state = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
     const accepted = state.accepted ?? snapshot;
@@ -382,7 +384,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
             setInvalid(false);
             if (manageUnity && (intent.path !== null || intent.previousPath !== null)) {
                 try {
-                    await (events?.client ?? client).unityInstallationsRefresh();
+                    await refreshInstallations("unityInstallationsRefresh");
                     if (request === generation.current) onInstallationsChanged();
                 } catch {}
             }
@@ -505,6 +507,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     const [mutation, setMutation] = useState<"refresh" | "select" | "register" | "remove">();
     const [actionError, setActionError] = useState<RpcError>();
     const [removing, setRemoving] = useState<UnityInstallation>();
+    const writeRequest = useGuiWrite(client, removing);
     const actionPending = useRef(false);
     const selectedPath = useRef("");
     const sectionRef = useRef<HTMLElement>(null);
@@ -555,11 +558,11 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
                 if (!isCurrent() || path === undefined) return;
                 selectedPath.current = path;
                 setMutation("register");
-                await client.unityInstallationRegister(path);
+                await writeRequest("unityInstallationRegister", path);
             } else if (action === "refresh") {
-                await client.unityInstallationsRefresh();
+                await writeRequest("unityInstallationsRefresh");
             } else {
-                await client.unityInstallationRemove(removing!.installationId, removing!.revision);
+                await writeRequest("unityInstallationRemove", removing!.installationId, removing!.revision);
             }
             if (!isCurrent()) return;
             if (action === "remove") setRemoving(undefined);

@@ -180,10 +180,19 @@ fn native_sdk_package_plans_omit_automatic_options_and_preserve_explicit_values(
     let sdk = schema("native-sdk-v1");
     let contract = schema("m4-package-transaction");
     for (sdk_name, core_name) in [
-        ("PackagePlan", "plan"), ("PackageChangeSet", "changeSet"), ("PackageMutation", "packageMutation"),
-        ("PackagePlanInstallParams", "planInstallParams"), ("PackagePlanDowngradeParams", "planDowngradeParams"),
+        ("PackagePlan", "plan"),
+        ("PackageChangeSet", "changeSet"),
+        ("PackageMutation", "packageMutation"),
+        ("PackagePlanInstallParams", "planInstallParams"),
+        ("PackagePlanDowngradeParams", "planDowngradeParams"),
     ] {
-        assert_eq!(sdk["$defs"][sdk_name]["$ref"], format!("{}#/$defs/{core_name}", contract["$id"].as_str().expect("schema ID")));
+        assert_eq!(
+            sdk["$defs"][sdk_name]["$ref"],
+            format!(
+                "{}#/$defs/{core_name}",
+                contract["$id"].as_str().expect("schema ID")
+            )
+        );
     }
     let definitions = &contract["$defs"];
     let actions = definitions["plan"]["properties"]["action"]["enum"]
@@ -425,7 +434,10 @@ fn live_events_contract_separates_ready_responses_and_closed_bounded_notificatio
         contract["x-alcomd-method-permissions"],
         json!({"events.subscribe":["events.read"]})
     );
-    assert_eq!(contract["x-alcomd-local-owner-only"], true);
+    assert_eq!(
+        contract["x-alcomd-interactive-clients"],
+        json!(["GUI", "CLI", "MCP"])
+    );
     assert_eq!(contract["x-alcomd-default-batch-limit"], 100);
     assert_eq!(
         contract["x-alcomd-max-encoded-frame-bytes"],
@@ -1999,10 +2011,9 @@ fn project_creation_and_template_archives_round_trip() {
         ProjectsCreateParams, ProjectsCreateResult,
     };
     let contract = schema("m7-project-create");
-    assert_eq!(contract["x-alcomd-local-owner-only"], false);
     assert_eq!(
-        contract["x-alcomd-local-owner-only-methods"],
-        json!(["projects.create"])
+        contract["x-alcomd-interactive-clients"],
+        json!(["GUI", "CLI", "MCP"])
     );
     assert_eq!(
         contract["x-alcomd-method-permissions"]["projectTemplates.remove"],
@@ -2165,7 +2176,7 @@ fn hello_schema_requires_storage_contracts_and_describes_extension_api() {
         assert!(
             response["properties"]["result"]["required"]
                 .as_array()
-                .unwrap()
+                .expect("required fields")
                 .contains(&json!(field))
         );
     }
@@ -2477,13 +2488,13 @@ fn repository_list_approved_wire_shapes_are_closed_and_preserve_query_text() {
 #[test]
 fn repository_exchange_defaults_to_native_and_preserves_explicit_vcc_text() {
     use alcomd_protocol::*;
-    let native: RepositoryListPreviewParams = serde_json::from_value(json!({})).unwrap();
+    let native: RepositoryListPreviewParams = serde_json::from_value(json!({})).expect("parse default native preview");
     assert_eq!(native.format, RepositoryListFormat::Native);
-    assert_eq!(serde_json::to_value(native).unwrap(), json!({}));
+    assert_eq!(serde_json::to_value(native).expect("serialize default preview"), json!({}));
     let text = json!({"format":"legacy"});
-    let explicit: RepositoryListPreviewParams = serde_json::from_value(text.clone()).unwrap();
+    let explicit: RepositoryListPreviewParams = serde_json::from_value(text.clone()).expect("parse explicit format");
     assert_eq!(explicit.format, RepositoryListFormat::Legacy);
-    assert_eq!(serde_json::to_value(explicit).unwrap(), text);
+    assert_eq!(serde_json::to_value(explicit).expect("serialize explicit format"), text);
     assert_eq!(
         serde_json::to_value(RepositoryListImportItem::Updated { line: 1 }).expect("updated wire"),
         json!({"line":1,"status":"updated"})

@@ -1,6 +1,6 @@
 # MCP loopback HTTP v1
 
-2026-11-13 所有者批准。完整边界及必要依赖见 [M8 已批准合同](../../docs/exec-plans/M8-mcp-protocol-and-management.md#http现状审计与最小合同提案2026-11-13已批准实施中)。这是冻结2026-07-28 Streamable HTTP的本地预配Bearer profile，非完整OAuth；不广告PRM、授权服务器发现、token audience/expiry或浏览器登录。
+2026-11-13 所有者批准。完整边界及必要依赖见 [M8 已批准合同](../../docs/exec-plans/M8-mcp-protocol-and-management.md#连接与业务权限)。这是冻结2026-07-28 Streamable HTTP的本地预配Bearer profile，非完整OAuth；不广告PRM、授权服务器发现、token audience/expiry或浏览器登录。
 
 - `alcomd-mcp serve --port <u16>`，默认0，只绑定`127.0.0.1`；stderr给实际`/mcp` URL，stdout空。仅HTTP/1.1 POST，无重定向、代理、TLS、IPv6或持久网络配置。
 - 每请求唯一Bearer为既有64字符MCP凭据，必须新建独立typed Core连接并经hello绑定。Core仍逐RPC及Apply接受事务重新鉴权。无owner回退、跨请求连接池、cookie/URL/STDIO环境凭据继承。

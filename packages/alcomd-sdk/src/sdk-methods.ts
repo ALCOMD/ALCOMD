@@ -42,6 +42,7 @@ export const SDK_METHODS = {
     "packages.userPackages.list": "read",
     "packages.userPackages.refresh": "write",
     "packages.userPackages.remove": "write",
+    "plans.get": "read",
     "projectTemplates.edit": "write",
     "projectTemplates.export": "write",
     "projectTemplates.get": "read",
@@ -69,13 +70,13 @@ export const SDK_METHODS = {
     "repositories.inspect": "read",
     "repositories.inspectListFile": "read",
     "repositories.list": "read",
+    "repositories.move": "write",
     "repositories.packages": "read",
     "repositories.previewListExport": "read",
     "repositories.refresh": "write",
     "repositories.refreshAll": "write",
     "repositories.register": "write",
     "repositories.setCredentials": "write",
-    "repositories.move": "write",
     "repositories.setDisplayName": "write",
     "repositories.unregister": "write",
     "settings.get": "read",
@@ -238,6 +239,7 @@ export interface NativeRpcMethods {
     "packages.userPackages.list": { params: UserPackagesListParams; result: Types.UserPackagesListResult };
     "packages.userPackages.refresh": { params: UserPackageMutationParams; result: Types.UserPackageWriteResult };
     "packages.userPackages.remove": { params: UserPackageMutationParams; result: Types.UserPackageRemoveResult };
+    "plans.get": { params: Types.PlansGetParams; result: Types.PlansGetResult };
     "projectTemplates.edit": { params: Types.ProjectTemplateEditParams; result: Types.ProjectTemplatesSaveResult };
     "projectTemplates.export": { params: Types.ProjectTemplatesExportParams; result: Types.ProjectTemplatesSaveResult };
     "projectTemplates.get": { params: Types.ProjectTemplateGetParams; result: Types.ProjectTemplateGetResult };
@@ -265,13 +267,13 @@ export interface NativeRpcMethods {
     "repositories.inspect": { params: RepositoryInspectParams; result: NativeRepositoryResult };
     "repositories.inspectListFile": { params: RepositoryListInspectParams; result: Types.RepositoryListInspection };
     "repositories.list": { params: RegistryListParams; result: NativeRepositoriesListResult };
+    "repositories.move": { params: Types.RepositoryMoveParams; result: Types.RepositoryMoveResult };
     "repositories.packages": { params: RepositoryPackagesParams; result: Types.RepositoryPackagesResult };
     "repositories.previewListExport": { params: RepositoryListPreviewParams; result: Types.RepositoryListPreview };
     "repositories.refresh": { params: RepositoryMutationParams; result: NativeRepositoryWriteResult };
     "repositories.refreshAll": { params: Types.RepositoryRefreshAllParams; result: Types.RepositoryRefreshAllResult };
     "repositories.register": { params: RepositoryRegisterParams; result: NativeRepositoryWriteResult };
     "repositories.setCredentials": { params: RepositorySetCredentialsParams; result: NativeRepositoryWriteResult };
-    "repositories.move": { params: Types.RepositoryMoveParams; result: Types.RepositoryMoveResult };
     "repositories.setDisplayName": { params: Types.RepositorySetDisplayNameParams; result: NativeRepositoryWriteResult };
     "repositories.unregister": { params: RepositoryMutationParams; result: Types.RepositoryUnregisterResult };
     "settings.get": { params: EmptyParams; result: Types.SettingsGetResult };

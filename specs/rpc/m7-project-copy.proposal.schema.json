@@ -9,7 +9,7 @@
         "projects.planCopy": ["projects.read", "projects.create"],
         "projects.applyCopy": ["projects.read", "projects.create"]
     },
-    "x-alcomd-filesystem-writer": "builtin:local-owner",
+    "x-alcomd-filesystem-writer": "Core",
     "x-alcomd-operation-kind": "projects.copy",
     "x-alcomd-plan-expiry-ms": 900000,
     "x-alcomd-resource-locks": [

@@ -1,10 +1,12 @@
 # ALCOMD RPC v1
 
-状态：M1-M7 已完成人工验收。M8 实施状态见 `docs/status.md` 与 [客户端合同](m8-mcp-clients-v2.md)。
+状态：M1-M7 已完成人工验收。M8 实施状态见 `docs/status.md` 与 [客户端合同](m8-mcp-clients-v1.md)。
+
+[首发合同清单](../first-release-contracts.json)登记全部原生、服务专用方法和协商能力。
 
 ## 首发合同修正
 
-ALCOMD 自有合同首次发布前只有一份有效定义，版本号始终为 1，破坏性变更也原位修订。输入只按现行结构校验；相同结构具有相同语义。禁止旧合同专属识别、别名、迁移、回退或拒绝分支。GUI、CLI、MCP 具备相同业务权限；认证、撤销、实际调用者和资源归属由 Core 检查，扩展遵守自己的沙箱和授权。
+ALCOMD 自有合同首次发布前只有一份有效定义，版本号始终为 1，破坏性变更也原位修订。输入只按现行结构校验；相同结构具有相同语义。禁止旧合同专属识别、别名、迁移、回退或拒绝分支。GUI、CLI、MCP 具备相同业务权限；认证、撤销、实际调用者和资源归属由 Core 检查，扩展遵守自己的沙箱和授权。验收以现行定义为准，覆盖合规输入成功、违反定义的输入正常报错，并检查实现中没有旧合同专属路径。
 
 ## 1. M1 合同范围
 
@@ -138,7 +140,7 @@ A-034 的数据库开发兼容策略本身不授权 RPC、Extension API 或权�
 - 服务器只返回双方实际接受且由服务端支持的 capability；未知 capability 安全忽略。
 - `client.name`、`client.version`、`client.instanceId` 仅用于诊断和能力协商，不参与授权。
 
-M1 hello 请求示例：
+握手请求示例：
 
 ```json
 {
@@ -156,7 +158,7 @@ M1 hello 请求示例：
 }
 ```
 
-hello 结果只包含已经真实存在的值：
+握手返回协商结果、已就绪的数据库与配置合同编号，以及宿主提供的扩展 ABI 信息。
 
 ```json
 {
@@ -164,13 +166,13 @@ hello 结果只包含已经真实存在的值：
     "result": {
         "rpcVersion": 1,
         "daemonVersion": "4.0.0-alpha.0",
-        "capabilities": []
+        "capabilities": [],
+        "dataSchema": 1,
+        "configSchema": 1,
+        "extensionApi": {"major": 1, "world": "alcomd:extension/extension-v1@1.0.0"}
     }
 }
 ```
-
-`dataSchema`、`configSchema` 和 `extensionApi` 不属于 M1 hello 合同；这些子系统真正实现后才能
-以兼容可选字段方式增加。
 
 客户端 metadata 限制：
 
@@ -255,42 +257,11 @@ M2 capability 固定为：
 才能调用。缺少协商结果返回 `capability_required`。capability 只对当前连接有效，不是 Principal
 或 permission。
 
-store 成功初始化且 daemon ready 后，hello result 兼容增加可选 `dataSchema: 1`：
-
-```json
-{
-    "id": "hello-1",
-    "result": {
-        "rpcVersion": 1,
-        "daemonVersion": "4.0.0-alpha.0",
-        "capabilities": ["state.check.v1", "operations.v1", "events.replay.v1"],
-        "dataSchema": 1
-    }
-}
-```
-
-`dataSchema` 报告 daemon 成功打开的实际数据库结构版本，`configSchema` 报告 daemon 支持的配置
-格式版本。两者均为可选字段，提供时接受 1 到 4,294,967,295 的整数。daemon 从实际子系统取得版本。
-`extensionApi.major` 当前为 1。格式版本独立于产品发布版本。
-按 A-034，未发布开发库不承诺长期兼容；当前保留 v16 及既有迁移，发布前 Schema 整理另行审计，
-不因此自动清空数据。首次正式发布后维护正式升级与恢复链。
-
-`dataSchema` 不替代 RPC version/capability 协商。M2 本身不增加 `configSchema` 或 `extensionApi`。旧 M1
-client 必须忽略该字段并继续工作。
+Core 完成持久化初始化后接受握手。`dataSchema` 和 `configSchema` 均为必填整数，首发值为 1。产品版本由 `daemonVersion` 单独报告。每个连接独立协商 `capabilities`。
 
 ## 10. M2 Principal 与 permission
 
-M2 内建 Principal ID 是 `builtin:local-owner`，权限固定为：
-
-- `state.check`
-- `operations.read`
-- `operations.cancel`
-- `events.read`
-
-每个 application 用例复验 permission 和 owner/visibility。client metadata、SID、pipe 名、
-OperationId 与 capability 都不能自报 Principal。M2 最初使用 `builtin:local-owner` 作为
-bootstrap Principal。M10 将同系统账号端点上的原生 GUI 与 CLI 统一纳入该 Principal，
-由平台确认端点的账号边界，再由 Core 执行业务校验。MCP 和扩展使用各自合同。
+GUI 和 CLI 使用平台认证的同账号端点，对应 `builtin:local-owner`。MCP 使用已认证的连接身份。三端使用同一组业务权限，每个用例仍按实际调用者检查资源归属、可见性与权限。扩展沿用各自授权及宿主沙箱。客户端元数据和操作 ID 不能指定调用者身份。
 
 ## 11. M2 method
 
@@ -360,7 +331,7 @@ M2 不删除 Event，因此不会产生 `event_cursor_expired`；该错误名只
 
 完整合同见 [m7-events-live.schema.json](m7-events-live.schema.json) 与独立的
 [notification-envelope.schema.json](notification-envelope.schema.json)。需要 `events.live.v1` 和
-`events.read`，初期仅允许现有已认证 local-owner；事件不授予任何后续资源查询权限。
+`events.read`，适用于已认证的 GUI、CLI 和 MCP；事件不授予任何后续资源查询权限。
 
 订阅独占一条已认证/协商的连接：普通带 id 的 events.subscribe 请求、带相同 id 的就绪响应，
 随后是无 id 的 events.batch/events.closed Notification Envelope。普通请求/响应 id 合同不变，
@@ -519,6 +490,8 @@ Core 结合调用者权限和仓库来源判定资格，并用 `builtin` 标识�
 视图结果返回 `viewSequence`，续页提交同一 `view`、`nextCursor` 和原 `viewSequence` 作为
 `expectedViewSequence`。Core 在同一读取快照核对项目事件水位并读取分页结果。水位改变或游标不再有效时
 返回 `revision_conflict`，客户端从首页重读。
+`repositories.refresh` 返回当次公开仓库快照。Core 按调用者、原参数和幂等键保存回执，包含来源与声明 URL、名称、修订、问题、刷新时间及认证配置状态。包清单、下载认证头、凭据和条件请求验证器只在各自的数据路径使用。重放直接返回原结果，即使仓库已变更或移除，也不会再次下载。
+
 `repositories.refreshAll` 接收单个最多 64 字节的幂等键。Core 对本 principal 最多 4096 个已登记的源
 滚动发起刷新，修订冲突时读取当前修订并重试一次。结果按登记快照顺序逐仓库返回 `refreshed` 或
 `failed`，失败附稳定错误码。单仓失败时保留其 last-known-good 状态。
@@ -532,12 +505,7 @@ milliseconds）；`projects.inspect` 产生的未注册 snapshot 不返回该字
 检查时间、`registeredAtMs` 或数据库 `updatedAtMs` 替代。该字段不新增 method、capability、
 permission 或请求参数，不改变 registry 分页顺序／cursor、Plan/Apply 或项目内容 revision 语义。
 
-项目 `observedAtMs` 已按所有者批准从 `ProjectSnapshot`／内部项目观察模型移除，属于发布前
-RPC v1 的破坏性字段删除；不提供别名、fallback、双版本模型或新 method/capability/permission。
-State v15→v16 物理删除项目观察列并清理项目快照与永久幂等响应中的旧字段；旧未 Apply 的
-Unity migration Plan 失效，须重新生成 Plan，不重签旧 authority hash。已执行的 Plan／journal
-保留原 fingerprint 和迁移专有重检证据。Unity 安装扫描时间与 copy/delete writer evidence
-的同名字段属于不同合同，继续保留。普通项目重新检查只产生项目内容，no-op refresh 不改变
+Unity 安装扫描、项目复制和删除可记录检查时间。普通项目重新检查只产生项目内容，no-op refresh 不改变
 revision、最后修改时间或候选权威指纹；内容变化仍按现有 revision／Plan 验证处理。
 
 同步写命令使用 M2 永久幂等 scope，但成功响应不需要 OperationId。`register` 返回注册后的
@@ -562,23 +530,21 @@ debug、HTTP header、SQL 或 credential；未知错误继续使用 `internal_er
 M3 仍不增加 notification、background refresh、credential、package payload、SemVer、resolver、
 Plan/Apply 或项目写入。新增 method/capability/可选响应字段是兼容增加；既有 M1/M2 方法语义不变。
 
-## 18. M4 兼容增加：Package Plan/Apply
+## 18. 软件包 Plan 与 Apply
 
-M4 在 RPC major 1 上冻结两个 capability：
+软件包计划和执行分别使用以下能力。
 
 | capability | method |
 |---|---|
-| `packages.plan.v1` | `packages.planInstall`、`packages.planRemove`、`packages.planUpgrade`、`packages.planDowngrade`、`packages.planResolve` |
+| `packages.plan.v1` | `packages.planInstall`、`packages.planRemove`、`packages.planUpgrade`、`packages.planDowngrade`、`packages.planResolve`、`packages.planReinstall`、`packages.planBulk` |
 | `packages.apply.v1` | `packages.applyPlan` |
 
-本节同时约束已接入的 M4 最小生产垂直切片、hello capability 广告与 State Schema v3 自动
-migration。完整 GUI/CLI/MCP、credential、完整 legacy VPM 和 v3 parity 仍未实现，不得因这些
-method 已接通而描述为完整 package manager。
+包计划使用首发 State1 持久化。单包与批量默认安装、升级均省略版本范围、来源和预发布策略。Core 使用当前候选目录与软件包偏好求解。显式选择来源时附带 `source`，仅稳定版操作发送 `includePrerelease: false`。
 
 所有 Plan 方法是 bounded 同步 RPC，需要 `projects.read + repositories.read + packages.read` 及目标
 resource scope。它们保存 immutable durable Plan，安装、更新等来源选择使用已登记的 resolver-ready snapshot，不写 Unity
 项目或触发 repository refresh。Plan 不下载仓库软件包归档；旧资源清理由登记来源身份和清单指纹固定的元数据计算，
-已登记用户包仅使用已有的拥有归档快照。即使清理清单为空，经过来源/旧资源准备的新普通 Plan 也使用 formatVersion 4 冻结完整的确认范围；单包卸载沿原格式。
+已登记用户包使用已拥有的归档快照。所有动作使用 `formatVersion: 1` 保存完整的确认范围。来源证据以 `kind` 区分 `repository` 与 `user_package`。
 仓库 source pin 的 `archiveSha256` 可缺省，表示发布方未提供有效摘要且本地尚未固定实际摘要；已有摘要不变，用户包摘要仍必需。
 确认后的 Apply 才下载、校验和暂存归档。缺省摘要在执行阶段按同一来源修订、清单指纹、包身份及 URL 固定实际 SHA-256，
 与并发或已有摘要冲突时拒绝执行；不可改写已确认 Plan。归档的依赖、Unity 要求或有效旧资源声明与计划依据不一致时，
@@ -599,7 +565,7 @@ resource scope。它们保存 immutable durable Plan，安装、更新等来源�
 混合批量和其他计划的依赖拒绝规则保持。目录在计划前已缺失的待移除项以内部证据冻结，
 允许仅移除清单记录；计划后目录出现/消失仍拒绝执行，该内部证据不投影到公开 DTO。
 
-若仍保留的包依赖明确移除的目标，ChangeSet使用formatVersion 4并增加可选
+若仍保留的包依赖明确移除的目标，ChangeSet 包含
 `removalConflicts: [{packageId, requiredBy: [{packageId, range}]}]`，无冲突时省略。
 目标及依赖方确定排序、去重；目标最多1024，总依赖关系最多4096。
 每个目标必须对应remove mutation，每个依赖方必须保留，关系必须存在于冻结的
@@ -657,17 +623,17 @@ revision、Event、cancel/recovery 语义；公开 progress 只暴露脱敏 phas
 仓库声明 `zipSHA256` 时接受 64-lower-hex SHA-256 并严格比对，畸形值返回 `package_hash_required`。
 字段缺省时在确认后的首次下载中本地固定摘要；Plan 中的仓库 `archiveSha256` 可省略。
 Apply 使用计划中已有的摘要，或执行时绑定到同一来源的实际摘要核对归档。
-作者（对象或字符串）、显示名和描述是展示信息，缺省或无法归一化时不排除安装候选；缺少作者保存为空，显示名缺省使用包 ID。`legacyFolders`/`legacyFiles` 的 null GUID 表示按路径声明，实际清理仍受既有范围与证据校验约束。2026-11-10 所有者批准配套 State32，不改 RPC 形状或权限。Yanked 版本不参与新选择。
+作者（对象或字符串）、显示名和描述是展示信息，缺省或无法归一化时不排除安装候选；缺少作者保存为空，显示名缺省使用包 ID。`legacyFolders`/`legacyFiles` 的 null GUID 表示按路径声明，实际清理仍受既有范围与证据校验约束。Yanked 版本不参与新选择。
 
 所有者于2026-11-08批准手动Unity兼容性窄例外：`packages.planInstall`、
 `packages.planUpgrade`、`packages.planDowngrade` 增加可选布尔值
-`allowUnityIncompatible`，缺省false。true只适用于Plan v2的单个精确根目标；
+`allowUnityIncompatible`，缺省 false。true 只适用于单个精确根目标；
 Install/Upgrade需`=完整SemVer`，Downgrade沿用精确version。项目Unity必须已知。
 只跳过该根包该版本的Unity最低版本限制，不放宽依赖、来源、撤回、范围、权限及安全校验。
 GUI依据Core候选的可选`manualUnityOverrideAllowed`资格展示确认，取消不创建Plan；
 自动更新和批量请求不发送覆盖意图，也不获得新资格。
 
-确认后的ChangeSet使用既有formatVersion 4，可选
+确认后的 ChangeSet 可包含
 `unityCompatibilityOverrides: [{packageId, version}]`至多一项，必须对应有固定来源的mutation。
 该意图进入不可变Plan摘要和既有持久JSON；Apply和recovery只执行固定证据，不重新求解。
 未覆盖时字段省略，既有计划不会自动获得覆盖权，无SQL迁移、权限或新RPC方法。
@@ -687,7 +653,7 @@ GUI依据Core候选的可选`manualUnityOverrideAllowed`资格展示确认，取
 GUID元数据流式读取，不因单个文件或行超过64KiB而拒绝；整体读取预算、
 重复GUID、文件变化及事务证据校验保持。
 
-采用该迁移依据的 ChangeSet 使用 `formatVersion: 4`。非空 `legacyRemovals` 为最多
+非空 `legacyRemovals` 为最多
 4096 项的有序数组，每项包含项目相对 `path`、`kind`（`file` 或 `directory`）与
 声明来源 `packageId`。清单及内部身份、内容证据由 ChangeSet 摘要绑定。
 Apply 复验并在现有事务中隔离旧项。目标清单变化时返回 `plan_stale`，
@@ -759,9 +725,7 @@ project revision、canonical exact version、permission 与永久 idempotency。
 `unity_launch_state_uncertain`、`unity_project_selector_forbidden`、`unity_launch_failed` 与
 `unity_launch_not_found`。普通 error 不包含完整进程命令行、私密路径、PID 列表或 OS debug。
 
-完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State v14 删除旧 editor preference 并保留独立 launch config。daemon
-在 store 成功初始化后通过 hello 广告实际 `dataSchema` 和客户端实际协商的已实现 capability。此兼容增加不
-改变 M1-M4 方法语义，也不表示 Backup 或完整 CLI 已实现。
+完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。项目启动参数由 Core 单独保存。握手报告 `dataSchema: 1` 和协商成功的能力。
 
 ## 20. M7 新建项目与模板声明
 
@@ -771,7 +735,7 @@ Core 通过 `projects.create.v1` 发布 `projects.create`。已认证的本机�
 相同请求返回原任务，不同请求返回 `idempotency_conflict`。成功的任务结果包含 `projectId`。
 Core 校验目标父目录的身份，只向不存在的目标发布，并在同一事务登记项目、完成任务和写入事件。
 
-模板目录通过 `projectTemplates.v2` 发布 `projectTemplates.list`、`projectTemplates.save`、
+模板目录通过 `projectTemplates.v1` 发布 `projectTemplates.list`、`projectTemplates.save`、
 `projectTemplates.export` 和 `projectTemplates.remove` 的本机入口。M8 的 MCP 调用
 使用同一方法，列表沿用项目流程协商，写入通过 `project-templates.edit.v1` 协商并检查 `projects.manage`。
 列表按 ID 分页，记录包含 ID、显示名、可选 Unity 版本、修订和锁定标记。变更提交
@@ -793,28 +757,28 @@ Core 校验目标父目录的身份，只向不存在的目标发布，并在同
 和 `packages.manage`。除保留 ID 的内置 Blank 外，请求的 Unity 版本必须与模板声明精确匹配。以前登记的其他无版本模板须
 补全后替换才能用于创建项目。安装锁定或求解后的包后才发布。
 公开任务失败可通过结果的 `packageId` 标识受影响的软件包。
-State28 替换 State23 的模板声明和能力。精确 DTO 见 `m7-project-create.schema.json`。
+精确 DTO 见 `m7-project-create.schema.json`。
 
 ### MCP project and backup workflows
 
-The current MCP workflow capability is `mcp.project-workflows.v2`. Project registration,
+The current MCP workflow capability is `mcp.project-workflows.v1`. Project registration,
 creation and copy accept absolute paths on the Core host. Copy retains its Plan/Apply and
 confirmation contract. Each accepted write binds the authenticated principal and checks the
-current business permissions again on replay. [MCP workflow Schema](mcp-project-workflows-v2.schema.json)
+current business permissions again on replay. [MCP workflow Schema](mcp-project-workflows-v1.schema.json)
 
 ## 21. Unity project ZIP
 
-`backups.create` negotiates `backups.create.v2`. It accepts `projectId`, `expectedRevision`,
+`backups.create` negotiates `backups.create.v1`. It accepts `projectId`, `expectedRevision`,
 `idempotencyKey`, and optional `compressionMode`, `excludeVpmPackages`, `includeLibrary`, and
 `destinationPath`. Core freezes the effective defaults at acceptance. The compression choices are
 `store`, `fast`, `level3`, `level5`, `level7`, and `maximum`, with levels 0, 1, 3, 5, 7, and 9.
 `destinationPath` specifies a new absolute ZIP file. With no explicit destination, Core uses its
 configured backup directory and naming rules.
 
-`backups.restore` negotiates `backups.restore.v2`. It accepts `archivePath`, `idempotencyKey`,
+`backups.restore` negotiates `backups.restore.v1`. It accepts `archivePath`, `idempotencyKey`,
 and optional `projectName` or `destinationPath`. `archivePath` identifies an absolute ZIP file
 on the Core host. The archive must have a Unity project at its root. Core restores into a
-new directory and registers it. MCP uses `mcp.backups.restore` with explicit confirmation.
+new directory and registers it. The MCP tool confirms the request before calling `backups.restore`.
 
 Both methods return `operationId` and `replayed`. Recover an interrupted reply using the original
 input and idempotency key. A successful create task returns `archiveName` and `archiveBytes`. A
@@ -839,7 +803,7 @@ Plan 的 `requiredPermissions` / `optionalPermissions` 直接投影冻结 eviden
 不从当前源文件、GUI 输入或已授权 scope 推断声明，不自动授权。
 
 `extensions.permissions.list({extensionId,cursor?,limit?})` 返回
-`{extensionId,grantRevision,requiredPermissions,optionalPermissions,grants,nextCursor?}`，其中 active `grants` 只含
+`{extensionId,grantRevision,availablePermissions,requiredPermissions,optionalPermissions,grants,nextCursor?}`，其中 active `grants` 只含
 `{permission,resourceKind,resourceId}`。默认 limit 100、允许 1–1000；三字段按二进制顺序 keyset 分页。
 声明来自与当前安装身份匹配且已有 `state_committed` 证据的已应用 install Plan；一个只读事务同时取得当前记录、
 冻结声明及有效授权，不读取撤销历史、凭据、Host 身份或扩展数据，也不创建持久查询会话。
@@ -849,21 +813,17 @@ package/manifest/component 摘要、安装时间与对应 install Plan。授权�
 
 enable/disable 是 revisioned、永久幂等的窄 lifecycle command，不创建 Operation kind。enable 在
 package/API/grant 重验后创建 daemon-owned `ExtensionInstanceLease`；disable/revoke 的 durable grant revision commit
-是 authority linearization point。State v8 只增加 `extensions.install` 与 `extensions.uninstall` 两个 Operation kind。
+是 authority linearization point。扩展安装与卸载使用 `extensions.install` 与 `extensions.uninstall` 两个 Operation kind。
 Host/guest 不能自报 PrincipalId、ExtensionId、publisher、first-party status 或 scope。desired state 与 runtime
 state 分离，公开 record 不返回 PID、Host pipe、lease nonce、安装路径、trap/backtrace 或 extension data。
 
-`extensions.setGrant/revokeGrant` 的 M6 business scope 只允许 `background.run + ExtensionId self` 与
-`projects.read + specific ProjectId`。permission/grant update 使用 expected grant revision 与永久幂等；wildcard、path、
-URL 和 Manifest selector 全部拒绝。
+`extensions.setGrant/revokeGrant` 遵从[可授予扩展的权限目录](../extensions/permissions-v1.md)。
+`background.run` 的范围是当前扩展 ID，其余可授予权限的范围是 `Global/*`。更新检查预期授权修订和幂等键。
 
-install source kind 只允许 `local_owner_selected` 与 `first_party_packaged`，不接受 URL、registry、marketplace、remote
-catalog 或任意网络 fetch。retained data namespace 绑定 ExtensionId + publisher fingerprint；publisher 不同返回
+扩展安装支持 `local_owner_selected`、`first_party_packaged` 和 `remote_extension_source`。在线安装使用[单扩展来源合同](../extensions/source-v1.md)读取清单和验证包。retained data namespace 绑定 ExtensionId + publisher fingerprint；publisher 不同返回
 `extension_data_owner_mismatch`。uninstall 总是撤销全部 grants/lease/session/handle，reinstall 不恢复旧 grant。
 
-`system.hello.result.extensionApi` 是兼容 optional field；daemon 在 data Schema v8 migration、Host/WIT/runtime 与
-对应 capability 全部生产可用后返回 `{major:1,world:"alcomd:extension/extension-v1@1.0.0"}`。
-State v8 是该功能的引入版本；当前 hello 报告 ready Store 的实际 State v18。旧 client 必须忽略未知 optional field。
+扩展宿主可用时，`system.hello.result.extensionApi` 报告 `{major:1,world:"alcomd:extension/extension-v1@1.0.0"}`。
 
 M6 stable errors 由 `rpc-error.schema.json` 冻结。普通 error 只返回安全 code、opaque ID/revision 与必要 subreason，
 不返回 package/source/data 完整路径、public key material 以外的 credential、Host protocol、trap、WIT parser debug、
@@ -885,30 +845,28 @@ M7 在 RPC major 1 上兼容增加 `extensions.ui.portable.v1` 与四个 method�
 `../extensions/portable-ui-v1.md` 冻结。没有 `listSurfaces`、surface identity、filesystem locator、Host PID、pipe、
 lease secret、InvocationContextId、private Principal metadata 或 raw Wasmtime error。
 
-State v9 只为 `extensions` 与 immutable `extension_plans` 增加 nullable checked `ui_protocol`；UI Session、Snapshot、
-action、replay 与 renderer state 都不持久化。State v9 是该功能的引入版本；当前 hello 报告 ready Store 的实际
-State v18，并只在 client 请求时回显已实现的 `extensions.ui.portable.v1` capability。
+`extensions` 与不可变的扩展安装计划记录可选的 UI 协议。UI Session、Snapshot、action、replay 与渲染状态由当次会话维护。客户端可协商 `extensions.ui.portable.v1`。
 
 ## 24. M7：Official GUI settings
 
-M7 保留设置 base methods 与独立 `unity.hub.open.v2`。所有者于2026-11-05批准撤销日志、活动记录及提示系统，这是未发布RPC major 1的破坏性删除：`activity.list/get`、`diagnostics.list`、`diagnostics.log.read/history/health`、`diagnostics.log.v1`及其专属权限/DTO不再提供，无兼容别名；旧方法按未知方法拒绝。业务Operation、Event与`events.live.v1`不受影响。
+M7 保留设置 base methods 与独立 `unity.hub.open.v1`。所有者于2026-11-05批准撤销日志、活动记录及提示系统，这是未发布RPC major 1的破坏性删除：`activity.list/get`、`diagnostics.list`、`diagnostics.log.read/history/health`、`diagnostics.log.v1`及其专属权限/DTO不再提供，无兼容别名；旧方法按未知方法拒绝。业务Operation、Event与`events.live.v1`不受影响。
 
 | method | params | result | permission |
 |---|---|---|---|
 | `settings.get` | `{}` | `configSchema`, `revision`, full normalized `settings`, derived `unityHub` | `settings.read` |
 | `settings.update` | `expectedRevision`, closed partial `update` | new `revision`, full normalized `settings`, derived `unityHub` | `settings.manage` |
-| `unity.hub.open` | `expectedRevision`, required nullable `expectedTargetToken` | `outcome: launch_requested \| download_required` | `settings.read` + `unity.hub.open`, local owner only |
+| `unity.hub.open` | `expectedRevision`, required nullable `expectedTargetToken` | `outcome: launch_requested \| download_required` | `settings.read` + `unity.hub.open`, authenticated interactive client |
 
-Config13 的 `settings.packages.hiddenRepositoryPackages` 按仓库 ID 分组保存关闭的包 ID，默认空清单。
+Config1 的 `settings.packages.hiddenRepositoryPackages` 按仓库 ID 分组保存关闭的包 ID，默认空清单。
 每组关闭该来源的全部现有及未来版本，不影响其他仓库或本地用户来源；整库开关叠加且保留包偏好。
 Core 在候选、提供方、依赖求解、Plan 与冻结 Apply 来源复验中统一过滤。已安装包事实保留，
 没有其他开启来源时显示未知来源，本地卸载保持；仅仓库筛选管理查询保留关闭项供重开。
-省略字段保留，空清单清除，null 非法，保存沿用设置 revision CAS。容量、规范化及升级边界见
-[Config13](../config/settings-v13.md)。严格客户端须同步新增必填字段，不增加 RPC 方法、权限或 State Schema。
+省略字段保留，空清单清除，null 非法，保存沿用设置 revision CAS。容量和规范化规则见
+[Config1](../config/settings-v1.md)。严格客户端须同步新增必填字段，不增加 RPC 方法、权限或 State Schema。
 
-Config12 的 `settings.network.proxy` 是完整的代理模式对象。省略 `update.network` 保留当前偏好。
-显式更新复用 settings revision CAS，保存成功后新请求采用该偏好。模式、地址边界和迁移见
-[Config12](../config/settings-v12.md)。
+Config1 的 `settings.network.proxy` 是完整的代理模式对象。省略 `update.network` 保留当前偏好。
+显式更新复用 settings revision CAS，保存成功后新请求采用该偏好。模式和地址边界见
+[Config1](../config/settings-v1.md)。
 
 已批准的 Unity Hub 位置合同增加 `settings.unity.hubPath: string | null`；它只保存 Hub 可执行文件
 偏好，不修改该可执行文件或项目。省略保持原值，null 清除显式路径，unity 容器 null／空对象及
@@ -917,15 +875,15 @@ Config12 的 `settings.network.proxy` 是完整的代理模式对象。省略 `u
 configuredPathStatus；读取使用该响应的准确 ConfigSnapshot，派生状态不持久化、不推进 revision。
 已成功提交后的证据检测失败返回 unavailable 证据，不将提交改报失败。具体枚举、4096 UTF-8
 字节路径界限、三平台发现顺序、16 KiB 配置上限及尚未覆盖的 Hub 行为见
-`../config/unity-hub-location.proposal.contract.json` 和 `../config/settings-v8.md`。
+`../config/unity-hub-location.proposal.contract.json` 和 `../config/settings-v1.md`。
 
 settings.read/manage 明确授权的设置响应可返回所请求的 Hub 绝对路径，这是通用 redaction
 denylist 的窄例外；Event和普通错误不得因此泄露路径。位置偏好本身不新增
 method、capability、permission、Config version 或 State migration；严格旧客户端须更新新增的发布前响应字段。
 
-已另行批准的 `unity.hub.open` 使用独立 capability `unity.hub.open.v2` 和权限
+已另行批准的 `unity.hub.open` 使用独立 capability `unity.hub.open.v1` 和权限
 `unity.hub.open`；它不扩大 Project／Editor 的 `unity.launch` 或 registry 的 `unity.manage`。
-仅认证的 `builtin:local-owner` 可调用，且同时要求 `settings.read`，在配置／文件／进程访问前
+经过认证的 GUI、CLI 和 MCP 可调用，同时要求 `settings.read`，在配置／文件／进程访问前
 完成 Principal 与权限校验。closed params 的 `expectedRevision` 至少为 1。设置响应的
 `unityHub.targetToken` 与请求的 `expectedTargetToken` 均为必需可空字段。非空令牌是 64 位小写
 十六进制字符串，绑定 Core 解析的启动目标。可用的 MSIX 或 Flatpak 目标可以没有显示路径。
@@ -958,15 +916,13 @@ M7 在 RPC major 1 上实现并广告 `projects.copy.v1`：
 | `projects.planCopy` | source ProjectId/revision、target parent/leaf、idempotency key | immutable bounded Copy Plan、`replayed` | `projects.read + projects.create` |
 | `projects.applyCopy` | PlanId、expected source revision、idempotency key | durable OperationId、预分配 target ProjectId、`replayed` | `projects.read + projects.create` |
 
-外部 filesystem mutation 仍只允许 `builtin:local-owner`。Plan 有效期固定为 900000ms，只做 bounded
+Core 在文件写入前复验调用者、原 Plan 与源项目修订。Plan 有效期固定为 900000ms，只做 bounded
 identity/writer/target preflight，不遍历 source、不计算 inventory 或内容 digest。Apply 返回
 `projects.copy` Operation；完整 inventory 是 Operation-owned、versioned JSON Lines 私有文件，不进入 RPC、Event、日志或
 SQLite inventory table。
 
 Operation phase、Copy Profile v1、quota、source 两遍 SHA-256 一致性、sibling staging、forward recovery、取消边界、
-Resource Lock 与稳定错误由 `m7-project-copy.proposal.schema.json` 和 `../storage/state-v10.md` 冻结。State v10 只增加
-`project_copy_plans`、`project_copy_filesystem_journal` 与 `operations.kind='projects.copy'`；State v10 是该功能的
-引入版本，当前 hello 报告 ready Store 的实际 State v18。新增 method/capability/字段是 RPC v1 兼容增加，既有 Project/Package 方法语义不变。
+资源锁和稳定错误由 `m7-project-copy.proposal.schema.json` 规定。State1 的 `project_copy_plans`、`project_copy_filesystem_journal` 和 `projects.copy` 任务记录复制和恢复进度。
 
 ## 26. M7 兼容增加：Project Favorite 与 Unity product-model replacement
 
@@ -980,9 +936,7 @@ Project Favorite 继续使用既有 compatible addition：
 Favorite 是 registry metadata，不进入 filesystem observation 或 `snapshot_json`。Core list ordering/cursor 不变；真实 mutation
 增加 Project revision并写 `project.favorite_changed`，精确 same-value request 是保存幂等结果的 semantic no-op。
 
-早期 P5-B 的 Automatic/Explicit Editor preference 是历史实现证据，不再是当前产品合同。公开发布前的 State v14
-直接删除 `ProjectEditorPreference`、`ProjectEditorSelection*` 与 `unity.projectEditor.*`，把非空 argv 迁移到
-`project_unity_launch_config`；Project Unity Version 成为唯一用户级版本真相。当前 active DTO、CAS、one-shot launch 与
+项目指定的 Unity 版本决定默认目标，启动参数在 `project_unity_launch_config` 中单独保存。当前 active DTO、CAS、one-shot launch 与
 exact candidate resolution 由 `m5-unity.schema.json` 和 `m7-unity-project-version.proposal.schema.json` 冻结。
 
 ## 27. M7 兼容增加：Project Directory Delete
@@ -994,7 +948,7 @@ M7 在 RPC major 1 上实现并广告 `projects.delete.v1`：
 | `projects.planDeleteDirectory` | ProjectId、expected Project revision、idempotency key | immutable bounded Delete Plan、`replayed` | `projects.read + projects.delete` |
 | `projects.applyDeleteDirectory` | PlanId、expected Project revision、idempotency key | durable OperationId、ProjectId、`replayed` | `projects.delete` |
 
-调用只接受 `ProjectId`，不接受路径。外部 filesystem writer 只允许 `builtin:local-owner`；Permission
+调用只接受 `ProjectId`，不接受路径。Core 以实际调用主体执行受权的文件操作；Permission
 `projects.delete` 不授予 extension。Plan 有效期固定为 900000ms，只冻结 canonical root/parent、filesystem identity、
 leaf、ProjectVersion marker、writer evidence、profile 与 fingerprint，不保存 recursive inventory。Apply 必须 fresh
 revalidate，并返回 `projects.delete-directory` Operation。
@@ -1012,9 +966,7 @@ Operation phase 固定为 `accepted`、`preflight_complete`、`quarantine_intent
 `project_delete_recovery_required`；既有通用 `project_not_registered`、`revision_conflict`、
 `unity_project_running`、`idempotency_conflict`、`permission_denied` 与 `internal_error` 继续复用。
 完整 DTO、phases、path/link/mount 与 recovery vectors 由 `m7-project-delete.proposal.schema.json`、
-`../security/m7-project-delete-path-vectors.json` 与 `../storage/state-v13.md` 冻结。删除事务始于 State v13；
-当前 Store 初始化至 State v18 后，hello 广告 `dataSchema: 18`。新增 method/capability/字段是 RPC v1
-兼容增加，不改变 unregister 的 registry-only 语义。
+`../security/m7-project-delete-path-vectors.json` 与 [State1](../storage/state-v1.md) 冻结。unregister 只删除登记记录。
 
 ## 28. M7 兼容增加：Project Unity Version migration
 
@@ -1026,26 +978,26 @@ M7 在 RPC major 1 上实现并广告 `projects.unity-migration.v1`：
 | `projects.applyUnityMigration` | PlanId、idempotency key | durable OperationId、`replayed` | `projects.unity-migrate` |
 
 Plan 只接受 verified InstallationId，target canonical version 由 Core 推导；TTL 固定 900000ms。Apply 不重新
-Plan，不创建 public package child Operation，并且只允许 `builtin:local-owner` 执行外部 filesystem mutation。
+Plan，不创建 public package child Operation，由 Core 复验计划归属并执行文件变更。
 版本降级默认 `supportedForApply=false`；writer state 只有 `not_observed` 可进入 Plan/Apply。
 
-`projects.unity-migration` Operation 复用既有 Project Resource Lock，并使用 State v14 的 immutable Plan 与 append-only
+`projects.unity-migration` Operation 复用既有 Project Resource Lock，并使用 State1 的 immutable Plan 与 append-only
 journal。`preparation_intent` 或 `launch_intent` 后禁止普通取消；daemon restart 不自动 respawn、不得 kill Unity。最终成功必须
 重新观察同一 Project root identity 且 canonical version exact target，随后只提交一次 Project revision `+1` 和一个
 `project.unity_version_migrated` Event；Unity exit status 本身不是成功 authority。
 
 公开 Plan/Event/error 不包含 project/executable 完整路径、argv、PID、stdout/stderr 或 private recovery locator。受控本地技术
 日志可以保留诊断所需的准确绝对路径，但不得改变 RPC、Event或普通错误 的脱敏合同。完整 DTO、phase、
-permission 与稳定错误由 `m7-unity-project-version.proposal.schema.json`、`state-v14-unity-project-version.proposal.contract.json`
-和 M7 Unity ExecPlan 冻结。当前 Store 初始化至 State v18 后，hello 广告 `dataSchema: 18`。
+permission 与稳定错误由 `m7-unity-project-version.proposal.schema.json`、[State1](../storage/state-v1.md)
+和 M7 Unity ExecPlan 冻结。
 
 
 ## 29. M7 H2-A 兼容增加：Project package candidate evidence
 
 项目所有者批准单个只读 `packages.queryProjectCandidates`，协商 capability
-`packages.candidates.v2`；RPC major 仍为 1，复用原读权限。所有者于 2026-11-08 批准候选 v2，随后明确撤除项目展示数据库副本。当前配套 State32（此前 State31 移除项目展示副本），沿用读权限，Core/SDK/GUI 一起更新。
+`packages.candidates.v1`；RPC major 仍为 1，复用原读权限。候选列表使用当前项目和来源快照。
 
-候选 summary 新增 `description?`、`installedYanked?` 和必需的 `presentationState`（complete/partial/unobserved）；缺失撤回信息表示未知。provider 新增 `displayName?`、`name?`、`builtin?`、`sourceKind` 和 `displayOrder`，只返回可见来源。所有候选页必需返回 `presentationComplete`。summary 的可选 `requestedRange` 与 installed 均来自本次正常读取的项目清单。关键词/别名仅由 Core 搜索，不下发；完整仓库清单只供管理/筛选。Core 在普通首读直接读取项目文件，分页/筛选使用有界内存快照；没有项目展示数据库副本或 projects.refresh 补采前置步骤。登记 revision 与候选文件指纹分离，Plan/Apply 的既有冻结授权和过期检测保持。规范形状见候选 Schema，移除旧开发缓存表见 State31。
+候选 summary 新增 `description?`、`installedYanked?` 和必需的 `presentationState`（complete/partial/unobserved）；缺失撤回信息表示未知。provider 新增 `displayName?`、`name?`、`builtin?`、`sourceKind` 和 `displayOrder`，只返回可见来源。所有候选页必需返回 `presentationComplete`。summary 的可选 `requestedRange` 与 installed 均来自本次正常读取的项目清单。关键词/别名仅由 Core 搜索，不下发；完整仓库清单只供管理/筛选。Core 在普通首读直接读取项目文件，分页/筛选使用有界内存快照；没有项目展示数据库副本或 projects.refresh 补采前置步骤。登记 revision 与候选文件指纹分离，Plan/Apply 的既有冻结授权和过期检测保持。规范形状见候选 Schema。
 所有调用必须同时满足 `projects.read + repositories.read + packages.read + settings.read`
 及既有 Principal / Project / source scope。此查询与后续 Package Plan 使用同一应用层。
 
@@ -1127,7 +1079,7 @@ repository_list_changed，要求重新预览。
 取消不调用写 RPC。稳定错误另包括 repository_list_invalid、repository_list_target_invalid、
 repository_list_io_error；普通错误与日志均不包含原始秘密。
 
-2026-11-10 所有者要求默认完整配置导出，接受不兼容旧 ALCOM 并保留旧兼容入口。
+仓库导出默认使用原生完整配置，显式选择 VCC TXT 时使用独立的文本交换格式。
 `previewListExport` / `exportListFile` 增加可选 `format: native|legacy`，省略保持 legacy；
 GUI 默认显式发送 native，兼容按钮发送 legacy。native 预览/导出额外要求 local-owner 和
 `settings.read`；native 导入在原有权限外要求 `settings.read`、`settings.manage`。
@@ -1146,13 +1098,13 @@ native 导入按来源映射本机 ID 并恢复已有项，保留文件未包含
 
 包/锁依赖的普通范围与项目直接依赖范围分开；普通完整裸版本为exact，项目直接依赖单版本沿有据的minimum语义。unityRelease补充unity最低版本判断，Core候选与Plan一致；无unity时不施加此门槛。权限、来源、强摘要、Plan/Apply和启动exact匹配保持。
 
-本轮PackageChangeSet formatVersion=3固定新的范围上下文及保留锁元数据写出依据（Schema同时描述历史1/2）。1/2未接受Plan返回既有plan_stale；已接受任务保持原冻结摘要恢复，禁止自动重签。此依据标记不改变SQL结构、权限或请求幂等语义。
+计划固定范围上下文、锁元数据和输出摘要。Apply 依据同一摘要校验项目清单，恢复沿用原计划。
 
 ## M7 单页业务日志（2026-11-06，所有者已批准实施）
 
 范围和存储以`docs/exec-plans/M7-official-gui-extension-ui.md`的“单页业务操作日志”为准。这是向RPC v1新增只读方法和经能力协商的失效范围，不恢复diagnostics/activity接口。
 
-- 新增`logs.read`，能力`logs.read.v1`，仅authenticated local-owner且有既有`operations.read`权限，按owner隔离，无公开写入方法。
+- 新增`logs.read`，能力`logs.read.v1`，经认证并具备`operations.read`权限，按owner隔离，无公开写入方法。
 - params：可选`beforeSequence`、`afterSequence`互斥，limit默认100、最大200；无位置读最近记录，before向旧、after向新。所有位置为非负JSON安全整数。
 - 可选`filter`将`actor`、`outcome`、`type`和`search`组合为交集，由Core在游标范围内筛选后分页。`type`由Core根据操作与发起入口判定，分类为`read`、`write`、`passive`、`open`或`maintenance`。`search`最长256字符，忽略首尾空白和大小写，匹配已保存的发起入口、操作和步骤标识、状态、Core操作类型、目标名称和路径及详情。GUI本地化标签不参与搜索。
 - result：`entries`始终sequence升序；`highWatermark`为同一数据库读取快照中该owner的最新日志sequence；`hasMore`及有剩余时的`nextSequence`支持内部续读。before的next为本批最小sequence，after的next为最大sequence；无位置按before处理。单条512KiB、帧4MiB，按完整条目编码大小控制批次，不截断或跳过剩余条目。
@@ -1187,20 +1139,19 @@ owner仅为内部归属，不在条目中暴露；operationId仅关联已接受�
 
 ## M8 OAuth（2026-11-15，所有者已批准）
 
-现行 `mcp.oauth.v2` 保留九个 typed RPC 和两个互斥 hello 身份分支，详见
-[OAuth RPC](m8-mcp-oauth-v2.md)及其 Schema。`system-hello.request.schema.json`
+现行 `mcp.oauth.v1` 保留九个 typed RPC 和两个互斥 hello 身份分支，详见
+[OAuth RPC](m8-mcp-oauth-v1.md)及其 Schema。`system-hello.request.schema.json`
 引用完整的 authentication 联合。`mcp-oauth-endpoint` 仅能执行 begin/finish/token/revoke，
 永不取得 owner；`mcp-oauth-access` 逐请求验证 Core 签发 token、audience 和当前授权。
-其余五个控制 RPC 仅 authenticated local-owner，沿用现有权限。
+其余五个控制 RPC 检查调用者的管理权限。
 
 HTTPS/发现/授权码/刷新/撤销与错误边界见 [HTTP OAuth](../mcp/http-oauth-v1.md)，
-持久化见 [State36](../storage/state-v36.md)。此增量不修改 STDIO、预配 Bearer、
-六工具、Config13、权限名称、WIT 或现有资源 owner。秘密不进入普通响应、事件和
+持久化见 [State1](../storage/state-v1.md)。秘密不进入普通响应、事件和
 通用幂等结果；一次性写响应丢失不自动重签。
 
 ## M8 单扩展源在线安装补充
 
-新增 `extensions.inspectSource`、`extensions.planInstallFromSource`，以 `extensions.remote-install.v1` 协商；仅认证 local-owner＋extensions.manage，不开放Host或MCP委托。字段见 [M6 runtime Schema](m6-extension-runtime.schema.json)，来源JSON及安全边界见 [单扩展源 v1](../extensions/source-v1.md)。只创建新安装Plan，沿用原两步同意及Apply，变化即revision_conflict，不静默重规划。Plan sourceKind新增remote_extension_source，Plan/extension详情增加可选installationSource（url/version）；来源完整证据冻结于State42，不从可变远端补装详情。新增extension_source_invalid/extension_source_unavailable，摘要及大小沿用已有package错误。Config、权限名称、WIT和原本地入口不变。
+新增 `extensions.inspectSource`、`extensions.planInstallFromSource`，以 `extensions.remote-install.v1` 协商；调用方须经认证并具备 extensions.manage，Host 遵守扩展沙箱。字段见 [M6 runtime Schema](m6-extension-runtime.schema.json)，来源JSON及安全边界见 [单扩展源 v1](../extensions/source-v1.md)。只创建新安装Plan，沿用原两步同意及Apply，变化即revision_conflict，不静默重规划。Plan sourceKind新增remote_extension_source，Plan/extension详情增加可选installationSource（url/version）；来源完整证据冻结于State1，不从可变远端补装详情。新增extension_source_invalid/extension_source_unavailable，摘要及大小沿用已有package错误。Config、权限名称、WIT和原本地入口不变。
 
 ## M8 directory subscriptions and transport observations
 
@@ -1209,7 +1160,7 @@ and [transient adapter reports](m8-mcp-transport-v1.md). Existing catalogue resp
 now include a required catalogFingerprint. Observer hello is an explicit restricted
 protected-local-IPC role; it is never local-owner or a business MCP Principal.
 Transport reads use separate negotiated capabilities and existing/approved group
-permissions. Config13 and existing business tool/identity contracts are unchanged.
+permissions. Config1 and existing business tool/identity contracts are unchanged.
 
 ## M8 installed package inventory and template editing
 

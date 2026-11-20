@@ -136,8 +136,8 @@ function nodeProbe(mode, capture = false) {
 function probeResult(output) {
     const probe = JSON.parse(output);
     assert.equal(probe.hello.rpcVersion, 1);
-    assert(Number.isInteger(probe.hello.dataSchema) && probe.hello.dataSchema > 0);
-    assert(Number.isInteger(probe.hello.configSchema) && probe.hello.configSchema > 0);
+    assert.equal(probe.hello.dataSchema, 1);
+    assert.equal(probe.hello.configSchema, 1);
     assert.equal(probe.status.state, "ready");
     assert.equal(probe.projectCount, 0);
     assert.equal(typeof probe.instanceId, "string");

@@ -209,9 +209,9 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "候选版本信息已过期。",
         "ja-JP": "候補バージョンの情報が古くなっています。"
     },
-    "Candidate evidence unavailable: packages.candidates.v2 was not negotiated.": {
-        "zh-CN": "候选版本信息不可用：未协商 packages.candidates.v2。",
-        "ja-JP": "候補バージョンの情報を利用できません。packages.candidates.v2 が確認できませんでした。"
+    "Candidate evidence unavailable: packages.candidates.v1 was not negotiated.": {
+        "zh-CN": "候选版本信息不可用：未协商 packages.candidates.v1。",
+        "ja-JP": "候補バージョンの情報を利用できません。packages.candidates.v1 が確認できませんでした。"
     },
     "Change the search or package filter.": {
         "zh-CN": "请更改搜索内容或软件包筛选条件。",

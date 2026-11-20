@@ -20,7 +20,7 @@ test("backup creation writes to a selected ZIP and publishes one contextual task
     await expect(dialog.locator(".operation-follow")).toContainText("running");
     expect(await requests(page, "backups.create")).toEqual([{
         method: "backups.create",
-        params: { projectId, expectedRevision: 2, compressionMode: "fast", excludeVpmPackages: false, includeLibrary: false, destinationPath: "C:/Outside/Archive.zip", idempotencyKey: expect.any(String) }
+        params: { projectId, expectedRevision: 2, destinationPath: "C:/Outside/Archive.zip", idempotencyKey: expect.any(String) }
     }]);
     await state(page, "succeeded");
     await page.getByRole("button", { name: "View operation", exact: true }).click();

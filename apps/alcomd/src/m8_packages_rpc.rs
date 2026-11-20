@@ -708,13 +708,10 @@ async fn plan(
             })
         })?
         .sources;
-    let plan = if request.action.uses_delegated_catalog() {
-        apps.m4
-            .plan_delegated(access, request, authentication)
-            .await?
-    } else {
-        apps.m4.plan(access, request).await?
-    };
+    let plan = apps
+        .m4
+        .plan_authenticated(access, request, Some(authentication))
+        .await?;
     let mut plan = super::m4_rpc::plan_to_rpc(plan);
     let selected = plan
         .change_set
