@@ -17,8 +17,8 @@ jobs:
   windows-hosted:
     name: Windows Server 2025 hosted
     runs-on: windows-2025
-    # Cold native builds plus the full browser suite exceeded the former hour.
-    timeout-minutes: 90
+    # Leave room for cold native builds and the full browser suite on slower runners.
+    timeout-minutes: 120
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -74,8 +74,7 @@ jobs:
   linux-hosted:
     name: Ubuntu 22.04 hosted
     runs-on: ubuntu-22.04
-    # Cold native builds plus the full browser suite exceeded the former hour.
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -145,8 +144,7 @@ jobs:
   macos-hosted:
     name: macOS 15 arm64 hosted
     runs-on: macos-15
-    # Cold native builds leave too little of an hour for the full browser suite.
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
