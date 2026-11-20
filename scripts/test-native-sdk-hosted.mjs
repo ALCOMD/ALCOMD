@@ -42,7 +42,7 @@ if (macos) {
 }
 // Core resolves its normal macOS paths from HOME. Keep npm, Cargo and Rustup
 // on the runner's original HOME so the build still uses its installed caches.
-const fixtureEnvironment = macos ? { ...environment, HOME: profileBase } : environment;
+const fixtureEnvironment = { ...environment, ...(macos ? { HOME: profileBase } : {}) };
 const target = join(workspace, "target");
 const cargo = windows ? "cargo.exe" : "cargo";
 const bridge = join(target, "debug", `alcomd-sdk-bridge${suffix}`);
@@ -53,6 +53,37 @@ const rustExample = join(target, "debug", `alcomd-native-sdk-example${suffix}`);
 let ownedData;
 const createdProfileParents = [];
 let canClean = true;
+let repositoryProxy;
+const startedAt = performance.now();
+
+function phase(label) {
+    process.stdout.write(`Native SDK fixture +${Math.round(performance.now() - startedAt)} ms | ${label}\n`);
+}
+
+async function isolateRepositoryNetwork() {
+    // The default System proxy remains active. Reject external repository refreshes
+    // immediately so their network deadlines cannot extend the Core idle check.
+    // Run the rejecting listener separately so synchronous probes cannot block it.
+    const child = start(node, ["--input-type=module", "--eval", `
+        import { createServer } from "node:net";
+        const listener = createServer((socket) => socket.destroy());
+        listener.listen(0, "127.0.0.1", () => console.log(listener.address().port));
+        process.stdin.on("end", () => listener.close());
+        process.stdin.resume();
+    `], ["pipe", "pipe", "inherit"]);
+    const exited = observeExit(child);
+    repositoryProxy = { child, exited };
+    const port = Number(await readReadyLine(child, exited, 5_000, "Repository fixture proxy"));
+    assert(Number.isInteger(port) && port > 0 && port <= 65_535, "Repository fixture proxy must use a valid loopback port.");
+    for (const key of Object.keys(fixtureEnvironment)) {
+        if (["ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY"].includes(key.toUpperCase())) {
+            delete fixtureEnvironment[key];
+        }
+    }
+    const proxy = `http://127.0.0.1:${port}`;
+    fixtureEnvironment.HTTPS_PROXY = proxy;
+    fixtureEnvironment.HTTP_PROXY = proxy;
+}
 
 function samePath(first, second) {
     return windows ? first.toLowerCase() === second.toLowerCase() : first === second;
@@ -128,23 +159,61 @@ function start(command, args, stdio, cwd = external) {
     return spawn(command, args, { cwd, env: fixtureEnvironment, stdio, windowsHide: true });
 }
 
-async function openNodeConsumer(mode) {
-    const child = start(node, ["probe.mjs", mode], ["pipe", "pipe", "inherit"]);
-    const exited = once(child, "close", { signal: AbortSignal.timeout(60_000) });
+async function within(promise, timeout, label) {
+    const timer = new AbortController();
+    try {
+        return await Promise.race([promise, delay(timeout, undefined, { signal: timer.signal }).then(() => {
+            throw new Error(`${label} did not finish within ${timeout} ms.`);
+        })]);
+    } finally {
+        timer.abort();
+    }
+}
+
+function observeExit(child) {
+    const exited = once(child, "exit");
+    // A spawn error may arrive before the caller reaches the exit check.
+    exited.catch(() => {});
+    return exited;
+}
+
+async function expectExit(exited, timeout, label) {
+    const [code, signal] = await within(exited, timeout, label);
+    assert.equal(code, 0, `${label} exited with code ${code} and signal ${signal}.`);
+}
+
+async function stopChild(child, exited, label) {
+    if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+        child.kill();
+        await within(exited, 5_000, label).catch(() => {});
+    }
+}
+
+async function readReadyLine(child, exited, timeout, label) {
     const ready = createInterface({ input: child.stdout });
     try {
-        const signal = AbortSignal.timeout(35_000);
-        const [line] = await Promise.race([
-            once(ready, "line", { signal }),
-            exited.then(() => { throw new Error("The Node consumer exited before it reported status."); })
-        ]);
-        return { child, exited, result: probeResult(line) };
-    } catch (error) {
-        child.kill();
-        await exited.catch(() => {});
-        throw error;
+        const [line] = await within(Promise.race([
+            once(ready, "line"),
+            exited.then(([code, signal]) => {
+                throw new Error(`${label} exited before reporting readiness (code ${code}, signal ${signal}).`);
+            })
+        ]), timeout, `${label} readiness`);
+        return line;
     } finally {
         ready.close();
+        child.stdout.resume();
+    }
+}
+
+async function openNodeConsumer(mode) {
+    const child = start(node, ["probe.mjs", mode], ["pipe", "pipe", "inherit"]);
+    const exited = observeExit(child);
+    try {
+        const line = await readReadyLine(child, exited, 35_000, "Node cold consumer");
+        return { child, exited, result: probeResult(line) };
+    } catch (error) {
+        await stopChild(child, exited, "Stop failed Node cold consumer");
+        throw error;
     }
 }
 
@@ -219,16 +288,20 @@ try {
         cwd: external, env: buildEnv, timeout: 600_000
     }), "Build external Rust example");
 
+    phase("Check that the fixture endpoint and profile are unused");
+    await isolateRepositoryNetwork();
     const registration = await prepareProfile();
     canClean = false;
+    phase("Start staged Core before registration and probe readiness");
     const initial = start(daemon, [], ["ignore", "ignore", "inherit"], runtime);
-    const initialExit = once(initial, "close", { signal: AbortSignal.timeout(45_000) });
-    initialExit.catch(() => {});
+    const initialExit = observeExit(initial);
     try {
         const initialized = probeResult(success(rustProbe("probe-running"), "Initialize staged Core"));
-        assert.equal((await initialExit)[0], 0, "Initialized Core should exit naturally while idle.");
+        phase("Wait for initialized Core to exit after disconnecting");
+        await expectExit(initialExit, 45_000, "Initialized Core idle shutdown");
         assert((await metadata(join(ownedData, "state.db")))?.isFile(), "Core must initialize the fixture state before registration.");
         assert.equal(await metadata(registration), undefined);
+        phase("Verify missing and stale registration cannot start Core");
         success(nodeProbe("unavailable"), "Node rejects a missing registration");
 
         const missing = join(stage, "missing-runtime");
@@ -239,6 +312,7 @@ try {
         await unlink(registration);
         await writeFile(registration, `${runtime}\n`, { flag: "wx", mode: 0o600 });
 
+        phase("Connect Node and Rust in parallel from a cold start");
         const nodeReady = openNodeConsumer("hold");
         // Attach a handler immediately while the independent Rust program connects.
         nodeReady.catch(() => {});
@@ -249,31 +323,34 @@ try {
             const parallel = probeResult(success(await parallelRust, "Parallel Rust cold connection"));
             assert.equal(parallel.instanceId, held.result.instanceId);
             assert.notEqual(parallel.instanceId, initialized.instanceId);
+            phase("Attach Rust to the running Core during the Node event subscription");
             assert.equal(probeResult(success(rustProbe("probe-running"), "Running Core connection")).instanceId, parallel.instanceId);
         } finally {
+            phase("Release Node event subscription and wait for the consumer to exit");
             held.child.stdin.end();
             try {
-                assert.equal((await held.exited)[0], 0, "Node consumer should close normally.");
+                await expectExit(held.exited, 25_000, "Node cold consumer shutdown");
             } finally {
-                if (held.child.exitCode === null && held.child.signalCode === null) held.child.kill();
+                await stopChild(held.child, held.exited, "Stop Node cold consumer");
             }
         }
+        phase("Verify Core exited after both consumers disconnected");
         await assertIdleExit();
 
+        phase("Restart Core from the installed Node package and verify it idles again");
         const restart = probeResult(success(nodeProbe("probe", true), "Restart from Node"));
         assert.notEqual(restart.instanceId, held.result.instanceId);
         await assertIdleExit();
         canClean = true;
     } finally {
-        if (initial.exitCode === null && initial.signalCode === null) {
-            initial.kill();
-            await initialExit.catch(() => {});
-        }
+        await stopChild(initial, initialExit, "Stop initial Core fixture");
         if (!canClean) {
+            phase("Verify Core has stopped before cleaning its fixture data");
             try { await assertIdleExit(); canClean = true; } catch { /* Keep state while Core may own it. */ }
         }
     }
 
+    phase("Exercise packaged consumers against a separate isolated Core");
     success(run(cargo, ["test", "--locked", "--offline", "--package", "alcomd-testing", "--test", "m10_native_sdk"], {
         env: { ...buildEnv, ALCOMD_M10_NODE_PACKAGE_CONSUMER: external }, timeout: 600_000
     }), "Cross-language workflows on isolated Core");
@@ -282,6 +359,7 @@ try {
     await copyFile(join(archive, tarballs[0]), join(verifiedArchives, tarballs[0]));
     process.stdout.write("Native SDK archives, external consumers, installation startup and idle restart passed.\n");
 } finally {
+    if (repositoryProxy) await stopChild(repositoryProxy.child, repositoryProxy.exited, "Stop Repository fixture proxy");
     if (canClean) {
         if (windows && ownedData) {
             await verifyDirectory(ownedData, dirname(ownedData));
