@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, realpath, readdir, rm, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,6 +7,7 @@ import { basename, dirname, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 const workspace = await realpath(fileURLToPath(new URL("../", import.meta.url)));
 const { platform } = process;
@@ -50,6 +51,7 @@ const daemon = join(runtime, `alcomd${suffix}`);
 const packageEntry = join(external, "node_modules", "@alcomd", "sdk", "dist", "node.js");
 const sourceExample = join(workspace, "sdk", "rust", "examples", "native-client");
 const rustExample = join(target, "debug", `alcomd-native-sdk-example${suffix}`);
+const execFileAsync = promisify(execFile);
 let ownedData;
 const createdProfileParents = [];
 let canClean = true;
@@ -153,6 +155,43 @@ async function assertIdleExit() {
     // Leave the disconnected grace interval alone before the no-start probe.
     await delay(2_000);
     assertStopped();
+}
+
+async function waitForInstallerCore(initialExit) {
+    // First-run initialization precedes the installation receipt. Each probe still
+    // uses the SDK's no-autostart mode and its normal five-second deadline.
+    const started = performance.now();
+    const elapsed = () => `${Math.round(performance.now() - started)} ms`;
+    const probe = new AbortController();
+    const prematureExit = initialExit.then(([code, signal]) => {
+        throw new Error(`Installer Core exited before readiness (code ${code}, signal ${signal}, ${elapsed()}).`);
+    });
+    const probeUntilReady = async () => {
+        for (let attempt = 1; ; attempt++) {
+            let output;
+            try {
+                ({ stdout: output } = await execFileAsync(rustExample, ["probe-running"], {
+                    cwd: external, env: fixtureEnvironment, signal: probe.signal, windowsHide: true
+                }));
+            } catch (error) {
+                const reason = error.stderr?.trim();
+                if (error.code !== 1 || reason !== "the ALCOMD daemon did not become ready within five seconds") {
+                    const status = `code ${error.code ?? "none"}, signal ${error.signal ?? "none"}`;
+                    throw new Error(`Installer Core probe ${attempt} failed after ${elapsed()} (${status})${reason ? `: ${reason}` : "."}`);
+                }
+                phase(`Installer Core still initializing after probe ${attempt} (${elapsed()})`);
+                continue;
+            }
+            const ready = probeResult(output);
+            phase(`Installer Core became ready on probe ${attempt} (${elapsed()})`);
+            return ready;
+        }
+    };
+    try {
+        return await within(Promise.race([prematureExit, probeUntilReady()]), 30_000, "Installer Core readiness");
+    } finally {
+        probe.abort();
+    }
 }
 
 function start(command, args, stdio, cwd = external) {
@@ -317,7 +356,7 @@ try {
     const initial = start(daemon, [], ["ignore", "ignore", "inherit"], runtime);
     const initialExit = observeExit(initial);
     try {
-        const initialized = probeResult(success(rustProbe("probe-running"), "Initialize staged Core"));
+        const initialized = await waitForInstallerCore(initialExit);
         phase("Wait for initialized Core to exit after disconnecting");
         await expectExit(initialExit, 45_000, "Initialized Core idle shutdown");
         assert((await metadata(join(ownedData, "state.db")))?.isFile(), "Core must initialize the fixture state before registration.");
