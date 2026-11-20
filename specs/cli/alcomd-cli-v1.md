@@ -9,6 +9,8 @@ capability 已真实实现时才可进入 help；合同中存在名称不等于�
 
 `package install` 和 `package upgrade` 默认建议省略 `--version-range`，由 Core 推荐兼容版本。指定范围时，Core 在范围内选择。
 
+手动安装、升级或降级时，可用 `--allow-unity-incompatible` 为本次操作的目标包版本启用 Unity 兼容性例外。安装和升级须同时提供精确选择器，例如 `--version-range "=1.2.3"`。降级使用位置参数指定版本，例如 `1.2.3`。依赖包仍按项目的 Unity 版本检查。
+
 权威 machine-readable 工件：
 
 - `alcomd-cli-v1.schema.json`：machine output、stream record、退出码与全局选项。

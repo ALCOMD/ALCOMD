@@ -437,6 +437,9 @@ enum PackageCommand {
         /// Omit to let Core select the recommended compatible version.
         #[arg(long)]
         version_range: Option<String>,
+        /// Allow this exact package version despite its Unity requirement (requires --version-range "=X.Y.Z").
+        #[arg(long, requires = "version_range")]
+        allow_unity_incompatible: bool,
         #[arg(long)]
         repository_id: Option<String>,
         #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true", default_value_t = true)]
@@ -462,6 +465,9 @@ enum PackageCommand {
         /// Omit to let Core select the recommended compatible version.
         #[arg(long)]
         version_range: Option<String>,
+        /// Allow this exact package version despite its Unity requirement (requires --version-range "=X.Y.Z").
+        #[arg(long, requires = "version_range")]
+        allow_unity_incompatible: bool,
         #[arg(long)]
         repository_id: Option<String>,
         #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true", default_value_t = true)]
@@ -474,6 +480,9 @@ enum PackageCommand {
         project_id: String,
         package_id: String,
         version: String,
+        /// Allow this exact package version despite its Unity requirement.
+        #[arg(long)]
+        allow_unity_incompatible: bool,
         #[arg(long)]
         expected_revision: u64,
         #[arg(long)]
@@ -1154,12 +1163,13 @@ async fn execute(
                 expected_revision,
                 version_range,
                 repository_id,
+                allow_unity_incompatible,
                 include_prerelease,
                 idempotency_key,
             } => {
                 let plan = client
                     .package_plan_install(alcomd_protocol::PackagePlanInstallParams {
-                        allow_unity_incompatible: false,
+                        allow_unity_incompatible,
                         project_id,
                         expected_revision,
                         package_id,
@@ -1206,12 +1216,13 @@ async fn execute(
                 expected_revision,
                 version_range,
                 repository_id,
+                allow_unity_incompatible,
                 include_prerelease,
                 idempotency_key,
             } => {
                 let plan = client
                     .package_plan_upgrade(alcomd_protocol::PackagePlanUpgradeParams {
-                        allow_unity_incompatible: false,
+                        allow_unity_incompatible,
                         project_id,
                         expected_revision,
                         package_id,
@@ -1236,11 +1247,12 @@ async fn execute(
                 version,
                 expected_revision,
                 repository_id,
+                allow_unity_incompatible,
                 idempotency_key,
             } => {
                 let plan = client
                     .package_plan_downgrade(alcomd_protocol::PackagePlanDowngradeParams {
-                        allow_unity_incompatible: false,
+                        allow_unity_incompatible,
                         project_id,
                         expected_revision,
                         package_id,
@@ -2275,10 +2287,53 @@ mod tests {
                     command: PackageCommand::Install {
                         version_range: None,
                         include_prerelease: true,
+                        allow_unity_incompatible: false,
                         ..
                     } | PackageCommand::Upgrade {
                         version_range: None,
                         include_prerelease: true,
+                        allow_unity_incompatible: false,
+                        ..
+                    }
+                }
+            ));
+        }
+    }
+
+    #[test]
+    fn package_unity_override_requires_an_explicit_target() {
+        for action in ["install", "upgrade", "downgrade"] {
+            let base = [
+                "alcomd-cli",
+                "package",
+                action,
+                "project",
+                "pkg",
+                "--expected-revision",
+                "1",
+                "--idempotency-key",
+                "example",
+                "--allow-unity-incompatible",
+            ];
+            assert!(Arguments::try_parse_from(base).is_err());
+            let target: &[&str] = if action == "downgrade" {
+                &["1.2.3"]
+            } else {
+                &["--version-range", "=1.2.3"]
+            };
+            let args = Arguments::try_parse_from(base.into_iter().chain(target.iter().copied()))
+                .expect("explicit package version");
+            assert!(matches!(
+                args.command,
+                Command::Package {
+                    command: PackageCommand::Install {
+                        allow_unity_incompatible: true,
+                        ..
+                    } | PackageCommand::Upgrade {
+                        allow_unity_incompatible: true,
+                        ..
+                    } | PackageCommand::Downgrade {
+                        allow_unity_incompatible: true,
                         ..
                     }
                 }
