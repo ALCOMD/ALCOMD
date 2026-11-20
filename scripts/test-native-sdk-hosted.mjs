@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, realpath, readdir, rm, rmdir, unlink, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
@@ -30,6 +30,7 @@ const stageParent = await realpath(windows ? localAppData : macos ? "/private/tm
 const stage = await mkdtemp(join(stageParent, "ac-m10-host-"));
 const runtime = join(stage, "runtime");
 const external = join(stage, "consumer");
+const profileBase = windows ? stageParent : macos ? join(stage, "home") : stage;
 const environment = { ...process.env };
 delete environment.ALCOMD_MCP_CLIENT_CREDENTIAL;
 delete environment.NODE_OPTIONS;
@@ -39,6 +40,9 @@ if (macos) {
     environment.XDG_RUNTIME_DIR = stage;
     environment.XDG_DATA_HOME = join(stage, "xdg-data");
 }
+// Core resolves its normal macOS paths from HOME. Keep npm, Cargo and Rustup
+// on the runner's original HOME so the build still uses its installed caches.
+const fixtureEnvironment = macos ? { ...environment, HOME: profileBase } : environment;
 const target = join(workspace, "target");
 const cargo = windows ? "cargo.exe" : "cargo";
 const bridge = join(target, "debug", `alcomd-sdk-bridge${suffix}`);
@@ -89,7 +93,11 @@ function success(result, step) {
 }
 
 function rustProbe(mode) {
-    return run(rustExample, [mode], { cwd: external, capture: true });
+    return run(rustExample, [mode], { cwd: external, capture: true, env: fixtureEnvironment });
+}
+
+function nodeProbe(mode, capture = false) {
+    return run(node, ["probe.mjs", mode], { cwd: external, capture, env: fixtureEnvironment });
 }
 
 function probeResult(output) {
@@ -117,7 +125,7 @@ async function assertIdleExit() {
 }
 
 function start(command, args, stdio, cwd = external) {
-    return spawn(command, args, { cwd, env: environment, stdio, windowsHide: true });
+    return spawn(command, args, { cwd, env: fixtureEnvironment, stdio, windowsHide: true });
 }
 
 async function openNodeConsumer(mode) {
@@ -141,22 +149,26 @@ async function openNodeConsumer(mode) {
 }
 
 async function prepareProfile() {
+    if (macos) {
+        await mkdir(profileBase, { mode: 0o700 });
+        await verifyDirectory(profileBase, stage);
+    }
     const registration = success(rustProbe("registration-path"), "Locate Core registration").trim();
-    const expected = windows ? join(localAppData, "ALCOMD", "data", "core-installation-v1")
-        : macos ? join(homedir(), "Library", "Application Support", "ALCOMD", "core-installation-v1")
+    const expected = windows ? join(profileBase, "ALCOMD", "data", "core-installation-v1")
+        : macos ? join(profileBase, "Library", "Application Support", "ALCOMD", "core-installation-v1")
         : join(environment.XDG_DATA_HOME, "alcomd", "core-installation-v1");
     assert(samePath(registration, expected), "The registration resolves outside the expected fixture data location.");
     assertStopped();
     const data = dirname(registration);
     assert.equal(await metadata(data), undefined, "Refusing to start with existing Core data or registration.");
     const components = windows ? ["ALCOMD"] : macos ? ["Library", "Application Support"] : ["xdg-data"];
-    let parent = await realpath(windows ? localAppData : macos ? homedir() : stage);
+    let parent = await realpath(profileBase);
     assert(samePath(join(parent, ...components), dirname(data)), "The registration's parent resolves outside the fixture.");
     for (const component of components) {
         const directory = join(parent, component);
         if (!await metadata(directory)) {
             await mkdir(directory, { mode: 0o700 });
-            createdProfileParents.push(directory);
+            if (windows) createdProfileParents.push(directory);
         }
         await verifyDirectory(directory, parent);
         parent = directory;
@@ -217,12 +229,12 @@ try {
         assert.equal((await initialExit)[0], 0, "Initialized Core should exit naturally while idle.");
         assert((await metadata(join(ownedData, "state.db")))?.isFile(), "Core must initialize the fixture state before registration.");
         assert.equal(await metadata(registration), undefined);
-        success(run(node, ["probe.mjs", "unavailable"], { cwd: external }), "Node rejects a missing registration");
+        success(nodeProbe("unavailable"), "Node rejects a missing registration");
 
         const missing = join(stage, "missing-runtime");
         await writeFile(registration, `${missing}\n`, { flag: "wx", mode: 0o600 });
         assert.notEqual(rustProbe("probe").status, 0, "Rust accepted a stale registration.");
-        success(run(node, ["probe.mjs", "unavailable"], { cwd: external }), "Node rejects stale registration");
+        success(nodeProbe("unavailable"), "Node rejects stale registration");
         assertStopped();
         await unlink(registration);
         await writeFile(registration, `${runtime}\n`, { flag: "wx", mode: 0o600 });
@@ -248,7 +260,7 @@ try {
         }
         await assertIdleExit();
 
-        const restart = probeResult(success(run(node, ["probe.mjs", "probe"], { cwd: external, capture: true }), "Restart from Node"));
+        const restart = probeResult(success(nodeProbe("probe", true), "Restart from Node"));
         assert.notEqual(restart.instanceId, held.result.instanceId);
         await assertIdleExit();
         canClean = true;
@@ -271,7 +283,7 @@ try {
     process.stdout.write("Native SDK archives, external consumers, installation startup and idle restart passed.\n");
 } finally {
     if (canClean) {
-        if (ownedData) {
+        if (windows && ownedData) {
             await verifyDirectory(ownedData, dirname(ownedData));
             await rm(ownedData, { recursive: true, force: true });
         }
