@@ -436,21 +436,11 @@ ALCOMD 长任务通过核心 `OperationId` 表达。4.0.0 不采用或广告 MCP
 query、input、approve、reject、resume 与 cancel。未来只能以兼容增加方式评估 Tasks，不得把
 旧实验性 Tasks API 当成稳定核心协议。
 
-MCP 管理扩展 ID：
-
-```text
-com.vrclearn.alcomd.extension.mcp
-```
-
 MCP 启用后，认证成功的客户端可调用全部当前发布的工具。STDIO 使用启动凭据。HTTP 按请求验证
 Bearer 凭据或单一 `mcp` scope 的 OAuth 令牌。Core 绑定已登记的客户端 Principal，并继续检查凭据
 撤销、业务条件、计划和任务归属。自报 clientInfo 仅用于展示。
 
-管理扩展提供客户端登记、撤销、接入指引，以及连接、请求和工具列表变更订阅流的可视化。
-客户端管理使用 `mcp.clients.read/manage`。观测分别使用 `mcp.requests.read`、
-`mcp.connections.read` 和 `mcp.subscription-streams.read`。关闭管理扩展后，独立 MCP 服务仍可运行。
-
-MCP 管理扩展默认安装并启用。
+Core 负责原生客户端发现、实例和 AI 客户端的登记、撤销及独立所有者审批。GUI 在设置页「客户端」展示这些信息，CLI 和 MCP 走相同用例。第三方扩展仍可按授予的权限管理或观察连接。客户端管理使用 `mcp.clients.read/manage`，观测分别使用 `mcp.requests.read`、`mcp.connections.read` 和 `mcp.subscription-streams.read`。原生入口与现存第一方扩展的替换进度见[三端实施计划](../exec-plans/M11-client-parity.md)。
 
 ## 17. Discord
 

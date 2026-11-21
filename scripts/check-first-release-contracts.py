@@ -35,6 +35,35 @@ def unique_names(values, label):
     return result
 
 
+def check_client_matrix(matrix, native_methods, service_methods):
+    labels = {"已提供", "已验证", "部分可达", "缺少入口", "仅本机交互", "协议专用"}
+    sections = re.split(r"(?m)^## ", matrix)
+    service_title = "连接和 MCP 适配方法"
+    service_tables = [s for s in sections[1:] if s.splitlines()[0] == service_title]
+    if len(service_tables) != 1:
+        raise ValueError(f"expected one matrix section for {service_title}")
+    for section, expected in ((sections[0], native_methods), (service_tables[0], service_methods)):
+        methods = []
+        for line in section.splitlines():
+            if not line.startswith("| `"):
+                continue
+            columns = [c.strip() for c in line.strip("|").split("|")]
+            if len(columns) != 4 or not re.fullmatch(r"`[\w.]+`", columns[0]):
+                raise ValueError(f"expected one method and three client entries: {line}")
+            method = columns[0].strip("`")
+            methods.append(method)
+            for client, cell in zip(("GUI", "CLI", "MCP"), columns[1:]):
+                label, _, detail = cell.partition(" · ")
+                if label not in labels or not detail.strip():
+                    raise ValueError(f"{method} {client}: missing status, entry point or reason")
+                if label == "已验证" and not re.search(r"\[[^\]]+\]\([^)]+\)", detail):
+                    raise ValueError(f"{method} {client}: verified entry needs a test evidence link")
+        actual = unique_names(methods, "client operation matrix row")
+        if actual != set(expected):
+            raise ValueError(f"client operation matrix: missing {sorted(set(expected) - actual)}, "
+                             f"unexpected {sorted(actual - set(expected))}")
+
+
 def check_first_release_versions(release):
     schemas = release["schemas"]
     config = read_json(SPEC / schemas["Config"])
@@ -106,9 +135,7 @@ def main():
         if not (SPEC / relative).is_file():
             raise ValueError(f"missing contract: {relative}")
     matrix = (ROOT / "docs/exec-plans/M11-client-operation-matrix.md").read_text(encoding="utf-8")
-    rows = re.findall(r"(?m)^\| `([^\s`]+)` \| (?:已提供|缺少入口|仅本机交互) \|", matrix)
-    if unique_names(rows, "client operation matrix row") != set(manifest["methods"]):
-        raise ValueError("client operation matrix disagrees with the native method catalogue")
+    check_client_matrix(matrix, manifest["methods"], release["serviceMethods"])
     if manifest["rpcVersion"] != 1:
         raise ValueError("invalid SDK protocol version")
     for name, entry in manifest["methods"].items():
@@ -127,6 +154,17 @@ def main():
         for item in catalog.get("x-alcomd-tools", []):
             tools.append(item["name"])
     unique_names(tools, "MCP tool")
+    cli = read_json(SPEC / "cli/command-catalog-v1.json")
+    commands = [
+        name
+        for group in cli["groups"]
+        for name in ([group["name"] + " " + command["name"] for command in group["commands"]]
+                     or [group["name"]])
+    ]
+    for name in [*commands, *tools]:
+        if not re.search(r"(?<![\w-])" + re.escape(name) + r"(?![\w-])", matrix):
+            raise ValueError(f"missing client catalogue entry in the operation matrix: {name}")
+
     for path in (SPEC / "extensions/wit").rglob("*.wit"):
         for version in re.findall(r'alcomd:[\w/-]+@(\d+\.\d+\.\d+(?:[-+][\w.-]+)?)', path.read_text(encoding="utf-8")):
             if version != "1.0.0":
