@@ -85,6 +85,12 @@ async fn m2_state_check_round_trips_through_real_ipc_and_durable_store() {
         },
     )
     .await;
+    // The first frame byte proves Core accepted the write while leaving the
+    // response unreadable to this client when its connection is dropped.
+    tokio::time::timeout(Duration::from_secs(3), abandoned.read_u8())
+        .await
+        .expect("Core started sending the state check response")
+        .expect("first byte of the response frame");
     drop(abandoned);
 
     let mut recovery_client = connect_with_retry(client_config.clone()).await;
