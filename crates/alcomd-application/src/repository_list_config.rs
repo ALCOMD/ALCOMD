@@ -141,7 +141,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
             let commits = Arc::clone(&commits);
             let mut stopped = stop.clone();
             let operation_key = key.as_str().to_owned();
-            jobs.spawn(async move {
+            let admission = async move {
                 if existing.is_some() && !overwrite_existing {
                     return (entry.line, RepositoryBatchItem::Existing, None);
                 }
@@ -165,7 +165,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                         "fetch_repository",
                         None,
                         registry.reader.inspect_repository_authenticated(
-                            source,
+                            source.clone(),
                             None,
                             entry.credentials.clone(),
                         ),
@@ -195,13 +195,16 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                 let result = match existing {
                     Some(record) => Ok((record.repository_id, false)),
                     None => {
-                        let observation = observation.expect("new source was read");
+                        let registration = crate::RepositoryRegistration {
+                            requested_source: source,
+                            observation: observation.expect("new source was read"),
+                        };
                         let result = match entry.credentials.clone() {
                             Some(credentials) => {
                                 registry
                                     .persist_authenticated_repository(
                                         &access,
-                                        observation,
+                                        registration,
                                         credentials,
                                         admission_key,
                                     )
@@ -209,7 +212,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                             }
                             None => {
                                 registry
-                                    .persist_repository(&access, observation, admission_key)
+                                    .persist_repository(&access, registration, admission_key)
                                     .await
                             }
                         };
@@ -304,7 +307,10 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                     },
                     Some((id, configuration)),
                 )
-            });
+            };
+            jobs.spawn(crate::m8_workflows::carry_workflow_authentication(
+                crate::carry_log_caller(admission),
+            ));
         }
         let mut results = Vec::new();
         let mut imported = BTreeMap::new();
@@ -440,6 +446,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
         .map_err(|error| {
             RepositoryListError(match error.code() {
                 M3ErrorCode::RevisionConflict => "repository_list_changed",
+                M3ErrorCode::PermissionDenied => "permission_denied",
                 M3ErrorCode::StoreUnavailable => "store_unavailable",
                 _ => "repository_list_configuration_failed",
             })

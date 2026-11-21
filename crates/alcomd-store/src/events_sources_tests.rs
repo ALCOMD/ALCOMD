@@ -1061,8 +1061,8 @@ fn metadata_event_failure_rolls_back_the_public_value_and_does_not_consume_the_k
     .value;
     let repository = m3::register_repository(
         &mut connection,
-        &owner,
-        repository_observation(),
+        &m3::RepositoryAccess::new(owner.clone()).expect("local access"),
+        repository_observation().into(),
         None,
         &key("repository"),
         1,

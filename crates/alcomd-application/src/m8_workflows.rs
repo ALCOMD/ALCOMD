@@ -7,12 +7,24 @@ tokio::task_local! {
 }
 
 /// Carries the verified transport credential to the workflow acceptance transaction.
-/// Spawned workers use the accepted immutable records and do not inherit this scope.
 pub async fn with_workflow_authentication<T>(
     authentication: ToolAuthentication,
     work: impl Future<Output = T>,
 ) -> T {
     WORKFLOW_AUTHENTICATION.scope(authentication, work).await
+}
+
+pub(crate) fn carry_workflow_authentication<T>(
+    work: impl Future<Output = T>,
+) -> impl Future<Output = T> {
+    let authentication = workflow_authentication();
+    async move {
+        if let Some(authentication) = authentication {
+            with_workflow_authentication(authentication, work).await
+        } else {
+            work.await
+        }
+    }
 }
 
 pub fn workflow_authentication() -> Option<ToolAuthentication> {

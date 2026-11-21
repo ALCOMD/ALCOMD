@@ -893,6 +893,253 @@ async fn repository_display_name_survives_refresh_and_only_emits_events_for_chan
 }
 
 #[tokio::test]
+async fn native_repository_requests_share_resources_and_recheck_the_callers_credential() {
+    use alcomd_application::{
+        McpIdentityApplication, McpIdentityWrite, RepositoryListStore, ToolAuthentication,
+        with_log_caller, with_workflow_authentication,
+    };
+
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("open store");
+    let identities = McpIdentityApplication::new(store.clone());
+    let owner = AccessContext::local_owner();
+    let client = identities
+        .write(
+            &owner,
+            "create".into(),
+            McpIdentityWrite::Create {
+                name: "Repository manager".into(),
+            },
+            1,
+        )
+        .await
+        .expect("create client")
+        .client;
+    let hash = [0x51; 32];
+    let issued = identities
+        .write(
+            &owner,
+            "issue".into(),
+            McpIdentityWrite::Issue {
+                id: client.client_id,
+                expected: client.revision,
+                hash,
+            },
+            2,
+        )
+        .await
+        .expect("issue credential")
+        .client;
+    let access = identities.authenticate(hash).await.expect("authenticate");
+    let caller = access.principal();
+    let auth = ToolAuthentication::Credential(hash);
+    let reference = Uuid::new_v4().to_string();
+    let replacement = Uuid::new_v4().to_string();
+    let registered = with_workflow_authentication(
+        auth.clone(),
+        with_log_caller(store.clone(), &access, async {
+            store
+                .register_repository_authenticated(
+                    caller.clone(),
+                    repository(6, 3),
+                    reference.clone(),
+                    key("register"),
+                    3,
+                )
+                .await
+                .expect("register with a credential")
+        }),
+    )
+    .await
+    .value;
+    let id = registered.repository_id;
+    assert_eq!(
+        store
+            .repository_credential_reference(owner.principal().clone(), id)
+            .await
+            .expect("shared reference"),
+        Some(reference.clone())
+    );
+    with_workflow_authentication(
+        auth.clone(),
+        with_log_caller(store.clone(), &access, async {
+            let set_reference = || {
+                store.set_repository_credential_reference(
+                    caller.clone(),
+                    id,
+                    registered.revision,
+                    Some(replacement.clone()),
+                    key("credentials"),
+                    4,
+                )
+            };
+            assert!(!set_reference().await.expect("replace credential").replayed);
+            assert!(
+                set_reference()
+                    .await
+                    .expect("replay credential change")
+                    .replayed
+            );
+        }),
+    )
+    .await;
+    assert_eq!(
+        store
+            .repository_credential_reference(owner.principal().clone(), id)
+            .await
+            .expect("replaced reference"),
+        Some(replacement.clone())
+    );
+    let events = store
+        .list_events(owner.principal().clone(), 0, 100)
+        .await
+        .expect("shared events")
+        .events;
+    for kind in ["repository.registered", "repository.refreshed"] {
+        assert!(
+            events
+                .iter()
+                .any(|event| event.kind == kind && event.aggregate_id == id.to_string())
+        );
+    }
+    {
+        let db = Connection::open_with_flags(
+            directory.database(),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .expect("inspect isolated records");
+        for method in ["repositories.register", "repositories.setCredentials"] {
+            let receipt: String = db
+                .query_row(
+                    "SELECT principal_id FROM idempotency_records WHERE method=?1",
+                    [method],
+                    |row| row.get(0),
+                )
+                .expect("receipt");
+            let log: String = db
+                .query_row(
+                    "SELECT owner FROM operation_log_entries WHERE action=?1",
+                    [method],
+                    |row| row.get(0),
+                )
+                .expect("operation log");
+            assert_eq!(receipt, caller.as_str());
+            assert_eq!(log, caller.as_str());
+        }
+    }
+    identities
+        .write(
+            &owner,
+            "revoke".into(),
+            McpIdentityWrite::Revoke {
+                id: issued.client_id,
+                expected: issued.revision,
+            },
+            5,
+        )
+        .await
+        .expect("revoke");
+    with_workflow_authentication(auth, async {
+        let denied = M3ErrorCode::PermissionDenied;
+        for (request, key) in [
+            (
+                alcomd_application::RepositoryWriteRequest::Register {
+                    source: repository(6, 3).source,
+                    authenticated: true,
+                },
+                key("register"),
+            ),
+            (
+                alcomd_application::RepositoryWriteRequest::SetCredentials {
+                    id,
+                    expected: registered.revision,
+                    authenticated: true,
+                },
+                key("credentials"),
+            ),
+        ] {
+            assert_eq!(
+                store
+                    .replay_repository_write(caller.clone(), request, key)
+                    .await
+                    .expect_err("revoked credentials cannot retrieve accepted native receipts")
+                    .code(),
+                denied
+            );
+        }
+        assert_eq!(
+            store
+                .repository_list_snapshot(caller.clone())
+                .await
+                .expect_err("snapshot")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .repository_credential_reference(caller.clone(), id)
+                .await
+                .expect_err("credential reference")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .register_repository_authenticated(
+                    caller.clone(),
+                    repository(6, 3),
+                    reference,
+                    key("register"),
+                    6
+                )
+                .await
+                .expect_err("registration replay")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .set_repository_credential_reference(
+                    caller.clone(),
+                    id,
+                    registered.revision,
+                    Some(replacement.clone()),
+                    key("credentials"),
+                    6
+                )
+                .await
+                .expect_err("credential replay")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .unregister_repository(caller.clone(), id, registered.revision, key("remove"), 6)
+                .await
+                .expect_err("remove")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .apply_repository_list_metadata(caller.clone(), String::new(), Vec::new(), 6)
+                .await
+                .expect_err("metadata import")
+                .code(),
+            denied
+        );
+    })
+    .await;
+    assert_eq!(
+        store
+            .repository_credential_reference(owner.principal().clone(), id)
+            .await
+            .expect("shared record retained"),
+        Some(replacement)
+    );
+}
+
+#[tokio::test]
 async fn repository_credentials_follow_revision_and_orphan_cleanup() {
     let directory = TestDirectory::new();
     let store = StateStoreHandle::open(directory.database()).expect("open store");

@@ -357,26 +357,45 @@ impl StateStoreHandle {
 impl alcomd_application::RepositoryListStore for StateStoreHandle {
     async fn repository_list_snapshot(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
     ) -> Result<alcomd_application::RepositoryListSnapshot, M3Error> {
-        self.request_m3(move |connection| m3::repository_list_snapshot(connection, &owner))
+        let access = m3::RepositoryAccess::new(caller)?;
+        self.request_m3(move |connection| access.read(connection, m3::repository_list_snapshot))
             .await
     }
     async fn apply_repository_list_metadata(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         expected_order: String,
         changes: Vec<alcomd_application::RepositoryListMetadata>,
         now_ms: u64,
     ) -> Result<(), M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
-            m3::apply_repository_list_metadata(connection, &owner, &expected_order, changes, now_ms)
+            m3::apply_repository_list_metadata(
+                connection,
+                &access,
+                &expected_order,
+                changes,
+                now_ms,
+            )
         })
         .await
     }
 }
 
 impl M3RegistryStore for StateStoreHandle {
+    async fn replay_repository_write(
+        &self,
+        caller: PrincipalId,
+        request: alcomd_application::RepositoryWriteRequest,
+        key: IdempotencyKey,
+    ) -> Result<Option<SyncWrite<RepositoryRecord>>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
+        self.request_m3(move |db| m3::replay_repository_write(db, &access, request, &key))
+            .await
+    }
+
     async fn list_oauth_projects(
         &self,
         principal: PrincipalId,
@@ -516,30 +535,34 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn register_repository(
         &self,
-        owner: PrincipalId,
-        observation: RepositoryObservation,
+        caller: PrincipalId,
+        registration: impl Into<alcomd_application::RepositoryRegistration> + Send,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
+        let registration = registration.into();
         self.request_m3(move |connection| {
-            m3::register_repository(connection, &owner, observation, None, &key, now_ms)
+            m3::register_repository(connection, &access, registration, None, &key, now_ms)
         })
         .await
     }
 
     async fn register_repository_authenticated(
         &self,
-        owner: PrincipalId,
-        observation: RepositoryObservation,
+        caller: PrincipalId,
+        registration: impl Into<alcomd_application::RepositoryRegistration> + Send,
         reference: String,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
+        let registration = registration.into();
         self.request_m3(move |connection| {
             m3::register_repository(
                 connection,
-                &owner,
-                observation,
+                &access,
+                registration,
                 Some(&reference),
                 &key,
                 now_ms,
@@ -550,11 +573,16 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn repository_credential_reference(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
     ) -> Result<Option<String>, M3Error> {
-        self.request_m3(move |connection| m3::credential_reference(connection, &owner, id))
-            .await
+        let access = m3::RepositoryAccess::new(caller)?;
+        self.request_m3(move |connection| {
+            access.read(connection, |db, owner| {
+                m3::credential_reference(db, owner, id)
+            })
+        })
+        .await
     }
 
     async fn queue_repository_credential_cleanup(&self, reference: String) -> Result<(), M3Error> {
@@ -574,17 +602,18 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn set_repository_credential_reference(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
         expected: Revision,
         reference: Option<String>,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
             m3::set_credential_reference(
                 connection,
-                &owner,
+                &access,
                 id,
                 expected,
                 reference.as_deref(),
@@ -609,17 +638,18 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn set_repository_display_name(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
         expected: Revision,
         display_name: Option<String>,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
             m3::set_repository_display_name(
                 connection,
-                &owner,
+                &access,
                 id,
                 expected,
                 display_name,
@@ -689,14 +719,14 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn refresh_repository(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
         expected: Revision,
         observation: RepositoryObservation,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<alcomd_application::RepositoryRefreshReceipt>, M3Error> {
-        let access = m3::RepositoryAccess::new(owner)?;
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
             m3::refresh_repository(connection, &access, id, expected, observation, &key, now_ms)
         })
@@ -723,14 +753,15 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn unregister_repository(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
         expected: Revision,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<UnregisterResult<RepositoryId>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
-            m3::unregister_repository(connection, &owner, id, expected, &key, now_ms)
+            m3::unregister_repository(connection, &access, id, expected, &key, now_ms)
         })
         .await
     }

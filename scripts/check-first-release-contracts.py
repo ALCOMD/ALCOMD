@@ -73,7 +73,7 @@ def check_first_release_versions(release):
     # These Store methods construct ALCOMD request fingerprints. Restrict the
     # check to their bodies so package manifests and input fixture versions are independent.
     for module, functions in {
-        "m3.rs": ("register_repository_projected",),
+        "m3.rs": ("registration_fingerprint", "credential_fingerprint"),
         "m5.rs": ("launch_fingerprint",),
         "m6.rs": ("accept_plan_on", "set_desired"),
     }.items():

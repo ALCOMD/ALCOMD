@@ -1,3 +1,6 @@
+#[path = "support/mcp_actor.rs"]
+mod mcp_actor;
+
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{
@@ -37,6 +40,10 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     .await
     .expect("owned test daemon");
     let mut client = AlcomdClient::connect(config.clone()).await.expect("client");
+    let issued = mcp_actor::issue_actor(&mut client, "native-repository-manager").await;
+    let mut actor = AlcomdClient::connect(config.clone().with_mcp_credential(issued.credential))
+        .await
+        .expect("connect authenticated MCP client");
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("loopback");
@@ -112,10 +119,17 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
         .await
         .expect("read source");
     client
-        .repository_register(source, "list-add-remote".into())
+        .repository_register(source.clone(), "list-add-remote".into())
         .await
         .expect("explicit append reuses the single remote response");
     server.await.expect("server");
+    assert!(
+        client
+            .repository_register(source.clone(), "list-add-remote".into())
+            .await
+            .expect("registration receipt remains available after the HTTP server stops")
+            .replayed
+    );
     let old_preview = client
         .repository_configuration_preview_export(alcomd_protocol::RepositoryListFormat::Legacy)
         .await
@@ -123,15 +137,38 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     assert_eq!(old_preview.exportable_count, 1);
     let local = fixture.0.join("repository.json");
     fs::write(&local, r#"{"id":"list-rpc-local","packages":{}}"#).expect("local repository");
-    client
-        .repository_register(
-            RepositorySource::Local {
-                path: local.to_str().expect("path").into(),
-            },
-            "list-add-local".into(),
-        )
+    let local_source = RepositorySource::Local {
+        path: local.to_str().expect("path").into(),
+    };
+    let registered = actor
+        .repository_register(local_source.clone(), "list-add-local".into())
         .await
-        .expect("explicit local append");
+        .expect("MCP registers a shared local repository");
+    assert!(!registered.replayed);
+    let offline = fixture.0.join("offline-repository.json");
+    fs::rename(&local, &offline).expect("take owned source offline");
+    assert_code(
+        actor
+            .repository_register(source, "list-add-local".into())
+            .await
+            .expect_err("another source cannot replay the accepted key"),
+        "idempotency_conflict",
+    );
+    assert!(
+        actor
+            .repository_register(local_source.clone(), "list-add-local".into())
+            .await
+            .expect("MCP replays its registration while the source file is offline")
+            .replayed
+    );
+    fs::rename(offline, &local).expect("restore owned source");
+    assert_code(
+        client
+            .repository_register(local_source, "list-add-local".into())
+            .await
+            .expect_err("local owner has an independent receipt"),
+        "repository_already_registered",
+    );
     let output = fixture.0.join("export.txt");
     assert_code(
         client
@@ -301,7 +338,7 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     );
 
     let native = alcomd_protocol::RepositoryListFormat::Native;
-    let preview = client
+    let preview = actor
         .repository_configuration_preview_export(native)
         .await
         .expect("native RPC preview");
@@ -339,11 +376,22 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
             .as_deref(),
         Some("Restored by native RPC")
     );
-    let imported = client
+    let import_key = "native-rpc-apply";
+    let cancel = alcomd_protocol::RepositoryListCancelParams {
+        idempotency_key: import_key.into(),
+    };
+    assert!(
+        client
+            .repository_list_cancel_registration(cancel.clone())
+            .await
+            .expect("the local owner can request an early stop for its own import")
+            .stopped
+    );
+    let imported = actor
         .repository_list_import_file(alcomd_protocol::RepositoryListImportParams {
             path,
             expected_fingerprint: inspection.fingerprint,
-            idempotency_key: "native-rpc-apply".into(),
+            idempotency_key: import_key.into(),
             overwrite_existing: None,
         })
         .await
@@ -352,6 +400,20 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
         imported
             .items
             .contains(&alcomd_protocol::RepositoryListImportItem::Updated { line: 1 })
+    );
+    assert!(
+        !actor
+            .repository_list_cancel_registration(cancel.clone())
+            .await
+            .expect("completed MCP import")
+            .stopped
+    );
+    assert!(
+        client
+            .repository_list_cancel_registration(cancel)
+            .await
+            .expect("the owner's early cancellation remains independent")
+            .stopped
     );
     let settings = client
         .settings_get()
@@ -362,6 +424,101 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
         settings.settings.packages.hidden_repository_packages[0].package_ids,
         ["com.example.future"]
     );
+    let remote = actor
+        .repository_get(remote_id.clone())
+        .await
+        .expect("MCP reads local registration")
+        .repository;
+    let name = alcomd_protocol::RepositorySetDisplayNameParams {
+        repository_id: remote_id.clone(),
+        expected_revision: remote.revision.expect("revision"),
+        display_name: Some("MCP-managed repository".into()),
+        idempotency_key: "cross-client-rename".into(),
+    };
+    let renamed = actor
+        .repository_set_display_name(name.clone())
+        .await
+        .expect("rename shared repository");
+    assert!(
+        actor
+            .repository_set_display_name(name.clone())
+            .await
+            .expect("MCP replays rename")
+            .replayed
+    );
+    assert_code(
+        client
+            .repository_set_display_name(name)
+            .await
+            .expect_err("separate owner receipt"),
+        "revision_conflict",
+    );
+    assert_eq!(
+        client
+            .repository_get(remote_id.clone())
+            .await
+            .expect("owner reads updated name")
+            .repository
+            .display_name,
+        renamed.repository.display_name
+    );
+    let clear = alcomd_protocol::RepositorySetCredentialsParams {
+        repository_id: remote_id.clone(),
+        expected_revision: renamed.repository.revision.expect("renamed revision"),
+        idempotency_key: "clear-shared-credentials".into(),
+        credentials: None,
+    };
+    actor
+        .repository_set_credentials(clear.clone())
+        .await
+        .expect("clear shared credential reference");
+    assert!(
+        actor
+            .repository_set_credentials(clear)
+            .await
+            .expect("credential replay")
+            .replayed
+    );
+    let local_revision = client
+        .repository_get(local_id.clone())
+        .await
+        .expect("local repository")
+        .repository
+        .revision
+        .expect("local revision");
+    let refreshed = actor
+        .repository_refresh(local_id.clone(), local_revision, "mcp-refresh".into())
+        .await
+        .expect("refresh local repository");
+    assert!(
+        actor
+            .repository_refresh(local_id.clone(), local_revision, "mcp-refresh".into())
+            .await
+            .expect("MCP replays refresh")
+            .replayed
+    );
+    assert_eq!(
+        client
+            .repository_get(local_id.clone())
+            .await
+            .expect("read refreshed shared record")
+            .repository
+            .revision,
+        refreshed.repository.revision
+    );
+    let all = actor
+        .repositories_refresh_all(alcomd_protocol::RepositoryRefreshAllParams {
+            idempotency_key: "mcp-refresh-all".into(),
+        })
+        .await
+        .expect("MCP refreshes shared repositories");
+    assert!(
+        all.items
+            .contains(&alcomd_protocol::RepositoryRefreshAllItem::Refreshed {
+                repository_id: local_id.clone()
+            })
+    );
+    drop(actor);
     drop(client);
     stop.send(()).expect("stop");
     daemon.await.expect("join").expect("daemon result");
@@ -375,7 +532,9 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     )
     .await
     .expect("reopen fixture");
-    let mut client = AlcomdClient::connect(config).await.expect("reconnect");
+    let mut client = AlcomdClient::connect(config.clone())
+        .await
+        .expect("reconnect");
     let reopened = client
         .repositories_list(None, None)
         .await
@@ -389,9 +548,115 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
         Some(remote_id.as_str())
     );
     assert_eq!(reopened.order_fingerprint, moved.order_fingerprint);
+    let issued = mcp_actor::issue_actor(&mut client, "native-repository-remover").await;
+    let mut actor = AlcomdClient::connect(config.with_mcp_credential(issued.credential))
+        .await
+        .expect("connect remover");
+    let revision = reopened.repositories[0].revision.expect("revision");
+    let removed = actor
+        .repository_unregister(local_id.clone(), revision, "mcp-unregister".into())
+        .await
+        .expect("remove shared repository");
+    assert!(!removed.replayed);
+    assert!(
+        actor
+            .repository_unregister(local_id.clone(), revision, "mcp-unregister".into())
+            .await
+            .expect("replay removal")
+            .replayed
+    );
+    assert_code(
+        client
+            .repository_get(local_id)
+            .await
+            .expect_err("removed from shared catalog"),
+        "repository_not_registered",
+    );
+    drop(actor);
     drop(client);
     stop.send(()).expect("stop reopened fixture");
     daemon.await.expect("join").expect("daemon result");
+}
+
+#[tokio::test]
+async fn accepted_authenticated_repository_writes_replay_without_network_or_staged_credentials() {
+    use alcomd_application::{
+        AccessContext, IdempotencyKey, M3Application, M3RegistryStore, RepositoryCredentials,
+        RepositoryObservation, RepositorySource as Source,
+    };
+
+    let fixture = Fixture::new();
+    let store = alcomd_store::StateStoreHandle::open(fixture.0.join("receipts.db")).expect("store");
+    let access = AccessContext::local_owner();
+    let owner = access.principal();
+    let key = |text: &str| IdempotencyKey::parse(text.to_owned()).expect("key");
+    let endpoint = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve fixture endpoint");
+    let source = Source::Remote {
+        url: format!(
+            "https://{}/repository.json",
+            endpoint.local_addr().expect("address")
+        ),
+    };
+    drop(endpoint);
+    let record = store
+        .register_repository_authenticated(
+            owner.clone(),
+            RepositoryObservation {
+                source: source.clone(),
+                source_identity_key: vec![7],
+                declared_id: Some("fixture".into()),
+                name: None,
+                declared_url: None,
+                issues: vec![],
+                packages: vec![],
+                validators: Default::default(),
+                refreshed_at_ms: 1,
+            },
+            uuid::Uuid::new_v4().to_string(),
+            key("register"),
+            1,
+        )
+        .await
+        .expect("accepted registration")
+        .value;
+    let changed = store
+        .set_repository_credential_reference(
+            owner.clone(),
+            record.repository_id,
+            record.revision,
+            Some(uuid::Uuid::new_v4().to_string()),
+            key("replace"),
+            2,
+        )
+        .await
+        .expect("accepted credential replacement");
+    let app = M3Application::new(store, alcomd_vpm::VpmReader::new().expect("reader"));
+    let credentials = RepositoryCredentials {
+        headers: [("X-Fixture".to_owned(), "temporary-value".to_owned())].into(),
+    };
+    let registered = app
+        .register_repository_for_connection(
+            &access,
+            "reconnected",
+            source,
+            key("register"),
+            Some(credentials.clone()),
+        )
+        .await
+        .expect("registration receipt with neither a live source nor a keyring record");
+    let replaced = app
+        .set_repository_credentials(
+            &access,
+            record.repository_id,
+            record.revision,
+            Some(credentials),
+            key("replace"),
+        )
+        .await
+        .expect("credential receipt without opening the source");
+    assert!(registered.replayed && replaced.replayed);
+    assert_eq!(registered.value, record);
+    assert_eq!(replaced.value, changed.value);
 }
 
 fn assert_code(error: ClientError, expected: &str) {
