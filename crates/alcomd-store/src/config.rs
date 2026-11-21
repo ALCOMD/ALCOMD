@@ -711,6 +711,45 @@ mod tests {
 
     struct TestHubLauncher;
 
+    async fn issue_settings_client(
+        identities: &alcomd_application::McpIdentityApplication<crate::StateStoreHandle>,
+    ) -> (alcomd_application::McpClient, [u8; 32], AccessContext) {
+        use alcomd_application::McpIdentityWrite;
+        let owner = AccessContext::local_owner();
+        let client = identities
+            .write(
+                &owner,
+                "create-client".into(),
+                McpIdentityWrite::Create {
+                    name: "Settings client".into(),
+                },
+                1,
+            )
+            .await
+            .expect("create caller")
+            .client;
+        let hash = alcomd_application::mcp_credential_hash(&uuid::Uuid::new_v4().to_string());
+        let client = identities
+            .write(
+                &owner,
+                "issue-client".into(),
+                McpIdentityWrite::Issue {
+                    id: client.client_id,
+                    expected: client.revision,
+                    hash,
+                },
+                2,
+            )
+            .await
+            .expect("issue credential")
+            .client;
+        let caller = identities
+            .authenticate(hash)
+            .await
+            .expect("authenticate caller");
+        (client, hash, caller)
+    }
+
     #[tokio::test]
     async fn hub_open_rechecks_the_waiting_mcp_credential_before_launch() {
         use alcomd_application::{
@@ -778,38 +817,7 @@ mod tests {
             .await
             .expect("snapshot")
             .revision;
-        let owner = AccessContext::local_owner();
-        let client = identities
-            .write(
-                &owner,
-                "create-hub".into(),
-                McpIdentityWrite::Create {
-                    name: "Hub client".into(),
-                },
-                1,
-            )
-            .await
-            .expect("create caller")
-            .client;
-        let hash = alcomd_application::mcp_credential_hash(&uuid::Uuid::new_v4().to_string());
-        let client = identities
-            .write(
-                &owner,
-                "issue-hub".into(),
-                McpIdentityWrite::Issue {
-                    id: client.client_id,
-                    expected: client.revision,
-                    hash,
-                },
-                2,
-            )
-            .await
-            .expect("issue credential")
-            .client;
-        let caller = identities
-            .authenticate(hash)
-            .await
-            .expect("authenticate caller");
+        let (client, hash, caller) = issue_settings_client(&identities).await;
         let open = || {
             with_workflow_authentication(
                 ToolAuthentication::Credential(hash),
@@ -833,7 +841,7 @@ mod tests {
         .await;
         identities
             .write(
-                &owner,
+                &AccessContext::local_owner(),
                 "revoke-hub".into(),
                 McpIdentityWrite::Revoke {
                     id: client.client_id,
@@ -847,6 +855,143 @@ mod tests {
         assert_eq!(first.await, Err(UnityHubOpenError::PermissionDenied));
         assert_eq!(pending.await, Err(UnityHubOpenError::PermissionDenied));
         assert_eq!(hub.launches.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn settings_update_rechecks_mcp_before_publishing_after_authorization_waits() {
+        use alcomd_application as app;
+        use tokio::sync::oneshot;
+
+        struct DirectoryCheck {
+            gate: std::sync::Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
+        }
+        impl app::StorageDirectoryPlatform for DirectoryCheck {
+            fn default_directories(&self) -> Result<app::StorageDirectories, OfficialGuiError> {
+                TestDirectories.default_directories()
+            }
+            fn normalize_directory(&self, path: &str) -> Result<String, OfficialGuiError> {
+                let (entered, resume) = self
+                    .gate
+                    .lock()
+                    .expect("validation gate")
+                    .take()
+                    .expect("one path check");
+                entered.send(()).expect("signal validation");
+                resume.blocking_recv().expect("finish validation");
+                TestDirectories.normalize_directory(path)
+            }
+        }
+        let directory = crate::events_tests::Directory::new();
+        let database = directory.database();
+        let path = database.with_file_name("settings.toml");
+        let store = crate::StateStoreHandle::open(database).expect("isolated identity database");
+        let identities = app::McpIdentityApplication::new(store.clone());
+        let (client, hash, caller) = issue_settings_client(&identities).await;
+        let (entered, validating) = oneshot::channel();
+        let (resume, gate) = oneshot::channel();
+        let application = M7OfficialApplication::new(
+            Arc::new(FileConfigStore::new(path.clone())),
+            Arc::new(TestHub),
+            Arc::new(TestHubLauncher),
+            Arc::new(DirectoryCheck {
+                gate: std::sync::Mutex::new(Some((entered, gate))),
+            }),
+        )
+        .with_mcp_identity_store(store);
+        application
+            .initialize_settings()
+            .await
+            .expect("initialize settings");
+        let update = |revision, patch| {
+            app::with_workflow_authentication(
+                app::ToolAuthentication::Credential(hash),
+                application.update_settings(&caller, revision, patch),
+            )
+        };
+        let initial = application
+            .candidate_settings()
+            .await
+            .expect("initial settings");
+        let accepted = update(
+            initial.revision,
+            ConfigUpdate {
+                locale: Some(ConfigLocale::JaJp),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("authenticated write");
+        assert_eq!(accepted.revision, initial.revision + 1);
+        assert_eq!(accepted.settings.locale, ConfigLocale::JaJp);
+        let bytes = fs::read(&path).expect("published settings");
+        let mut validating_update = std::pin::pin!(update(
+            accepted.revision,
+            ConfigUpdate {
+                paths: Some(app::ConfigPathUpdate {
+                    project_directory: ConfigNullableUpdate::Set("/fixtures/other-projects".into()),
+                    backup_directory: ConfigNullableUpdate::Unchanged
+                }),
+                ..Default::default()
+            }
+        ));
+        tokio::select! {
+            result = &mut validating_update => panic!("unexpected early update: {result:?}"),
+            ready = validating => ready.expect("project directory validation under settings lock"),
+        }
+        let mut queued = std::pin::pin!(update(
+            accepted.revision,
+            ConfigUpdate {
+                projects: Some(app::ConfigProjectUpdate {
+                    auto_discover: false
+                }),
+                unity: Some(app::ConfigUnityUpdate {
+                    hub_path: ConfigNullableUpdate::Unchanged,
+                    default_launch_arguments: ConfigNullableUpdate::Set(vec![])
+                }),
+                ..Default::default()
+            }
+        ));
+        std::future::poll_fn(|cx| {
+            assert!(queued.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        identities
+            .write(
+                &AccessContext::local_owner(),
+                "revoke-settings".into(),
+                app::McpIdentityWrite::Revoke {
+                    id: client.client_id,
+                    expected: client.revision,
+                },
+                3,
+            )
+            .await
+            .expect("revoke while settings requests are pending");
+        resume.send(()).expect("resume validation");
+        assert_eq!(
+            validating_update.await,
+            Err(OfficialGuiError::PermissionDenied)
+        );
+        assert_eq!(queued.await, Err(OfficialGuiError::PermissionDenied));
+        assert_eq!(application.candidate_settings().await, Ok(accepted.clone()));
+        assert_eq!(fs::read(&path).expect("unchanged file"), bytes);
+        assert_eq!(FileConfigStore::new(path).load(), Ok(accepted.clone()));
+        let local = application
+            .update_settings(
+                &AccessContext::local_owner(),
+                accepted.revision,
+                ConfigUpdate {
+                    projects: Some(app::ConfigProjectUpdate {
+                        auto_discover: false,
+                    }),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("local owner can still update from the unchanged revision");
+        assert_eq!(local.revision, accepted.revision + 1);
+        assert!(!local.settings.projects.auto_discover);
     }
 
     impl alcomd_application::UnityHubLauncher for TestHubLauncher {
