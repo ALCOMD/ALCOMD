@@ -72,6 +72,11 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     let project_parent =
         std::env::temp_dir().join(format!("alcomd-cli-create-{}", std::process::id()));
     std::fs::create_dir(&project_parent).expect("owned project fixture directory");
+    // Unix temporary directories can have symlinked ancestors (e.g. /var on macOS).
+    #[cfg(unix)]
+    let project_parent = project_parent
+        .canonicalize()
+        .expect("resolve fixture directory");
     let target_parent = project_parent.to_str().expect("UTF-8 fixture path");
     let creation = run_group_cli(
         runtime.clone(),
@@ -135,7 +140,7 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
             "project",
             "copy",
             created_id,
-            project_parent.to_str().expect("UTF-8 fixture directory"),
+            target_parent,
             "Reviewed copy",
             "--expected-revision",
             "1",
