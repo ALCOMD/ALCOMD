@@ -1236,10 +1236,6 @@ pub(super) fn unregister_project(
     Ok(response)
 }
 
-fn repository_fingerprint(observation: &RepositoryObservation) -> Result<String, M3Error> {
-    json(&serde_json::json!({"source": observation.source, "version": 1}))
-}
-
 fn source_parts(source: &RepositorySource) -> (&'static str, &str) {
     match source {
         RepositorySource::Local { path } => ("local", path),
@@ -1584,12 +1580,10 @@ fn register_repository_projected<T: From<RepositoryRecord> + Serialize + Deseria
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<T>, M3Error> {
-    let (method, fingerprint) = scope.identity(REPOSITORY_REGISTER, || if credential.is_some() {
-        json(
-            &serde_json::json!({"source": observation.source, "authenticated": true, "version": 2}),
-        )
-    } else {
-        repository_fingerprint(&observation)
+    let (method, fingerprint) = scope.identity(REPOSITORY_REGISTER, || {
+        json(&serde_json::json!({
+            "source": observation.source, "authenticated": credential.is_some(), "version": 1
+        }))
     })?;
     let owner = scope.owner;
     let transaction = begin(connection)?;

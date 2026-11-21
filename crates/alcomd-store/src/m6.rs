@@ -909,7 +909,7 @@ fn accept_plan_on(
             .ok_or_else(|| error(M6ErrorCode::InvalidInput))?;
         validate_install_consent(&plan, consent)?;
         serde_json::to_string(
-            &serde_json::json!({"planId": plan_id.to_string(), "version": 2, "consent": consent}),
+            &serde_json::json!({"planId": plan_id.to_string(), "version": 1, "consent": consent}),
         )
         .map_err(|_| internal())?
     } else {
@@ -1368,17 +1368,16 @@ pub(super) fn set_desired(
     } else {
         "extensions.disable"
     };
-    let mut fingerprint = format!(
-        "{{\"extensionId\":\"{extension_id}\",\"expectedRevision\":{},\"version\":1}}",
-        expected.get()
-    );
-    if let Some(activation) = &activation {
-        fingerprint = serde_json::json!({
-            "extensionId": extension_id, "expectedRevision": expected.get(),
-            "packageDigest": activation.package_digest, "version": 2,
-        })
-        .to_string();
-    }
+    let fingerprint = serde_json::json!({
+        "extensionId": extension_id,
+        "expectedRevision": expected.get(),
+        "activation": activation.as_ref().map(|value| serde_json::json!({
+            "packageDigest": value.package_digest,
+            "targetScopes": value.target_scopes,
+        })),
+        "version": 1,
+    })
+    .to_string();
     if let Some((saved, response)) = idempotent(&transaction, owner, method, key)? {
         if saved != fingerprint {
             return Err(error(M6ErrorCode::IdempotencyConflict));

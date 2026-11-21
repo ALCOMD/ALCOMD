@@ -145,7 +145,7 @@ fn idempotency_scope_is_principal_method_and_permanent_key() {
         "INSERT INTO idempotency_records (
             principal_id, method, idempotency_key, request_fingerprint, state,
             operation_id, response_json, created_at_ms
-        ) VALUES (?1, 'state.check', 'same-key', '{\"version\":2}', 'completed',
+        ) VALUES (?1, 'state.check', 'same-key', '{\"version\":1}', 'completed',
             ?2, '{}', 20)",
         params![PRINCIPAL, OPERATION_A],
     );

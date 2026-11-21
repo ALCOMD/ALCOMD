@@ -70,6 +70,19 @@ def check_first_release_versions(release):
         source = (ROOT / path).read_text(encoding="utf-8")
         if not re.search(rf"\bconst {name}: u32 = 1;", source):
             raise ValueError(f"{path}: first-release {name} must be 1")
+    # These Store methods construct ALCOMD request fingerprints. Restrict the
+    # check to their bodies so package manifests and input fixture versions are independent.
+    for module, functions in {
+        "m3.rs": ("register_repository_projected",),
+        "m5.rs": ("launch_fingerprint",),
+        "m6.rs": ("accept_plan_on", "set_desired"),
+    }.items():
+        source = (ROOT / "crates/alcomd-store/src" / module).read_text(encoding="utf-8")
+        for name in functions:
+            body = re.search(rf"(?ms)^(?:pub\(super\) )?fn {name}\b.*?^}}", source)
+            tags = re.findall(r'"version"\s*:\s*(\d+)', body[0].replace(r'\"', '"')) if body else []
+            if set(tags) != {"1"}:
+                raise ValueError(f"{module}:{name}: expected first-release fingerprint version 1")
 
 
 def main():
