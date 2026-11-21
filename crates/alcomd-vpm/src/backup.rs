@@ -1825,6 +1825,8 @@ mod tests {
         std::fs::write(root.join("LibraryCache/cache.bin"), b"nonstandard cache")
             .expect("prefix cache");
         std::fs::write(root.join("Temp/temporary.bin"), b"temporary").expect("temporary");
+        #[cfg(unix)]
+        let root = std::fs::canonicalize(root).expect("resolve fixture directory");
         let record = ProjectRecord {
             project_id: ProjectId::new(),
             observation: ProjectObservation {

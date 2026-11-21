@@ -56,6 +56,8 @@ impl Fixture {
             r#"{"dependencies":{},"locked":{}}"#,
         )
         .expect("VPM manifest");
+        #[cfg(unix)]
+        let root = fs::canonicalize(root).expect("resolve fixture directory");
         Self(root)
     }
 }
