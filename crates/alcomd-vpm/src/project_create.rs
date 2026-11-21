@@ -15,12 +15,12 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 
-use crate::range::VpmRange;
 use crate::template_archive::TemplateArchiveStore;
 use crate::{
     FrozenPackageMaterializer, ResolveRequest, StagingProjectEvidence, UnityVersion, VpmReader,
     candidates_from_catalog, inspect_package_project, project_creation_resource,
 };
+use alcomd_domain::vpm_range::VpmRange;
 
 const UPM_MANIFEST: &[u8] = b"{\"dependencies\":{}}\n";
 const VPM_MANIFEST: &[u8] = b"{\"dependencies\":{},\"locked\":{}}\n";
@@ -321,7 +321,7 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
                 package_id: dependency.package_id.clone(),
                 range: dependency.version_range.clone(),
                 source: None,
-                include_prerelease: false,
+                include_prerelease: true,
                 unity_version,
             })
             .collect::<Vec<_>>();
@@ -359,6 +359,7 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
             &stage.root,
             &candidates,
             &requests,
+            catalog.prefer_prerelease,
         )
         .await
         .map_err(map_template_resolve_error)?;
@@ -940,10 +941,10 @@ mod tests {
                             package_id: "com.example.extra".to_owned(),
                             version_range: "^1.0.0".to_owned(),
                         }],
-                        base_template: Some(ProjectTemplateRef {
+                        base_template: ProjectTemplateRef {
                             id: base.id.clone(),
                             revision: 1,
-                        }),
+                        },
                     },
                     None,
                     Some(base.clone()),
@@ -958,6 +959,28 @@ mod tests {
                 );
             }
             let derived = derive(version.clone()).expect("derive from frozen archive");
+            let exported = fixture.root.join(format!("derived-{index}.alcomdtemplate"));
+            let export_path = exported.to_str().expect("UTF-8 fixture path");
+            let operation = OperationId::new();
+            fixture
+                .engine
+                .export_template(&derived, export_path, operation)
+                .expect("export standalone template");
+            fixture
+                .engine
+                .finish_template_export(export_path, operation)
+                .expect("finish export");
+            let mut archive =
+                zip::ZipArchive::new(fs::File::open(exported).expect("exported file"))
+                    .expect("template archive");
+            let metadata: serde_json::Value = serde_json::from_reader(
+                archive.by_name("package.json").expect("template metadata"),
+            )
+            .expect("JSON metadata");
+            assert_eq!(
+                metadata,
+                serde_json::json!({"name": id, "displayName": "Derived"})
+            );
             assert_eq!(derived.editor_version.as_deref(), Some(version.as_str()));
             assert_eq!(derived.locked_versions, base.locked_versions);
             for dependency in &base.dependencies {
@@ -1013,7 +1036,7 @@ mod tests {
                         name: "User-derived child".to_owned(),
                         unity_version: version,
                         dependencies: Vec::new(),
-                        base_template: Some(ProjectTemplateRef { id, revision: 2 }),
+                        base_template: ProjectTemplateRef { id, revision: 2 },
                     },
                     None,
                     Some(derived.clone()),
@@ -1077,10 +1100,10 @@ mod tests {
                         package_id: "com.example.extra".to_owned(),
                         version_range: "*".to_owned(),
                     }],
-                    base_template: Some(ProjectTemplateRef {
+                    base_template: ProjectTemplateRef {
                         id: base.id.clone(),
                         revision: 1,
-                    }),
+                    },
                 },
                 None,
                 Some(base),
@@ -1567,6 +1590,7 @@ mod tests {
             }
         }
         ResolverCatalog {
+            prefer_prerelease: false,
             entries,
             complete: true,
         }

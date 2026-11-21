@@ -8,10 +8,10 @@ use std::time::Duration;
 use alcomd_client::{AlcomdClient, ClientConfig, EventSubscription};
 use alcomd_platform::{DataConfig, IpcConfig, IpcStream};
 use alcomd_protocol::{
-    BackupsListParams, CAPABILITY_PACKAGES_APPLY_V1, EventNotification, EventsSubscribeParams,
-    ExtensionsListParams, METHOD_PACKAGES_APPLY_PLAN, METHOD_SYSTEM_HELLO, OperationState,
-    PackageApplyPlanParams, PackagePlanRemoveParams, RPC_VERSION, RequestEnvelope, Response,
-    decode_frame_length, encode_frame,
+    BackupCreateParams, BackupRestoreParams, CAPABILITY_PACKAGES_APPLY_V1, EventNotification,
+    EventsSubscribeParams, ExtensionsListParams, METHOD_PACKAGES_APPLY_PLAN, METHOD_SYSTEM_HELLO,
+    OperationState, PackageApplyPlanParams, PackagePlanRemoveParams, RPC_VERSION, RequestEnvelope,
+    Response, decode_frame_length, encode_frame,
 };
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -43,11 +43,11 @@ async fn native_sdk_projects_packages_tasks_and_live_events_agree_on_real_core()
     assert_eq!(rust.hello_result().rpc_version, RPC_VERSION);
     assert_eq!(
         rust.hello_result().data_schema,
-        Some(alcomd_store::CURRENT_DATA_SCHEMA)
+        alcomd_store::CURRENT_DATA_SCHEMA
     );
     assert_eq!(
         rust.hello_result().config_schema,
-        Some(alcomd_protocol::CONFIG_SCHEMA_VERSION)
+        alcomd_protocol::CONFIG_SCHEMA_VERSION
     );
 
     let mut identities = Vec::new();
@@ -135,13 +135,6 @@ async fn native_sdk_projects_packages_tasks_and_live_events_agree_on_real_core()
         alcomd_protocol::CONFIG_SCHEMA_VERSION
     );
     assert!(
-        rust.backups_list(BackupsListParams::default())
-            .await
-            .expect("backup catalog")
-            .backups
-            .is_empty()
-    );
-    assert!(
         rust.extensions_list(ExtensionsListParams {
             cursor: None,
             limit: Some(1)
@@ -168,6 +161,46 @@ async fn native_sdk_projects_packages_tasks_and_live_events_agree_on_real_core()
         );
     }
 
+    let archive = root.path.join("SDK Archive.zip");
+    let revision = rust
+        .project_get(rust_id.clone())
+        .await
+        .expect("current revision")
+        .project
+        .revision
+        .expect("revision");
+    let created = rust
+        .backup_create(BackupCreateParams {
+            project_id: rust_id.clone(),
+            expected_revision: revision,
+            compression_mode: None,
+            exclude_vpm_packages: None,
+            include_library: None,
+            destination_path: Some(archive.to_str().expect("Unicode archive path").into()),
+            idempotency_key: "m11-rust-backup".into(),
+        })
+        .await
+        .expect("write ordinary ZIP");
+    let completed = wait_for_sdk_task(&mut rust, created.operation_id).await;
+    assert_eq!(completed.state, OperationState::Succeeded, "{completed:?}");
+    let destination = root.path.join("SDK Restored Project");
+    let accepted = rust
+        .backup_restore(BackupRestoreParams {
+            archive_path: archive.to_str().expect("Unicode archive path").into(),
+            project_name: None,
+            destination_path: Some(destination.to_str().expect("Unicode project path").into()),
+            idempotency_key: "m11-rust-restore".into(),
+        })
+        .await
+        .expect("restore external ZIP");
+    let completed = wait_for_sdk_task(&mut rust, accepted.operation_id).await;
+    assert_eq!(completed.state, OperationState::Succeeded, "{completed:?}");
+    assert!(
+        destination
+            .join("ProjectSettings/ProjectVersion.txt")
+            .is_file()
+    );
+
     drop(rust);
     stop.send(()).expect("request owned server shutdown");
     tokio::time::timeout(Duration::from_secs(5), daemon)
@@ -177,8 +210,26 @@ async fn native_sdk_projects_packages_tasks_and_live_events_agree_on_real_core()
         .expect("owned daemon result");
 }
 
+async fn wait_for_sdk_task(client: &mut AlcomdClient, id: String) -> alcomd_protocol::Operation {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let operation = client.operation_get(id.clone()).await.expect("task status");
+            if matches!(
+                operation.state,
+                OperationState::Succeeded | OperationState::Failed | OperationState::Cancelled
+            ) {
+                return operation;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("task finished")
+}
+
 fn create_project(project: &Path) {
     let package = project.join("Packages").join(PACKAGE);
+    fs::create_dir_all(project.join("Assets")).expect("Unity assets");
     fs::create_dir_all(project.join("ProjectSettings")).expect("project settings");
     fs::create_dir_all(&package).expect("embedded package");
     fs::write(
@@ -341,7 +392,23 @@ async fn run_node_consumer(root: &Path, consumer: &Path, identities: &[(String, 
             const replay = await client.request('packages.applyPlan', params);
             assert.deepEqual(replay, {...accepted, replayed: true});
             assert.equal((await client.request('settings.get', {})).configSchema, client.hello.configSchema);
-            assert.deepEqual((await client.request('backups.list', {})).backups, []);
+            const waitForTask = async operationId => {
+                for (let attempt = 0; attempt < 300; ++attempt) {
+                    const task = await client.request('operations.get', {operationId});
+                    if (['succeeded', 'failed', 'cancelled'].includes(task.state)) return task;
+                    await new Promise(resolve => setTimeout(resolve, 40));
+                }
+                throw new Error('ZIP operation did not finish');
+            };
+            const updated = (await client.request('projects.get', {projectId})).project;
+            const zip = await client.request('backups.create', {
+                projectId, expectedRevision: updated.revision, destinationPath: input.archivePath, idempotencyKey: 'm11-node-backup'
+            });
+            assert.equal((await waitForTask(zip.operationId)).state, 'succeeded');
+            const restore = {archivePath: input.archivePath, destinationPath: input.restorePath, idempotencyKey: 'm11-node-restore'};
+            const restored = await client.request('backups.restore', restore);
+            assert.equal((await waitForTask(restored.operationId)).state, 'succeeded');
+            assert.deepEqual(await client.request('backups.restore', restore), {...restored, replayed: true});
             assert.deepEqual((await client.request('extensions.list', {})).extensions, []);
         } finally {
             stream?.close();
@@ -360,6 +427,8 @@ async fn run_node_consumer(root: &Path, consumer: &Path, identities: &[(String, 
                 "ids": [&identities[0].0, &identities[1].0],
                 "node": &identities[1],
                 "packageId": PACKAGE,
+                "archivePath": root.join("Node Archive.zip"),
+                "restorePath": root.join("Node Restored Project"),
             })
             .to_string(),
         )

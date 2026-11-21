@@ -69,7 +69,7 @@ pub(super) async fn dispatch(
     service: &OAuthApplication<StateStoreHandle>,
     access: &AccessContext,
 ) -> DispatchAction {
-    if let Some(action) = require_capability(&request.id, state, CAPABILITY_MCP_OAUTH_V2) {
+    if let Some(action) = require_capability(&request.id, state, CAPABILITY_MCP_OAUTH_V1) {
         return action;
     }
     if state.oauth_endpoint != ingress_method(&request.method) {

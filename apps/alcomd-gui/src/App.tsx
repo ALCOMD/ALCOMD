@@ -3,6 +3,7 @@ import { OperationLogsRoute } from "./OperationLogsRoute";
 import { createTranslator, LocaleProvider, preferredLocale, useTranslation } from "./i18n";
 import type {
     ExtensionRecord,
+    ExtensionUiDispatchParams,
     RpcError,
     UiAction,
     UiSnapshot
@@ -36,7 +37,7 @@ import { AppNotifications } from "./app-notifications";
 import { AppNotificationOutlet } from "./AppNotifications";
 import { CoreEventsProvider, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
-import { AboutPage, BackupDetailPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, primePackageWorkspaceRead, routePreloadRead, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
+import { AboutPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, primePackageWorkspaceRead, routePreloadRead, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageHeader } from "./PageHeader";
 import { PageLoadingState } from "./LoadingState";
@@ -78,7 +79,6 @@ type Route =
     | { kind: "templates" }
     | { kind: "user-packages" }
     | { kind: "unity" }
-    | { kind: "backup-detail"; backupId: string }
     | { kind: "operations" }
     | { kind: "logs" }
     | { kind: "operation-detail"; operationId: string }
@@ -378,7 +378,6 @@ function RouteLoadingShell({ route }: { route: Route }) {
         : route.kind === "repository-detail" ? "Repository"
         : route.kind === "project-unity" ? "Project Unity"
         : route.kind === "project-backups" ? "Backups"
-        : route.kind === "backup-detail" ? "Backup detail"
         : route.kind === "operations" ? navigationLabels.taskCenter
         : route.kind === "logs" ? navigationLabels.logs
         : route.kind === "operation-detail" ? "Operation detail"
@@ -536,13 +535,12 @@ function RouteContent({
         case "project-detail": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.repositoriesRead]}><ProjectDetailPage {...props} projectId={route.projectId} /></CapabilityRoute>;
         case "project-packages": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.repositoriesRead]}><ProjectPackagesPage {...props} projectId={route.projectId} /></CapabilityRoute>;
         case "project-unity": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.unityRead]}><ProjectUnityPage {...props} afterMigrationOpen={route.afterMigrationOpen} projectId={route.projectId} /></CapabilityRoute>;
-        case "project-backups": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.backupsRead]}><ProjectBackupsPage {...props} projectId={route.projectId} /></CapabilityRoute>;
+        case "project-backups": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.backupsCreate]}><ProjectBackupsPage {...props} projectId={route.projectId} /></CapabilityRoute>;
         case "repositories": return <CapabilityRoute required={[capabilities.repositoriesRead]}><RepositoriesPage {...props} /></CapabilityRoute>;
         case "repository-detail": return <CapabilityRoute required={[capabilities.repositoriesRead]}><RepositoryDetailPage {...props} repositoryId={route.repositoryId} /></CapabilityRoute>;
         case "templates": return <TemplatesPage {...props} />;
         case "user-packages": return <CapabilityRoute required={[capabilities.packagesUserPackages]}><UserPackagesPage {...props} /></CapabilityRoute>;
         case "unity": return <CapabilityRoute required={[capabilities.unityRead]}><UnityPage {...props} /></CapabilityRoute>;
-        case "backup-detail": return <CapabilityRoute required={[capabilities.backupsRead]}><BackupDetailPage {...props} backupId={route.backupId} /></CapabilityRoute>;
         case "operations": return <CapabilityRoute required={[capabilities.operations]}><OperationsPage {...props} /></CapabilityRoute>;
         case "logs": return <CapabilityRoute required={[capabilities.logsRead]}><OperationLogsRoute client={props.client} /></CapabilityRoute>;
         case "operation-detail": return <CapabilityRoute required={[capabilities.operations]}><OperationDetailPage {...props} operationId={route.operationId} /></CapabilityRoute>;
@@ -591,6 +589,7 @@ interface ExtensionUiSessionScope {
     busy: boolean;
     sessionId?: string;
     sequence: number;
+    pendingAction?: ExtensionUiDispatchParams;
 }
 
 function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: ExtensionUiPageProps) {
@@ -710,18 +709,24 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
         setBusy(true);
         setError(undefined);
         try {
-            const result = await scope.client.extensionUiDispatch({
-                sessionId: snapshot.sessionId,
-                expectedSnapshotRevision: snapshot.snapshotRevision,
-                sequence,
-                requestId: crypto.randomUUID(),
-                action
-            });
+            const pending = scope.pendingAction;
+            const request = pending?.sequence === sequence && pending.expectedSnapshotRevision === snapshot.snapshotRevision
+                && JSON.stringify(pending.action) === JSON.stringify(action) ? pending : {
+                    sessionId: snapshot.sessionId,
+                    expectedSnapshotRevision: snapshot.snapshotRevision,
+                    sequence,
+                    requestId: crypto.randomUUID(),
+                    action: structuredClone(action)
+                };
+            scope.pendingAction = request;
+            const result = await scope.client.extensionUiDispatch(request);
+            scope.pendingAction = undefined;
             if (!isCurrent(scope)) return;
             setSnapshot(acceptSnapshot(snapshot, result.snapshot, result.replayed));
             scope.sequence = sequence + 1;
             updateDirty(false);
         } catch (caught: unknown) {
+            if (safeError(caught).code !== "internal_error") scope.pendingAction = undefined;
             handleSessionError(scope, caught);
         } finally {
             if (isCurrent(scope)) {
@@ -907,7 +912,6 @@ function readRoute(pathname: string, search = ""): Route {
         if (segments.length === 3 && segments[2] === "backups") return { kind: "project-backups", projectId: segments[1] };
     }
     if (segments[0] === "repositories" && segments.length === 2 && segments[1] !== undefined) return { kind: "repository-detail", repositoryId: segments[1] };
-    if (segments[0] === "backups" && segments.length === 2 && segments[1] !== undefined) return { kind: "backup-detail", backupId: segments[1] };
     if (segments[0] === "operations" && segments.length === 2 && segments[1] !== undefined) return { kind: "operation-detail", operationId: segments[1] };
     if (segments[0] === "extensions" && segments[1] !== undefined) {
         if (segments.length === 2) return { kind: "extension-detail", extensionId: segments[1] };
@@ -928,7 +932,6 @@ function routePath(route: Route): string {
         case "templates": return "/templates";
         case "user-packages": return "/user-packages";
         case "unity": return "/unity";
-        case "backup-detail": return `/backups/${encodeURIComponent(route.backupId)}`;
         case "operations": return "/operations";
         case "logs": return "/logs";
         case "operation-detail": return `/operations/${encodeURIComponent(route.operationId)}`;
@@ -951,7 +954,6 @@ function routeSection(route: Route): string {
         case "repository-detail":
         case "templates":
         case "user-packages": return "packages";
-        case "backup-detail": return "projects";
         case "operations":
         case "operation-detail": return "tasks";
         case "extension-detail":

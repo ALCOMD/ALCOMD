@@ -46,7 +46,6 @@ pub enum RepositoryListFormat {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryConfiguration {
     pub display_name: Option<String>,
-    pub priority: u64,
     pub enabled: bool,
     pub disabled_package_ids: Vec<String>,
 }
@@ -64,6 +63,7 @@ pub struct RepositoryListMetadata {
 pub struct RepositoryListRecord {
     pub repository_id: String,
     pub revision: u64,
+    pub order_key: u64,
     pub source: RepositorySource,
     pub credential_reference: Option<String>,
     pub configuration: RepositoryConfiguration,
@@ -138,6 +138,7 @@ pub trait RepositoryListStore: Clone + Send + Sync + 'static {
     fn apply_repository_list_metadata(
         &self,
         owner: PrincipalId,
+        expected_order: String,
         changes: Vec<RepositoryListMetadata>,
         now_ms: u64,
     ) -> impl Future<Output = Result<(), M3Error>> + Send;
@@ -232,7 +233,8 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
     {
         require(access, true)?;
         require_import_manage(access)?;
-        let (_control, stop) = ImportGuard::start(&self.imports, key.as_str())?;
+        let (_control, stop) =
+            ImportGuard::start(&self.imports, (access.principal().clone(), key.clone()))?;
         // Classify duplicates in the file here. The registry checks currently
         // registered URLs just before admission and reports their line as existing.
         let inspection = self
@@ -285,24 +287,21 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
         key: &IdempotencyKey,
     ) -> Result<bool, RepositoryListError> {
         require_import_manage(access)?;
+        let key = (access.principal().clone(), key.clone());
         let mut controls = self
             .imports
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(stop) = controls.active.get(key.as_str()) {
+        if let Some(stop) = controls.active.get(&key) {
             stop.send_replace(true);
             return Ok(true);
         }
         controls.expire();
-        if let Some((_, _, stopped)) = controls
-            .recent
-            .iter()
-            .find(|(entry, _, _)| entry == key.as_str())
-        {
+        if let Some((_, _, stopped)) = controls.recent.iter().find(|(entry, _, _)| entry == &key) {
             return Ok(*stopped);
         }
         // A stop on a second connection can overtake the start request.
-        controls.remember(key.as_str().to_owned(), true);
+        controls.remember(key, true);
         Ok(true)
     }
 
@@ -352,12 +351,17 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
         self.store
             .repository_list_snapshot(access.principal().clone())
             .await
-            .map_err(|_| RepositoryListError("store_unavailable"))
+            .map_err(|error| {
+                RepositoryListError(match error.code() {
+                    M3ErrorCode::PermissionDenied => "permission_denied",
+                    _ => "store_unavailable",
+                })
+            })
     }
 }
 
 fn require_import_manage(access: &AccessContext) -> Result<(), RepositoryListError> {
-    if access.principal() != &PrincipalId::local_owner() {
+    if !access.is_interactive_client() {
         return Err(RepositoryListError("permission_denied"));
     }
     access
@@ -365,11 +369,13 @@ fn require_import_manage(access: &AccessContext) -> Result<(), RepositoryListErr
         .map_err(|_| RepositoryListError("permission_denied"))
 }
 
+type ImportKey = (PrincipalId, IdempotencyKey);
+
 #[derive(Default)]
 struct ImportControls {
-    active: HashMap<String, tokio::sync::watch::Sender<bool>>,
+    active: HashMap<ImportKey, tokio::sync::watch::Sender<bool>>,
     // The bool distinguishes an early stop from a completed import.
-    recent: VecDeque<(String, Instant, bool)>,
+    recent: VecDeque<(ImportKey, Instant, bool)>,
 }
 
 impl ImportControls {
@@ -383,7 +389,7 @@ impl ImportControls {
         }
     }
 
-    fn remember(&mut self, key: String, stopped: bool) {
+    fn remember(&mut self, key: ImportKey, stopped: bool) {
         self.expire();
         if self.recent.len() == 32 {
             self.recent.pop_front();
@@ -394,18 +400,18 @@ impl ImportControls {
 
 struct ImportGuard<'a> {
     controls: &'a Mutex<ImportControls>,
-    key: String,
+    key: ImportKey,
 }
 
 impl<'a> ImportGuard<'a> {
     fn start(
         controls: &'a Mutex<ImportControls>,
-        key: &str,
+        key: ImportKey,
     ) -> Result<(Self, tokio::sync::watch::Receiver<bool>), RepositoryListError> {
         let mut state = controls
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if state.active.contains_key(key) {
+        if state.active.contains_key(&key) {
             return Err(RepositoryListError("idempotency_conflict"));
         }
         if state.active.len() >= 8 {
@@ -415,18 +421,12 @@ impl<'a> ImportGuard<'a> {
         let stopped = state
             .recent
             .iter()
-            .position(|(entry, _, _)| entry == key)
+            .position(|(entry, _, _)| entry == &key)
             .and_then(|index| state.recent.remove(index))
             .is_some_and(|(_, _, stopped)| stopped);
         let (sender, receiver) = tokio::sync::watch::channel(stopped);
-        state.active.insert(key.to_owned(), sender);
-        Ok((
-            Self {
-                controls,
-                key: key.to_owned(),
-            },
-            receiver,
-        ))
+        state.active.insert(key.clone(), sender);
+        Ok((Self { controls, key }, receiver))
     }
 }
 
@@ -437,15 +437,38 @@ impl Drop for ImportGuard<'_> {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         controls.active.remove(&self.key);
-        controls.remember(std::mem::take(&mut self.key), false);
+        controls.remember(self.key.clone(), false);
     }
 }
 
-fn require(access: &AccessContext, owner_only: bool) -> Result<(), RepositoryListError> {
+#[cfg(test)]
+#[test]
+fn active_import_keys_conflict_only_for_the_same_caller() {
+    let controls = Mutex::new(ImportControls::default());
+    let key = IdempotencyKey::parse("import").expect("key");
+    let first = (PrincipalId::local_owner(), key.clone());
+    let second = (PrincipalId::parse("mcp:fixture").expect("principal"), key);
+    let (_owner_guard, owner_stop) =
+        ImportGuard::start(&controls, first.clone()).expect("start owner");
+    assert!(matches!(
+        ImportGuard::start(&controls, first.clone()),
+        Err(RepositoryListError("idempotency_conflict"))
+    ));
+    let (_client_guard, client_stop) =
+        ImportGuard::start(&controls, second).expect("start other caller");
+    controls.lock().expect("controls").active[&first].send_replace(true);
+    assert!(*owner_stop.borrow());
+    assert!(!*client_stop.borrow());
+}
+
+fn require(
+    access: &AccessContext,
+    requires_interactive_client: bool,
+) -> Result<(), RepositoryListError> {
     access
         .require(Permission::RepositoriesRead)
         .map_err(|_| RepositoryListError("permission_denied"))?;
-    if owner_only && access.principal().as_str() != PrincipalId::LOCAL_OWNER {
+    if requires_interactive_client && !access.is_interactive_client() {
         return Err(RepositoryListError("permission_denied"));
     }
     Ok(())

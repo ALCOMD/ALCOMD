@@ -4,6 +4,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::unity_registration::{self, Registration, UnityApp, UnityAppTarget};
+
 const MAX_PATH_BYTES: usize = 4096;
 const MAX_DEFAULT_CANDIDATES: usize = 8;
 
@@ -86,6 +88,7 @@ pub struct UnityHubInspection {
     pub status: UnityHubAvailability,
     pub source: UnityHubOrigin,
     pub path: Option<String>,
+    pub registered_target: Option<String>,
     pub configured_path_status: ConfiguredUnityHubStatus,
 }
 
@@ -130,13 +133,16 @@ pub fn normalize_unity_hub_path(path: &str) -> Result<String, UnityHubPathError>
         .ok_or(UnityHubPathError::Invalid)
 }
 
-/// Searches only fixed platform candidates after the configured executable.
+/// Searches the desktop registration after any explicit executable.
 #[must_use]
 pub fn inspect_unity_hub(configured_path: Option<&str>) -> UnityHubInspection {
-    inspect_candidates(configured_path, default_candidates())
+    inspect_registered(configured_path, || unity_registration::query(UnityApp::Hub))
 }
 
-fn inspect_candidates(configured_path: Option<&str>, defaults: Vec<PathBuf>) -> UnityHubInspection {
+fn inspect_registered(
+    configured_path: Option<&str>,
+    query: impl FnOnce() -> Registration,
+) -> UnityHubInspection {
     let mut configured_path_status = ConfiguredUnityHubStatus::Unset;
     if let Some(path) = configured_path {
         match normalize_unity_hub_path(path) {
@@ -145,6 +151,7 @@ fn inspect_candidates(configured_path: Option<&str>, defaults: Vec<PathBuf>) -> 
                     status: UnityHubAvailability::Available,
                     source: UnityHubOrigin::Configured,
                     path: Some(path),
+                    registered_target: None,
                     configured_path_status: ConfiguredUnityHubStatus::Available,
                 };
             }
@@ -159,31 +166,59 @@ fn inspect_candidates(configured_path: Option<&str>, defaults: Vec<PathBuf>) -> 
             }
         }
     }
+    let registration = query();
+    let mut unavailable =
+        registration.unavailable || registration.targets.len() > MAX_DEFAULT_CANDIDATES;
     let mut seen = Vec::new();
-    for candidate in defaults.into_iter().take(MAX_DEFAULT_CANDIDATES) {
-        if !candidate.is_absolute() || seen.contains(&candidate) {
-            continue;
-        }
-        seen.push(candidate.clone());
-        let Some(path) = candidate.to_str() else {
-            continue;
-        };
-        match normalize_unity_hub_path(path) {
-            Ok(path) => {
-                return UnityHubInspection {
-                    status: UnityHubAvailability::Available,
-                    source: UnityHubOrigin::Discovered,
-                    path: Some(path),
-                    configured_path_status,
+    for target in registration
+        .targets
+        .into_iter()
+        .take(MAX_DEFAULT_CANDIDATES)
+    {
+        let (path, registered_target) = match target {
+            UnityAppTarget::Executable(candidate) => {
+                if !candidate.is_absolute() || seen.contains(&candidate) {
+                    continue;
+                }
+                seen.push(candidate.clone());
+                let Some(path) = candidate.to_str() else {
+                    continue;
                 };
+                match normalize_unity_hub_path(path) {
+                    Ok(path) => (Some(path), None),
+                    Err(error) if error.kind() == UnityHubPathErrorKind::Invalid => continue,
+                    Err(_) => {
+                        unavailable = true;
+                        continue;
+                    }
+                }
             }
-            Err(error) if error.kind() == UnityHubPathErrorKind::Invalid => {}
-            Err(_) => {
-                return missing(UnityHubAvailability::Unavailable, configured_path_status);
+            #[cfg(windows)]
+            UnityAppTarget::Msix => (None, Some("msix:unity-hub".to_owned())),
+            #[cfg(target_os = "linux")]
+            UnityAppTarget::Flatpak { launcher, user } => {
+                let scope = if user { "user" } else { "system" };
+                let Some(launcher) = launcher.to_str().filter(|value| valid_text(value)) else {
+                    unavailable = true;
+                    continue;
+                };
+                (None, Some(format!("flatpak:{scope}:{launcher}")))
             }
-        }
+        };
+        return UnityHubInspection {
+            status: UnityHubAvailability::Available,
+            source: UnityHubOrigin::Discovered,
+            path,
+            registered_target,
+            configured_path_status,
+        };
     }
-    missing(UnityHubAvailability::NotFound, configured_path_status)
+    let status = if unavailable {
+        UnityHubAvailability::Unavailable
+    } else {
+        UnityHubAvailability::NotFound
+    };
+    missing(status, configured_path_status)
 }
 
 fn missing(
@@ -194,6 +229,7 @@ fn missing(
         status,
         source: UnityHubOrigin::None,
         path: None,
+        registered_target: None,
         configured_path_status,
     }
 }
@@ -215,52 +251,15 @@ fn classify_io(error: io::Error) -> UnityHubPathError {
     classified.with_source(error)
 }
 
-#[cfg(windows)]
-fn default_candidates() -> Vec<PathBuf> {
-    [
-        ("ProgramFiles", "Unity Hub/Unity Hub.exe"),
-        ("ProgramFiles(x86)", "Unity Hub/Unity Hub.exe"),
-        ("LOCALAPPDATA", "Programs/Unity Hub/Unity Hub.exe"),
-    ]
-    .into_iter()
-    .filter_map(|(variable, relative)| {
-        std::env::var_os(variable).map(|root| PathBuf::from(root).join(relative))
+#[cfg(test)]
+fn inspect_candidates(configured_path: Option<&str>, defaults: Vec<PathBuf>) -> UnityHubInspection {
+    inspect_registered(configured_path, || Registration {
+        targets: defaults
+            .into_iter()
+            .map(UnityAppTarget::Executable)
+            .collect(),
+        unavailable: false,
     })
-    .collect()
-}
-
-#[cfg(target_os = "macos")]
-fn default_candidates() -> Vec<PathBuf> {
-    let mut paths = vec![PathBuf::from(
-        "/Applications/Unity Hub.app/Contents/MacOS/Unity Hub",
-    )];
-    if let Some(home) = std::env::var_os("HOME") {
-        paths.push(PathBuf::from(home).join("Applications/Unity Hub.app/Contents/MacOS/Unity Hub"));
-    }
-    paths
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn default_candidates() -> Vec<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let data_home = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .or_else(|| home.as_ref().map(|root| root.join(".local/share")));
-    let mut paths = Vec::new();
-    if let Some(home) = home {
-        paths.push(home.join("Applications/Unity Hub.AppImage"));
-    }
-    paths.extend([
-        PathBuf::from("/usr/bin/unity-hub"),
-        PathBuf::from("/opt/unityhub/unityhub"),
-    ]);
-    if let Some(data_home) = data_home {
-        paths.push(data_home.join("flatpak/exports/bin/com.unity.UnityHub"));
-    }
-    paths.push(PathBuf::from(
-        "/var/lib/flatpak/exports/bin/com.unity.UnityHub",
-    ));
-    paths
 }
 
 #[cfg(test)]
@@ -346,8 +345,32 @@ mod tests {
         paths.push(first);
         assert_eq!(
             inspect_candidates(None, paths).status,
-            UnityHubAvailability::NotFound
+            UnityHubAvailability::Unavailable
         );
+    }
+
+    #[test]
+    fn unreadable_registration_is_not_an_absent_installation() {
+        let value = inspect_registered(None, || Registration {
+            targets: Vec::new(),
+            unavailable: true,
+        });
+        assert_eq!(value.status, UnityHubAvailability::Unavailable);
+        assert!(value.path.is_none());
+        assert!(value.registered_target.is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn msix_registration_is_available_without_a_display_path() {
+        let value = inspect_registered(None, || Registration {
+            targets: vec![UnityAppTarget::Msix],
+            unavailable: false,
+        });
+        assert_eq!(value.status, UnityHubAvailability::Available);
+        assert_eq!(value.source, UnityHubOrigin::Discovered);
+        assert_eq!(value.path, None);
+        assert_eq!(value.registered_target.as_deref(), Some("msix:unity-hub"));
     }
 
     #[test]
@@ -401,7 +424,6 @@ mod tests {
             classify_io(io::Error::from(io::ErrorKind::NotFound)),
             UnityHubPathError::Invalid
         );
-        assert!(default_candidates().len() <= MAX_DEFAULT_CANDIDATES);
     }
 
     #[cfg(windows)]

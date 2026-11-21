@@ -41,6 +41,7 @@ export interface UnityHubLocation {
     status: "available" | "not_found" | "unavailable";
     source: "configured" | "discovered" | "none";
     path: string | null;
+    targetToken: string | null;
     configuredPathStatus: "unset" | "available" | "invalid" | "unavailable";
 }
 
@@ -67,7 +68,7 @@ export interface OfficialSettings {
 export interface SettingsGetResult {
     directories: { projectDirectory: string; backupDirectory: string };
     unityHub: UnityHubLocation;
-    configSchema: 13;
+    configSchema: 1;
     revision: number;
     settings: OfficialSettings;
 }
@@ -198,7 +199,15 @@ export interface RepositorySnapshot {
 }
 
 export interface RepositoryResult { repository: RepositorySnapshot }
-export interface RepositoriesListResult { repositories: RepositorySnapshot[]; nextCursor?: RegistryCursor }
+export interface RepositoryCursor extends RegistryCursor { orderFingerprint: string }
+export interface RepositoriesListResult { repositories: RepositorySnapshot[]; nextCursor?: RepositoryCursor; orderFingerprint: string }
+export interface RepositoryMoveParams {
+    repositoryId: string;
+    beforeRepositoryId: string | null;
+    expectedOrderFingerprint: string;
+    idempotencyKey: string;
+}
+export interface RepositoryMoveResult { changed: boolean; replayed: boolean }
 export interface RepositoryWriteResult { repository: RepositorySnapshot; replayed: boolean }
 export interface RepositoryUnregisterResult { repositoryId: string; revision: number; unregistered: boolean; replayed: boolean }
 
@@ -227,6 +236,7 @@ export interface PackageCursor {
 }
 
 export interface RepositoryPackageSourcePin {
+    kind: "repository";
     repositoryId: string;
     repositoryRevision: number;
     sourceIdentity: string;
@@ -238,6 +248,7 @@ export interface RepositoryPackageSourcePin {
 }
 
 export interface UserPackageSourcePin {
+    kind: "user_package";
     userPackageId: string;
     sourceRevision: number;
     sourceIdentity: string;
@@ -255,15 +266,15 @@ export type PackageSourceSelector =
 export interface PackageMutation {
     kind: "install" | "remove" | "replace";
     packageId: string;
-    fromVersion?: string | null;
-    toVersion?: string | null;
-    source?: PackageSourcePin;
+    fromVersion: string | null;
+    toVersion: string | null;
+    source: PackageSourcePin | null;
 }
 
 export interface PackageChangeSet {
     removalConflicts?: PackageRemovalConflict[];
     unityCompatibilityOverrides?: { packageId: string; version: string }[];
-    formatVersion: number;
+    formatVersion: 1;
     legacyRemovals?: { path: string; kind: "file" | "directory"; packageId: string }[];
     mutations: PackageMutation[];
     dependencyEdges: Array<{ fromPackageId: string; toPackageId: string; range: string; direct: boolean }>;
@@ -298,8 +309,8 @@ export type PackageReinstallSelection = { kind: "packages"; packageIds: string[]
 export interface PackageReinstallSource { packageId: string; source: PackageSourceSelector }
 export interface PackagePlanReinstallParams { projectId: string; expectedRevision: number; selection: PackageReinstallSelection; sources?: PackageReinstallSource[] }
 export type PackageBulkIntent =
-    | { kind: "install"; packageId: string; versionRange?: string | null; source?: PackageSourceSelector | null; includePrerelease: boolean }
-    | { kind: "upgrade"; packageId: string; versionRange?: string | null; source?: PackageSourceSelector | null; includePrerelease: boolean }
+    | { kind: "install"; packageId: string; versionRange?: string | null; source?: PackageSourceSelector | null; includePrerelease?: boolean }
+    | { kind: "upgrade"; packageId: string; versionRange?: string | null; source?: PackageSourceSelector | null; includePrerelease?: boolean }
     | { kind: "remove"; packageId: string }
     | { kind: "reinstall"; packageId: string; source?: PackageSourceSelector | null };
 export interface PackagePlanBulkParams { projectId: string; expectedRevision: number; intents: PackageBulkIntent[] }
@@ -417,31 +428,6 @@ export type ProjectsPlanUnityMigrationResult =
 
 export interface ProjectsApplyUnityMigrationResult { operationId: string; replayed: boolean }
 
-export interface BackupRecord {
-    backupId: string;
-    sourceProjectId: string;
-    archiveSha256: string;
-    archiveBytes: number;
-    formatVersion: number;
-    createdAtMs: number;
-    compressionMode: BackupCompressionMode;
-    excludeVpmPackages: boolean;
-}
-
-export interface BackupsListResult { backups: BackupRecord[]; nextCursor?: string }
-
-export interface BackupCreateResult { operationId: string; backupId: string; replayed: boolean }
-export interface BackupRestorePlan {
-    planId: string;
-    projectId: string;
-    backupId: string;
-    target: { parent: string; leaf: string; mustBeAbsent: boolean };
-    archiveSha256: string;
-    packagesRequireResolve: boolean;
-    excludedPackages: Array<{ packageId: string; version: string }>;
-    planFingerprint: string;
-}
-export interface BackupApplyRestoreResult { operationId: string; projectId: string; replayed: boolean }
 export interface ExtensionsListResult { extensions: ExtensionRecord[]; nextCursor?: string }
 
 export interface ExtensionPlan {
@@ -468,3 +454,11 @@ export interface ExtensionPlan {
 export interface ExtensionPlanResult { plan: ExtensionPlan }
 export interface ExtensionOperationResult { operationId: string; replayed: boolean }
 export interface ExtensionGrantResult { extensionId: string; grantRevision: number; state: string; replayed: boolean }
+
+export type PlansGetResult =
+    | { kind: "package"; plan: PackagePlan }
+    | { kind: "project_copy"; plan: ProjectCopyPlan }
+    | { kind: "project_delete_directory"; plan: ProjectDeletePlan }
+    | { kind: "project_unity_migration"; plan: ProjectUnityMigrationPlan };
+
+export interface PlansGetParams { kind: PlansGetResult["kind"]; planId: string }

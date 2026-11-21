@@ -7,11 +7,17 @@
 repository、package cache 或备份文件，也不直接启动 Unity。命令只有在对应 daemon
 capability 已真实实现时才可进入 help；合同中存在名称不等于后端已经可用。
 
+`package install` 和 `package upgrade` 默认建议省略 `--version-range`，由 Core 推荐兼容版本。指定范围时，Core 在范围内选择。安装、升级和降级均可用 `--repository-id` 或 `--user-package-id` 指定一个来源。两个参数互斥。省略来源时由 Core 选择。
+
+手动安装、升级或降级时，可用 `--allow-unity-incompatible` 为本次操作的目标包版本启用 Unity 兼容性例外。安装和升级须同时提供精确选择器，例如 `--version-range "=1.2.3"`。降级使用位置参数指定版本，例如 `1.2.3`。依赖包仍按项目的 Unity 版本检查。
+
+`project list`、`repository list`、`repository packages` 可将上一页的 JSON `nextCursor` 原样传给 `--cursor`。任务列表的两个游标字段成对传递；`--active-only` 选择活动任务。
+
 权威 machine-readable 工件：
 
 - `alcomd-cli-v1.schema.json`：machine output、stream record、退出码与全局选项。
 - `command-catalog-v1.json`：已发布的命令和 alias。只列出已有真实 daemon capability 的入口。
-- `m5-backup-commands-v1.json`：已发布的 Backup list/get/create/restore 命令合同。
+- [ZIP 备份与恢复命令](backup-commands-v1.json)定义 `backup create` 和 `backup restore` 的参数、确认及任务回执。
 
 ## 输出模式
 
@@ -58,7 +64,7 @@ NDJSON。普通日志不得污染任何 machine stdout。
 
 `project create <target-parent> <name> --unity-version <version> --idempotency-key <key>` 默认直接创建项目。
 选用模板时同时提供 `--template-id <id>` 和 `--template-revision <revision>`。
-命令直接接受任务，支持 `--no-wait`，不接受 `--dry-run`。旧 `template` 命令随 M7 模板切换撤除。
+命令直接接受任务，支持 `--no-wait`，不接受 `--dry-run`。
 
 ## completion
 
@@ -66,8 +72,10 @@ NDJSON。普通日志不得污染任何 machine stdout。
 数据库、网络、repository 或项目。dynamic completion 后置。`clap_complete` 尚未获批，生产实现若
 需要它必须先提交精确依赖审批。
 
-## 兼容规则
+## 首发合同
 
-新增命令、alias、可选 machine 字段或 NDJSON record type 是版本内兼容增加，但只有真实 backend
-存在后才能发布。删除/重命名命令或 alias、改变退出码、stdout/stderr 路由、既有字段类型或语义是
-破坏性变化。首次发布前的 M7 模板切换已获准移除旧命令和参数，CLI contract version 保持 1。
+正式发布前 CLI 合同编号固定为 1。变更命令、参数、退出码或输出格式时，同步改写命令目录、调用方和测试。CLI 只接受当前命令树和参数定义。
+
+`project apply-copy`、`project apply-delete-directory` 和 `project apply-unity-migration` 接受原预演返回的 planId 和 `--idempotency-key`。软件包、复制与删除缺省使用原计划的项目修订，显式传入的 `--expected-revision` 由 Core 复验。交互式按 ID Apply 使用 `plans.get` 读回当前主体的原始计划并展示；非交互调用使用 `--yes` 确认已审阅相应预演，Core 在执行时复验计划。
+
+项目复制、目录删除和 Unity 迁移使用 `--plan-idempotency-key` 创建计划。直接确认执行时另传 `--idempotency-key`，预演可省略执行键。回执未知时携原参数与原键重试。

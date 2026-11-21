@@ -1,3 +1,4 @@
+import { useGuiWrite } from "./gui-write-attempt";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PackageCursor, RepositoryPackagesResult, RepositoryPackageVersion, RepositorySnapshot } from "./core-models";
 import type { RepositoryPackageSettings, RpcError } from "@alcomd/sdk";
@@ -14,6 +15,7 @@ import type { GuiRpcClient } from "./rpc";
 
 export function RepositoryRefresh({ client, repository, onChanged }: { client: GuiRpcClient; repository: RepositorySnapshot; onChanged(): void }) {
     const { t } = useTranslation();
+    const writeRequest = useGuiWrite(client, repository.repositoryId);
     const available = useCapability(capabilities.repositoriesRegistry);
     const current = useActionScope(client);
     const latest = useRef(repository);
@@ -26,7 +28,7 @@ export function RepositoryRefresh({ client, repository, onChanged }: { client: G
         pending.current = true;
         setBusy(true);
         try {
-            const result = await client.repositoryRefresh(repositoryId, revision);
+            const result = await writeRequest("repositoryRefresh", repositoryId, revision);
             if (!current()) return;
             latest.current = result.repository;
             onChanged();

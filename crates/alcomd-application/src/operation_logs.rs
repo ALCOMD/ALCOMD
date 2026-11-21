@@ -480,9 +480,6 @@ pub async fn read_operation_logs<S: OperationLogStore>(
     query: OperationLogQuery,
 ) -> Result<OperationLogPage, ApplicationError> {
     access.require(Permission::OperationsRead)?;
-    if access.principal() != &PrincipalId::local_owner() {
-        return Err(ApplicationError::PermissionDenied);
-    }
     if !query.valid() {
         return Err(ApplicationError::InvalidInput);
     }

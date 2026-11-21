@@ -141,7 +141,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
             let commits = Arc::clone(&commits);
             let mut stopped = stop.clone();
             let operation_key = key.as_str().to_owned();
-            jobs.spawn(async move {
+            let admission = async move {
                 if existing.is_some() && !overwrite_existing {
                     return (entry.line, RepositoryBatchItem::Existing, None);
                 }
@@ -165,7 +165,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                         "fetch_repository",
                         None,
                         registry.reader.inspect_repository_authenticated(
-                            source,
+                            source.clone(),
                             None,
                             entry.credentials.clone(),
                         ),
@@ -195,13 +195,16 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                 let result = match existing {
                     Some(record) => Ok((record.repository_id, false)),
                     None => {
-                        let observation = observation.expect("new source was read");
+                        let registration = crate::RepositoryRegistration {
+                            requested_source: source,
+                            observation: observation.expect("new source was read"),
+                        };
                         let result = match entry.credentials.clone() {
                             Some(credentials) => {
                                 registry
                                     .persist_authenticated_repository(
                                         &access,
-                                        observation,
+                                        registration,
                                         credentials,
                                         admission_key,
                                     )
@@ -209,7 +212,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                             }
                             None => {
                                 registry
-                                    .persist_repository(&access, observation, admission_key)
+                                    .persist_repository(&access, registration, admission_key)
                                     .await
                             }
                         };
@@ -304,7 +307,10 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                     },
                     Some((id, configuration)),
                 )
-            });
+            };
+            jobs.spawn(crate::m8_workflows::carry_workflow_authentication(
+                crate::carry_log_caller(admission),
+            ));
         }
         let mut results = Vec::new();
         let mut imported = BTreeMap::new();
@@ -346,57 +352,43 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
         merged.packages.hidden_repository_ids = hidden.clone();
         merged.packages.hidden_repository_packages = package_groups.clone();
         merged.validate().map_err(config_error)?;
-        let mut ordered: Vec<_> = current.repositories.iter().collect();
-        ordered.sort_by_key(|record| match imported.get(&record.repository_id) {
-            Some((line, entry)) => (false, entry.priority, *line as u64),
-            None => (true, record.configuration.priority, 0),
-        });
-        let max_imported = imported
-            .values()
-            .map(|(_, entry)| entry.priority)
-            .max()
-            .unwrap_or(0);
-        let preserve_priorities = overwrite_existing
-            && max_imported
-                .checked_add(current.repositories.len() as u64)
-                .is_some_and(|maximum| maximum <= i64::MAX as u64);
-        let mut rank = if overwrite_existing {
-            0
-        } else {
+        if current.repositories.len() > REPOSITORY_LIST_MAX_ENTRIES {
+            return Err(RepositoryListError("repository_list_import_incomplete"));
+        }
+        let expected_order = crate::repository_order_fingerprint(
             current
                 .repositories
                 .iter()
-                .filter(|record| !ids.contains(&record.repository_id))
-                .map(|record| record.configuration.priority)
-                .max()
-                .unwrap_or(0)
-        };
-        let mut previous = None;
+                .map(|record| &record.repository_id),
+        );
+        let mut ordered: Vec<_> = current.repositories.iter().enumerate().collect();
+        ordered.sort_by_key(|(index, record)| {
+            let id = RepositoryId::parse(&record.repository_id).expect("registered ID");
+            if crate::builtin_repository(id).is_some() {
+                (0, *index)
+            } else if let Some((line, _)) = imported.get(&record.repository_id) {
+                (if overwrite_existing { 1 } else { 2 }, *line as usize)
+            } else {
+                (if overwrite_existing { 2 } else { 1 }, *index)
+            }
+        });
+        let order_changed = ordered
+            .iter()
+            .enumerate()
+            .any(|(position, (previous, _))| position != *previous);
         let mut changes = Vec::new();
-        for record in ordered {
+        for (position, (_, record)) in ordered.into_iter().enumerate() {
             let imported_configuration = imported.get(&record.repository_id);
-            if !overwrite_existing && imported_configuration.is_none() {
-                continue;
-            }
-            let group = match imported_configuration {
-                Some((_, entry)) => (false, entry.priority),
-                None => (true, record.configuration.priority),
+            let rank = if order_changed {
+                position as u64 + 1
+            } else {
+                record.order_key
             };
-            if previous != Some(group) {
-                rank = if preserve_priorities {
-                    imported_configuration
-                        .map(|(_, entry)| entry.priority)
-                        .unwrap_or_else(|| (rank + 1).max(record.configuration.priority))
-                } else {
-                    rank + 1
-                };
-                previous = Some(group);
-            }
             let name = imported_configuration
                 .map(|(_, entry)| entry.display_name.clone())
                 .unwrap_or_else(|| record.configuration.display_name.clone());
             let metadata_changed =
-                name != record.configuration.display_name || rank != record.configuration.priority;
+                name != record.configuration.display_name || rank != record.order_key;
             let switches_changed = imported_configuration.is_some_and(|(_, entry)| {
                 entry.enabled
                     == config
@@ -426,7 +418,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                 changes.push(RepositoryListMetadata {
                     repository_id: record.repository_id.clone(),
                     expected_display_name: record.configuration.display_name.clone(),
-                    expected_priority: record.configuration.priority,
+                    expected_priority: record.order_key,
                     display_name: name,
                     priority: rank,
                 });
@@ -444,6 +436,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
             None,
             self.store.apply_repository_list_metadata(
                 access.principal().clone(),
+                expected_order,
                 changes,
                 super::super::m3_time_ms().map_err(|_| RepositoryListError("internal_error"))?,
             ),
@@ -453,6 +446,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
         .map_err(|error| {
             RepositoryListError(match error.code() {
                 M3ErrorCode::RevisionConflict => "repository_list_changed",
+                M3ErrorCode::PermissionDenied => "permission_denied",
                 M3ErrorCode::StoreUnavailable => "store_unavailable",
                 _ => "repository_list_configuration_failed",
             })
@@ -467,6 +461,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                     ConfigUpdate {
                         packages: Some(ConfigPackageSettingsUpdate {
                             show_prerelease: None,
+                            prefer_prerelease: None,
                             hide_local_user_packages: None,
                             hidden_repository_ids: Some(hidden),
                             hidden_repository_packages: Some(package_groups),

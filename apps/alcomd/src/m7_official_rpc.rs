@@ -24,14 +24,20 @@ pub(super) async fn dispatch(
                 Err(_) => return invalid(request.id),
             };
             match application
-                .open_unity_hub(access, params.expected_revision, params.expected_path)
+                .open_unity_hub(
+                    access,
+                    params.expected_revision,
+                    params.expected_target_token,
+                )
                 .await
             {
                 Ok(value) => success_action(
                     request.id,
                     rpc::UnityHubOpenResult {
                         outcome: match value {
-                            app::UnityHubOpenOutcome::Spawned => rpc::UnityHubOpenOutcome::Spawned,
+                            app::UnityHubOpenOutcome::LaunchRequested => {
+                                rpc::UnityHubOpenOutcome::LaunchRequested
+                            }
                             app::UnityHubOpenOutcome::DownloadRequired => {
                                 rpc::UnityHubOpenOutcome::DownloadRequired
                             }
@@ -133,6 +139,7 @@ pub(super) async fn dispatch(
                     .packages
                     .map(|value| app::ConfigPackageSettingsUpdate {
                         show_prerelease: value.show_prerelease,
+                        prefer_prerelease: value.prefer_prerelease,
                         hidden_repository_ids: value.hidden_repository_ids,
                         hidden_repository_packages: value.hidden_repository_packages.map(
                             |groups| {
@@ -194,6 +201,7 @@ fn settings_result(
             backup_directory: directories.backup_directory,
         },
         unity_hub: rpc::UnityHubLocation {
+            target_token: hub.target_token(),
             status: match hub.status {
                 app::UnityHubStatus::Available => rpc::UnityHubStatus::Available,
                 app::UnityHubStatus::NotFound => rpc::UnityHubStatus::NotFound,
@@ -290,6 +298,7 @@ fn settings_result(
             },
             packages: rpc::PackageSettings {
                 show_prerelease: value.settings.packages.show_prerelease,
+                prefer_prerelease: value.settings.packages.prefer_prerelease,
                 hidden_repository_ids: value.settings.packages.hidden_repository_ids,
                 hidden_repository_packages: value
                     .settings
@@ -453,7 +462,7 @@ mod tests {
                 backup_directory: "/fixtures/backups".into(),
             },
         );
-        assert_eq!(result.config_schema, 13);
+        assert_eq!(result.config_schema, 1);
         assert_eq!(
             result.config_schema,
             alcomd_store::FileConfigStore::SCHEMA_VERSION

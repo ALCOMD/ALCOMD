@@ -171,9 +171,19 @@ pub(crate) fn extract_archive_checked(
     limits: ArchiveLimits,
     validate: impl FnOnce(&ArchivePreflight) -> Result<(), ArchiveErrorCode>,
 ) -> Result<ArchivePreflight, ArchiveError> {
-    validate_empty_destination(destination)?;
-    let file = File::open(archive_path)
+    let mut file = File::open(archive_path)
         .map_err(|cause| archive_error(ArchiveErrorCode::Io).with_source(cause))?;
+    extract_archive_from_file(&mut file, destination, limits, validate, || false)
+}
+
+pub(crate) fn extract_archive_from_file(
+    file: &mut File,
+    destination: &Path,
+    limits: ArchiveLimits,
+    validate: impl FnOnce(&ArchivePreflight) -> Result<(), ArchiveErrorCode>,
+    cancelled: impl Fn() -> bool,
+) -> Result<ArchivePreflight, ArchiveError> {
+    validate_empty_destination(destination)?;
     let metadata = file
         .metadata()
         .map_err(|cause| archive_error(ArchiveErrorCode::Io).with_source(cause))?;
@@ -186,6 +196,8 @@ pub(crate) fn extract_archive_checked(
     validate(&preflight).map_err(archive_error)?;
     let mut streamed_total = 0_u64;
     for planned in &preflight.entries {
+        check_cancelled(&cancelled)
+            .map_err(|cause| archive_error(ArchiveErrorCode::Io).with_source(cause))?;
         let mut entry = archive
             .by_index(planned.index)
             .map_err(|cause| archive_error(ArchiveErrorCode::Invalid).with_source(cause))?;
@@ -210,7 +222,7 @@ pub(crate) fn extract_archive_checked(
             .open(&target)
             .map_err(|cause| archive_error(ArchiveErrorCode::Io).with_source(cause))?;
         let copied = copy_bounded(
-            &mut entry,
+            &mut CancelCheckedRead(&mut entry, &cancelled),
             &mut output,
             planned.uncompressed_size,
             limits.entry_bytes,
@@ -241,6 +253,23 @@ pub(crate) fn extract_archive_checked(
     Ok(preflight)
 }
 
+struct CancelCheckedRead<R, C>(R, C);
+
+impl<R: Read, C: Fn() -> bool> Read for CancelCheckedRead<R, C> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        check_cancelled(&self.1)?;
+        self.0.read(buffer)
+    }
+}
+
+fn check_cancelled(cancelled: impl Fn() -> bool) -> io::Result<()> {
+    if cancelled() {
+        // Interrupted would be retried by io::copy.
+        return Err(io::Error::other("archive extraction cancelled"));
+    }
+    Ok(())
+}
+
 fn preflight_reader<R: Read + Seek>(
     reader: R,
     limits: ArchiveLimits,
@@ -250,7 +279,7 @@ fn preflight_reader<R: Read + Seek>(
     preflight_zip(&mut archive, limits)
 }
 
-fn preflight_zip<R: Read + Seek>(
+pub(crate) fn preflight_zip<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     limits: ArchiveLimits,
 ) -> Result<ArchivePreflight, ArchiveError> {

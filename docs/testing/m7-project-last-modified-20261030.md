@@ -4,7 +4,7 @@
 
 ## 权威语义
 
-v3 的 `LastModified` 是 registry 维护的最近使用／成功变更时间，不是文件树 mtime，也不是最近扫描时间。只读参考 `vrc-get-gui/src/commands/project.rs`、`commands/environment/projects.rs`、`backend/projects.rs` 和 `vrc-get-vpm/src/environment/project_management.rs`，未复制实现或引入运行时依赖。精确合同在当前 M7 ExecPlan、`specs/rpc/alcomd-rpc-v1.md`、M3 RPC Schema 及 `specs/storage/state-v15-project-last-modified.contract.json`。
+v3 的 `LastModified` 是 registry 维护的最近使用／成功变更时间，不是文件树 mtime，也不是最近扫描时间。只读参考 `vrc-get-gui/src/commands/project.rs`、`commands/environment/projects.rs`、`backend/projects.rs` 和 `vrc-get-vpm/src/environment/project_management.rs`，未复制实现或引入运行时依赖。精确合同在当前 M7 ExecPlan、`specs/rpc/alcomd-rpc-v1.md`、M3 RPC Schema 及 `specs/storage/state-v1.md`。
 
 | 边界 | 更新时间 |
 |---|---|
@@ -22,9 +22,9 @@ v3 的 `LastModified` 是 registry 维护的最近使用／成功变更时间，
 
 ## 数据与界面
 
-- `ProjectRecord.last_modified_at_ms: Option<u64>` 由 Core 独立维护。项目观察模型已按后续明确指令移除通用采集时间，当前存储升至 State 16；删除范围和新验证见 `m7-remove-project-observed-20261030.md`。旧 durable Plan／永久幂等 JSON 缺字段读取为未知，None 省略序列化；不加旧方法别名或另一套时间模型。
+- `ProjectRecord.last_modified_at_ms: Option<u64>` 由 Core 独立维护。项目观察模型已按后续明确指令移除通用采集时间；删除范围和新验证见 `m7-remove-project-observed-20261030.md`。未知值省略序列化。
 - 现有 `ProjectSnapshot.lastModifiedAtMs` 为可选 Unix 毫秒值。注册／列表／get／refresh 等统一转换；未注册 inspect 及未知值省略，无新 method、capability 或 permission。
-- Schema 14→15 只为 `projects` 增加 nullable INTEGER 列，原数据及其他表不变。NULL 表示未知，0 是合法时间，不回填观察时间、数据库更新时间或注册日期；负值及越界拒绝，升级事务可回滚。
+- 项目表保存 nullable INTEGER。NULL 表示未知，0 是合法时间，负值和越界值无效。
 - 列表表头、网格日期及排序统一采用最后修改时间，三语言按 v3 对应词条。收藏优先；其内未知日期始终在已知之后，时间相同按 ProjectId／路径稳定决胜。GUI 不以本机时钟、检查时间或注册日期补值。
 - 真正 launch RPC 成功或失败完成后，经显式 `onLaunchSettled` 回调重读 Core。launch-options 失败不调用该回调，无自动 mutation 重试，原错误反馈保留。
 - 无新依赖、unsafe、平台 API、配置项、图标、布局、CSS 或窄窗口适配。

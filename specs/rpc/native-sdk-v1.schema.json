@@ -3,559 +3,30 @@
     "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/native-sdk-v1.schema.json",
     "title": "ALCOMD native SDK v1 additional wire shapes",
     "$defs": {
-        "BackupsListResult": {
-            "type": "object",
-            "properties": {
-                "backups": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m5-backup-create.json#/$defs/backupRecord"
-                    }
-                },
-                "nextCursor": {
-                    "type": "string"
-                }
-            },
-            "required": [
-                "backups"
-            ]
-        },
         "EmptyParams": {
             "type": "object",
             "additionalProperties": false
         },
         "PackageBulkIntent": {
-            "oneOf": [
-                {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                        "kind",
-                        "packageId",
-                        "includePrerelease"
-                    ],
-                    "properties": {
-                        "kind": {
-                            "const": "install"
-                        },
-                        "packageId": {
-                            "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/packageId"
-                        },
-                        "versionRange": {
-                            "oneOf": [
-                                {
-                                    "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/versionText"
-                                },
-                                {
-                                    "type": "null"
-                                }
-                            ]
-                        },
-                        "source": {
-                            "oneOf": [
-                                {
-                                    "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/sourceSelector"
-                                },
-                                {
-                                    "type": "null"
-                                }
-                            ]
-                        },
-                        "includePrerelease": {
-                            "type": "boolean"
-                        }
-                    }
-                },
-                {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                        "kind",
-                        "packageId",
-                        "includePrerelease"
-                    ],
-                    "properties": {
-                        "kind": {
-                            "const": "upgrade"
-                        },
-                        "packageId": {
-                            "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/packageId"
-                        },
-                        "versionRange": {
-                            "oneOf": [
-                                {
-                                    "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/versionText"
-                                },
-                                {
-                                    "type": "null"
-                                }
-                            ]
-                        },
-                        "source": {
-                            "oneOf": [
-                                {
-                                    "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/sourceSelector"
-                                },
-                                {
-                                    "type": "null"
-                                }
-                            ]
-                        },
-                        "includePrerelease": {
-                            "type": "boolean"
-                        }
-                    }
-                },
-                {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                        "kind",
-                        "packageId"
-                    ],
-                    "properties": {
-                        "kind": {
-                            "const": "remove"
-                        },
-                        "packageId": {
-                            "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/packageId"
-                        }
-                    }
-                },
-                {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                        "kind",
-                        "packageId"
-                    ],
-                    "properties": {
-                        "kind": {
-                            "const": "reinstall"
-                        },
-                        "packageId": {
-                            "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/packageId"
-                        },
-                        "source": {
-                            "oneOf": [
-                                {
-                                    "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/sourceSelector"
-                                },
-                                {
-                                    "type": "null"
-                                }
-                            ]
-                        }
-                    }
-                }
-            ]
+            "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/bulkIntent"
         },
         "PackageChangeSet": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "formatVersion",
-                "mutations",
-                "dependencyEdges",
-                "vpmManifestSha256"
-            ],
-            "if": {
-                "required": [
-                    "legacyRemovals"
-                ]
-            },
-            "then": {
-                "properties": {
-                    "formatVersion": {
-                        "const": 4
-                    }
-                }
-            },
-            "allOf": [
-                {
-                    "if": {
-                        "required": [
-                            "unityCompatibilityOverrides"
-                        ]
-                    },
-                    "then": {
-                        "properties": {
-                            "formatVersion": {
-                                "const": 4
-                            }
-                        }
-                    }
-                },
-                {
-                    "if": {
-                        "required": [
-                            "removalConflicts"
-                        ]
-                    },
-                    "then": {
-                        "properties": {
-                            "formatVersion": {
-                                "const": 4
-                            },
-                            "mutations": {
-                                "items": {
-                                    "properties": {
-                                        "kind": {
-                                            "const": "remove"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            ],
-            "properties": {
-                "removalConflicts": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 1024,
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                            "packageId",
-                            "requiredBy"
-                        ],
-                        "properties": {
-                            "packageId": {
-                                "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/packageId"
-                            },
-                            "requiredBy": {
-                                "type": "array",
-                                "minItems": 1,
-                                "maxItems": 4096,
-                                "items": {
-                                    "type": "object",
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "packageId",
-                                        "range"
-                                    ],
-                                    "properties": {
-                                        "packageId": {
-                                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/packageId"
-                                        },
-                                        "range": {
-                                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/versionText"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                "unityCompatibilityOverrides": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 1,
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                            "packageId",
-                            "version"
-                        ],
-                        "properties": {
-                            "packageId": {
-                                "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/packageId"
-                            },
-                            "version": {
-                                "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/versionText"
-                            }
-                        }
-                    }
-                },
-                "formatVersion": {
-                    "enum": [
-                        1,
-                        2,
-                        3,
-                        4
-                    ]
-                },
-                "mutations": {
-                    "type": "array",
-                    "maxItems": 1024,
-                    "items": {
-                        "$ref": "#/$defs/PackageMutation"
-                    }
-                },
-                "dependencyEdges": {
-                    "type": "array",
-                    "maxItems": 4096,
-                    "items": {
-                        "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/dependencyEdge"
-                    }
-                },
-                "legacyRemovals": {
-                    "type": "array",
-                    "maxItems": 4096,
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                            "path",
-                            "kind",
-                            "packageId"
-                        ],
-                        "properties": {
-                            "path": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 1024
-                            },
-                            "kind": {
-                                "enum": [
-                                    "file",
-                                    "directory"
-                                ]
-                            },
-                            "packageId": {
-                                "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/packageId"
-                            }
-                        }
-                    }
-                },
-                "vpmManifestSha256": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/sha256"
-                }
-            }
+            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/changeSet"
         },
         "PackageMutation": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "kind",
-                "packageId",
-                "fromVersion",
-                "toVersion",
-                "source"
-            ],
-            "properties": {
-                "kind": {
-                    "enum": [
-                        "install",
-                        "remove",
-                        "replace"
-                    ]
-                },
-                "packageId": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/packageId"
-                },
-                "fromVersion": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "minLength": 1,
-                    "maxLength": 1024
-                },
-                "toVersion": {
-                    "type": [
-                        "string",
-                        "null"
-                    ],
-                    "minLength": 1,
-                    "maxLength": 1024
-                },
-                "source": {
-                    "oneOf": [
-                        {
-                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/sourcePin"
-                        },
-                        {
-                            "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/userPackageSourcePinV2"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ]
-                }
-            }
+            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/packageMutation"
         },
         "PackagePlan": {
-            "type": "object",
-            "additionalProperties": true,
-            "required": [
-                "planId",
-                "action",
-                "state",
-                "projectId",
-                "projectRevision",
-                "changeSetFingerprint",
-                "changeSet"
-            ],
-            "properties": {
-                "planId": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/uuid"
-                },
-                "action": {
-                    "enum": [
-                        "install",
-                        "remove",
-                        "upgrade",
-                        "downgrade",
-                        "resolve",
-                        "reinstall",
-                        "bulk"
-                    ]
-                },
-                "state": {
-                    "enum": [
-                        "unapplied",
-                        "applied"
-                    ]
-                },
-                "projectId": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/uuid"
-                },
-                "projectRevision": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/revision"
-                },
-                "changeSetFingerprint": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/sha256"
-                },
-                "changeSet": {
-                    "$ref": "#/$defs/PackageChangeSet"
-                }
-            }
+            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/plan"
         },
         "PackagePlanBulkParams": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "projectId",
-                "expectedRevision",
-                "intents"
-            ],
-            "properties": {
-                "projectId": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/uuid"
-                },
-                "expectedRevision": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/revision"
-                },
-                "intents": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 256,
-                    "items": {
-                        "$ref": "#/$defs/PackageBulkIntent"
-                    }
-                }
-            }
+            "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/planBulkParams"
         },
         "PackagePlanDowngradeParams": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "projectId",
-                "expectedRevision",
-                "packageId",
-                "version"
-            ],
-            "properties": {
-                "projectId": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/uuid"
-                },
-                "expectedRevision": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/revision"
-                },
-                "packageId": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/packageId"
-                },
-                "version": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/versionText"
-                },
-                "allowUnityIncompatible": {
-                    "type": "boolean",
-                    "default": false
-                },
-                "repositoryId": {
-                    "oneOf": [
-                        {
-                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/uuid"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ]
-                },
-                "source": {
-                    "oneOf": [
-                        {
-                            "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/sourceSelector"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ]
-                }
-            }
+            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/planDowngradeParams"
         },
         "PackagePlanInstallParams": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "projectId",
-                "expectedRevision",
-                "packageId"
-            ],
-            "properties": {
-                "projectId": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/uuid"
-                },
-                "expectedRevision": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/revision"
-                },
-                "packageId": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/packageId"
-                },
-                "versionRange": {
-                    "oneOf": [
-                        {
-                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/versionText"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ]
-                },
-                "repositoryId": {
-                    "oneOf": [
-                        {
-                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/uuid"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ]
-                },
-                "includePrerelease": {
-                    "type": "boolean",
-                    "default": false
-                },
-                "allowUnityIncompatible": {
-                    "type": "boolean",
-                    "default": false
-                },
-                "source": {
-                    "oneOf": [
-                        {
-                            "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/sourceSelector"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ]
-                }
-            }
+            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/planInstallParams"
         },
         "ProjectResult": {
             "type": "object",
@@ -611,6 +82,9 @@
         "RepositoriesListResult": {
             "type": "object",
             "properties": {
+                "orderFingerprint": {
+                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m3-project-repository.json#/$defs/repositoryOrderFingerprint"
+                },
                 "repositories": {
                     "type": "array",
                     "items": {
@@ -622,8 +96,18 @@
                 }
             },
             "required": [
-                "repositories"
+                "repositories",
+                "orderFingerprint"
             ]
+        },
+        "RepositoryMoveResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "changed": {"type": "boolean"},
+                "replayed": {"type": "boolean"}
+            },
+            "required": ["changed", "replayed"]
         },
         "RepositoryPackagesResult": {
             "type": "object",
@@ -705,19 +189,19 @@
             ],
             "properties": {
                 "configSchema": {
-                    "const": 13
+                    "const": 1
                 },
                 "revision": {
                     "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-official-gui.json#/$defs/revision"
                 },
                 "settings": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v13.json#/$defs/settings"
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v1.json#/$defs/settings"
                 },
                 "unityHub": {
                     "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-official-gui.json#/$defs/unityHubLocation"
                 },
                 "directories": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v13.json#/$defs/storageDirectories"
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v1.json#/$defs/storageDirectories"
                 }
             }
         },

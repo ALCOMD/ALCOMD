@@ -1,3 +1,6 @@
+#[path = "support/state.rs"]
+mod state;
+
 use alcomd_protocol::{
     PackageBulkIntent, PackagePlanBulkParams, PackagePlanReinstallParams,
     PackageReinstallSelection, PackageReinstallSource, PackageSourceSelector,
@@ -9,8 +12,6 @@ const CONTRACT: &str =
     include_str!("../../../specs/rpc/m7-p6-package-closure.proposal.schema.json");
 const VECTORS: &str =
     include_str!("../../../specs/rpc/m7-p6-package-closure.contract-vectors.json");
-const STATE: &str =
-    include_str!("../../../specs/storage/state-v12-migration.proposal.contract.json");
 
 fn document(text: &str) -> Value {
     serde_json::from_str(text).expect("valid contract JSON")
@@ -70,8 +71,6 @@ fn p6_approved_wire_shapes_use_camel_case_through_production_dtos() {
 fn p6_methods_capabilities_errors_and_source_shapes_are_exact() {
     let contract = document(CONTRACT);
     assert_eq!(contract["x-alcomd-production-wiring-created"], true);
-    assert_eq!(contract["x-alcomd-config-schema"], 2);
-    assert_eq!(contract["x-alcomd-state-schema"], 12);
     assert_eq!(
         contract["properties"]["methods"]["const"],
         serde_json::json!([
@@ -88,7 +87,6 @@ fn p6_methods_capabilities_errors_and_source_shapes_are_exact() {
         contract["properties"]["capabilities"]["const"],
         serde_json::json!([
             "packages.plan.v1",
-            "packages.plan.v2",
             "packages.apply.v1",
             "packages.user-packages.v1"
         ])
@@ -107,21 +105,11 @@ fn p6_methods_capabilities_errors_and_source_shapes_are_exact() {
             "user_package_limit_exceeded"
         ])
     );
-    let repository_required = contract["$defs"]["repositorySourcePinV1"]["required"]
-        .as_array()
-        .expect("repository pin required fields");
-    assert!(!repository_required.iter().any(|field| field == "kind"));
-    assert!(
-        contract["$defs"]["userPackageSourcePinV2"]["properties"]
-            .get("artifactUrl")
-            .is_none()
-    );
 }
 
 #[test]
-fn p6_vectors_and_state_contract_freeze_limits_and_atomic_scope() {
+fn p6_vectors_and_current_state_preserve_limits_and_source_identity() {
     let vectors = document(VECTORS);
-    let state = document(STATE);
     let contract = document(CONTRACT);
     let serialized = serde_json::to_string(&vectors).expect("vectors");
     for evidence in [
@@ -133,12 +121,22 @@ fn p6_vectors_and_state_contract_freeze_limits_and_atomic_scope() {
     ] {
         assert!(serialized.contains(evidence), "missing vector {evidence}");
     }
-    assert_eq!(state["to"], 12);
-    assert_eq!(state["transaction"], "BEGIN IMMEDIATE");
-    assert_eq!(
-        state["tablesAdded"],
-        serde_json::json!(["user_package_sources"])
+    let db = state::current();
+    let sources = state::definition(&db, "table", "user_package_sources");
+    assert!(sources.contains("UNIQUE (owner_principal_id, source_identity_key)"));
+    assert!(sources.contains("UNIQUE (owner_principal_id, package_id)"));
+    assert!(sources.contains("length(manifest_fingerprint) = 32"));
+    assert!(sources.contains("length(content_fingerprint) = 32"));
+    assert!(!sources.contains("artifact_url"));
+    assert!(!sources.contains("repository_id"));
+    let plans = state::definition(&db, "table", "package_plans");
+    assert!(
+        plans.contains(
+            "'install', 'remove', 'upgrade', 'downgrade', 'resolve', 'reinstall', 'bulk'"
+        )
     );
+    let operations = state::definition(&db, "table", "operations");
+    assert!(operations.contains("'packages.apply'"));
     assert_eq!(
         contract["properties"]["userPackageQuotas"]["const"],
         serde_json::json!({

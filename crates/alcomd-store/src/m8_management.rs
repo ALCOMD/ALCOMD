@@ -244,10 +244,6 @@ fn authorize_permission(
             .require(permission)
             .map_err(|_| ManagementError::from(E::PermissionDenied))?;
     }
-    // MCP clients cannot possess administration/UI authority. Never reinterpret them as owner.
-    if authority.client_access.is_mcp_client() {
-        return Err(E::PermissionDenied.into());
-    }
     crate::m6::validate_lease(db, lease, now)
         .map_err(|_| ManagementError::from(E::LeaseRevoked))?;
     let extension =
@@ -414,9 +410,7 @@ mod tests {
 
     #[test]
     fn management_create_and_revoke_keep_replay_bound_to_the_actual_actor() {
-        let mut db = crate::sqlite::mcp_state32_fixture();
-        db.execute_batch(include_str!("../migrations/0033_mcp_clients.sql"))
-            .expect("State33 fixture");
+        let mut db = crate::sqlite::current_schema_fixture();
         let actor = alcomd_application::PrincipalId::parse("extension:dev.alcomd.manager")
             .expect("extension principal");
         let other = alcomd_application::PrincipalId::local_owner();

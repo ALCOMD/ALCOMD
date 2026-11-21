@@ -1,0 +1,551 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/migration/v3/state-v1.json",
+    "title": "Native state from an isolated v3 migration",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "schema",
+        "sourceVersion",
+        "projects",
+        "unityInstallations",
+        "repositories",
+        "localPackages",
+        "templates",
+        "settings",
+        "extensions",
+        "discord"
+    ],
+    "properties": {
+        "schema": {
+            "const": 1
+        },
+        "sourceVersion": {
+            "const": "3.4.0"
+        },
+        "projects": {
+            "type": "array",
+            "maxItems": 16384,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "path",
+                    "favorite",
+                    "registeredAtMs",
+                    "lastModifiedAtMs",
+                    "unityVersion",
+                    "unityRevision",
+                    "unityExecutablePath",
+                    "unityLaunchArguments"
+                ],
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "maxLength": 4096
+                    },
+                    "favorite": {
+                        "type": "boolean"
+                    },
+                    "registeredAtMs": {
+                        "anyOf": [
+                            {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9223372036854775807
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "lastModifiedAtMs": {
+                        "anyOf": [
+                            {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9223372036854775807
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "unityVersion": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "unityRevision": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "unityExecutablePath": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 4096
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "unityLaunchArguments": {
+                        "anyOf": [
+                            {
+                                "type": "array",
+                                "maxItems": 64,
+                                "items": {
+                                    "type": "string",
+                                    "maxLength": 4096
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        "unityInstallations": {
+            "type": "array",
+            "maxItems": 16384,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "executablePath",
+                    "version",
+                    "fromHub"
+                ],
+                "properties": {
+                    "executablePath": {
+                        "type": "string",
+                        "maxLength": 4096
+                    },
+                    "version": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "fromHub": {
+                        "type": "boolean"
+                    }
+                }
+            }
+        },
+        "repositories": {
+            "type": "array",
+            "maxItems": 16384,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "source",
+                    "declaredId",
+                    "displayName",
+                    "hidden",
+                    "hasCredentials",
+                    "credentialRef"
+                ],
+                "properties": {
+                    "source": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "kind",
+                                    "path"
+                                ],
+                                "properties": {
+                                    "kind": {
+                                        "const": "local"
+                                    },
+                                    "path": {
+                                        "type": "string",
+                                        "maxLength": 4096
+                                    }
+                                }
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "kind",
+                                    "url"
+                                ],
+                                "properties": {
+                                    "kind": {
+                                        "const": "remote"
+                                    },
+                                    "url": {
+                                        "type": "string",
+                                        "maxLength": 8192
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    "declaredId": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "displayName": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "hidden": {
+                        "type": "boolean"
+                    },
+                    "hasCredentials": {
+                        "type": "boolean"
+                    },
+                    "credentialRef": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        "localPackages": {
+            "type": "array",
+            "maxItems": 16384,
+            "items": {
+                "type": "string",
+                "maxLength": 4096
+            }
+        },
+        "templates": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "name",
+                    "source"
+                ],
+                "properties": {
+                    "id": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 128
+                    },
+                    "source": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "kind",
+                                    "baseTemplate",
+                                    "unityRange",
+                                    "dependencies",
+                                    "unityPackages"
+                                ],
+                                "properties": {
+                                    "kind": {
+                                        "const": "manual"
+                                    },
+                                    "baseTemplate": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    },
+                                    "unityRange": {
+                                        "type": "string",
+                                        "maxLength": 1024
+                                    },
+                                    "dependencies": {
+                                        "type": "object",
+                                        "maxProperties": 512,
+                                        "additionalProperties": {
+                                            "type": "string",
+                                            "maxLength": 4096
+                                        }
+                                    },
+                                    "unityPackages": {
+                                        "type": "array",
+                                        "maxItems": 128,
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 4096
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "kind",
+                                    "unityVersion",
+                                    "archivePath"
+                                ],
+                                "properties": {
+                                    "kind": {
+                                        "const": "projectArchive"
+                                    },
+                                    "unityVersion": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    },
+                                    "archivePath": {
+                                        "type": "string",
+                                        "pattern": "^templates/[0-9]{4}\\.alcomdtemplate$"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        "settings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "locale",
+                "appearanceMode",
+                "appearanceMotion",
+                "fullscreen",
+                "handleVccLinks",
+                "showPrerelease",
+                "hideLocalUserPackages",
+                "hideOfficialRepository",
+                "hideCuratedRepository",
+                "projectDirectory",
+                "backupDirectory",
+                "hubPath",
+                "defaultUnityLaunchArguments",
+                "backupCompression",
+                "favoriteTemplateIds",
+                "lastSelectedTemplateId"
+            ],
+            "properties": {
+                "locale": {
+                    "enum": [
+                        "system",
+                        "en-US",
+                        "zh-CN",
+                        "ja-JP"
+                    ]
+                },
+                "appearanceMode": {
+                    "enum": [
+                        "system",
+                        "light",
+                        "dark"
+                    ]
+                },
+                "appearanceMotion": {
+                    "enum": [
+                        "full",
+                        "reduced"
+                    ]
+                },
+                "fullscreen": {
+                    "type": "boolean"
+                },
+                "handleVccLinks": {
+                    "type": "boolean"
+                },
+                "showPrerelease": {
+                    "type": "boolean"
+                },
+                "hideLocalUserPackages": {
+                    "type": "boolean"
+                },
+                "hideOfficialRepository": {
+                    "type": "boolean"
+                },
+                "hideCuratedRepository": {
+                    "type": "boolean"
+                },
+                "projectDirectory": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "backupDirectory": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "hubPath": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "defaultUnityLaunchArguments": {
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "maxItems": 64,
+                            "items": {
+                                "type": "string",
+                                "maxLength": 4096
+                            }
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "backupCompression": {
+                    "enum": [
+                        "store",
+                        "fast",
+                        "maximum"
+                    ]
+                },
+                "favoriteTemplateIds": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "items": {
+                        "type": "string",
+                        "maxLength": 128
+                    }
+                },
+                "lastSelectedTemplateId": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "maxLength": 128
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            }
+        },
+        "extensions": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "enabled",
+                    "visible"
+                ],
+                "properties": {
+                    "id": {
+                        "enum": [
+                            "mcp",
+                            "discord"
+                        ]
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "visible": {
+                        "type": "boolean"
+                    }
+                }
+            }
+        },
+        "discord": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "enabled",
+                "projectName",
+                "unityVersion",
+                "editorCount",
+                "customText"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "projectName": {
+                    "type": "boolean"
+                },
+                "unityVersion": {
+                    "type": "boolean"
+                },
+                "editorCount": {
+                    "type": "boolean"
+                },
+                "customText": {
+                    "type": "string",
+                    "maxLength": 1024
+                }
+            }
+        }
+    }
+}

@@ -44,28 +44,31 @@ const REPOSITORY_REGISTER: &str = "repositories.register";
 const REPOSITORY_REFRESH: &str = "repositories.refresh";
 const REPOSITORY_UNREGISTER: &str = "repositories.unregister";
 const REPOSITORY_SET_CREDENTIALS: &str = "repositories.setCredentials";
+const REPOSITORY_MOVE: &str = "repositories.move";
 const REPOSITORY_SET_DISPLAY_NAME: &str = "repositories.setDisplayName";
 
 struct RepositoryWriteScope<'a> {
     owner: &'a PrincipalId,
-    delegation: Option<(&'a app::McpRepositoryAuthority, app::McpRepositoryCommand)>,
+    authority: Option<&'a app::McpRepositoryAuthority>,
+    command: Option<app::McpRepositoryCommand>,
 }
 
 impl<'a> RepositoryWriteScope<'a> {
-    fn owner(owner: &'a PrincipalId) -> Self {
-        Self {
-            owner,
-            delegation: None,
-        }
-    }
-
     fn caller(&self) -> &PrincipalId {
-        self.delegation
-            .map_or(self.owner, |(authority, _)| &authority.caller)
+        self.authority
+            .map_or(self.owner, |authority| &authority.caller)
     }
 
     fn require(&self, connection: &Connection) -> Result<(), M3Error> {
-        if let Some((authority, _)) = self.delegation {
+        self.require_permission(connection, app::Permission::RepositoriesManage)
+    }
+
+    fn require_permission(
+        &self,
+        connection: &Connection,
+        permission: app::Permission,
+    ) -> Result<(), M3Error> {
+        if let Some(authority) = self.authority {
             let denied = || M3Error::new(M3ErrorCode::PermissionDenied);
             let client = super::m8_tools::authenticate(connection, &authority.authentication)
                 .map_err(|_| denied())?;
@@ -76,7 +79,7 @@ impl<'a> RepositoryWriteScope<'a> {
                 .authentication
                 .access(client)
                 .map_err(|_| denied())?
-                .require(app::Permission::RepositoriesManage)
+                .require(permission)
                 .map_err(|_| denied())?;
         }
         Ok(())
@@ -87,11 +90,138 @@ impl<'a> RepositoryWriteScope<'a> {
         owner_method: &'static str,
         owner_fingerprint: impl FnOnce() -> Result<String, M3Error>,
     ) -> Result<(&'static str, String), M3Error> {
-        self.delegation.map_or_else(
+        self.command.map_or_else(
             || Ok((owner_method, owner_fingerprint()?)),
-            |(_, command)| repository_command_identity(command),
+            repository_command_identity,
         )
     }
+}
+
+pub(super) struct RepositoryAccess {
+    owner: PrincipalId,
+    authority: Option<app::McpRepositoryAuthority>,
+}
+
+impl RepositoryAccess {
+    // Capture the authenticated credential on the calling task before handing work to SQLite.
+    pub(super) fn new(caller: PrincipalId) -> Result<Self, M3Error> {
+        let owner = app::workflow_resource_owner(&caller);
+        let authority = if owner == caller {
+            None
+        } else {
+            Some(app::McpRepositoryAuthority {
+                caller,
+                authentication: app::workflow_authentication()
+                    .ok_or_else(|| M3Error::new(M3ErrorCode::PermissionDenied))?,
+            })
+        };
+        Ok(Self { owner, authority })
+    }
+
+    fn scope(&self) -> RepositoryWriteScope<'_> {
+        RepositoryWriteScope {
+            owner: &self.owner,
+            authority: self.authority.as_ref(),
+            command: None,
+        }
+    }
+
+    pub(super) fn read<T>(
+        &self,
+        connection: &mut Connection,
+        read: impl FnOnce(&Connection, &PrincipalId) -> Result<T, M3Error>,
+    ) -> Result<T, M3Error> {
+        let transaction = connection.transaction().map_err(sql_failure)?;
+        self.scope()
+            .require_permission(&transaction, app::Permission::RepositoriesRead)?;
+        let result = read(&transaction, &self.owner)?;
+        transaction.commit().map_err(sql_failure)?;
+        Ok(result)
+    }
+}
+
+fn registration_fingerprint(
+    source: &RepositorySource,
+    authenticated: bool,
+) -> Result<String, M3Error> {
+    // Keep the original locator bound to the request without persisting it or a write-only header.
+    let source = app::digest(json(source)?.as_bytes());
+    json(&serde_json::json!({ "source": source, "authenticated": authenticated, "version": 1 }))
+}
+
+fn credential_fingerprint(
+    id: RepositoryId,
+    expected: Revision,
+    authenticated: bool,
+) -> Result<String, M3Error> {
+    json(&serde_json::json!({
+        "repositoryId": id.to_string(), "expectedRevision": expected.get(),
+        "authenticated": authenticated, "version": 1
+    }))
+}
+
+pub(super) fn replay_repository_write(
+    connection: &mut Connection,
+    access: &RepositoryAccess,
+    request: app::RepositoryWriteRequest,
+    key: &IdempotencyKey,
+) -> Result<Option<SyncWrite<RepositoryRecord>>, M3Error> {
+    let tx = connection.transaction().map_err(sql_failure)?;
+    let scope = access.scope();
+    scope.require(&tx)?;
+    let (method, fingerprint) = match request {
+        app::RepositoryWriteRequest::Register {
+            source,
+            authenticated,
+        } => (
+            REPOSITORY_REGISTER,
+            registration_fingerprint(&source, authenticated)?,
+        ),
+        app::RepositoryWriteRequest::SetCredentials {
+            id,
+            expected,
+            authenticated,
+        } => (
+            REPOSITORY_SET_CREDENTIALS,
+            credential_fingerprint(id, expected, authenticated)?,
+        ),
+    };
+    let mut result = existing_response::<SyncWrite<RepositoryRecord>>(
+        &tx,
+        scope.caller(),
+        method,
+        key,
+        &fingerprint,
+    )?;
+    if let Some(receipt) = &mut result {
+        receipt.replayed = true;
+    }
+    tx.commit().map_err(sql_failure)?;
+    Ok(result)
+}
+
+pub(super) fn replay_repository_refresh(
+    connection: &Connection,
+    access: &RepositoryAccess,
+    id: RepositoryId,
+    expected: Revision,
+    key: &IdempotencyKey,
+) -> Result<Option<SyncWrite<app::RepositoryRefreshReceipt>>, M3Error> {
+    let scope = access.scope();
+    let transaction = connection.unchecked_transaction().map_err(sql_failure)?;
+    scope.require(&transaction)?;
+    let mut result = existing_response::<SyncWrite<app::RepositoryRefreshReceipt>>(
+        &transaction,
+        scope.caller(),
+        REPOSITORY_REFRESH,
+        key,
+        &aggregate_fingerprint(id, expected)?,
+    )?;
+    if let Some(receipt) = &mut result {
+        receipt.replayed = true;
+    }
+    transaction.commit().map_err(sql_failure)?;
+    Ok(result)
 }
 
 fn repository_command_identity(
@@ -102,10 +232,6 @@ fn repository_command_identity(
         Register { preview_id } => (
             "mcp.repositories.register",
             json(&serde_json::json!({"previewId":preview_id,"version":1}))?,
-        ),
-        Refresh { id, expected } => (
-            "mcp.repositories.refresh",
-            aggregate_fingerprint(id, expected)?,
         ),
         Remove { id, expected } => (
             "mcp.repositories.remove",
@@ -123,7 +249,8 @@ pub(super) fn mcp_repository_replay(
     let owner = PrincipalId::local_owner();
     let scope = RepositoryWriteScope {
         owner: &owner,
-        delegation: Some((authority, command)),
+        authority: Some(authority),
+        command: Some(command),
     };
     let tx = connection.transaction().map_err(sql_failure)?;
     scope.require(&tx)?;
@@ -170,22 +297,13 @@ pub(super) fn mcp_repository_commit(
     let owner = PrincipalId::local_owner();
     let scope = RepositoryWriteScope {
         owner: &owner,
-        delegation: Some((authority, command)),
+        authority: Some(authority),
+        command: Some(command),
     };
     match (command, observation) {
         (Register { .. }, Some(Fresh(observation))) => {
-            register_repository_projected(connection, scope, observation, None, key, now_ms)
+            register_repository_projected(connection, scope, observation.into(), None, key, now_ms)
                 .map(repository_receipt)
-        }
-        (Refresh { id, expected }, Some(Fresh(observation))) => {
-            refresh_repository_projected(connection, scope, id, expected, observation, key, now_ms)
-                .map(repository_receipt)
-        }
-        (Refresh { id, expected }, Some(NotModified(validators))) => {
-            update_repository_validators_projected(
-                connection, scope, id, expected, validators, key, now_ms,
-            )
-            .map(repository_receipt)
         }
         (Remove { id, expected }, None) if app::builtin_repository(id).is_none() => {
             unregister_repository_scoped(connection, scope, id, expected, key, now_ms)
@@ -214,15 +332,14 @@ fn removed_repository_receipt(value: UnregisterResult<RepositoryId>) -> app::Mcp
 }
 
 pub(super) fn repository_list_snapshot(
-    connection: &mut Connection,
+    connection: &Connection,
     owner: &PrincipalId,
 ) -> Result<alcomd_application::RepositoryListSnapshot, M3Error> {
-    let transaction = connection.transaction().map_err(sql_failure)?;
-    let mut statement = transaction
-        .prepare(
-            "SELECT repository_id, revision, source_kind, source_locator, credential_reference, display_name, priority FROM repositories
-         WHERE owner_principal_id=?1 ORDER BY repository_id",
-        )
+    let mut statement = connection
+        .prepare(&ordered_repository_query(
+            "SELECT r.repository_id, r.revision, r.source_kind, r.source_locator, r.credential_reference, r.display_name, r.priority
+             FROM repository_order o JOIN repositories r USING(repository_id) ORDER BY o.list_rank",
+        ))
         .map_err(sql_failure)?;
     let rows = statement
         .query_map([owner.as_str()], |row| {
@@ -249,11 +366,11 @@ pub(super) fn repository_list_snapshot(
         repositories.push(alcomd_application::RepositoryListRecord {
             repository_id,
             revision: revision(rev)?.get(),
+            order_key: u64::try_from(priority).map_err(|_| internal())?,
             source,
             credential_reference,
             configuration: alcomd_application::RepositoryConfiguration {
                 display_name,
-                priority: u64::try_from(priority).map_err(|_| internal())?,
                 enabled: true,
                 disabled_package_ids: Vec::new(),
             },
@@ -264,7 +381,7 @@ pub(super) fn repository_list_snapshot(
         }
     }
     drop(statement);
-    let mut statement = transaction
+    let mut statement = connection
         .prepare("SELECT root_path FROM projects ORDER BY project_id")
         .map_err(sql_failure)?;
     let project_roots = statement
@@ -469,16 +586,17 @@ fn load_project(
 
 pub(super) fn register_project(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     observation: ProjectObservation,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
     let fingerprint = project_fingerprint(&observation)?;
     let transaction = begin(connection)?;
+    let owner = project_resource_owner(&transaction, caller, app::Permission::ProjectsManage)?;
     if let Some(mut response) = existing_response::<SyncWrite<ProjectRecord>>(
         &transaction,
-        owner,
+        caller,
         PROJECT_REGISTER,
         key,
         &fingerprint,
@@ -488,12 +606,19 @@ pub(super) fn register_project(
         return Ok(response);
     }
     let response = SyncWrite {
-        value: insert_project(&transaction, owner, owner, observation, now_ms)?,
+        value: insert_project(
+            &transaction,
+            &owner,
+            caller,
+            observation,
+            now_ms,
+            Some(now_ms),
+        )?,
         replayed: false,
     };
     save_response(
         &transaction,
-        owner,
+        caller,
         PROJECT_REGISTER,
         key,
         &fingerprint,
@@ -540,7 +665,14 @@ pub(super) fn register_mcp_project(
         return Ok(existing);
     }
     let owner = app::workflow_resource_owner(caller);
-    let record = insert_project(&transaction, &owner, caller, observation, now_ms)?;
+    let record = insert_project(
+        &transaction,
+        &owner,
+        caller,
+        observation,
+        now_ms,
+        Some(now_ms),
+    )?;
     let response = SyncWrite {
         value: app::McpRegisteredProject {
             project_id: record.project_id,
@@ -564,12 +696,39 @@ pub(super) fn register_mcp_project(
     Ok(response)
 }
 
+impl super::StateStoreHandle {
+    /// Registers a project in the offline import stage with its recorded activity time.
+    pub async fn import_project(
+        &self,
+        observation: ProjectObservation,
+        registered_at_ms: u64,
+        last_modified_at_ms: Option<u64>,
+    ) -> Result<ProjectRecord, M3Error> {
+        self.request_m3(move |connection| {
+            let owner = PrincipalId::local_owner();
+            let transaction = begin(connection)?;
+            let record = insert_project(
+                &transaction,
+                &owner,
+                &owner,
+                observation,
+                registered_at_ms,
+                last_modified_at_ms,
+            )?;
+            transaction.commit().map_err(sql_failure)?;
+            Ok(record)
+        })
+        .await
+    }
+}
+
 fn insert_project(
     transaction: &Transaction<'_>,
     owner: &PrincipalId,
     caller: &PrincipalId,
     observation: ProjectObservation,
     now_ms: u64,
+    last_modified_at_ms: Option<u64>,
 ) -> Result<ProjectRecord, M3Error> {
     let duplicate = transaction
         .query_row(
@@ -583,6 +742,15 @@ fn insert_project(
     if duplicate {
         return Err(M3Error::new(M3ErrorCode::ProjectAlreadyRegistered));
     }
+    if super::m5_backup_restore::target_reserved(
+        transaction,
+        std::path::Path::new(&observation.root_path),
+    )
+    .map_err(|cause| M3Error::new(M3ErrorCode::StoreUnavailable).with_source(cause))?
+    {
+        return Err(M3Error::new(M3ErrorCode::ProjectInaccessible)
+            .with_reason("project destination belongs to an unfinished restore"));
+    }
     let id = ProjectId::new();
     transaction
         .execute(
@@ -590,7 +758,7 @@ fn insert_project(
                 project_id, owner_principal_id, root_path, path_identity_key, project_type,
                 unity_version, unity_revision, snapshot_json, revision, registered_at_ms,
                 updated_at_ms, last_modified_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?9, ?9)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?9, ?10)",
             params![
                 id.to_string(),
                 owner.as_str(),
@@ -600,7 +768,8 @@ fn insert_project(
                 observation.unity_version,
                 observation.unity_revision,
                 json(&observation)?,
-                integer(now_ms)?
+                integer(now_ms)?,
+                last_modified_at_ms.map(integer).transpose()?
             ],
         )
         .map_err(sql_failure)?;
@@ -609,7 +778,7 @@ fn insert_project(
         observation,
         revision: Revision::INITIAL,
         registered_at_ms: now_ms,
-        last_modified_at_ms: Some(now_ms),
+        last_modified_at_ms,
         favorite: false,
     };
 
@@ -634,6 +803,28 @@ fn insert_project(
     )
     .map_err(sql_failure)?;
     Ok(record)
+}
+
+pub(super) fn project_resource_owner(
+    db: &Connection,
+    caller: &PrincipalId,
+    permission: app::Permission,
+) -> Result<PrincipalId, M3Error> {
+    super::m8_workflows::require(db, caller, &[permission])
+        .map_err(|cause| M3Error::new(M3ErrorCode::PermissionDenied).with_source(cause))?;
+    Ok(app::workflow_resource_owner(caller))
+}
+
+pub(super) fn get_project_for_caller(
+    db: &mut Connection,
+    caller: &PrincipalId,
+    id: ProjectId,
+) -> Result<ProjectRecord, M3Error> {
+    let transaction = db.transaction().map_err(sql_failure)?;
+    let owner = project_resource_owner(&transaction, caller, app::Permission::ProjectsRead)?;
+    let project = load_project(&transaction, &owner, id)?;
+    transaction.commit().map_err(sql_failure)?;
+    Ok(project)
 }
 
 pub(super) fn get_project(
@@ -705,13 +896,30 @@ struct ProjectListRow {
 
 pub(super) fn list_project_view(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    access: &app::AccessContext,
+    authentication: Option<&app::ToolAuthentication>,
     cursor: Option<RegistryCursor<ProjectId>>,
     limit: u32,
     view: &ProjectListView,
     expected_sequence: Option<u64>,
 ) -> Result<ProjectViewPage, M3Error> {
     let transaction = connection.transaction().map_err(sql_failure)?;
+    let owner = &app::workflow_resource_owner(access.principal());
+    if access.is_mcp_client() {
+        let denied = || M3Error::new(M3ErrorCode::PermissionDenied);
+        let client =
+            super::m8_tools::authenticate(&transaction, authentication.ok_or_else(denied)?)
+                .map_err(|_| denied())?;
+        if &client.principal_id != access.principal() {
+            return Err(denied());
+        }
+    }
+    super::m8_mcp::validate_project_cursor(
+        &transaction,
+        access.principal(),
+        cursor.as_ref(),
+        access.oauth_guard(),
+    )?;
     let sequence: i64 = transaction
         .query_row(
             "SELECT COALESCE(MAX(sequence),0) FROM events
@@ -818,7 +1026,7 @@ pub(super) fn list_project_view(
         let id = ProjectId::parse(&row.id).map_err(|_| internal())?;
         projects.push(load_project(&transaction, owner, id)?);
     }
-    let next_cursor = if rows.len() > offset + projects.len() {
+    let mut next_cursor = if rows.len() > offset + projects.len() {
         projects.last().map(|record| RegistryCursor {
             registered_at_ms: record.registered_at_ms,
             id: record.project_id,
@@ -827,6 +1035,7 @@ pub(super) fn list_project_view(
     } else {
         None
     };
+    super::m8_mcp::bind_project_cursor(&transaction, access.oauth_guard(), next_cursor.as_mut())?;
     Ok(ProjectViewPage {
         page: ProjectPage {
             projects,
@@ -839,7 +1048,7 @@ pub(super) fn list_project_view(
 
 pub(super) fn refresh_project(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     id: ProjectId,
     expected: Revision,
     observation: ProjectObservation,
@@ -848,9 +1057,10 @@ pub(super) fn refresh_project(
 ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
     let fingerprint = aggregate_fingerprint(id, expected)?;
     let transaction = begin(connection)?;
+    let owner = project_resource_owner(&transaction, caller, app::Permission::ProjectsManage)?;
     if let Some(mut response) = existing_response::<SyncWrite<ProjectRecord>>(
         &transaction,
-        owner,
+        caller,
         PROJECT_REFRESH,
         key,
         &fingerprint,
@@ -859,7 +1069,7 @@ pub(super) fn refresh_project(
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
-    let current = load_project(&transaction, owner, id)?;
+    let current = load_project(&transaction, &owner, id)?;
     if current.revision != expected {
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
@@ -894,7 +1104,7 @@ pub(super) fn refresh_project(
     if changed {
         insert_event(
             &transaction,
-            owner,
+            &owner,
             "project",
             &id.to_string(),
             next_revision,
@@ -904,7 +1114,7 @@ pub(super) fn refresh_project(
     }
     committed(
         &transaction,
-        owner,
+        caller,
         now_ms,
         CommittedStep::succeeded(
             PROJECT_REFRESH,
@@ -927,7 +1137,7 @@ pub(super) fn refresh_project(
     };
     save_response(
         &transaction,
-        owner,
+        caller,
         PROJECT_REFRESH,
         key,
         &fingerprint,
@@ -941,7 +1151,7 @@ pub(super) fn refresh_project(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn set_project_favorite(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     id: ProjectId,
     favorite: bool,
     expected: Revision,
@@ -955,9 +1165,10 @@ pub(super) fn set_project_favorite(
         id
     );
     let transaction = begin(connection)?;
+    let owner = project_resource_owner(&transaction, caller, app::Permission::ProjectsManage)?;
     if let Some(mut response) = existing_response::<SyncWrite<ProjectRecord>>(
         &transaction,
-        owner,
+        caller,
         PROJECT_SET_FAVORITE,
         key,
         &fingerprint,
@@ -966,7 +1177,7 @@ pub(super) fn set_project_favorite(
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
-    let current = load_project(&transaction, owner, id)?;
+    let current = load_project(&transaction, &owner, id)?;
     if current.revision != expected {
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
@@ -990,7 +1201,7 @@ pub(super) fn set_project_favorite(
 
         insert_event(
             &transaction,
-            owner,
+            &owner,
             "project",
             &id.to_string(),
             revision,
@@ -999,7 +1210,7 @@ pub(super) fn set_project_favorite(
         )?;
         committed(
             &transaction,
-            owner,
+            caller,
             now_ms,
             CommittedStep::succeeded(
                 PROJECT_SET_FAVORITE,
@@ -1020,7 +1231,7 @@ pub(super) fn set_project_favorite(
     };
     save_response(
         &transaction,
-        owner,
+        caller,
         PROJECT_SET_FAVORITE,
         key,
         &fingerprint,
@@ -1033,7 +1244,7 @@ pub(super) fn set_project_favorite(
 
 pub(super) fn unregister_project(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     id: ProjectId,
     expected: Revision,
     key: &IdempotencyKey,
@@ -1041,9 +1252,10 @@ pub(super) fn unregister_project(
 ) -> Result<UnregisterResult<ProjectId>, M3Error> {
     let fingerprint = aggregate_fingerprint(id, expected)?;
     let transaction = begin(connection)?;
+    let owner = project_resource_owner(&transaction, caller, app::Permission::ProjectsManage)?;
     if let Some(mut response) = existing_response::<UnregisterResult<ProjectId>>(
         &transaction,
-        owner,
+        caller,
         PROJECT_UNREGISTER,
         key,
         &fingerprint,
@@ -1052,7 +1264,7 @@ pub(super) fn unregister_project(
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
-    let current = load_project(&transaction, owner, id)?;
+    let current = load_project(&transaction, &owner, id)?;
     if current.revision != expected {
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
@@ -1065,7 +1277,7 @@ pub(super) fn unregister_project(
         .map_err(sql_failure)?;
     insert_event(
         &transaction,
-        owner,
+        &owner,
         "project",
         &id.to_string(),
         next,
@@ -1074,7 +1286,7 @@ pub(super) fn unregister_project(
     )?;
     committed(
         &transaction,
-        owner,
+        caller,
         now_ms,
         CommittedStep::succeeded(
             PROJECT_UNREGISTER,
@@ -1090,7 +1302,7 @@ pub(super) fn unregister_project(
     };
     save_response(
         &transaction,
-        owner,
+        caller,
         PROJECT_UNREGISTER,
         key,
         &fingerprint,
@@ -1099,10 +1311,6 @@ pub(super) fn unregister_project(
     )?;
     transaction.commit().map_err(sql_failure)?;
     Ok(response)
-}
-
-fn repository_fingerprint(observation: &RepositoryObservation) -> Result<String, M3Error> {
-    json(&serde_json::json!({"source": observation.source, "version": 1}))
 }
 
 fn source_parts(source: &RepositorySource) -> (&'static str, &str) {
@@ -1425,16 +1633,16 @@ pub(super) fn ensure_builtin_repositories(
 
 pub(super) fn register_repository(
     connection: &mut Connection,
-    owner: &PrincipalId,
-    observation: RepositoryObservation,
+    access: &RepositoryAccess,
+    registration: app::RepositoryRegistration,
     credential: Option<&str>,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
     register_repository_projected(
         connection,
-        RepositoryWriteScope::owner(owner),
-        observation,
+        access.scope(),
+        registration,
         credential,
         key,
         now_ms,
@@ -1444,18 +1652,15 @@ pub(super) fn register_repository(
 fn register_repository_projected<T: From<RepositoryRecord> + Serialize + DeserializeOwned>(
     connection: &mut Connection,
     scope: RepositoryWriteScope<'_>,
-    mut observation: RepositoryObservation,
+    registration: app::RepositoryRegistration,
     credential: Option<&str>,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<T>, M3Error> {
-    let (method, fingerprint) = scope.identity(REPOSITORY_REGISTER, || if credential.is_some() {
-        json(
-            &serde_json::json!({"source": observation.source, "authenticated": true, "version": 2}),
-        )
-    } else {
-        repository_fingerprint(&observation)
+    let (method, fingerprint) = scope.identity(REPOSITORY_REGISTER, || {
+        registration_fingerprint(&registration.requested_source, credential.is_some())
     })?;
+    let mut observation = registration.observation;
     let owner = scope.owner;
     let transaction = begin(connection)?;
     scope.require(&transaction)?;
@@ -1611,7 +1816,7 @@ pub(super) fn pending_credential_cleanup(connection: &Connection) -> Result<Vec<
 
 pub(super) fn set_repository_display_name(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    access: &RepositoryAccess,
     id: RepositoryId,
     expected: Revision,
     display_name: Option<String>,
@@ -1623,9 +1828,12 @@ pub(super) fn set_repository_display_name(
         "displayName": display_name, "version": 1
     }))?;
     let transaction = begin(connection)?;
+    let scope = access.scope();
+    scope.require(&transaction)?;
+    let owner = scope.owner;
     if let Some(mut response) = existing_response::<SyncWrite<RepositoryRecord>>(
         &transaction,
-        owner,
+        scope.caller(),
         REPOSITORY_SET_DISPLAY_NAME,
         key,
         &fingerprint,
@@ -1638,7 +1846,8 @@ pub(super) fn set_repository_display_name(
     if current.revision != expected {
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
-    if current.display_name != display_name {
+    let changed = current.display_name != display_name;
+    if changed {
         let next = expected.checked_next().ok_or_else(internal)?;
         transaction
             .execute(
@@ -1665,13 +1874,24 @@ pub(super) fn set_repository_display_name(
             now_ms,
         )?;
     }
+    committed(
+        &transaction,
+        scope.caller(),
+        now_ms,
+        CommittedStep::succeeded(
+            REPOSITORY_SET_DISPLAY_NAME,
+            if changed { "updated" } else { "no_changes" },
+            Some(repository_target(id, &current.observation)),
+        ),
+    )
+    .map_err(sql_failure)?;
     let response = SyncWrite {
         value: current,
         replayed: false,
     };
     save_response(
         &transaction,
-        owner,
+        scope.caller(),
         REPOSITORY_SET_DISPLAY_NAME,
         key,
         &fingerprint,
@@ -1684,21 +1904,21 @@ pub(super) fn set_repository_display_name(
 
 pub(super) fn set_credential_reference(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    access: &RepositoryAccess,
     id: RepositoryId,
     expected: Revision,
     reference: Option<&str>,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
-    let fingerprint = json(&serde_json::json!({
-        "repositoryId": id.to_string(), "expectedRevision": expected.get(),
-        "authenticated": reference.is_some(), "version": 1
-    }))?;
+    let fingerprint = credential_fingerprint(id, expected, reference.is_some())?;
     let transaction = begin(connection)?;
+    let scope = access.scope();
+    scope.require(&transaction)?;
+    let owner = scope.owner;
     if let Some(mut response) = existing_response::<SyncWrite<RepositoryRecord>>(
         &transaction,
-        owner,
+        scope.caller(),
         REPOSITORY_SET_CREDENTIALS,
         key,
         &fingerprint,
@@ -1738,13 +1958,24 @@ pub(super) fn set_credential_reference(
         "repository.refreshed",
         now_ms,
     )?;
+    committed(
+        &transaction,
+        scope.caller(),
+        now_ms,
+        CommittedStep::succeeded(
+            REPOSITORY_SET_CREDENTIALS,
+            "updated",
+            Some(repository_target(id, &current.observation)),
+        ),
+    )
+    .map_err(sql_failure)?;
     let response = SyncWrite {
         value: current,
         replayed: false,
     };
     save_response(
         &transaction,
-        owner,
+        scope.caller(),
         REPOSITORY_SET_CREDENTIALS,
         key,
         &fingerprint,
@@ -1755,80 +1986,195 @@ pub(super) fn set_credential_reference(
     Ok(response)
 }
 
+pub(super) fn ordered_repository_query(select: &str) -> String {
+    format!(
+        "WITH repository_order AS (
+            SELECT repository_id, ROW_NUMBER() OVER (ORDER BY
+                CASE repository_id
+                    WHEN '{VRCHAT_OFFICIAL_REPOSITORY_ID}' THEN 0
+                    WHEN '{VRCHAT_CURATED_REPOSITORY_ID}' THEN 1
+                    ELSE 2
+                END, priority, repository_id) AS list_rank
+            FROM repositories WHERE owner_principal_id=?1
+        ) {select}"
+    )
+}
+
+struct OrderedRepository {
+    id: String,
+    registered_at_ms: i64,
+    order_key: i64,
+}
+
+fn repository_order(
+    connection: &Connection,
+    owner: &PrincipalId,
+) -> Result<Vec<OrderedRepository>, M3Error> {
+    let mut statement = connection
+        .prepare(&ordered_repository_query(
+            "SELECT r.repository_id, r.registered_at_ms, r.priority
+         FROM repository_order o JOIN repositories r USING(repository_id) ORDER BY o.list_rank",
+        ))
+        .map_err(sql_failure)?;
+    statement
+        .query_map([owner.as_str()], |row| {
+            Ok(OrderedRepository {
+                id: row.get(0)?,
+                registered_at_ms: row.get(1)?,
+                order_key: row.get(2)?,
+            })
+        })
+        .map_err(sql_failure)?
+        .collect::<Result<_, _>>()
+        .map_err(sql_failure)
+}
+
 pub(super) fn list_repositories(
     connection: &Connection,
     owner: &PrincipalId,
-    cursor: Option<RegistryCursor<RepositoryId>>,
+    cursor: Option<app::RepositoryCursor>,
     limit: u32,
 ) -> Result<RepositoryPage, M3Error> {
-    let cursor_key = cursor
-        .map(|value| {
-            connection
-                .query_row(
-                    "SELECT priority FROM repositories
-                     WHERE owner_principal_id=?1 AND repository_id=?2 AND registered_at_ms=?3",
-                    params![
-                        owner.as_str(),
-                        value.id.to_string(),
-                        integer(value.registered_at_ms)?
-                    ],
-                    |row| row.get::<_, i64>(0),
-                )
-                .optional()
-                .map_err(sql_failure)?
-                .map(|priority| (priority, value.id.to_string()))
-                .ok_or_else(|| M3Error::new(M3ErrorCode::RevisionConflict))
-        })
-        .transpose()?;
-    let (cursor_priority, cursor_id) = cursor_key.unzip();
-    let mut statement = connection
-        .prepare(
-            "WITH ordered AS (
-                SELECT repository_id, priority,
-                       CASE repository_id WHEN ?5 THEN 0 WHEN ?6 THEN 1 ELSE 2 END AS source_rank
-                FROM repositories WHERE owner_principal_id=?1
-             )
-             SELECT repository_id FROM ordered
-             WHERE ?2 IS NULL OR (source_rank, priority, repository_id) >
-                 (CASE ?3 WHEN ?5 THEN 0 WHEN ?6 THEN 1 ELSE 2 END, ?2, ?3)
-             ORDER BY source_rank, priority, repository_id LIMIT ?4",
-        )
-        .map_err(sql_failure)?;
-    let rows = statement
-        .query_map(
-            params![
-                owner.as_str(),
-                cursor_priority,
-                cursor_id,
-                i64::from(limit) + 1,
-                VRCHAT_OFFICIAL_REPOSITORY_ID,
-                VRCHAT_CURATED_REPOSITORY_ID,
-            ],
-            |row| row.get::<_, String>(0),
-        )
-        .map_err(sql_failure)?;
-    let mut repositories = Vec::new();
-    for row in rows {
-        let id = RepositoryId::parse(&row.map_err(sql_failure)?).map_err(|_| internal())?;
+    let order = repository_order(connection, owner)?;
+    let order_fingerprint = app::repository_order_fingerprint(order.iter().map(|entry| &entry.id));
+    let conflict = || M3Error::new(M3ErrorCode::RevisionConflict);
+    let start = match cursor {
+        Some(cursor) => {
+            if cursor.order_fingerprint != order_fingerprint {
+                return Err(conflict());
+            }
+            let id = cursor.id.to_string();
+            let registered_at_ms = integer(cursor.registered_at_ms)?;
+            order
+                .iter()
+                .position(|entry| entry.id == id && entry.registered_at_ms == registered_at_ms)
+                .ok_or_else(conflict)?
+                + 1
+        }
+        None => 0,
+    };
+    let end = (start + limit as usize).min(order.len());
+    let mut repositories = Vec::with_capacity(end - start);
+    for entry in &order[start..end] {
+        let id = RepositoryId::parse(&entry.id).map_err(|_| internal())?;
         repositories.push(load_repository_summary(connection, owner, id)?);
     }
-    let has_more = repositories.len() > limit as usize;
-    if has_more {
-        repositories.pop();
-    }
-    let next_cursor = has_more
-        .then(|| {
-            repositories.last().map(|record| RegistryCursor {
-                registered_at_ms: record.registered_at_ms,
-                id: record.repository_id,
-                authorization_binding: None,
-            })
+    let next_cursor = if end < order.len() {
+        repositories.last().map(|record| app::RepositoryCursor {
+            registered_at_ms: record.registered_at_ms,
+            id: record.repository_id,
+            order_fingerprint: order_fingerprint.clone(),
         })
-        .flatten();
+    } else {
+        None
+    };
     Ok(RepositoryPage {
         repositories,
         next_cursor,
+        order_fingerprint,
     })
+}
+
+pub(super) fn move_repository(
+    connection: &mut Connection,
+    access: &RepositoryAccess,
+    movement: app::RepositoryMove,
+    key: &IdempotencyKey,
+    now_ms: u64,
+) -> Result<app::RepositoryMoveResult, M3Error> {
+    let id = movement.id.to_string();
+    let before = movement.before.map(|value| value.to_string());
+    let request = json(&serde_json::json!([
+        id,
+        before,
+        movement.expected_order_fingerprint
+    ]))?;
+    let transaction = begin(connection)?;
+    let scope = access.scope();
+    scope.require(&transaction)?;
+    let owner = scope.owner;
+    if let Some(mut result) = existing_response::<app::RepositoryMoveResult>(
+        &transaction,
+        scope.caller(),
+        REPOSITORY_MOVE,
+        key,
+        &request,
+    )? {
+        result.replayed = true;
+        transaction.commit().map_err(sql_failure)?;
+        return Ok(result);
+    }
+    let mut order = repository_order(&transaction, owner)?;
+    let fingerprint = app::repository_order_fingerprint(order.iter().map(|entry| &entry.id));
+    if fingerprint != movement.expected_order_fingerprint {
+        return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+    }
+    let missing = || M3Error::new(M3ErrorCode::RepositoryNotRegistered);
+    let from = order
+        .iter()
+        .position(|entry| entry.id == id)
+        .ok_or_else(missing)?;
+    let target = match before {
+        Some(before) => order
+            .iter()
+            .position(|entry| entry.id == before)
+            .ok_or_else(missing)?,
+        None => order.len(),
+    };
+    let to = if target > from { target - 1 } else { target };
+    let changed = from != to;
+    if changed {
+        let entry = order.remove(from);
+        order.insert(to, entry);
+        for (index, entry) in order.into_iter().enumerate() {
+            let order_key = index as u64 + 1;
+            if integer(order_key)? == entry.order_key {
+                continue;
+            }
+            let id = RepositoryId::parse(&entry.id).map_err(|_| internal())?;
+            let current = load_repository_summary(&transaction, owner, id)?;
+            write_repository_metadata(
+                &transaction,
+                owner,
+                &current,
+                current.display_name.as_deref(),
+                order_key,
+                "repository.order-changed",
+                now_ms,
+            )?;
+        }
+    }
+    let result = app::RepositoryMoveResult {
+        changed,
+        replayed: false,
+    };
+    committed(
+        &transaction,
+        scope.caller(),
+        now_ms,
+        CommittedStep::succeeded(
+            REPOSITORY_MOVE,
+            if changed { "updated" } else { "no_changes" },
+            Some(app::LogTarget {
+                kind: "repository".into(),
+                id: Some(id),
+                name: None,
+                path: None,
+            }),
+        ),
+    )
+    .map_err(sql_failure)?;
+    save_response(
+        &transaction,
+        scope.caller(),
+        REPOSITORY_MOVE,
+        key,
+        &request,
+        &result,
+        now_ms,
+    )?;
+    transaction.commit().map_err(sql_failure)?;
+    Ok(result)
 }
 
 pub(super) fn list_repository_packages(
@@ -1980,41 +2326,26 @@ fn restore_repository_archive_pins(
 
 pub(super) fn refresh_repository(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    access: &RepositoryAccess,
     id: RepositoryId,
     expected: Revision,
     observation: RepositoryObservation,
     key: &IdempotencyKey,
     now_ms: u64,
-) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
-    refresh_repository_projected(
-        connection,
-        RepositoryWriteScope::owner(owner),
-        id,
-        expected,
-        observation,
-        key,
-        now_ms,
-    )
-}
-
-fn refresh_repository_projected<T: From<RepositoryRecord> + Serialize + DeserializeOwned>(
-    connection: &mut Connection,
-    scope: RepositoryWriteScope<'_>,
-    id: RepositoryId,
-    expected: Revision,
-    mut observation: RepositoryObservation,
-    key: &IdempotencyKey,
-    now_ms: u64,
-) -> Result<SyncWrite<T>, M3Error> {
+) -> Result<SyncWrite<app::RepositoryRefreshReceipt>, M3Error> {
+    let scope = access.scope();
     let (method, fingerprint) =
         scope.identity(REPOSITORY_REFRESH, || aggregate_fingerprint(id, expected))?;
     let owner = scope.owner;
     let transaction = begin(connection)?;
     scope.require(&transaction)?;
-    if let Some(mut response) =
-        existing_response::<SyncWrite<T>>(&transaction, scope.caller(), method, key, &fingerprint)?
-    {
+    if let Some(mut response) = existing_response::<SyncWrite<app::RepositoryRefreshReceipt>>(
+        &transaction,
+        scope.caller(),
+        method,
+        key,
+        &fingerprint,
+    )? {
         response.replayed = true;
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
@@ -2093,7 +2424,6 @@ fn refresh_repository_projected<T: From<RepositoryRecord> + Serialize + Deserial
             now_ms,
         )?;
     }
-    observation.packages.clear();
     let record = RepositoryRecord {
         repository_id: id,
         display_name: current.display_name,
@@ -2133,43 +2463,26 @@ fn refresh_repository_projected<T: From<RepositoryRecord> + Serialize + Deserial
 
 pub(super) fn update_repository_validators(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    access: &RepositoryAccess,
     id: RepositoryId,
     expected: Revision,
     validators: RepositoryValidators,
     key: &IdempotencyKey,
     now_ms: u64,
-) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
-    update_repository_validators_projected(
-        connection,
-        RepositoryWriteScope::owner(owner),
-        id,
-        expected,
-        validators,
-        key,
-        now_ms,
-    )
-}
-
-fn update_repository_validators_projected<
-    T: From<RepositoryRecord> + Serialize + DeserializeOwned,
->(
-    connection: &mut Connection,
-    scope: RepositoryWriteScope<'_>,
-    id: RepositoryId,
-    expected: Revision,
-    validators: RepositoryValidators,
-    key: &IdempotencyKey,
-    now_ms: u64,
-) -> Result<SyncWrite<T>, M3Error> {
+) -> Result<SyncWrite<app::RepositoryRefreshReceipt>, M3Error> {
+    let scope = access.scope();
     let (method, fingerprint) =
         scope.identity(REPOSITORY_REFRESH, || aggregate_fingerprint(id, expected))?;
     let owner = scope.owner;
     let transaction = begin(connection)?;
     scope.require(&transaction)?;
-    if let Some(mut response) =
-        existing_response::<SyncWrite<T>>(&transaction, scope.caller(), method, key, &fingerprint)?
-    {
+    if let Some(mut response) = existing_response::<SyncWrite<app::RepositoryRefreshReceipt>>(
+        &transaction,
+        scope.caller(),
+        method,
+        key,
+        &fingerprint,
+    )? {
         response.replayed = true;
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
@@ -2224,20 +2537,13 @@ fn update_repository_validators_projected<
 
 pub(super) fn unregister_repository(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    access: &RepositoryAccess,
     id: RepositoryId,
     expected: Revision,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<UnregisterResult<RepositoryId>, M3Error> {
-    unregister_repository_scoped(
-        connection,
-        RepositoryWriteScope::owner(owner),
-        id,
-        expected,
-        key,
-        now_ms,
-    )
+    unregister_repository_scoped(connection, access.scope(), id, expected, key, now_ms)
 }
 
 fn unregister_repository_scoped(
@@ -2319,11 +2625,19 @@ fn unregister_repository_scoped(
 
 pub(super) fn apply_repository_list_metadata(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    access: &RepositoryAccess,
+    expected_order: &str,
     changes: Vec<alcomd_application::RepositoryListMetadata>,
     now_ms: u64,
 ) -> Result<(), M3Error> {
     let transaction = begin(connection)?;
+    let scope = access.scope();
+    scope.require(&transaction)?;
+    let owner = scope.owner;
+    let order = repository_order(&transaction, owner)?;
+    if app::repository_order_fingerprint(order.iter().map(|entry| &entry.id)) != expected_order {
+        return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+    }
     for change in changes {
         let id = RepositoryId::parse(&change.repository_id).map_err(|_| internal())?;
         let current = load_repository_summary(&transaction, owner, id)?;
@@ -2337,17 +2651,54 @@ pub(super) fn apply_repository_list_metadata(
         {
             return Err(M3Error::new(M3ErrorCode::RevisionConflict));
         }
-        let next = current.revision.checked_next().ok_or_else(internal)?;
-        transaction.execute("UPDATE repositories SET display_name=?1, priority=?2, revision=?3, updated_at_ms=?4 WHERE owner_principal_id=?5 AND repository_id=?6",params![change.display_name,integer(change.priority)?,integer(next.get())?,integer(now_ms)?,owner.as_str(),id.to_string()]).map_err(sql_failure)?;
-        insert_event(
+        write_repository_metadata(
             &transaction,
             owner,
-            "repository",
-            &id.to_string(),
-            next,
+            &current,
+            change.display_name.as_deref(),
+            change.priority,
             "repository.configuration-imported",
             now_ms,
         )?;
+        committed(
+            &transaction,
+            scope.caller(),
+            now_ms,
+            CommittedStep::succeeded(
+                "repositories.importListFile",
+                "restore_repository_configuration",
+                Some(repository_target(id, &current.observation)),
+            ),
+        )
+        .map_err(sql_failure)?;
     }
     transaction.commit().map_err(sql_failure)
+}
+
+fn write_repository_metadata(
+    transaction: &Transaction<'_>,
+    owner: &PrincipalId,
+    current: &RepositoryRecord,
+    name: Option<&str>,
+    order_key: u64,
+    event: &str,
+    now_ms: u64,
+) -> Result<(), M3Error> {
+    let next = current.revision.checked_next().ok_or_else(internal)?;
+    let id = current.repository_id.to_string();
+    transaction
+        .execute(
+            "UPDATE repositories SET display_name=?1, priority=?2, revision=?3, updated_at_ms=?4
+         WHERE owner_principal_id=?5 AND repository_id=?6",
+            params![
+                name,
+                integer(order_key)?,
+                integer(next.get())?,
+                integer(now_ms)?,
+                owner.as_str(),
+                id
+            ],
+        )
+        .map_err(sql_failure)?;
+    insert_event(transaction, owner, "repository", &id, next, event, now_ms)
 }

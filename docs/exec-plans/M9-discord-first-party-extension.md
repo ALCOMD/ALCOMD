@@ -48,12 +48,12 @@ macOS 前台采样使用已锁定的 `objc2-app-kit = 0.3.2` 与 `objc2 = 0.6.4`
 ### 用户启用与存储兼容
 
 - 标准可信界面显示扩展实际请求的 `background.run`、`unity.sessions.read`、`projects.read` 及目标 IPC 范围。「启用展示」一次确认。扩展 UI 负责隐私设置与预览，启用操作由可信 GUI 发起。启用 RPC 只接受与当前扩展、已验证包摘要、目标摘要及预期修订一致的同意。Core 同事务提交实际 grants 与启用状态，并复用幂等控制。旧启用请求、guest、安装、重启和重连不得隐式授予权限。显式撤权停止该次展示，并阻止旧请求重新授予。
-- State45 从 State44 增量迁移，只扩大 `extension_grants` 的权限名和范围 `CHECK`，保持旧行和旧分支等价。项目摘要沿用 `Global/*`，后台权限沿用当前 Extension 范围。无需新增会话表、连接表或 Discord 设置列。扩展设置继续走现有命名空间。
+- State1 的 `extension_grants` 约束权限名和授权范围。项目摘要沿用 `Global/*`，后台权限沿用当前 Extension 范围。无需新增会话表、连接表或 Discord 设置列。扩展设置继续走现有命名空间。
 - 正常停用在有效授权和租约范围内给 guest 一次有界清除机会，并禁止此时打开新通道。显式撤权的持久化仍是授权失效点，生效后阻断旧授权下所有 I/O 并立即断开。卸载、租约到期及异常退出统一回收资源。真实客户端验证断连后的清除表现，不能以宿主回收代替 Discord 端证据。
 
 ## 实施顺序与停止点
 
-1. 核对私有运行时入口和 State44 约束。用合成对端验证 Windows 管道能识别实际服务端进程。用已确认的 v3 Discord Application ID 和获准的本机客户端验证握手、展示、清除及对端应用身份。真实证据未具备前，继续实现独立的 WIT 和 Unity 观测，IPC 对端身份策略与运行时启用停在预验点。
+1. 核对私有运行时入口和 数据库约束。用合成对端验证 Windows 管道能识别实际服务端进程。用已确认的 v3 Discord Application ID 和获准的本机客户端验证握手、展示、清除及对端应用身份。真实证据未具备前，继续实现独立的 WIT 和 Unity 观测，IPC 对端身份策略与运行时启用停在预验点。
 2. 公共合同获批后先接通 Core 授权、运行时调度、Unity 投影和三平台 IPC，再用普通第三方样例覆盖合同。真实用户环境写入与对外展示需在获准的测试环境执行。
 3. 按独立授权创建公开仓库。锁定已批准的公开合同版本和摘要，交付锁定依赖的构建、测试、`.alcomdextension` 打包、测试签名、安装和调试步骤。独立检出验证通过后，移除主仓占位 backend 的构建、锁文件和脚本引用。新增生产依赖先记录用途、替代方案和维护风险。
 4. 扩展首版启用后立即尝试连接。Discord 未启动时退避重试，启动、重启或换端点后自动恢复并重新读取当前会话。可用会话发布 Presence，空会话或观测失败清除。相同内容去重。Portable UI 提供连接状态、预览，以及项目名、Unity 版本、编辑器数量和自定义文本设置。默认只展示通用 Unity 编辑状态；详细字段由用户开启，自定义文本上限 128 个 Unicode 字符。预览和发送共用隐私过滤。
@@ -64,14 +64,14 @@ macOS 前台采样使用已锁定的 `objc2-app-kit = 0.3.2` 与 `objc2 = 0.6.4`
 
 - 2026-11-20 第一批合同已获实施批准。已核对只读 v3.4.0 提交 `4aa98ae4f18d42c10137278997180dbede991e88` 及 `alcomd3.config.json` blob `b6780e8155f73db6808483e5ddd23cc5c0bc88ab` 与冻结记录一致，沿用其中公开的 Application ID。[冻结配置](https://github.com/ALCOMD/ALCOMD3/blob/4aa98ae4f18d42c10137278997180dbede991e88/alcomd3.config.json)
 - Windows 合成管道使用独立子进程和一次性名称。`GetNamedPipeServerProcessId` 返回实际服务端 PID，`ProcessIdToSessionId` 确认同会话，错误的预期 PID 校验失败。已经通过开始菜单查到可执行的 Discord 安装，客户端未运行。应用发布者身份核验和 Discord 协议仍待在获准使用的账号上真实预验。独立仓库创建与推送仍按各自授权执行。
-- 本地候选新增 `background-integration-v1` WIT，以及 Core 的 Unity 会话采样、缓存和安全投影。Windows 和 macOS 提供前台采样，Ubuntu 使用最近启动规则。`m5::tests` 10 项及 Wasmtime WIT 绑定 1 项通过，M6–M8 的三组旧扩展合同共 16 项通过。受影响包严格 Clippy、fmt、元数据校验、macOS 和 Linux 平台层交叉检查通过。`cargo xtask check` 首轮发现 Discord 包 ID 校验仍用旧后缀，与产品身份派生规则对齐后通过。交叉检查未启动真实桌面。新 WIT 尚未在 Extension Host 注册，数据库仍为 State44。
+- 本地候选新增 `background-integration-v1` WIT，以及 Core 的 Unity 会话采样、缓存和安全投影。Windows 和 macOS 提供前台采样，Ubuntu 使用最近启动规则。`m5::tests` 10 项及 Wasmtime WIT 绑定 1 项通过，M6–M8 的三组旧扩展合同共 16 项通过。受影响包严格 Clippy、fmt、元数据校验、macOS 和 Linux 平台层交叉检查通过。`cargo xtask check` 首轮发现 Discord 包 ID 校验仍用旧后缀，与产品身份派生规则对齐后通过。交叉检查未启动真实桌面。新 WIT 尚未在 Extension Host 注册，数据库仍为 该候选数据库。
 - Windows 只读预验确认已安装 Discord `1.0.9269` 的 Authenticode 签名有效，签名组织是 `Discord Inc.`。已准备忽略目录内的 `target/m9-discord-preflight.ps1`，脚本缺省只做签名检查。真实模式需要显式开关，核对管道服务端、Windows 用户、会话和签名后才握手，发布合成内容并请求清除。真实模式待账号授权。
 
 ## Windows 真实预验与 IPC 接线
 
 - 所有者明确批准使用当前 Windows Discord 账号。第一轮完成管道对端核验，探针读取异步握手时失败，未发送 `SET_ACTIVITY`。修正 `ValueTask` 等待后，真实 Discord `1.0.9269` 确认 `READY`、合成 `ALCOMD M9 connectivity test` 的 `SET_ACTIVITY`，以及紧随其后的 `activity: null` 清除。展示不含项目名或路径。取证范围为 Discord IPC 回执。
 - Windows 原生连接器随后以无消息模式打开并关闭同一签名客户端的管道。正确发布者通过，错误发布者被拒绝。`windows-sys` 保留锁定版本，仅扩展对管道服务端 PID、进程会话、WinTrust 和证书属性所需的 Windows feature。
-- 新 world 由签名 Manifest 三项必需接口明确选择，扩展 Host 接通后台回调、Unity 投影及有界 IPC。Windows 按用户、会话、可执行文件名和 Authenticode 组织验签，macOS 按签名标识和 Team ID，Linux 按同 UID 和已声明的系统安装路径验证实际进程。Core 在每个操作期间持有经验证的授权，数据库将撤权提交排在在途操作之后。State45 保留旧授权，没有自动授权。
+- 新 world 由签名 Manifest 三项必需接口明确选择，扩展 Host 接通后台回调、Unity 投影及有界 IPC。Windows 按用户、会话、可执行文件名和 Authenticode 组织验签，macOS 按签名标识和 Team ID，Linux 按同 UID 和已声明的系统安装路径验证实际进程。Core 在每个操作期间持有经验证的授权，数据库将撤权提交排在在途操作之后。授权由用户明确授予。
 - 本地 M9 Host 合同 3 项通过，包含真实 Wasm fixture 经 Host 私有管道执行后台 tick、Unity 读取和 IPC 打开/写入/读取/关闭。fixture SHA-256 为 `1c2d589077ab5915c65c1dfd7ca231cf841692a0fe508aec208b8d298edc88d5`。旧 Host 6 项、Store 17 项、迁移 4 项、M6–M8 合同 27 项分别通过。Windows 受影响包严格 Clippy、元数据和仓库检查通过。
 - macOS 和 Linux 的平台适配器通过目标 Clippy。完整 Core 交叉检查在 `aws-lc-sys` 构建阶段受本机外平台 C 工具链限制，本轮没有对应的完整 Core 或真实桌面结果。Linux 目前支持签名目标所声明的系统路径，安装在用户目录或独立沙箱容器的客户端未纳入此合同。
 - 这一阶段通过已有的显式权限入口验证精确目标。后续候选新增标准 GUI 的一次启用和常规停用的有效租约清除流程。
@@ -86,7 +86,7 @@ macOS 前台采样使用已锁定的 `objc2-app-kit = 0.3.2` 与 `objc2 = 0.6.4`
 - 独立签名包通过 Windows 原生隔离 Core 流程。安装后无 grants，缺失、过期或不匹配的确认被拒绝，单次有效确认授予四个权限并启动后台。Portable UI 三项信息开关默认关闭，修改开关与合成自定义文本后可读取已保存设置。撤销精确目标会停用，重放旧启用请求无法恢复授权，新的显式同意可以重新启用再正常停用。此用例无需 Unity 展示。
 - Chromium 定向通过 17 项，覆盖扩展工作区和 Portable UI。标准启用确认显示签名目标，取消时不调用启用，确认时只发一次带摘要的启用请求。权限页按精确目标范围发送撤权。
 - Windows 整仓的早期轮次发现两处旧权限断言需要同步。一处补齐目录中的两个新权限，一处保留普通权限的必需和可选断言，并验证 `local-ipc.connect` 必须是可选权限且带签名目标和完整的启用权限。
-- Windows 整仓收集轮为 1103 通过、4 失败、21 忽略。4 项失败来自三处旧断言。修正后的协议 Schema 53 项、State44 迁移保真复验 1 项和真实 MCP 传输订阅复验 3 项通过，传输复验另保留 2 项既有忽略。整仓严格 Clippy、fmt、`cargo xtask check`、原生 GUI 编译检查、前端检查和构建及元数据校验通过。
+- Windows 整仓收集轮为 1103 通过、4 失败、21 忽略。4 项失败来自三处旧断言。修正后的协议 Schema 53 项、数据库回归 1 项和真实 MCP 传输订阅复验 3 项通过，传输复验另保留 2 项既有忽略。整仓严格 Clippy、fmt、`cargo xtask check`、原生 GUI 编译检查、前端检查和构建及元数据校验通过。
 - 主仓候选 `6e95e205` 的 Windows 单元与集成测试随后达到 1107 通过、0 失败、21 忽略。运行期间发现空闲退出缺口并开始修复，旧轮次的 rustdoc 在源码更新后遇到旧 trait 产物冲突。后续按更新后的源码复跑整仓 doctest、严格 Clippy、fmt、仓库与元数据检查均通过。独立签名包的 Windows 原生复验确认断开最后一个客户端后后台继续运行，停用并断开后 Core 自动退出。签名包复验首轮在并行编译期间触及 Host 既有 5 秒就绪上限，编译结束后按相同上限复验通过。修复后的原生扩展生命周期回归为 12 通过、0 失败、3 忽略，开发签名包用例另行通过。
 - Windows 真实产品验收用例已编译，仍待同一 Discord 账号的实际展示和重连授权。用例 `discord_publishes_and_clears_generic_activity_for_real_unity` 使用临时 Core 数据、独立开发包、真实 Unity Editor 和两个合成工程。真正的 Windows 展示、清除与异常生命周期，以及两仓的 Hosted CI 和 CodeQL 仍是 M9 收尾条件。
 

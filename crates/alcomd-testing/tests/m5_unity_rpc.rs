@@ -1,3 +1,6 @@
+#[path = "support/mcp_actor.rs"]
+mod mcp_actor;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -39,13 +42,10 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
     )
     .await
     .expect("start owned test daemon");
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        assert_removed_manual_query(&query_ipc),
-    )
-    .await
-    .expect("withdrawn method check must finish");
-    let mut client = connect_with_retry(config).await;
+    tokio::time::timeout(Duration::from_secs(5), assert_unknown_query(&query_ipc))
+        .await
+        .expect("unknown method check must finish");
+    let mut client = connect_with_retry(config.clone()).await;
     let capabilities = client
         .system_status()
         .await
@@ -111,20 +111,34 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         .expect("read launch options without candidates");
     assert!(no_candidate.exact_matching_installations.is_empty());
     assert_eq!(no_candidate.migration_version_options, Some(Vec::new()));
-    let installation = client
-        .unity_installation_register(UnityInstallationRegisterParams {
-            executable_path: editor.to_string_lossy().into_owned(),
-            idempotency_key: "m5-editor-register".to_owned(),
-        })
+    let issued = mcp_actor::issue_actor(&mut client, "migration-reader").await;
+    let mut actor = connect_with_retry(config.with_mcp_credential(issued.credential)).await;
+    let registration = UnityInstallationRegisterParams {
+        executable_path: editor.to_string_lossy().into_owned(),
+        idempotency_key: "m5-editor-register".to_owned(),
+    };
+    let installation = actor
+        .unity_installation_register(registration.clone())
         .await
         .expect("register Editor");
     assert_eq!(installation.installation.unity_version, "2022.3.22f1");
+    let native = client
+        .unity_installation_register(registration.clone())
+        .await
+        .expect("the local owner has an independent receipt for the same shared Editor");
+    assert!(!native.replayed);
+    assert_eq!(installation.installation, native.installation);
+    assert_eq!(
+        actor
+            .unity_installation_get(installation.installation.installation_id.clone())
+            .await
+            .expect("read the same Editor by ID")
+            .installation,
+        native.installation
+    );
     assert!(
-        client
-            .unity_installation_register(UnityInstallationRegisterParams {
-                executable_path: editor.to_string_lossy().into_owned(),
-                idempotency_key: "m5-editor-register".to_owned(),
-            })
+        actor
+            .unity_installation_register(registration)
             .await
             .expect("replay Editor registration")
             .replayed
@@ -185,7 +199,7 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
     assert_eq!(versions.versions, ["2022.3.22f1", "2022.3.6f1"]);
     assert_eq!(versions.default_version, None);
 
-    let migration = client
+    let migration = actor
         .unity_launch_options(UnityLaunchOptionsParams {
             project_id: project_id.clone(),
             expected_project_revision: project.project.revision.expect("project revision"),
@@ -208,7 +222,51 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         migration[0].default_installation_id.as_deref(),
         Some(alternate.installation_id.as_str())
     );
-    let config = client
+    let migration_request = alcomd_protocol::ProjectsPlanUnityMigrationParams {
+        project_id: project_id.clone(),
+        target_installation_id: alternate.installation_id.clone(),
+        expected_project_revision: project.project.revision.expect("project revision"),
+        idempotency_key: "read-original-unity-plan".to_owned(),
+    };
+    let migration = actor
+        .project_plan_unity_migration(migration_request.clone())
+        .await
+        .expect("plan for a different editor version");
+    let alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned { plan, .. } = migration else {
+        panic!("distinct editor versions must produce a plan");
+    };
+    assert_eq!(
+        actor
+            .project_plan_unity_migration(migration_request)
+            .await
+            .expect("replay original request"),
+        alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned {
+            plan: plan.clone(),
+            replayed: true
+        },
+    );
+    assert_eq!(
+        actor
+            .get_plan(alcomd_protocol::PlansGetParams {
+                kind: alcomd_protocol::PlanKind::ProjectUnityMigration,
+                plan_id: plan.plan_id.clone(),
+            })
+            .await
+            .expect("read the persisted plan"),
+        alcomd_protocol::PlansGetResult::ProjectUnityMigration {
+            plan: Box::new(plan.clone()),
+        }
+    );
+    assert!(
+        client
+            .get_plan(alcomd_protocol::PlansGetParams {
+                kind: alcomd_protocol::PlanKind::ProjectUnityMigration,
+                plan_id: plan.plan_id,
+            })
+            .await
+            .is_err()
+    );
+    let config = actor
         .unity_project_launch_config_set(ProjectUnityLaunchConfigSetParams {
             project_id: project_id.clone(),
             arguments: vec!["-logFile".to_owned(), "-".to_owned()],
@@ -225,7 +283,7 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
     assert_eq!(stored.config.arguments, vec!["-logFile", "-"]);
     assert_eq!(stored.default_arguments, default_arguments);
     assert_eq!(stored.effective_arguments, stored.config.arguments);
-    let cleared = client
+    let cleared = actor
         .unity_project_launch_config_clear(ProjectUnityLaunchConfigClearParams {
             project_id: project_id.clone(),
             expected_revision: stored.config.revision,
@@ -241,7 +299,7 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         .expect("clear restores inheritance");
     assert_eq!(inherited.config.revision, 0);
     assert_eq!(inherited.effective_arguments, default_arguments);
-    let writer = client
+    let writer = actor
         .unity_writer_state(project_id.clone())
         .await
         .expect("observe writer state");
@@ -256,7 +314,7 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
                 !writer.evidence.is_empty(),
                 "an unverified Editor associated with this project retains evidence"
             );
-            let error = client
+            let error = actor
                 .unity_launch(UnityLaunchParams {
                     project_id,
                     installation_id: installation.installation.installation_id.clone(),
@@ -280,7 +338,7 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         }
         other => panic!("unexpected writer state before fixture launch: {other:?}"),
     }
-    let launch = client
+    let launch = actor
         .unity_launch(UnityLaunchParams {
             project_id,
             installation_id: installation.installation.installation_id.clone(),
@@ -291,14 +349,15 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         .expect("accept Unity launch");
     assert!(launch.launch.spawn_accepted);
     let second_editor = create_fake_editor(fixture.path(), "EditorB", "2022.3.22f1");
-    client
+    let second = client
         .unity_installation_register(UnityInstallationRegisterParams {
             executable_path: second_editor.to_string_lossy().into_owned(),
             idempotency_key: "m7-editor-register-second".to_owned(),
         })
         .await
-        .expect("register second compatible Editor");
-    let replay = client
+        .expect("register second compatible Editor")
+        .installation;
+    let replay = actor
         .unity_launch(UnityLaunchParams {
             project_id: launch.launch.project_id.clone(),
             installation_id: installation.installation.installation_id.clone(),
@@ -319,6 +378,34 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         .expect("read all exact launch candidates");
     assert_eq!(multiple.exact_matching_installations.len(), 2);
     assert!(multiple.migration_version_options.is_none());
+    let removal = alcomd_protocol::UnityInstallationRemoveParams {
+        installation_id: second.installation_id.clone(),
+        expected_revision: second.revision,
+        idempotency_key: "m5-editor-remove".into(),
+    };
+    assert!(
+        actor
+            .unity_installation_remove(removal.clone())
+            .await
+            .expect("remove owner's Editor")
+            .removed
+    );
+    assert!(
+        actor
+            .unity_installation_remove(removal)
+            .await
+            .expect("replay Editor removal")
+            .replayed
+    );
+    assert!(
+        client
+            .unity_installations_list(UnityInstallationsListParams::default())
+            .await
+            .expect("owner reads updated catalog")
+            .installations
+            .iter()
+            .all(|row| row.installation_id != second.installation_id)
+    );
 
     shutdown.store(true, Ordering::Release);
     let result = tokio::time::timeout(Duration::from_secs(3), daemon)
@@ -375,7 +462,7 @@ fn create_project(root: &Path) {
     .expect("write vpm manifest");
 }
 
-async fn assert_removed_manual_query(ipc: &IpcConfig) {
+async fn assert_unknown_query(ipc: &IpcConfig) {
     let mut stream = alcomd_platform::connect(ipc)
         .await
         .expect("owned test connection");
@@ -390,17 +477,17 @@ async fn assert_removed_manual_query(ipc: &IpcConfig) {
     let removed = raw_request(
         &mut stream,
         serde_json::json!({
-            "id": "withdrawn-query", "method": "unity.launchStatus",
+            "id": "unknown-query", "method": "unity.unknownQuery",
             "params": { "launchId": uuid::Uuid::new_v4().to_string() }
         }),
     )
     .await;
-    assert_eq!(removed["id"], "withdrawn-query");
+    assert_eq!(removed["id"], "unknown-query");
     assert_eq!(removed["error"]["code"], "method_not_found");
     let next = raw_request(
         &mut stream,
         serde_json::json!({
-            "id": "after-withdrawn-query", "method": "system.status", "params": {}
+            "id": "after-unknown-query", "method": "system.status", "params": {}
         }),
     )
     .await;

@@ -29,11 +29,9 @@ Tauri 2.12.5 默认不启用页面缩放快捷键，本轮复用 `zoomHotkeysEna
 Windows 走 WebView2 原生缩放。无新增 ALCOMD RPC、State/Config Schema、权限、依赖或扩展协议。
 只读路径继续使用 `displayPath`，不更改真实路径、可编辑值或 RPC 参数。
 
-## Config4 与证据边界
+## 设置与证据边界
 
-H5 签收候选 `6739705de9711b18e9e398270e0254e6b8719c6b` 的真实迁移证据继续有效：
-`target/m7-h5-no-compact-20261102/migration-verification.json` 证明 schema 3→4、仅删除 density，
-revision 166 及其他设置逐值保留，五组预期比较均 true。H6 交接和构建前只读 `settings.get` 仍为 Config4/revision166，
+H6 交接和构建前只读 `settings.get` 取得 revision 166，
 公开 appearance 只含 mode/motion/scheme/sourceColor。没有恢复紧凑模式开关、样式分支或公开字段，未重复迁移/Rust 测试。
 
 证据目录：`target/m7-h6-accessibility-20261102/`。每轮捕获 GUI/SDK/UI/build/test 的 186 项文件摘要，
@@ -100,7 +98,7 @@ Core 来源保持 `6739705`，摘要 `b90ec8b93d043ca8ef6077d9f0bfdec40a5db642a5
 新 GUI **139052** 使用原 profile 实际打开，窗口 **8393506**、标题 ALCOMD3、可响应。
 原 Core **143516** 持续使用 `target/m7-icon-acceptance-20260906/data`，没有安装测试扩展或操作用户 Unity。
 `before-build/` 至 `original-after/` 的 projects/editors/operations/settings/status 五组完整公开状态全部一致，
-`five-group-comparison.json` 五项 true；Config4/revision166 及其他设置保留，实际配置文件 SHA-256
+`five-group-comparison.json` 五项 true；设置 revision166 及其他设置保留，实际配置文件 SHA-256
 仍为 `4fd8b2504e4f1102df33ce0fe1613bf339e2e463bd75d4683bbce1bab9a64dd1`。
 进程、构建和文件证据见 `candidate-artifact.json`、`core-runtime.json`、`gui-runtime.json`、`window.json`。
 
@@ -119,7 +117,7 @@ H6 交付时窗口保持打开；以上进程与窗口事实绑定本轮采样�
 （1028 条三语言）通过。UI check（31 个固定图标资产）通过。已有错误反馈测试改为先检查可读原因、展开详情再检查原码，
 不删除 CAS、重试、权限或副作用断言；fixture 的 Unity/backup 错误码纠正为 Core 当前合同。
 
-H4 首轮 **78/1** 与定向 **6/0**、首个 H5 **101/2** 与定向 **56/0**、Config4 **76/0** 和补充 **1/0** 均独立保留，
+H4 首轮 **78/1** 与定向 **6/0**、首个 H5 **101/2** 与定向 **56/0**、设置测试 **76/0** 和补充 **1/0** 均独立保留，
 不把本轮覆盖或旧提交的远端结果回填为历史套件通过。H2-B、H3、H4、H5 及 H6 新增代码仍无对应 Hosted CI/CodeQL。
 
 ## 未覆盖项与人工查看范围

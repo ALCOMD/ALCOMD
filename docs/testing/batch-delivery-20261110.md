@@ -23,7 +23,7 @@
 
 旧 Core 读取基线后，在实际停止前再取最终快照并确认 0 活动任务。替换前后及新版 GUI 打开后的项目、存储库、模板、完整设置 DTO 逐项完全一致；持久设置文件字节保持。profile 在 GUI 启动前仍与备份相同，启动后核对 WebView 子进程继续使用原目录，不将正常缓存变化描述为字节不变。原 v3/Unity 进程身份保持，系统 VCC 关联未改动。
 
-- Core PID **33968**，GUI PID **39112**；Core ready、State31、Config13、0 活动任务，GUI 有响应窗口。
+- Core PID **33968**，GUI PID **39112**；Core ready、0 活动任务，GUI 有响应窗口。
 - 3 个项目、30 个存储库、5 个模板以及设置 revision **5** 保持；首次与最终切换快照均为 3 个项目。
 - Core SHA-256：`4023C75808AACC67BF83DA41908C4287A9102FC524C7D7F816D32473EEFAF89C`。
 - GUI SHA-256：`A9E7002BC448283291C17D98F17489BB92AA33DF30DDABD9F297BB6A6C60C347`。

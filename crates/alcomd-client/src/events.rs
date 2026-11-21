@@ -183,7 +183,6 @@ impl SubscriptionState {
                         | "project"
                         | "repository"
                         | "unity-installation"
-                        | "project-editor-preference"
                         | "project-unity-launch-config"
                         | "project-template"
                         | "user-package"
@@ -358,7 +357,6 @@ mod tests {
             "project",
             "repository",
             "unity-installation",
-            "project-editor-preference",
             "project-unity-launch-config",
             "project-template",
             "user-package",

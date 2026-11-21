@@ -42,7 +42,7 @@ source DTO，保持候选查询的 snake_case 合同不变。最终实现如下�
 额外适配。GUI、SDK 与已批准 P6 Schema 本来就使用 camelCase，无需加入页面特例转换。
 
 这是替换当前错误接受的 P6 snake_case 字段，属于实际 wire 的破坏性纠正，按未发布合同的
-本次人工批准直接实施。不保留旧字段别名、双格式或回退；RPC v1、State16、Config3、权限和
+本次人工批准直接实施。不保留旧字段别名、双格式或回退；RPC v1、权限和
 依赖保持。P6 规范中的 bulk source 示例同步改为已有嵌套 selector，未另建第二份有效合同。
 
 候选 Schema 与 vectors 的 SHA-256 分别仍为

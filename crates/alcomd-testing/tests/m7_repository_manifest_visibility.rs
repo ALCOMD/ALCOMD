@@ -17,6 +17,7 @@ fn key(value: impl Into<String>) -> IdempotencyKey {
 fn settings() -> ConfigPackageSettings {
     ConfigPackageSettings {
         show_prerelease: true,
+        prefer_prerelease: false,
         hidden_repository_ids: Vec::new(),
         hidden_repository_packages: Vec::new(),
         hide_local_user_packages: false,

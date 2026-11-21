@@ -1,3 +1,4 @@
+import { useGuiWrite } from "./gui-write-attempt";
 import { requestErrorMessage } from "./request-errors";
 import type { RpcError } from "@alcomd/sdk";
 import { Suspense, use, useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEventHandler, type ReactNode, type Ref } from "react";
@@ -17,6 +18,7 @@ import { usePageReadPromise, type PageReadResult } from "./PageRead";
 import { navigationLabels } from "./navigation-labels";
 import { ThemeControls, themePreferences } from "./ThemeControls";
 import { displayPath } from "./display-path";
+import { unityInstallationSourceLabel } from "./unity-installation-source";
 import { UnityDefaultArgumentsSettings } from "./UnityDefaultArgumentsSettings";
 import { backupCompressionOptions } from "./backup-compression";
 import { SettingsResetBoundary, SettingsResetButton, isSettingsResetTrigger, useSettingsResetPending } from "./SettingsResetButton";
@@ -310,6 +312,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
 }) {
     const { t } = useTranslation();
     const events = useCoreEvents();
+    const refreshInstallations = useGuiWrite(events?.client ?? client);
     const resetting = useSettingsResetPending();
     const state = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
     const accepted = state.accepted ?? snapshot;
@@ -381,7 +384,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
             setInvalid(false);
             if (manageUnity && (intent.path !== null || intent.previousPath !== null)) {
                 try {
-                    await (events?.client ?? client).unityInstallationsRefresh();
+                    await refreshInstallations("unityInstallationsRefresh");
                     if (request === generation.current) onInstallationsChanged();
                 } catch {}
             }
@@ -406,9 +409,10 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
         }
     };
     const location = accepted.unityHub;
-    const pathLabel = location.status === "unavailable" ? t("Unity Hub location is unavailable.") : t("Unity Hub was not found.");
+    const pathLabel = location.status === "available" ? t("Detected by the system")
+        : location.status === "unavailable" ? t("Unity Hub location is unavailable.") : t("Unity Hub was not found.");
     const download = accepted.settings.unity.hubPath === null && location.status === "not_found";
-    const usable = location.status === "available" && location.path !== null;
+    const usable = location.status === "available" && location.targetToken !== null;
     const openLabel = download ? t("Download Unity Hub") : t("Open Unity Hub");
     const openDisabledReason = !canOpenHub ? t("Opening Unity Hub is unavailable on this connection.")
         : !usable && !download ? t("Choose a usable Unity Hub path or use Auto detect before opening it.")
@@ -422,7 +426,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
         setBusy(true);
         try {
             const current = acceptedRef.current;
-            const result = await client.unityHubOpen(current.revision, current.unityHub.path);
+            const result = await client.unityHubOpen(current.revision, current.unityHub.targetToken);
             if (request !== generation.current) return;
             if (result.outcome === "download_required") await client.openUnityHubDownload();
         } catch (cause) {
@@ -503,6 +507,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     const [mutation, setMutation] = useState<"refresh" | "select" | "register" | "remove">();
     const [actionError, setActionError] = useState<RpcError>();
     const [removing, setRemoving] = useState<UnityInstallation>();
+    const writeRequest = useGuiWrite(client, removing);
     const actionPending = useRef(false);
     const selectedPath = useRef("");
     const sectionRef = useRef<HTMLElement>(null);
@@ -553,11 +558,11 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
                 if (!isCurrent() || path === undefined) return;
                 selectedPath.current = path;
                 setMutation("register");
-                await client.unityInstallationRegister(path);
+                await writeRequest("unityInstallationRegister", path);
             } else if (action === "refresh") {
-                await client.unityInstallationsRefresh();
+                await writeRequest("unityInstallationsRefresh");
             } else {
-                await client.unityInstallationRemove(removing!.installationId, removing!.revision);
+                await writeRequest("unityInstallationRemove", removing!.installationId, removing!.revision);
             }
             if (!isCurrent()) return;
             if (action === "remove") setRemoving(undefined);
@@ -592,7 +597,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
                     {error === undefined || loaded ? null : <div role="alert"><strong>{t("Unity installations could not be loaded.")}</strong><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
                         <Button disabled={busy} onClick={retryRead} type="button" variant="text">{t("Retry")}</Button>
                     </div>}
-                    <DesktopList columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }, { key: "actions", header: t("Actions"), width: 96 }]} label={t("Unity installations")} minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, <span title={displayPath(item.executablePath)}>{displayPath(item.executablePath)}</span>, item.sourceKind === "manual" ? t("Manual") : item.sourceKind === "unity_hub" ? t("Unity Hub") : item.sourceKind.replaceAll("_", " "), <Button className="material-button--danger" disabled={!manage || controlsBusy} title={manageTitle} onClick={() => { setActionError(undefined); setRemoving(item); }} type="button" variant="text">{t("Remove")}</Button>] }))} />
+                    <DesktopList columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }, { key: "actions", header: t("Actions"), width: 96 }]} label={t("Unity installations")} minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, <span title={displayPath(item.executablePath)}>{displayPath(item.executablePath)}</span>, t(unityInstallationSourceLabel(item.sourceKind)), <Button className="material-button--danger" disabled={!manage || controlsBusy} title={manageTitle} onClick={() => { setActionError(undefined); setRemoving(item); }} type="button" variant="text">{t("Remove")}</Button>] }))} />
                     {items.length === 0 ? loaded ? <p role="status">{t("No Unity installations registered")}</p> : busy ? <LoadingState title={t("Loading Unity installations…")} /> : null : null}
                     {cursor === undefined ? null : <Button disabled={busy} onClick={() => void read(cursor)} type="button" variant="text">{t("Load more installations")}</Button>}
                 </>

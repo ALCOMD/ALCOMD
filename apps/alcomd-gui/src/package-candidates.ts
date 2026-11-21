@@ -27,7 +27,7 @@ export function bulkPlanIntent(intent: CandidateBulkIntent): PackageBulkIntent {
         case "remove": return intent;
         case "reinstall": return { kind: intent.kind, packageId: intent.packageId, ...(intent.source === undefined ? {} : { source: candidateSource(intent.source) }) };
         case "install":
-        case "upgrade": return { ...intent, source: candidateSource(intent.source) };
+        case "upgrade": return { kind: intent.kind, packageId: intent.packageId, ...(intent.includePrerelease === undefined ? {} : { includePrerelease: intent.includePrerelease }), ...(intent.source === undefined ? {} : { source: candidateSource(intent.source) }) };
     }
 }
 

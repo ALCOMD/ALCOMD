@@ -163,6 +163,29 @@ struct EntryPlan {
 }
 
 pub fn inspect_extension_package(path: &Path) -> Result<VerifiedExtensionPackage, PackageError> {
+    inspect_archive(open_archive(path)?, path)
+}
+
+/// Verify distribution evidence and the extension signature over the same archive bytes.
+pub fn inspect_extension_package_with_archive_digest(
+    path: &Path,
+    expected_archive_sha256: &str,
+) -> Result<VerifiedExtensionPackage, PackageError> {
+    let mut bytes = Vec::new();
+    open_archive(path)?
+        .take(MAX_ARCHIVE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
+    if bytes.is_empty() || bytes.len() as u64 > MAX_ARCHIVE_BYTES {
+        return Err(error(PackageErrorCode::ArchiveLimitExceeded));
+    }
+    if hex(&Sha256::digest(&bytes)) != expected_archive_sha256 {
+        return Err(error(PackageErrorCode::SignatureInvalid));
+    }
+    inspect_archive(std::io::Cursor::new(bytes), path)
+}
+
+fn open_archive(path: &Path) -> Result<File, PackageError> {
     let metadata = std::fs::metadata(path).map_err(|cause| {
         error(PackageErrorCode::Io)
             .with_source(cause)
@@ -171,12 +194,18 @@ pub fn inspect_extension_package(path: &Path) -> Result<VerifiedExtensionPackage
     if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_ARCHIVE_BYTES {
         return Err(error(PackageErrorCode::ArchiveLimitExceeded));
     }
-    let file = File::open(path).map_err(|cause| {
+    File::open(path).map_err(|cause| {
         error(PackageErrorCode::Io)
             .with_source(cause)
             .with_path(path.display().to_string())
-    })?;
-    let mut archive = ZipArchive::new(file).map_err(|cause| {
+    })
+}
+
+fn inspect_archive(
+    reader: impl Read + Seek,
+    path: &Path,
+) -> Result<VerifiedExtensionPackage, PackageError> {
+    let mut archive = ZipArchive::new(reader).map_err(|cause| {
         error(PackageErrorCode::InvalidArchive)
             .with_source(cause)
             .with_path(path.display().to_string())
@@ -1070,6 +1099,21 @@ mod tests {
         assert_eq!(package.manifest.version, "1.0.0");
         assert_eq!(package.manifest.api, 1);
         assert_eq!(package.publisher_fingerprint.len(), 79);
+        let archive_bytes = std::fs::read(&path).expect("distribution archive bytes");
+        let archive_digest = hex(&Sha256::digest(archive_bytes));
+        assert_eq!(
+            inspect_extension_package_with_archive_digest(&path, &archive_digest)
+                .expect("verify distribution evidence and extension signature"),
+            package
+        );
+        assert_eq!(
+            inspect_extension_package_with_archive_digest(&path, &"00".repeat(32))
+                .expect_err(
+                    "a valid signature is insufficient for a mismatched distribution digest"
+                )
+                .code(),
+            PackageErrorCode::SignatureInvalid
+        );
         std::fs::remove_file(path).expect("remove package");
     }
 

@@ -26,14 +26,6 @@ impl AlcomdClient {
             .await
     }
 
-    pub async fn mcp_repository_refresh(
-        &mut self,
-        params: rpc::RepositoryMutationParams,
-    ) -> Result<rpc::McpRepositoryWriteResult, ClientError> {
-        self.call(rpc::METHOD_MCP_REPOSITORIES_REFRESH, params)
-            .await
-    }
-
     pub async fn mcp_repository_remove(
         &mut self,
         params: rpc::McpRepositoryRemoveParams,

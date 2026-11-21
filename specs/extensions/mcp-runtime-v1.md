@@ -1,8 +1,8 @@
 # MCP Core observation Host interface v1
 
 Owner-approved on2026-11-17. The additive interface is
-`alcomd:mcp-runtime/observations@1.0.0`; `runtime-v1` includes the unchanged
-management-v1 and frozen extension-v1 worlds. Old WIT and Portable UI are unchanged.
+`alcomd:mcp-runtime/observations@1.0.0`. The `runtime-v1` world includes the
+management-v1 and extension-v1 interfaces.
 The single `snapshot` reads the same bounded projection as mcp.runtime.snapshot;
 its fields and65536-byte budget are frozen in the adjacent Schema.
 
@@ -16,6 +16,5 @@ are optional, off by default. No external MCP administration grant or token is a
 Rows are actual authenticated Core IPC and in-flight RPC metadata, not online
 clients, idle HTTP sockets, all MCP requests, sessions or subscriptions. No secret,
 parameter, response body, caller-selected request ID, path or URL is projected.
-A query failure is unavailable, not an empty success. State40 stores only the new
-permission combinations; observations remain transient and bounded. No termination,
+A query failure is unavailable, not an empty success. The database stores the granted permissions; observations remain transient and bounded. No termination,
 request cancellation or Operation cancellation management function is introduced.

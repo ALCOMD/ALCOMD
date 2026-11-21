@@ -19,7 +19,7 @@ pub(super) async fn dispatch(
     access: &AccessContext,
 ) -> DispatchAction {
     if let Some(action) =
-        require_capability(&request.id, state, rpc::CAPABILITY_PACKAGES_CANDIDATES_V2)
+        require_capability(&request.id, state, rpc::CAPABILITY_PACKAGES_CANDIDATES_V1)
     {
         return action;
     }

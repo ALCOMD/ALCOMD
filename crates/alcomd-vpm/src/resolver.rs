@@ -5,9 +5,10 @@ use std::fmt;
 use semver::Version;
 use serde_json::Value;
 
-use crate::range::{VpmRange, compare_precedence};
+use crate::range::compare_precedence;
 use crate::unity_version::{UnityVersion, meets_minimum, package_minimum};
 use alcomd_application::{PackageSourceSelector, ResolverCatalog, ResolverCatalogSource};
+use alcomd_domain::vpm_range::VpmRange;
 
 const MAX_REQUIREMENTS: usize = 4_096;
 
@@ -444,6 +445,7 @@ impl ProjectResolutionRules {
 
 #[derive(Clone, Copy)]
 struct SolveOptions<'a> {
+    prefer_prerelease: bool,
     unity_overrides: &'a BTreeMap<String, Version>,
     include_prerelease: bool,
     unity_version: Option<UnityVersion>,
@@ -474,8 +476,14 @@ pub fn resolve_packages(
     catalog: &[PackageCandidate],
     requests: &[ResolveRequest],
 ) -> Result<Resolution, ResolveError> {
-    resolve_packages_internal(catalog, requests, LegacyCandidateHandling::Reject, None)
-        .map(|resolved| resolved.resolution)
+    resolve_packages_internal(
+        catalog,
+        requests,
+        LegacyCandidateHandling::Reject,
+        None,
+        false,
+    )
+    .map(|resolved| resolved.resolution)
 }
 
 pub(super) fn resolve_unity_migration_packages(
@@ -487,19 +495,22 @@ pub(super) fn resolve_unity_migration_packages(
         requests,
         LegacyCandidateHandling::CollectCleanupObligations,
         None,
+        false,
     )
 }
 
 pub(super) fn resolve_project_change(
     catalog: &[PackageCandidate],
     requests: &[ResolveRequest],
-    project: &ProjectResolutionRules,
+    project: Option<&ProjectResolutionRules>,
+    prefer_prerelease: bool,
 ) -> Result<UnityMigrationResolution, ResolveError> {
     resolve_packages_internal(
         catalog,
         requests,
         LegacyCandidateHandling::CollectCleanupObligations,
-        Some(project),
+        project,
+        prefer_prerelease,
     )
 }
 
@@ -508,6 +519,7 @@ fn resolve_packages_internal(
     requests: &[ResolveRequest],
     legacy_handling: LegacyCandidateHandling,
     project: Option<&ProjectResolutionRules>,
+    prefer_prerelease: bool,
 ) -> Result<UnityMigrationResolution, ResolveError> {
     if requests.is_empty() || requests.len() > MAX_REQUIREMENTS {
         return Err(ResolveError::TooManyRequirements);
@@ -570,6 +582,7 @@ fn resolve_packages_internal(
         requirements.clone(),
         BTreeMap::new(),
         SolveOptions {
+            prefer_prerelease,
             unity_overrides: &unity_overrides,
             include_prerelease,
             unity_version,
@@ -743,9 +756,20 @@ fn solve<'a>(
             compare_precedence(&locked.version, &candidate.version) == Ordering::Equal
         })
     };
+    let prefer_stable = |candidate: &PackageCandidate| {
+        !options.prefer_prerelease
+            && candidate.version.pre.is_empty()
+            && options
+                .project
+                .and_then(|project| project.locked.get(package_id))
+                .is_none_or(|installed| {
+                    !candidate.version.cmp_precedence(&installed.version).is_lt()
+                })
+    };
     candidates.sort_by(|left, right| {
         preferred(right)
             .cmp(&preferred(left))
+            .then_with(|| prefer_stable(right).cmp(&prefer_stable(left)))
             .then_with(|| candidate_order(left, right))
     });
 

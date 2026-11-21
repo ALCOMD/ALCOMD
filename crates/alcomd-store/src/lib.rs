@@ -10,29 +10,28 @@ use std::thread;
 
 use alcomd_application::{
     ApplyPlanOutcome, BackupArchiveEvidence, BackupCreateOptions, BackupCreateOutcome,
-    BackupCreateRequest, BackupCursor, BackupId, BackupOperationRecord, BackupPhase,
-    BackupRestoreApplyOutcome, BackupRestoreOperationRecord, BackupRestorePhase,
-    BackupRestorePlanDraft, BackupRestorePlanRecord, CheckClassification, CreateOperationOutcome,
-    EventCommitWatermark, EventPage, ExtensionApplyOutcome, ExtensionDataValue,
-    ExtensionDataWriteResult, ExtensionFilesystemJournalEntry, ExtensionGrantMutation,
-    ExtensionGrantRecord, ExtensionInstallPlanDraft, ExtensionInstanceLease, ExtensionPlanRecord,
-    ExtensionRecord, ExtensionUninstallPlanDraft, FilesystemJournalEntry, IdempotencyKey, M3Error,
-    M3RegistryStore, M4Error, M4Store, M5BackupError, M5BackupStore, M5UnityError, M5UnityStore,
-    M6Error, M6Store, M7CopyError, M7CopyStore, M7DeleteError, M7DeleteStore,
-    M7UnityMigrationError, M7UnityMigrationStore, OperationCursor, OperationId, OperationPage,
-    OperationRecord, PackageApplyCompletion, PackageCursor, PackagePage, PackagePlanDraft,
-    PackagePlanRecord, PlanId, PrincipalId, ProjectCopyApplyOutcome, ProjectCopyInventoryEvidence,
-    ProjectCopyOperationRecord, ProjectCopyPhase, ProjectCopyPlanDraft, ProjectCopyPlanOutcome,
-    ProjectCopyPlanRecord, ProjectDeleteApplyOutcome, ProjectDeleteFilesystemEvidence,
-    ProjectDeleteOperationRecord, ProjectDeletePhase, ProjectDeletePlanDraft,
-    ProjectDeletePlanOutcome, ProjectDeletePlanRecord, ProjectId, ProjectObservation, ProjectPage,
-    ProjectRecord, ProjectUnityLaunchConfig, PublishedProjectCopy, RegistryCursor,
-    RepositoryArchivePinStore, RepositoryId, RepositoryObservation, RepositoryPackageSourcePin,
-    RepositoryPage, RepositoryRecord, RepositoryValidators, ResolverCatalog, RestoredProject,
-    Revision, StateCheckResult, StateStore, StoreError, StoredBackupRecord, SyncWrite,
-    UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
-    UnityInstallationPage, UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord,
-    UnityLaunchState, UnityMigrationApplyOutcome, UnityMigrationEvidence,
+    BackupCreateRequest, BackupOperationRecord, BackupPhase, BackupRestoreInput,
+    BackupRestoreOperationRecord, BackupRestorePhase, BackupRestoreRequest, CheckClassification,
+    CreateOperationOutcome, EventCommitWatermark, EventPage, ExtensionApplyOutcome,
+    ExtensionDataValue, ExtensionDataWriteResult, ExtensionFilesystemJournalEntry,
+    ExtensionGrantMutation, ExtensionGrantRecord, ExtensionInstallPlanDraft,
+    ExtensionInstanceLease, ExtensionPlanRecord, ExtensionRecord, ExtensionUninstallPlanDraft,
+    FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore, M4Error, M4Store,
+    M5BackupError, M5BackupStore, M5UnityError, M5UnityStore, M6Error, M6Store, M7CopyError,
+    M7CopyStore, M7DeleteError, M7DeleteStore, M7UnityMigrationError, M7UnityMigrationStore,
+    OperationCursor, OperationId, OperationPage, OperationRecord, PackageApplyCompletion,
+    PackageCursor, PackagePage, PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId,
+    ProjectCopyApplyOutcome, ProjectCopyInventoryEvidence, ProjectCopyOperationRecord,
+    ProjectCopyPhase, ProjectCopyPlanDraft, ProjectCopyPlanOutcome, ProjectCopyPlanRecord,
+    ProjectDeleteApplyOutcome, ProjectDeleteFilesystemEvidence, ProjectDeleteOperationRecord,
+    ProjectDeletePhase, ProjectDeletePlanDraft, ProjectDeletePlanOutcome, ProjectDeletePlanRecord,
+    ProjectId, ProjectObservation, ProjectPage, ProjectRecord, ProjectUnityLaunchConfig,
+    PublishedProjectCopy, RegistryCursor, RepositoryArchivePinStore, RepositoryId,
+    RepositoryObservation, RepositoryPackageSourcePin, RepositoryPage, RepositoryRecord,
+    RepositoryValidators, ResolverCatalog, RestoredProject, Revision, StateCheckResult, StateStore,
+    StoreError, SyncWrite, UnityInstallationCursor, UnityInstallationId,
+    UnityInstallationObservation, UnityInstallationPage, UnityInstallationRecord, UnityLaunchId,
+    UnityLaunchRecord, UnityLaunchState, UnityMigrationApplyOutcome, UnityMigrationEvidence,
     UnityMigrationOperationRecord, UnityMigrationPhase, UnityMigrationPlanDraft,
     UnityMigrationPlanOutcome, UnityMigrationPlanRecord, UnregisterResult, UserPackageCursor,
     UserPackageError, UserPackageErrorCode, UserPackageId, UserPackagePage, UserPackageRecord,
@@ -46,8 +45,6 @@ mod events_sources_tests;
 mod events_tests;
 #[cfg(test)]
 mod idle_shutdown_tests;
-#[cfg(test)]
-mod remove_activity_tests;
 
 mod config;
 mod m3;
@@ -77,26 +74,37 @@ mod project_template_jobs;
 mod project_templates;
 mod sqlite;
 
-pub use config::FileConfigStore;
+pub use config::{FileConfigStore, preflight_config};
+pub use sqlite::preflight_state_database;
 
 /// Stable crate identifier used by repository checks.
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 45;
+pub const CURRENT_DATA_SCHEMA: u32 = 1;
+
+fn is_regular_state_file(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return false;
+        }
+    }
+    metadata.is_file()
+}
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
 pub enum StoreOpenError {
-    /// The database uses a newer schema and was not modified.
+    /// The database uses an unsupported schema and was not modified.
     UnsupportedDataSchema {
         /// Version read before any initialization pragma or migration.
         found: u32,
-        /// Highest version supported by this binary.
+        /// The version supported by this binary.
         supported: u32,
     },
-    /// Finish or cancel legacy template operations before removing their authority.
-    LegacyTemplateOperationsActive,
     /// The worker thread could not be started or initialized.
     Unavailable,
 }
@@ -106,11 +114,8 @@ impl fmt::Display for StoreOpenError {
         match self {
             Self::UnsupportedDataSchema { found, supported } => write!(
                 formatter,
-                "state data schema {found} is newer than supported schema {supported}"
+                "state data schema {found} differs from supported schema {supported}"
             ),
-            Self::LegacyTemplateOperationsActive => {
-                formatter.write_str("finish or cancel legacy template operations before upgrading")
-            }
             Self::Unavailable => formatter.write_str("state store initialization failed"),
         }
     }
@@ -129,7 +134,6 @@ struct StoreInner {
     commands: Mutex<Option<mpsc::Sender<Command>>>,
     worker: Option<thread::JoinHandle<()>>,
     event_commits: watch::Receiver<EventCommitWatermark>,
-    retired_legacy_template_state: bool,
     extension_authority: Arc<RwLock<()>>,
 }
 
@@ -147,6 +151,30 @@ impl Drop for StoreInner {
 }
 
 impl StateStoreHandle {
+    /// Read or seed a verified installed namespace before the extension has run.
+    /// Offline native import may insert a missing value or reuse identical bytes.
+    pub async fn migration_extension_value(
+        &self,
+        extension_id: String,
+        package_digest: [u8; 32],
+        key: String,
+        seed: Option<(Vec<u8>, u64)>,
+    ) -> Result<Option<Vec<u8>>, M6Error> {
+        self.request_worker(
+            move |connection| {
+                m6::migration_extension_value(
+                    connection,
+                    &extension_id,
+                    package_digest,
+                    &key,
+                    seed.as_ref().map(|(value, now)| (value.as_slice(), *now)),
+                )
+            },
+            m6::unavailable,
+        )
+        .await
+    }
+
     /// Holds the current grant through bounded side effects, ordered against durable revocation.
     pub async fn authorize_background_integration(
         &self,
@@ -175,43 +203,7 @@ impl StateStoreHandle {
         .await?;
         Ok(guard)
     }
-    pub async fn workflow_plan_path_proof(
-        &self,
-        owner: PrincipalId,
-        plan_id: PlanId,
-    ) -> Result<alcomd_application::WorkflowPlanPath, alcomd_application::ToolError> {
-        self.request_worker(
-            move |db| m8_workflows::plan_proof(db, &owner, plan_id),
-            || alcomd_application::ToolError::Unavailable,
-        )
-        .await
-    }
-
-    pub async fn mcp_backup_restore_plan(
-        &self,
-        owner: PrincipalId,
-        plan_id: PlanId,
-    ) -> Result<BackupRestorePlanRecord, M5BackupError> {
-        self.request_worker(
-            move |db| m5_backup_restore::load_plan(db, &owner, plan_id),
-            m5_backup_restore::unavailable,
-        )
-        .await
-    }
-
-    pub async fn replay_mcp_backup_restore(
-        &self,
-        owner: PrincipalId,
-        plan_id: PlanId,
-        key: IdempotencyKey,
-    ) -> Result<Option<BackupRestoreApplyOutcome>, M5BackupError> {
-        self.request_worker(
-            move |db| m5_backup_restore::replay(db, &owner, plan_id, &key),
-            m5_backup_restore::unavailable,
-        )
-        .await
-    }
-    /// Opens, migrates, verifies, and starts the single SQLite worker.
+    /// Initializes or reopens the current database and starts the single SQLite worker.
     pub fn open(path: PathBuf) -> Result<Self, StoreOpenError> {
         let (commands, receiver) = mpsc::channel(128);
         let (commits, event_commits) = watch::channel(EventCommitWatermark {
@@ -224,23 +216,21 @@ impl StateStoreHandle {
         let (ready_sender, ready_receiver) = std::sync::mpsc::sync_channel(1);
         let worker = thread::Builder::new()
             .name("alcomd-state-store".to_owned())
-            .spawn(
-                move || match sqlite::initialize_connection_with_report(&path) {
-                    Ok((connection, retired_legacy_template_state)) => {
-                        if publish_event_watermark(&connection, &commits, false).is_err() {
-                            let _ = ready_sender.send(Err(StoreOpenError::Unavailable));
-                            return;
-                        }
-                        let _ = ready_sender.send(Ok(retired_legacy_template_state));
-                        run_worker(connection, receiver, commits);
+            .spawn(move || match sqlite::initialize_connection(&path) {
+                Ok(connection) => {
+                    if publish_event_watermark(&connection, &commits, false).is_err() {
+                        let _ = ready_sender.send(Err(StoreOpenError::Unavailable));
+                        return;
                     }
-                    Err(error) => {
-                        let _ = ready_sender.send(Err(error));
-                    }
-                },
-            )
+                    let _ = ready_sender.send(Ok(()));
+                    run_worker(connection, receiver, commits);
+                }
+                Err(error) => {
+                    let _ = ready_sender.send(Err(error));
+                }
+            })
             .map_err(|_| StoreOpenError::Unavailable)?;
-        let retired_legacy_template_state = ready_receiver
+        ready_receiver
             .recv()
             .map_err(|_| StoreOpenError::Unavailable)??;
         Ok(Self {
@@ -248,16 +238,9 @@ impl StateStoreHandle {
                 commands: Mutex::new(Some(commands)),
                 worker: Some(worker),
                 event_commits,
-                retired_legacy_template_state,
                 extension_authority: Arc::default(),
             }),
         })
-    }
-
-    /// Reports whether this open removed an existing legacy template schema.
-    #[must_use]
-    pub fn retired_legacy_template_state(&self) -> bool {
-        self.inner.retired_legacy_template_state
     }
 
     /// Registers missing built-in repository sources and returns their metadata in input order.
@@ -321,13 +304,11 @@ impl StateStoreHandle {
         let log_context = alcomd_application::log_write_context();
         let tool_context = alcomd_application::tool_invocation();
         let workflow_context = alcomd_application::workflow_authentication();
-        let workflow_path = alcomd_application::workflow_plan_path();
         commands
             .send(Command::M3(Box::new(move |connection| {
                 let _log = operation_logs::ContextGuard::install(log_context);
                 let _tool = m8_tools::ContextGuard::install(tool_context);
-                let _workflow =
-                    m8_workflows::ContextGuard::install(workflow_context, workflow_path);
+                let _workflow = m8_workflows::ContextGuard::install(workflow_context);
                 let _ = reply.send(work(connection));
                 false
             })))
@@ -376,25 +357,45 @@ impl StateStoreHandle {
 impl alcomd_application::RepositoryListStore for StateStoreHandle {
     async fn repository_list_snapshot(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
     ) -> Result<alcomd_application::RepositoryListSnapshot, M3Error> {
-        self.request_m3(move |connection| m3::repository_list_snapshot(connection, &owner))
+        let access = m3::RepositoryAccess::new(caller)?;
+        self.request_m3(move |connection| access.read(connection, m3::repository_list_snapshot))
             .await
     }
     async fn apply_repository_list_metadata(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
+        expected_order: String,
         changes: Vec<alcomd_application::RepositoryListMetadata>,
         now_ms: u64,
     ) -> Result<(), M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
-            m3::apply_repository_list_metadata(connection, &owner, changes, now_ms)
+            m3::apply_repository_list_metadata(
+                connection,
+                &access,
+                &expected_order,
+                changes,
+                now_ms,
+            )
         })
         .await
     }
 }
 
 impl M3RegistryStore for StateStoreHandle {
+    async fn replay_repository_write(
+        &self,
+        caller: PrincipalId,
+        request: alcomd_application::RepositoryWriteRequest,
+        key: IdempotencyKey,
+    ) -> Result<Option<SyncWrite<RepositoryRecord>>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
+        self.request_m3(move |db| m3::replay_repository_write(db, &access, request, &key))
+            .await
+    }
+
     async fn list_oauth_projects(
         &self,
         principal: PrincipalId,
@@ -407,33 +408,15 @@ impl M3RegistryStore for StateStoreHandle {
         })
         .await
     }
-    async fn get_mcp_project(
-        &self,
-        principal: PrincipalId,
-        id: ProjectId,
-    ) -> Result<ProjectRecord, M3Error> {
-        self.request_m3(move |db| m8_mcp::project(db, &principal, id))
-            .await
-    }
-    async fn list_mcp_projects(
-        &self,
-        principal: PrincipalId,
-        cursor: Option<RegistryCursor<ProjectId>>,
-        limit: u32,
-    ) -> Result<ProjectPage, M3Error> {
-        self.request_m3(move |db| m8_mcp::projects(db, &principal, cursor, limit))
-            .await
-    }
-
     async fn register_project(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         observation: ProjectObservation,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         self.request_m3(move |connection| {
-            m3::register_project(connection, &owner, observation, &key, now_ms)
+            m3::register_project(connection, &caller, observation, &key, now_ms)
         })
         .await
     }
@@ -464,10 +447,10 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn get_project(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: ProjectId,
     ) -> Result<ProjectRecord, M3Error> {
-        self.request_m3(move |connection| m3::get_project(connection, &owner, id))
+        self.request_m3(move |connection| m3::get_project_for_caller(connection, &caller, id))
             .await
     }
 
@@ -477,27 +460,38 @@ impl M3RegistryStore for StateStoreHandle {
         cursor: Option<RegistryCursor<ProjectId>>,
         limit: u32,
     ) -> Result<ProjectPage, M3Error> {
-        self.request_m3(move |connection| m3::list_projects(connection, &owner, cursor, limit))
-            .await
+        self.request_m3(move |connection| {
+            m8_mcp::authorized_projects(connection, &owner, cursor, limit, None)
+        })
+        .await
     }
 
     async fn list_project_view(
         &self,
-        owner: PrincipalId,
+        access: alcomd_application::AccessContext,
         cursor: Option<RegistryCursor<ProjectId>>,
         limit: u32,
         view: alcomd_application::ProjectListView,
         expected_sequence: Option<u64>,
     ) -> Result<alcomd_application::ProjectViewPage, M3Error> {
+        let authentication = alcomd_application::workflow_authentication();
         self.request_m3(move |connection| {
-            m3::list_project_view(connection, &owner, cursor, limit, &view, expected_sequence)
+            m3::list_project_view(
+                connection,
+                &access,
+                authentication.as_ref(),
+                cursor,
+                limit,
+                &view,
+                expected_sequence,
+            )
         })
         .await
     }
 
     async fn refresh_project(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: ProjectId,
         expected: Revision,
         observation: ProjectObservation,
@@ -505,14 +499,14 @@ impl M3RegistryStore for StateStoreHandle {
         now_ms: u64,
     ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         self.request_m3(move |connection| {
-            m3::refresh_project(connection, &owner, id, expected, observation, &key, now_ms)
+            m3::refresh_project(connection, &caller, id, expected, observation, &key, now_ms)
         })
         .await
     }
 
     async fn set_project_favorite(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: ProjectId,
         favorite: bool,
         expected: Revision,
@@ -520,51 +514,55 @@ impl M3RegistryStore for StateStoreHandle {
         now_ms: u64,
     ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         self.request_m3(move |connection| {
-            m3::set_project_favorite(connection, &owner, id, favorite, expected, &key, now_ms)
+            m3::set_project_favorite(connection, &caller, id, favorite, expected, &key, now_ms)
         })
         .await
     }
 
     async fn unregister_project(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: ProjectId,
         expected: Revision,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<UnregisterResult<ProjectId>, M3Error> {
         self.request_m3(move |connection| {
-            m3::unregister_project(connection, &owner, id, expected, &key, now_ms)
+            m3::unregister_project(connection, &caller, id, expected, &key, now_ms)
         })
         .await
     }
 
     async fn register_repository(
         &self,
-        owner: PrincipalId,
-        observation: RepositoryObservation,
+        caller: PrincipalId,
+        registration: impl Into<alcomd_application::RepositoryRegistration> + Send,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
+        let registration = registration.into();
         self.request_m3(move |connection| {
-            m3::register_repository(connection, &owner, observation, None, &key, now_ms)
+            m3::register_repository(connection, &access, registration, None, &key, now_ms)
         })
         .await
     }
 
     async fn register_repository_authenticated(
         &self,
-        owner: PrincipalId,
-        observation: RepositoryObservation,
+        caller: PrincipalId,
+        registration: impl Into<alcomd_application::RepositoryRegistration> + Send,
         reference: String,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
+        let registration = registration.into();
         self.request_m3(move |connection| {
             m3::register_repository(
                 connection,
-                &owner,
-                observation,
+                &access,
+                registration,
                 Some(&reference),
                 &key,
                 now_ms,
@@ -575,11 +573,16 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn repository_credential_reference(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
     ) -> Result<Option<String>, M3Error> {
-        self.request_m3(move |connection| m3::credential_reference(connection, &owner, id))
-            .await
+        let access = m3::RepositoryAccess::new(caller)?;
+        self.request_m3(move |connection| {
+            access.read(connection, |db, owner| {
+                m3::credential_reference(db, owner, id)
+            })
+        })
+        .await
     }
 
     async fn queue_repository_credential_cleanup(&self, reference: String) -> Result<(), M3Error> {
@@ -599,17 +602,18 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn set_repository_credential_reference(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
         expected: Revision,
         reference: Option<String>,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
             m3::set_credential_reference(
                 connection,
-                &owner,
+                &access,
                 id,
                 expected,
                 reference.as_deref(),
@@ -622,26 +626,30 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn get_repository(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
     ) -> Result<RepositoryRecord, M3Error> {
-        self.request_m3(move |connection| m3::get_repository(connection, &owner, id))
-            .await
+        let access = m3::RepositoryAccess::new(caller)?;
+        self.request_m3(move |connection| {
+            access.read(connection, |db, owner| m3::get_repository(db, owner, id))
+        })
+        .await
     }
 
     async fn set_repository_display_name(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
         expected: Revision,
         display_name: Option<String>,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
             m3::set_repository_display_name(
                 connection,
-                &owner,
+                &access,
                 id,
                 expected,
                 display_name,
@@ -652,40 +660,75 @@ impl M3RegistryStore for StateStoreHandle {
         .await
     }
 
-    async fn list_repositories(
+    async fn move_repository(
         &self,
-        owner: PrincipalId,
-        cursor: Option<RegistryCursor<RepositoryId>>,
-        limit: u32,
-    ) -> Result<RepositoryPage, M3Error> {
-        self.request_m3(move |connection| m3::list_repositories(connection, &owner, cursor, limit))
-            .await
-    }
-
-    async fn list_repository_packages(
-        &self,
-        owner: PrincipalId,
-        id: RepositoryId,
-        cursor: Option<PackageCursor>,
-        limit: u32,
-    ) -> Result<PackagePage, M3Error> {
+        caller: PrincipalId,
+        movement: alcomd_application::RepositoryMove,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<alcomd_application::RepositoryMoveResult, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
-            m3::list_repository_packages(connection, &owner, id, cursor, limit)
+            m3::move_repository(connection, &access, movement, &key, now_ms)
         })
         .await
     }
 
+    async fn list_repositories(
+        &self,
+        caller: PrincipalId,
+        cursor: Option<alcomd_application::RepositoryCursor>,
+        limit: u32,
+    ) -> Result<RepositoryPage, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
+        self.request_m3(move |connection| {
+            access.read(connection, |db, owner| {
+                m3::list_repositories(db, owner, cursor, limit)
+            })
+        })
+        .await
+    }
+
+    async fn list_repository_packages(
+        &self,
+        caller: PrincipalId,
+        id: RepositoryId,
+        cursor: Option<PackageCursor>,
+        limit: u32,
+    ) -> Result<PackagePage, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
+        self.request_m3(move |connection| {
+            access.read(connection, |db, owner| {
+                m3::list_repository_packages(db, owner, id, cursor, limit)
+            })
+        })
+        .await
+    }
+
+    async fn replay_repository_refresh(
+        &self,
+        caller: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        key: IdempotencyKey,
+    ) -> Result<Option<SyncWrite<alcomd_application::RepositoryRefreshReceipt>>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
+        self.request_m3(move |db| m3::replay_repository_refresh(db, &access, id, expected, &key))
+            .await
+    }
+
     async fn refresh_repository(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
         expected: Revision,
         observation: RepositoryObservation,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+    ) -> Result<SyncWrite<alcomd_application::RepositoryRefreshReceipt>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
-            m3::refresh_repository(connection, &owner, id, expected, observation, &key, now_ms)
+            m3::refresh_repository(connection, &access, id, expected, observation, &key, now_ms)
         })
         .await
     }
@@ -698,10 +741,11 @@ impl M3RegistryStore for StateStoreHandle {
         validators: RepositoryValidators,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+    ) -> Result<SyncWrite<alcomd_application::RepositoryRefreshReceipt>, M3Error> {
+        let access = m3::RepositoryAccess::new(owner)?;
         self.request_m3(move |connection| {
             m3::update_repository_validators(
-                connection, &owner, id, expected, validators, &key, now_ms,
+                connection, &access, id, expected, validators, &key, now_ms,
             )
         })
         .await
@@ -709,14 +753,15 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn unregister_repository(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
         expected: Revision,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<UnregisterResult<RepositoryId>, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
-            m3::unregister_repository(connection, &owner, id, expected, &key, now_ms)
+            m3::unregister_repository(connection, &access, id, expected, &key, now_ms)
         })
         .await
     }
@@ -1005,13 +1050,13 @@ impl M4Store for StateStoreHandle {
 impl UserPackageStore for StateStoreHandle {
     async fn replay_user_package_enroll(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         source_path: String,
         key: IdempotencyKey,
     ) -> Result<Option<UserPackageWriteResult>, UserPackageError> {
         self.request_worker(
             move |connection| {
-                m7_user_packages::replay_enroll(connection, &owner, &source_path, &key)
+                m7_user_packages::replay_enroll(connection, &caller, &source_path, &key)
             },
             || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
         )
@@ -1020,7 +1065,7 @@ impl UserPackageStore for StateStoreHandle {
 
     async fn replay_user_package_refresh(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
         expected_revision: Revision,
         key: IdempotencyKey,
@@ -1029,7 +1074,7 @@ impl UserPackageStore for StateStoreHandle {
             move |connection| {
                 m7_user_packages::replay_refresh(
                     connection,
-                    &owner,
+                    &caller,
                     user_package_id,
                     expected_revision,
                     &key,
@@ -1042,12 +1087,12 @@ impl UserPackageStore for StateStoreHandle {
 
     async fn list_user_packages(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         cursor: Option<UserPackageCursor>,
         limit: u32,
     ) -> Result<UserPackagePage, UserPackageError> {
         self.request_worker(
-            move |connection| m7_user_packages::list(connection, &owner, cursor, limit),
+            move |connection| m7_user_packages::list(connection, &caller, cursor, limit),
             || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
         )
         .await
@@ -1055,11 +1100,11 @@ impl UserPackageStore for StateStoreHandle {
 
     async fn get_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
     ) -> Result<UserPackageRecord, UserPackageError> {
         self.request_worker(
-            move |connection| m7_user_packages::get(connection, &owner, user_package_id),
+            move |connection| m7_user_packages::get(connection, &caller, user_package_id),
             || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
         )
         .await
@@ -1067,13 +1112,13 @@ impl UserPackageStore for StateStoreHandle {
 
     async fn enroll_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         snapshot: UserPackageSnapshot,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<UserPackageWriteResult, UserPackageError> {
         self.request_worker(
-            move |connection| m7_user_packages::enroll(connection, &owner, snapshot, &key, now_ms),
+            move |connection| m7_user_packages::enroll(connection, &caller, snapshot, &key, now_ms),
             || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
         )
         .await
@@ -1081,7 +1126,7 @@ impl UserPackageStore for StateStoreHandle {
 
     async fn refresh_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
         expected_revision: Revision,
         snapshot: UserPackageSnapshot,
@@ -1092,7 +1137,7 @@ impl UserPackageStore for StateStoreHandle {
             move |connection| {
                 m7_user_packages::refresh(
                     connection,
-                    &owner,
+                    &caller,
                     user_package_id,
                     expected_revision,
                     snapshot,
@@ -1107,7 +1152,7 @@ impl UserPackageStore for StateStoreHandle {
 
     async fn remove_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
         expected_revision: Revision,
         key: IdempotencyKey,
@@ -1117,7 +1162,7 @@ impl UserPackageStore for StateStoreHandle {
             move |connection| {
                 m7_user_packages::remove(
                     connection,
-                    &owner,
+                    &caller,
                     user_package_id,
                     expected_revision,
                     &key,
@@ -1593,7 +1638,7 @@ impl M6Store for StateStoreHandle {
         &self,
         daemon_epoch: String,
         now_ms: u64,
-    ) -> Result<Vec<String>, M6Error> {
+    ) -> Result<Vec<alcomd_application::ExtensionRuntimeTarget>, M6Error> {
         self.request_extension_write(move |connection| {
             m6::recover_instances(connection, &daemon_epoch, now_ms)
         })
@@ -1825,34 +1870,6 @@ impl M5BackupStore for StateStoreHandle {
         .await
     }
 
-    async fn list_backups(
-        &self,
-        owner: PrincipalId,
-        project_id: Option<ProjectId>,
-        cursor: Option<BackupCursor>,
-        limit: u32,
-    ) -> Result<Vec<StoredBackupRecord>, M5BackupError> {
-        self.request_worker(
-            move |connection| {
-                m5_backup::list_backups(connection, &owner, project_id, cursor, limit)
-            },
-            m5_backup::unavailable,
-        )
-        .await
-    }
-
-    async fn get_backup(
-        &self,
-        owner: PrincipalId,
-        backup_id: BackupId,
-    ) -> Result<StoredBackupRecord, M5BackupError> {
-        self.request_worker(
-            move |connection| m5_backup::get_backup(connection, &owner, backup_id),
-            m5_backup::unavailable,
-        )
-        .await
-    }
-
     async fn accept_backup_create(
         &self,
         owner: PrincipalId,
@@ -1908,12 +1925,17 @@ impl M5BackupStore for StateStoreHandle {
     async fn complete_backup_create(
         &self,
         operation_id: OperationId,
-        backup: StoredBackupRecord,
+        archive_name: String,
         completed_at_ms: u64,
     ) -> Result<(), M5BackupError> {
         self.request_worker(
             move |connection| {
-                m5_backup::complete_backup_create(connection, operation_id, backup, completed_at_ms)
+                m5_backup::complete_backup_create(
+                    connection,
+                    operation_id,
+                    archive_name,
+                    completed_at_ms,
+                )
             },
             m5_backup::unavailable,
         )
@@ -1973,16 +1995,14 @@ impl M5BackupStore for StateStoreHandle {
         .await
     }
 
-    async fn create_backup_restore_plan(
+    async fn replay_backup_restore(
         &self,
         owner: PrincipalId,
-        draft: BackupRestorePlanDraft,
-        created_at_ms: u64,
-    ) -> Result<BackupRestorePlanRecord, M5BackupError> {
+        input: BackupRestoreInput,
+        key: IdempotencyKey,
+    ) -> Result<Option<BackupCreateOutcome>, M5BackupError> {
         self.request_worker(
-            move |connection| {
-                m5_backup_restore::create_plan(connection, &owner, draft, created_at_ms)
-            },
+            move |connection| m5_backup_restore::replay(connection, &owner, &input, &key),
             m5_backup_restore::unavailable,
         )
         .await
@@ -1991,13 +2011,14 @@ impl M5BackupStore for StateStoreHandle {
     async fn accept_backup_restore(
         &self,
         owner: PrincipalId,
-        plan_id: PlanId,
+        input: BackupRestoreInput,
+        request: BackupRestoreRequest,
         key: IdempotencyKey,
         created_at_ms: u64,
-    ) -> Result<BackupRestoreApplyOutcome, M5BackupError> {
+    ) -> Result<BackupCreateOutcome, M5BackupError> {
         self.request_worker(
             move |connection| {
-                m5_backup_restore::accept(connection, &owner, plan_id, &key, created_at_ms)
+                m5_backup_restore::accept(connection, &owner, &input, request, &key, created_at_ms)
             },
             m5_backup_restore::unavailable,
         )
@@ -2095,16 +2116,6 @@ impl M5BackupStore for StateStoreHandle {
     ) -> Result<Vec<OperationId>, M5BackupError> {
         self.request_worker(
             move |connection| m5_backup_restore::recover(connection, recovered_at_ms),
-            m5_backup_restore::unavailable,
-        )
-        .await
-    }
-
-    async fn completed_backup_restores(
-        &self,
-    ) -> Result<Vec<(OperationId, BackupRestorePlanRecord)>, M5BackupError> {
-        self.request_worker(
-            |connection| m5_backup_restore::completed(connection),
             m5_backup_restore::unavailable,
         )
         .await

@@ -173,7 +173,15 @@ pub fn evaluate_candidate_summary(
                 source.is_some(),
                 input.settings.show_prerelease,
             );
-            let update = update_evidence(&project_latest, &installed);
+            let recommended = if input.settings.prefer_prerelease
+                || matches!(&project_latest_stable, CandidateChoice::None { .. })
+                || matches!(&project_latest_stable, CandidateChoice::Candidate { candidate } if candidate.relation == CandidateRelation::Older)
+            {
+                project_latest.clone()
+            } else {
+                project_latest_stable.clone()
+            };
+            let update = update_evidence(&recommended, &installed);
             let stable_update = update_evidence(&project_latest_stable, &installed);
             let (mut display_name, mut links) = summary_presentation(
                 &rows,
@@ -272,6 +280,7 @@ pub fn evaluate_candidate_summary(
                 installed,
                 latest,
                 latest_stable,
+                recommended,
                 project_latest,
                 project_latest_stable,
                 update,
@@ -943,6 +952,7 @@ mod tests {
             settings: ConfigPackageSettings {
                 hidden_repository_packages: Vec::new(),
                 show_prerelease: false,
+                prefer_prerelease: false,
                 hidden_repository_ids: vec![],
                 hide_local_user_packages: false,
             },

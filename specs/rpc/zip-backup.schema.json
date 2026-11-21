@@ -1,0 +1,107 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/zip-backup.json",
+    "title": "ALCOMD RPC v1 ZIP backup and restore",
+    "x-alcomd-method-permissions": {
+        "backups.create": [
+            "backups.manage",
+            "projects.read:target-project"
+        ],
+        "backups.restore": [
+            "backups.manage",
+            "backups.read",
+            "projects.create"
+        ]
+    },
+    "$defs": {
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807
+        },
+        "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[!-~]+$"
+        },
+        "compressionMode": {
+            "enum": [
+                "store",
+                "fast",
+                "level3",
+                "level5",
+                "level7",
+                "maximum"
+            ]
+        },
+        "createParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "projectId",
+                "expectedRevision",
+                "idempotencyKey"
+            ],
+            "properties": {
+                "projectId": {
+                    "$ref": "#/$defs/uuid"
+                },
+                "expectedRevision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "compressionMode": {
+                    "$ref": "#/$defs/compressionMode"
+                },
+                "excludeVpmPackages": {
+                    "type": "boolean"
+                },
+                "includeLibrary": {
+                    "type": "boolean"
+                },
+                "idempotencyKey": {
+                    "$ref": "#/$defs/idempotencyKey"
+                },
+                "destinationPath": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            }
+        },
+        "restoreParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "archivePath",
+                "idempotencyKey"
+            ],
+            "properties": {
+                "archivePath": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "projectName": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "destinationPath": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "idempotencyKey": {
+                    "$ref": "#/$defs/idempotencyKey"
+                }
+            },
+            "not": {
+                "required": [
+                    "projectName",
+                    "destinationPath"
+                ]
+            }
+        }
+    }
+}

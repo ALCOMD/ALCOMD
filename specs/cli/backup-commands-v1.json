@@ -1,0 +1,25 @@
+{
+    "contractVersion": 1,
+    "commands": [
+        {
+            "path": ["backup", "create"],
+            "argument": "project-id",
+            "rpc": "backups.create",
+            "options": [
+                "--expected-revision", "--compression", "--exclude-vpm-packages", "--include-library",
+                "--destination", "--idempotency-key", "--no-wait"
+            ]
+        },
+        {
+            "path": ["backup", "restore"],
+            "argument": "archive",
+            "rpc": "backups.restore",
+            "options": ["--name", "--destination", "--idempotency-key", "--yes", "--no-wait"],
+            "nonTtyWithoutYes": "confirmation_required"
+        }
+    ],
+    "compressionValues": ["store", "fast", "level3", "level5", "level7", "maximum"],
+    "defaultWaitsForTerminalOperation": true,
+    "noWaitReturns": ["operationId", "replayed"],
+    "outputModes": ["human", "json", "ndjson"]
+}

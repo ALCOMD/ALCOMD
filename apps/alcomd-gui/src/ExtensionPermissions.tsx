@@ -1,9 +1,10 @@
+import { useGuiWrite } from "./gui-write-attempt";
 import { withActionNotification } from "./app-notifications";
 import { requestErrorMessage } from "./request-errors";
 import { useEffect, useRef, useState } from "react";
 import type { ExtensionPermissionGrant, ExtensionPermissionsListResult, RpcError } from "@alcomd/sdk";
 import type { GuiRpcClient } from "./rpc";
-import { DialogCloseButton, LoadingButton, useActionFeedback, Switch } from "./Material";
+import { Button, DialogCloseButton, LoadingButton, useActionFeedback, Switch } from "./Material";
 import { LoadingState } from "./LoadingState";
 import { capabilities, useCapability } from "./capabilities";
 import { useTranslation, type Translate } from "./i18n";
@@ -43,7 +44,7 @@ function permissionDescription(permission: string, t: Translate): string {
         case "mcp.subscription-streams.read": return t("View adapter-reported MCP notification streams.");
         case "mcp.requests.read": return t("View Core calls currently executing for all MCP clients.");
         case "mcp.clients.read": return t("View all registered MCP clients and their grants.");
-        case "mcp.clients.manage": return t("Create MCP clients, change their grants, and permanently revoke them.");
+        case "mcp.clients.manage": return t("Create and permanently revoke MCP clients.");
         case "mcp.tools.provide": return t("Make declared tools available to MCP clients with matching business permissions.");
         case "repositories.read": return t("Read repository and package source information.");
         case "packages.read": return t("Read available packages and prepare package change plans.");
@@ -76,6 +77,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     onChanged?(): void;
 }) {
     const { t } = useTranslation();
+    const writeRequest = useGuiWrite(client, extensionId);
     const canRead = useCapability(capabilities.extensionsPermissionsRead);
     const canWrite = useCapability(capabilities.extensionsPermissions);
 
@@ -88,6 +90,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     const [loading, setLoading] = useState(true);
     const [writing, setWriting] = useState(false);
     const [writeUnknown, setWriteUnknown] = useState(false);
+    const pendingGrant = useRef<{ grant: ExtensionPermissionGrant; revoke: boolean; revision: number } | undefined>(undefined);
     const owner = useRef({ client, extensionId, canRead, generation, active: true, pending: false });
     if (owner.current.client !== client || owner.current.extensionId !== extensionId || owner.current.canRead !== canRead || owner.current.generation !== generation) {
         owner.current.active = false;
@@ -110,7 +113,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
             await withActionNotification(client, "Refresh", async () => {
                 await readPermissions();
             });
-            if (current()) setWriteUnknown(false);
+            if (current()) { pendingGrant.current = undefined; setWriteUnknown(false); }
         } catch { /* The read functions retain their local, actionable errors. */ }
     });
     const readPermissions = async () => {
@@ -140,19 +143,20 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
 
     useEffect(() => {
         scope.active = true;
+        pendingGrant.current = undefined;
         if (!sameReadIdentity) setValue(undefined);
         setError(undefined); setLoading(true); setWriting(false); setWriteUnknown(false);
         if (canRead) void readPermissions().catch(() => {}); else setLoading(false);
         return () => { scope.active = false; readVersion.current += 1; };
     }, [canRead, client, extensionId, scope]);
 
-    const write = async (grant: ExtensionPermissionGrant, revoke: boolean) => {
-        if (!canWrite || !canRead || !current() || !ownsRead || scope.pending || loading || writeUnknown || value === undefined) return;
+    const write = async (grant: ExtensionPermissionGrant, revoke: boolean, revision = value?.grantRevision) => {
+        if (!canWrite || !canRead || !current() || !ownsRead || scope.pending || loading || revision === undefined) return;
         scope.pending = true; setWriting(true); setError(undefined);  onBusyChange(true);
         try {
             await (revoke
-                ? client.extensionRevokeGrant(extensionId, grant.permission, grant.resourceKind, grant.resourceId, value.grantRevision)
-                : client.extensionSetGrant(extensionId, grant.permission, grant.resourceKind, grant.resourceId, value.grantRevision));
+                ? writeRequest("extensionRevokeGrant", extensionId, grant.permission, grant.resourceKind, grant.resourceId, revision)
+                : writeRequest("extensionSetGrant", extensionId, grant.permission, grant.resourceKind, grant.resourceId, revision));
             if (!current()) return;
 
             onChanged?.(); reload();
@@ -161,6 +165,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
                 const nextError = requestError(caught);
                 const unknown = nextError.code === "daemon_unavailable" || nextError.code === "internal_error";
                 if (unknown || nextError.code === "revision_conflict") setValue(undefined);
+                pendingGrant.current = unknown ? { grant, revoke, revision } : undefined;
                 setWriteUnknown(unknown); setError(nextError);
             }
         } finally { scope.pending = false; if (owner.current === scope) setWriting(false); onBusyChange(false); }
@@ -174,7 +179,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     const blocked = !canWrite || !ownsRead || writing || loading || writeUnknown;
     return <section className="extension-permissions" aria-label={t("Extension permissions")}>
         {!canRead ? <div>{t("Permission details are unavailable from this Core.")}</div> : (loading || !ownsRead) && visibleValue === undefined ? <LoadingState title={t("Loading…")} /> : null}
-        {visibleError === undefined ? null : <div role="alert" data-notification-error={visibleError.code}><p>{t(requestErrorMessage(visibleError.code))}</p><code>{visibleError.code}</code>{visibleError.diagnosticId === undefined ? null : <p><code>{visibleError.diagnosticId}</code></p>}{!writeUnknown ? null : <p>{t("The permission change may have completed. Refresh permissions before trying again.")}</p>}<LoadingButton disabled={writing} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
+        {visibleError === undefined ? null : <div role="alert" data-notification-error={visibleError.code}><p>{t(requestErrorMessage(visibleError.code))}</p><code>{visibleError.code}</code>{visibleError.diagnosticId === undefined ? null : <p><code>{visibleError.diagnosticId}</code></p>}{!writeUnknown ? null : <><p>{t("The permission change may have completed.")}</p><Button disabled={!canWrite || writing || loading} onClick={() => { const request = pendingGrant.current; if (request) void write(request.grant, request.revoke, request.revision); }} type="button">{t("Retry")}</Button></>}<LoadingButton disabled={writing} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
         {visibleValue === undefined ? null : groups.map((group) => <section className="extension-permission-group" aria-label={group.title} key={group.title}>
             <h3>{group.title}</h3>
             {group.permissions.length === 0 ? <p>{t("None")}</p> : <div className="extension-permission-options">

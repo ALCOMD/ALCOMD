@@ -9,7 +9,9 @@ import { useTranslation } from "./i18n";
 export function TaskProgressDialog({ events, navigate }: { events: CoreEvents; navigate(path: string): void }) {
     const [accepted, setAccepted] = useState<{ events: CoreEvents; task: AcceptedGuiTask }>();
     useEffect(() => {
-        return events.subscribeAcceptedTasks((task) => setAccepted({ events, task }));
+        return events.subscribeAcceptedTasks((task) => {
+            if (!task.progressShownInForm) setAccepted({ events, task });
+        });
     }, [events]);
     if (accepted?.events !== events) return null;
     return <AcceptedTaskDialog events={events} task={accepted.task} key={accepted.task.operationId} navigate={navigate} dismiss={() => setAccepted(undefined)} />;

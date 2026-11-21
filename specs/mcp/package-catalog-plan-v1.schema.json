@@ -59,7 +59,7 @@
         {
             "name": "alcomd_plan_package_install",
             "title": "Review a package installation",
-            "description": "Plan one compatible installation. Show the complete plan and obtain confirmation before applying.",
+            "description": "Plan one compatible installation. Normally omit version_selector to use the Core recommendation. Show the complete plan and obtain confirmation before applying.",
             "inputSchema": {
                 "type": "object",
                 "$ref": "#/$defs/installInput"
@@ -95,7 +95,7 @@
         {
             "name": "alcomd_plan_package_changes",
             "title": "Review package changes",
-            "description": "Plan installation, removal, upgrade, downgrade, resolution, reinstallation, or a bounded batch. Review the original plan and obtain confirmation before applying.",
+            "description": "Plan installation, removal, upgrade, downgrade, resolution, reinstallation, or a bounded batch. For installation or upgrade, normally omit version_selector to use the Core recommendation. Review the original plan and obtain confirmation before applying.",
             "inputSchema": {
                 "type": "object",
                 "$ref": "#/$defs/changesInput"
@@ -363,7 +363,8 @@
                     "$ref": "#/$defs/source"
                 },
                 "version_selector": {
-                    "$ref": "#/$defs/selector"
+                    "$ref": "#/$defs/selector",
+                    "description": "Omit to use the Core recommendation. Specify an exact version or range to constrain selection."
                 },
                 "include_prerelease": {
                     "type": "boolean"
@@ -375,8 +376,7 @@
             "required": [
                 "project_id",
                 "expected_revision",
-                "package_id",
-                "version_selector"
+                "package_id"
             ],
             "allOf": [
                 {
@@ -399,7 +399,10 @@
                                     }
                                 }
                             }
-                        }
+                        },
+                        "required": [
+                            "version_selector"
+                        ]
                     }
                 }
             ]
@@ -935,7 +938,10 @@
             },
             "required": [
                 "kind",
-                "package_id"
+                "package_id",
+                "from_version",
+                "to_version",
+                "source"
             ]
         },
         "planChanges": {
@@ -943,8 +949,7 @@
             "additionalProperties": false,
             "properties": {
                 "format_version": {
-                    "type": "integer",
-                    "minimum": 1
+                    "const": 1
                 },
                 "mutations": {
                     "type": "array",
@@ -1233,8 +1238,7 @@
                     },
                     "required": [
                         "kind",
-                        "package_id",
-                        "include_prerelease"
+                        "package_id"
                     ]
                 },
                 {
@@ -1259,8 +1263,7 @@
                     },
                     "required": [
                         "kind",
-                        "package_id",
-                        "include_prerelease"
+                        "package_id"
                     ]
                 },
                 {
@@ -1310,7 +1313,8 @@
                             "const": "install"
                         },
                         "version_selector": {
-                            "$ref": "#/$defs/selector"
+                            "$ref": "#/$defs/selector",
+                            "description": "Omit to use the Core recommendation. Specify an exact version or range to constrain selection."
                         },
                         "include_prerelease": {
                             "type": "boolean"
@@ -1320,8 +1324,7 @@
                         }
                     },
                     "required": [
-                        "kind",
-                        "version_selector"
+                        "kind"
                     ],
                     "allOf": [
                         {
@@ -1344,7 +1347,10 @@
                                             }
                                         }
                                     }
-                                }
+                                },
+                                "required": [
+                                    "version_selector"
+                                ]
                             }
                         }
                     ]
@@ -1357,7 +1363,8 @@
                             "const": "upgrade"
                         },
                         "version_selector": {
-                            "$ref": "#/$defs/selector"
+                            "$ref": "#/$defs/selector",
+                            "description": "Omit to use the Core recommendation. Specify an exact version or range to constrain selection."
                         },
                         "include_prerelease": {
                             "type": "boolean"
@@ -1367,8 +1374,7 @@
                         }
                     },
                     "required": [
-                        "kind",
-                        "version_selector"
+                        "kind"
                     ],
                     "allOf": [
                         {
@@ -1391,7 +1397,10 @@
                                             }
                                         }
                                     }
-                                }
+                                },
+                                "required": [
+                                    "version_selector"
+                                ]
                             }
                         }
                     ]

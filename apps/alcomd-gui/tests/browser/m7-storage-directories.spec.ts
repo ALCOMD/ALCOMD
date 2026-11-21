@@ -102,17 +102,14 @@ test("a rejected save location can be corrected before the shared Retry", async 
     expect((await writes(page))[1]!.params).toEqual({ expectedRevision: 7, update: { paths: { projectDirectory: chosenDirectory } } });
 });
 
-for (const kind of ["create", "restore", "copy"] as const) {
+for (const kind of ["create", "copy"] as const) {
     test(`${kind} form starts at the configured project directory`, async ({ page }) => {
         await page.goto(`/browser-harness.html?route=/projects&project-directory=${encodeURIComponent(chosenDirectory)}`);
         if (kind === "create") await page.getByRole("button", { name: "Create project", exact: true }).click();
-        else if (kind === "restore") {
-            await selectActionMenuItem(page.getByRole("button", { name: "More project creation options", exact: true }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
-        } else {
+        else {
             await selectActionMenuItem(page.getByRole("button", { name: "More actions for <private-project>", exact: true }), page.getByRole("menuitem", { name: "Copy Project", exact: true }));
         }
-        const label = kind === "create" ? "Create target parent" : kind === "restore" ? "Restore target parent"
-            : "Copy project location";
+        const label = kind === "create" ? "Create target parent" : "Copy project location";
         await expect(page.locator("md-dialog[open]").getByRole("textbox", { name: label, exact: true })).toHaveValue(chosenDirectory);
     });
 }

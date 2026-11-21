@@ -14,9 +14,9 @@ use zip::CompressionMethod;
 use zip::write::SimpleFileOptions;
 
 use crate::archive::{ArchiveLimits, MAX_ARCHIVE_BYTES, normalize_path, validate_collision};
-use crate::range::VpmRange;
 use crate::unity_version::package_minimum;
 use crate::{PackageCache, preflight_archive};
+use alcomd_domain::vpm_range::VpmRange;
 
 const MANIFEST_LIMIT: u64 = 1_048_576;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);

@@ -324,14 +324,19 @@ async fn gui_select_file(
         picker_location::SelectionKind::File,
     );
     let picker = match kind.as_str() {
+        "backupZip" | "backupZipDestination" => picker.add_filter("ZIP archive", &["zip"]),
         "repositoryManifest" => picker.add_filter("JSON manifest", &["json"]),
         "extensionPackage" => picker.add_filter("ALCOMD extension", &["alcomdextension"]),
         "unityEditor" if cfg!(windows) => picker.add_filter("Executable", &["exe"]),
         "unityEditor" | "templateAttachment" => picker,
         _ => return Err(RpcError::invalid_request()),
     };
-    picker
-        .blocking_pick_file()
+    let selected = if kind == "backupZipDestination" {
+        picker.blocking_save_file()
+    } else {
+        picker.blocking_pick_file()
+    };
+    selected
         .map(|path| {
             path.into_path()
                 .ok()
@@ -826,6 +831,20 @@ async fn gui_repository_set_credentials(
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.repository_set_credentials(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_repository_move(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::RepositoryMoveParams,
+) -> Result<alcomd_protocol::RepositoryMoveResult, RpcError> {
+    let mut client = state.work.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.repository_move(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -1413,38 +1432,10 @@ async fn gui_project_templates_remove(
 }
 
 #[tauri::command]
-async fn gui_backups_list(
-    state: State<'_, GuiClientState>,
-    params: alcomd_protocol::BackupsListParams,
-) -> Result<alcomd_protocol::BackupsListResult, RpcError> {
-    let mut client = state.reads.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.backups_list(params).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
-async fn gui_backup_get(
-    state: State<'_, GuiClientState>,
-    backup_id: String,
-) -> Result<alcomd_protocol::BackupRecord, RpcError> {
-    let mut client = state.reads.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.backup_get(backup_id).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
 async fn gui_backup_create(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::BackupCreateParams,
-) -> Result<alcomd_protocol::BackupCreateResult, RpcError> {
+) -> Result<alcomd_protocol::OperationAccepted, RpcError> {
     let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
@@ -1455,28 +1446,14 @@ async fn gui_backup_create(
 }
 
 #[tauri::command]
-async fn gui_backup_plan_restore(
+async fn gui_backup_restore(
     state: State<'_, GuiClientState>,
-    params: alcomd_protocol::BackupPlanRestoreParams,
-) -> Result<alcomd_protocol::BackupRestorePlan, RpcError> {
+    params: alcomd_protocol::BackupRestoreParams,
+) -> Result<alcomd_protocol::OperationAccepted, RpcError> {
     let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.backup_plan_restore(params).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
-async fn gui_backup_apply_restore(
-    state: State<'_, GuiClientState>,
-    params: alcomd_protocol::BackupApplyRestoreParams,
-) -> Result<alcomd_protocol::BackupApplyRestoreResult, RpcError> {
-    let mut client = state.work.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.backup_apply_restore(params).await,
+        Some(client) => client.backup_restore(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -1847,6 +1824,7 @@ pub fn run() {
             gui_open_package_link,
             gui_repository_register,
             gui_repository_set_credentials,
+            gui_repository_move,
             gui_repository_set_display_name,
             gui_repository_refresh,
             gui_repositories_refresh_all,
@@ -1888,11 +1866,8 @@ pub fn run() {
             gui_project_templates_save,
             gui_project_templates_export,
             gui_project_templates_remove,
-            gui_backups_list,
-            gui_backup_get,
             gui_backup_create,
-            gui_backup_plan_restore,
-            gui_backup_apply_restore,
+            gui_backup_restore,
             gui_extensions_list,
             gui_extension_get,
             gui_extension_permissions_list,

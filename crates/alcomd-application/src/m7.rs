@@ -858,7 +858,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M7RuntimeAdapter, V: M7UiValidator>
             .await
             && let Some(delay_ms) = decision.restart_delay_ms
         {
-            self.core.schedule_restart(decision.extension_id, delay_ms);
+            self.core.schedule_restart(decision.target, delay_ms);
         }
     }
 

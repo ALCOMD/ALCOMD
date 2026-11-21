@@ -162,8 +162,9 @@ impl ProjectPackageSnapshot {
         explicit: BTreeSet<String>,
         preserve_unselected: bool,
     ) -> Result<crate::resolver::ProjectResolutionRules, M4Error> {
-        use crate::range::{ProjectDependencyRange, VpmRange};
+        use crate::range::ProjectDependencyRange;
         use crate::resolver::{LockedPackage, ProjectResolutionRules};
+        use alcomd_domain::vpm_range::VpmRange;
 
         let invalid = || M4Error::new(M4ErrorCode::PackageManifestInvalid);
         let mut locked = BTreeMap::new();
@@ -288,7 +289,7 @@ fn inspect_package_inputs(
     hash_field(
         &mut hasher,
         match scope {
-            PackageSnapshotScope::Metadata => b"alcomd-project-package-metadata-v8",
+            PackageSnapshotScope::Metadata => b"alcomd-project-package-metadata-v1",
             PackageSnapshotScope::Contents => b"alcomd-project-package-snapshot-v1",
         },
     );
@@ -564,7 +565,6 @@ fn freeze_legacy_reinstall(
         return Ok(());
     }
     draft.change_set.legacy_reinstall_packages = targets.iter().cloned().collect();
-    draft.change_set.format_version = 4;
     draft.change_set.validate_bounds()?;
     draft.change_set_fingerprint = Sha256::digest(
         serde_json::to_vec(&draft.change_set).map_err(|_| M4Error::new(M4ErrorCode::Internal))?,
@@ -1044,7 +1044,6 @@ pub(crate) fn build_removal_plan(
     );
     let mut draft = build_draft(snapshot, action, manifest, mutations, edges, Vec::new())?;
     if !removal_conflicts.is_empty() {
-        draft.change_set.format_version = 4;
         draft.change_set.removal_conflicts = removal_conflicts;
         draft.change_set.validate_bounds()?;
         draft.change_set_fingerprint = Sha256::digest(
@@ -1118,9 +1117,7 @@ fn materialize_plan_manifest_with_ranges(
     preserve_input_ranges: bool,
 ) -> Result<Vec<u8>, M4Error> {
     // Frozen byte identity is authoritative when restoring packages without a manifest change.
-    if change_set.format_version >= 3
-        && <[u8; 32]>::from(Sha256::digest(current)) == change_set.vpm_manifest_sha256
-    {
+    if <[u8; 32]>::from(Sha256::digest(current)) == change_set.vpm_manifest_sha256 {
         return Ok(current.to_vec());
     }
     let mut manifest: Value =
@@ -1158,41 +1155,6 @@ fn materialize_plan_manifest_with_ranges(
                 direct.remove(&mutation.package_id);
             }
         }
-    }
-    if change_set.format_version < 3 {
-        // Only already-accepted pre-remediation tasks may reach this path.
-        // Recreate their frozen bytes; never re-sign them with the new writer.
-        for (key, values) in [("dependencies", &direct), ("locked", &locked)] {
-            object.insert(
-                key.to_owned(),
-                Value::Object(
-                    values
-                        .iter()
-                        .map(|(id, version)| (id.clone(), serde_json::json!({"version":version})))
-                        .collect(),
-                ),
-            );
-        }
-        let bytes = serialize_manifest(&manifest)?;
-        if Sha256::digest(&bytes).as_slice() == change_set.vpm_manifest_sha256 {
-            return Ok(bytes);
-        }
-        // Historical builds wrote direct strings. Accept only an exact match
-        // to the task's original digest, never a newly computed authority.
-        manifest.as_object_mut().expect("validated object").insert(
-            "dependencies".to_owned(),
-            Value::Object(
-                direct
-                    .iter()
-                    .map(|(id, version)| (id.clone(), Value::String(version.clone())))
-                    .collect(),
-            ),
-        );
-        let strings = serialize_manifest(&manifest)?;
-        if Sha256::digest(&strings).as_slice() == change_set.vpm_manifest_sha256 {
-            return Ok(strings);
-        }
-        return Ok(bytes);
     }
     direct.retain(|id, _| direct_ids.contains(id.as_str()));
     for id in &direct_ids {
@@ -1304,7 +1266,6 @@ pub(crate) fn attach_legacy_removals(
     draft
         .source_set
         .retain(|source| !obsolete.contains(source.package_id()));
-    change.format_version = 4;
     change.legacy_removals = removals;
     change.legacy_packages = obsolete.into_iter().collect();
     change.validate_bounds()?;
@@ -1380,15 +1341,11 @@ fn build_draft_from_bytes(
         .map(|mutation| mutation.package_id.clone())
         .collect::<Vec<_>>();
     let change_set = PackageChangeSet {
-        absent_removal_packages: absent_removal_packages.clone(),
+        absent_removal_packages,
         legacy_reinstall_packages: Vec::new(),
         unity_compatibility_overrides: Vec::new(),
         removal_conflicts: Vec::new(),
-        format_version: if absent_removal_packages.is_empty() {
-            3
-        } else {
-            4
-        },
+        format_version: 1,
         mutations,
         dependency_edges: edges,
         legacy_removals: Vec::new(),
@@ -1682,42 +1639,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accepted_old_writer_uses_original_digest_without_resigning() {
-        let current = br#"{"dependencies":{"com.example.a":{"version":"1.0.0"}},"locked":{"com.example.a":{"version":"1.0.0","dependencies":{"com.example.b":"^1.0.0"}}}}"#;
-        let historical = serde_json::json!({"dependencies":{"com.example.a":{"version":"1.0.0"}},"locked":{"com.example.a":{"version":"1.0.0"}}});
-        let expected = serialize_manifest(&historical).expect("frozen historical output");
-        let mut change_set = PackageChangeSet {
-            unity_compatibility_overrides: Vec::new(),
-            removal_conflicts: Vec::new(),
-            absent_removal_packages: Vec::new(),
-            legacy_reinstall_packages: Vec::new(),
-            format_version: 1,
-            mutations: Vec::new(),
-            legacy_removals: Vec::new(),
-            legacy_packages: Vec::new(),
-            dependency_edges: vec![ChangeSetEdge {
-                from_package_id: "com.example.a".to_owned(),
-                to_package_id: "com.example.a".to_owned(),
-                range: "1.0.0".to_owned(),
-                direct: true,
-            }],
-            vpm_manifest_sha256: Sha256::digest(&expected).into(),
-        };
-        assert_eq!(
-            materialize_vpm_manifest(current, &change_set).expect("recover original output"),
-            expected
-        );
-        let frozen = change_set.vpm_manifest_sha256;
-        change_set.format_version = 3;
-        let next = materialize_vpm_manifest(current, &change_set).expect("new output");
-        assert_ne!(<[u8; 32]>::from(Sha256::digest(next)), frozen);
-        assert_eq!(
-            change_set.vpm_manifest_sha256, frozen,
-            "materialization cannot re-sign authority"
-        );
-    }
-
-    #[test]
     fn removal_preserves_unmodified_lock_metadata_and_matches_frozen_hash() {
         let original = serde_json::json!({
             "dependencies":{"com.example.a":{"version":"1.0.0","note":"keep"},"com.example.b":{"version":"1.0.0"}},
@@ -1767,7 +1688,7 @@ mod tests {
             plan.change_set.mutations[0].kind,
             PackageMutationKind::Remove
         );
-        assert_eq!(plan.change_set.format_version, 4);
+        assert_eq!(plan.change_set.format_version, 1);
         assert_eq!(
             plan.change_set.removal_conflicts,
             vec![PackageRemovalConflict {
@@ -1827,7 +1748,7 @@ mod tests {
         for change in [
             {
                 let mut invalid = plan.change_set.clone();
-                invalid.format_version = 3;
+                invalid.format_version = 0;
                 invalid
             },
             {

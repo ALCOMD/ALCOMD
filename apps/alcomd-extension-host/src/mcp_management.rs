@@ -6,8 +6,8 @@ use serde_json::{Value, json};
 
 mod bindings {
     wasmtime::component::bindgen!({
-        path: "../../specs/extensions/wit/mcp-management-v2",
-        world: "management-v2",
+        path: "../../specs/extensions/wit/mcp-management-v1",
+        world: "management-v1",
         imports: { default: async },
         exports: { default: async },
     });

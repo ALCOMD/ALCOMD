@@ -88,7 +88,7 @@ The scope key is lowercase SHA-256 over `alcomd-local-ipc-target-v1`, target ID 
 - required/optional interface 各最多 32 项、去重且 lexicographic canonical order。
 - 同一 ExtensionId + version + publisher fingerprint 但 package digest 不同是供应链冲突，不得静默覆盖。
 
-## 安装条款与明确同意（State41）
+## 安装条款与明确同意
 
 可选`[installation_terms]`只有`title`与`text`：title非空、最多128 Unicode字符、禁止控制字符；text非空、UTF-8最多16384字节，仅允许换行/回车/制表控制字符。它属于原签名Manifest，不读取远端文本，不执行HTML/Markdown/脚本。不存在时跳过条款步骤。
 

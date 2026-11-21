@@ -11,9 +11,8 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 pub use alcomd_domain::{
-    BackupId, IdempotencyKey, OperationId, OperationState, Permission, PlanId, PrincipalId,
-    ProjectId, RepositoryId, ResourceKey, Revision, UnityInstallationId, UnityLaunchId,
-    UserPackageId,
+    IdempotencyKey, OperationId, OperationState, Permission, PlanId, PrincipalId, ProjectId,
+    RepositoryId, ResourceKey, Revision, UnityInstallationId, UnityLaunchId, UserPackageId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -212,8 +211,7 @@ pub struct ProjectRecord {
     /// Historical records without reliable activity evidence remain unknown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_modified_at_ms: Option<u64>,
-    /// User-controlled registry metadata; absent in durable v10 JSON means false.
-    #[serde(default)]
+    /// User-controlled registry metadata.
     pub favorite: bool,
 }
 
@@ -261,10 +259,11 @@ pub fn can_remove_repository(access: &AccessContext, id: RepositoryId) -> bool {
 
 pub fn can_edit_repository_authentication(
     access: &AccessContext,
-    record: &RepositoryRecord,
+    id: RepositoryId,
+    source: &RepositorySource,
 ) -> bool {
-    builtin_repository(record.repository_id).is_none()
-        && repository_supports_authentication(&record.observation.source)
+    builtin_repository(id).is_none()
+        && repository_supports_authentication(source)
         && require_repository_credentials(access).is_ok()
 }
 
@@ -333,6 +332,53 @@ pub struct RepositoryObservation {
     pub refreshed_at_ms: u64,
 }
 
+/// Repository metadata returned by inspection and frozen in a refresh receipt.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepositoryMetadata {
+    pub source: RepositorySource,
+    pub declared_id: Option<String>,
+    pub name: Option<String>,
+    pub declared_url: Option<String>,
+    pub issues: Vec<ReadIssue>,
+    pub refreshed_at_ms: u64,
+}
+
+impl From<RepositoryObservation> for RepositoryMetadata {
+    fn from(value: RepositoryObservation) -> Self {
+        Self {
+            source: value.source,
+            declared_id: value.declared_id,
+            name: value.name,
+            declared_url: value.declared_url,
+            issues: value.issues,
+            refreshed_at_ms: value.refreshed_at_ms,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepositoryRefreshReceipt {
+    pub repository_id: RepositoryId,
+    pub observation: RepositoryMetadata,
+    pub display_name: Option<String>,
+    pub revision: Revision,
+    pub credentials_configured: bool,
+}
+
+impl From<RepositoryRecord> for RepositoryRefreshReceipt {
+    fn from(record: RepositoryRecord) -> Self {
+        Self {
+            repository_id: record.repository_id,
+            observation: record.observation.into(),
+            display_name: record.display_name,
+            revision: record.revision,
+            credentials_configured: record.credentials_configured,
+        }
+    }
+}
+
 /// Result of a conditional repository read.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RepositoryReadOutcome {
@@ -348,9 +394,7 @@ pub struct RepositoryRecord {
     pub display_name: Option<String>,
     pub revision: Revision,
     pub registered_at_ms: u64,
-    #[serde(default)]
     pub credentials_configured: bool,
-    #[serde(skip)]
     pub resolver_indexed: bool,
 }
 
@@ -414,8 +458,45 @@ pub struct ProjectViewPage {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RepositoryPage {
+    pub order_fingerprint: String,
     pub repositories: Vec<RepositoryRecord>,
-    pub next_cursor: Option<RegistryCursor<RepositoryId>>,
+    pub next_cursor: Option<RepositoryCursor>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryCursor {
+    pub registered_at_ms: u64,
+    pub id: RepositoryId,
+    pub order_fingerprint: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RepositoryMove {
+    pub id: RepositoryId,
+    pub before: Option<RepositoryId>,
+    pub expected_order_fingerprint: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryMoveResult {
+    pub changed: bool,
+    pub replayed: bool,
+}
+
+pub fn repository_order_fingerprint(ids: impl IntoIterator<Item = impl AsRef<str>>) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut digest = Sha256::new();
+    digest.update(b"alcomd-repository-order-v1\0");
+    for id in ids {
+        digest.update(id.as_ref().as_bytes());
+        digest.update(b"\0");
+    }
+    digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -575,8 +656,43 @@ pub trait M3ReadAdapter: Clone + Send + Sync + 'static {
     }
 }
 
+/// An accepted source is bound to the caller's locator even if inspection resolves an alias.
+pub struct RepositoryRegistration {
+    pub requested_source: RepositorySource,
+    pub observation: RepositoryObservation,
+}
+
+impl From<RepositoryObservation> for RepositoryRegistration {
+    fn from(observation: RepositoryObservation) -> Self {
+        Self {
+            requested_source: observation.source.clone(),
+            observation,
+        }
+    }
+}
+
+/// Inputs needed to replay an accepted native write without I/O on its repository or keyring.
+pub enum RepositoryWriteRequest {
+    Register {
+        source: RepositorySource,
+        authenticated: bool,
+    },
+    SetCredentials {
+        id: RepositoryId,
+        expected: Revision,
+        authenticated: bool,
+    },
+}
+
 /// M3 persistence port implemented only by the authoritative state store.
 pub trait M3RegistryStore: Clone + Send + Sync + 'static {
+    fn replay_repository_write(
+        &self,
+        caller: PrincipalId,
+        request: RepositoryWriteRequest,
+        key: IdempotencyKey,
+    ) -> impl Future<Output = Result<Option<SyncWrite<RepositoryRecord>>, M3Error>> + Send;
+
     fn queue_repository_credential_cleanup(
         &self,
         _reference: String,
@@ -607,7 +723,7 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
     fn register_repository_authenticated(
         &self,
         _owner: PrincipalId,
-        _observation: RepositoryObservation,
+        _registration: impl Into<RepositoryRegistration> + Send,
         _reference: String,
         _key: IdempotencyKey,
         _now_ms: u64,
@@ -647,21 +763,6 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<SyncWrite<McpRegisteredProject>, M3Error>> + Send;
-    fn get_mcp_project(
-        &self,
-        _principal: PrincipalId,
-        _id: ProjectId,
-    ) -> impl Future<Output = Result<ProjectRecord, M3Error>> + Send {
-        std::future::ready(Err(M3Error::new(M3ErrorCode::PermissionDenied)))
-    }
-    fn list_mcp_projects(
-        &self,
-        _principal: PrincipalId,
-        _cursor: Option<RegistryCursor<ProjectId>>,
-        _limit: u32,
-    ) -> impl Future<Output = Result<ProjectPage, M3Error>> + Send {
-        std::future::ready(Err(M3Error::new(M3ErrorCode::PermissionDenied)))
-    }
     fn list_oauth_projects(
         &self,
         _principal: PrincipalId,
@@ -684,7 +785,7 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = Result<ProjectPage, M3Error>> + Send;
     fn list_project_view(
         &self,
-        owner: PrincipalId,
+        access: AccessContext,
         cursor: Option<RegistryCursor<ProjectId>>,
         limit: u32,
         view: ProjectListView,
@@ -719,13 +820,13 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
     fn register_repository(
         &self,
         owner: PrincipalId,
-        observation: RepositoryObservation,
+        registration: impl Into<RepositoryRegistration> + Send,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
     fn get_repository(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
     ) -> impl Future<Output = Result<RepositoryRecord, M3Error>> + Send;
     fn set_repository_display_name(
@@ -737,19 +838,33 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
+    fn move_repository(
+        &self,
+        caller: PrincipalId,
+        movement: RepositoryMove,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<RepositoryMoveResult, M3Error>> + Send;
     fn list_repositories(
         &self,
-        owner: PrincipalId,
-        cursor: Option<RegistryCursor<RepositoryId>>,
+        caller: PrincipalId,
+        cursor: Option<RepositoryCursor>,
         limit: u32,
     ) -> impl Future<Output = Result<RepositoryPage, M3Error>> + Send;
     fn list_repository_packages(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
         cursor: Option<PackageCursor>,
         limit: u32,
     ) -> impl Future<Output = Result<PackagePage, M3Error>> + Send;
+    fn replay_repository_refresh(
+        &self,
+        caller: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        key: IdempotencyKey,
+    ) -> impl Future<Output = Result<Option<SyncWrite<RepositoryRefreshReceipt>>, M3Error>> + Send;
     fn refresh_repository(
         &self,
         owner: PrincipalId,
@@ -758,7 +873,7 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         observation: RepositoryObservation,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
+    ) -> impl Future<Output = Result<SyncWrite<RepositoryRefreshReceipt>, M3Error>> + Send;
     fn update_repository_validators(
         &self,
         owner: PrincipalId,
@@ -767,7 +882,7 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         validators: RepositoryValidators,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
+    ) -> impl Future<Output = Result<SyncWrite<RepositoryRefreshReceipt>, M3Error>> + Send;
     fn unregister_repository(
         &self,
         owner: PrincipalId,
@@ -1137,8 +1252,13 @@ impl AccessContext {
     /// Creates the M2 built-in official-client context.
     #[must_use]
     pub fn local_owner() -> Self {
+        Self::interactive_client(PrincipalId::local_owner())
+    }
+
+    /// Business permissions shared by the GUI, CLI and authenticated MCP clients.
+    pub(crate) fn interactive_client(principal: PrincipalId) -> Self {
         let mut access = Self::new(
-            PrincipalId::local_owner(),
+            principal,
             [
                 Permission::McpClientsRead,
                 Permission::McpClientsManage,
@@ -1182,6 +1302,10 @@ impl AccessContext {
     }
     pub fn is_mcp_client(&self) -> bool {
         self.mcp_identity
+    }
+
+    pub(crate) fn is_interactive_client(&self) -> bool {
+        self.is_mcp_client() || self.principal == PrincipalId::local_owner()
     }
 
     /// Returns the authenticated transport-neutral Principal.
@@ -1625,10 +1749,6 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             self.store
                 .list_oauth_projects(access.principal().clone(), cursor, limit, guard.clone())
                 .await?
-        } else if access.is_mcp_client() {
-            self.store
-                .list_mcp_projects(access.principal().clone(), cursor, limit)
-                .await?
         } else {
             self.store
                 .list_projects(access.principal().clone(), cursor, limit)
@@ -1647,8 +1767,12 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         expected_sequence: Option<u64>,
     ) -> Result<ProjectViewPage, M3Error> {
         require_m3(access, Permission::ProjectsRead)?;
-        if access.is_mcp_client() {
-            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+        if access.oauth_guard().is_none()
+            && cursor
+                .as_ref()
+                .is_some_and(|c| c.authorization_binding.is_some())
+        {
+            return Err(M3Error::new(M3ErrorCode::RevisionConflict));
         }
         validate_m3_limit(limit)?;
         if cursor.is_some() != expected_sequence.is_some()
@@ -1661,13 +1785,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         }
         let mut view_page = self
             .store
-            .list_project_view(
-                access.principal().clone(),
-                cursor,
-                limit,
-                view,
-                expected_sequence,
-            )
+            .list_project_view(access.clone(), cursor, limit, view, expected_sequence)
             .await?;
         self.observe_project_directories(&mut view_page.page).await;
         Ok(view_page)
@@ -1689,15 +1807,10 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         id: ProjectId,
     ) -> Result<ProjectDirectoryView, M3Error> {
         require_m3(access, Permission::ProjectsRead)?;
-        let project = if access.is_mcp_client() {
-            self.store
-                .get_mcp_project(access.principal().clone(), id)
-                .await?
-        } else {
-            self.store
-                .get_project(access.principal().clone(), id)
-                .await?
-        };
+        let project = self
+            .store
+            .get_project(access.principal().clone(), id)
+            .await?;
         Ok(self.project_directory_view(project).await)
     }
 
@@ -1935,7 +2048,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
     async fn persist_authenticated_repository(
         &self,
         access: &AccessContext,
-        observation: RepositoryObservation,
+        registration: RepositoryRegistration,
         credentials: RepositoryCredentials,
         key: IdempotencyKey,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
@@ -1945,7 +2058,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             .store
             .register_repository_authenticated(
                 access.principal().clone(),
-                observation,
+                registration,
                 reference.clone(),
                 key,
                 now,
@@ -2005,6 +2118,21 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
         let owner = access.principal().clone();
         let now = m3_time_ms()?;
+        if let Some(receipt) = self
+            .store
+            .replay_repository_write(
+                owner.clone(),
+                RepositoryWriteRequest::SetCredentials {
+                    id,
+                    expected,
+                    authenticated: credentials.is_some(),
+                },
+                key.clone(),
+            )
+            .await?
+        {
+            return Ok(receipt);
+        }
         let old = self
             .store
             .repository_credential_reference(owner.clone(), id)
@@ -2081,10 +2209,38 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         Ok(())
     }
 
+    pub async fn move_repository(
+        &self,
+        access: &AccessContext,
+        movement: RepositoryMove,
+        key: IdempotencyKey,
+    ) -> Result<RepositoryMoveResult, M3Error> {
+        require_m3(access, Permission::RepositoriesManage)?;
+        if !access.is_interactive_client() {
+            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+        }
+        if builtin_repository(movement.id).is_some()
+            || movement
+                .before
+                .is_some_and(|id| builtin_repository(id).is_some())
+            || movement.expected_order_fingerprint.len() != 64
+            || !movement
+                .expected_order_fingerprint
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(M3Error::new(M3ErrorCode::InvalidInput));
+        }
+        let _order = self.repository_import.lock().await;
+        self.store
+            .move_repository(access.principal().clone(), movement, key, m3_time_ms()?)
+            .await
+    }
+
     pub async fn list_repositories(
         &self,
         access: &AccessContext,
-        cursor: Option<RegistryCursor<RepositoryId>>,
+        cursor: Option<RepositoryCursor>,
         limit: u32,
     ) -> Result<RepositoryPage, M3Error> {
         require_m3(access, Permission::RepositoriesRead)?;
@@ -2126,6 +2282,30 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         key: IdempotencyKey,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
         require_m3(access, Permission::RepositoriesManage)?;
+        if let Some(receipt) = self
+            .store
+            .replay_repository_write(
+                access.principal().clone(),
+                RepositoryWriteRequest::Register {
+                    source: source.clone(),
+                    authenticated: false,
+                },
+                key.clone(),
+            )
+            .await?
+        {
+            return Ok(receipt);
+        }
+        self.register_repository_after_lookup(access, source, key)
+            .await
+    }
+
+    async fn register_repository_after_lookup(
+        &self,
+        access: &AccessContext,
+        source: RepositorySource,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
         let target = match &source {
             RepositorySource::Local { path } => Some(log_path("repository", path.clone())),
             RepositorySource::Remote { .. } => None,
@@ -2134,7 +2314,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             "repositories.register",
             "fetch_repository",
             target,
-            self.reader.inspect_repository(source, None),
+            self.reader.inspect_repository(source.clone(), None),
             |error| error.technical_path().map(str::to_owned),
         )
         .await?
@@ -2144,7 +2324,15 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 return Err(M3Error::new(M3ErrorCode::RepositoryUnavailable));
             }
         };
-        self.persist_repository(access, observation, key).await
+        self.persist_repository(
+            access,
+            RepositoryRegistration {
+                requested_source: source,
+                observation,
+            },
+            key,
+        )
+        .await
     }
 
     pub async fn register_repository_for_connection(
@@ -2158,6 +2346,20 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         require_m3(access, Permission::RepositoriesManage)?;
         if credentials.is_some() {
             require_repository_credentials(access)?;
+        }
+        if let Some(receipt) = self
+            .store
+            .replay_repository_write(
+                access.principal().clone(),
+                RepositoryWriteRequest::Register {
+                    source: source.clone(),
+                    authenticated: credentials.is_some(),
+                },
+                key.clone(),
+            )
+            .await?
+        {
+            return Ok(receipt);
         }
         let preview = {
             let mut previews = self.repository_previews.lock().await;
@@ -2180,26 +2382,32 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         {
             preview.observation
         } else if credentials.is_some() {
-            self.read_repository_preview(source, credentials.clone())
+            self.read_repository_preview(source.clone(), credentials.clone())
                 .await?
         } else {
-            return self.register_repository(access, source, key).await;
+            return self
+                .register_repository_after_lookup(access, source, key)
+                .await;
+        };
+        let registration = RepositoryRegistration {
+            requested_source: source,
+            observation,
         };
         if let Some(credentials) = credentials {
-            self.persist_authenticated_repository(access, observation, credentials, key)
+            self.persist_authenticated_repository(access, registration, credentials, key)
                 .await
         } else {
-            self.persist_repository(access, observation, key).await
+            self.persist_repository(access, registration, key).await
         }
     }
 
     async fn persist_repository(
         &self,
         access: &AccessContext,
-        observation: RepositoryObservation,
+        registration: RepositoryRegistration,
         key: IdempotencyKey,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
-        let target = match &observation.source {
+        let target = match &registration.observation.source {
             RepositorySource::Local { path } => Some(log_path("repository", path.clone())),
             RepositorySource::Remote { .. } => None,
         };
@@ -2209,7 +2417,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             target,
             self.store.register_repository(
                 access.principal().clone(),
-                observation,
+                registration,
                 key,
                 m3_time_ms()?,
             ),
@@ -2251,7 +2459,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         const REORDER_WINDOW: usize = 2 * DOWNLOAD_CONCURRENCY;
 
         require_m3(access, Permission::RepositoriesManage)?;
-        if access.principal() != &PrincipalId::local_owner() {
+        if !access.is_interactive_client() {
             return Err(M3Error::new(M3ErrorCode::PermissionDenied));
         }
         let invalid = || M3Error::new(M3ErrorCode::RepositorySourceInvalid);
@@ -2397,10 +2605,15 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             Ok(RepositoryReadOutcome::Fresh(value)) => {
                 let result = match credentials {
                     Some(credentials) => {
-                        self.persist_authenticated_repository(access, value, credentials, key)
-                            .await
+                        self.persist_authenticated_repository(
+                            access,
+                            value.into(),
+                            credentials,
+                            key,
+                        )
+                        .await
                     }
-                    None => self.persist_repository(access, value, key).await,
+                    None => self.persist_repository(access, value.into(), key).await,
                 };
                 match result {
                     Ok(_) => RepositoryBatchItem::Added,
@@ -2431,7 +2644,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         id: RepositoryId,
         expected: Revision,
         key: IdempotencyKey,
-    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+    ) -> Result<SyncWrite<RepositoryRefreshReceipt>, M3Error> {
         require_m3(access, Permission::RepositoriesManage)?;
         let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
         self.refresh_repository_locked(access, id, expected, key)
@@ -2468,16 +2681,21 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         id: RepositoryId,
         expected: Revision,
         key: IdempotencyKey,
-    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
-        let current = self
+    ) -> Result<SyncWrite<RepositoryRefreshReceipt>, M3Error> {
+        if let Some(receipt) = self
             .store
-            .get_repository(access.principal().clone(), id)
-            .await?;
-        let current_revision = current.revision;
-        match self
-            .fetch_repository_refresh(access.principal().clone(), id, current)
+            .replay_repository_refresh(access.principal().clone(), id, expected, key.clone())
             .await?
         {
+            return Ok(receipt);
+        }
+        let caller = access.principal().clone();
+        let current = self.store.get_repository(caller.clone(), id).await?;
+        if current.revision != expected {
+            return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+        }
+        let indexed = current.resolver_indexed;
+        match self.fetch_repository_refresh(caller, id, current).await? {
             RepositoryReadOutcome::Fresh(observation) => {
                 self.store
                     .refresh_repository(
@@ -2491,8 +2709,8 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                     .await
             }
             RepositoryReadOutcome::NotModified(validators) => {
-                if current_revision != expected {
-                    return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+                if !indexed {
+                    return Err(M3Error::new(M3ErrorCode::RepositoryUnavailable));
                 }
                 self.store
                     .update_repository_validators(
@@ -2510,7 +2728,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
 
     async fn fetch_repository_refresh(
         &self,
-        resource_owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
         current: RepositoryRecord,
     ) -> Result<RepositoryReadOutcome, M3Error> {
@@ -2526,7 +2744,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 let credentials = if current.credentials_configured {
                     let reference = self
                         .store
-                        .repository_credential_reference(resource_owner, id)
+                        .repository_credential_reference(caller, id)
                         .await?
                         .ok_or_else(|| M3Error::new(M3ErrorCode::RepositoryUnavailable))?;
                     Some(self.reader.load_repository_credentials(reference).await?)
@@ -2601,7 +2819,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 };
                 let application = self.clone();
                 let access = access.clone();
-                let task = running.spawn(async move {
+                let refresh = async move {
                     with_log_caller(application.store.clone(), &access, async {
                         match application
                             .refresh_repository(&access, id, revision, first)
@@ -2619,7 +2837,8 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                     .await
                     .map(|_| ())
                     .map_err(|error| error.code())
-                });
+                };
+                let task = running.spawn(m8_workflows::carry_workflow_authentication(refresh));
                 indices.insert(task.id(), index);
             }
             let Some(joined) = running.join_next_with_id().await else {
@@ -2668,7 +2887,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
 
 fn require_repository_credentials(access: &AccessContext) -> Result<(), M3Error> {
     require_m3(access, Permission::RepositoriesManage)?;
-    if access.principal() != &PrincipalId::local_owner() {
+    if !access.is_interactive_client() {
         return Err(M3Error::new(M3ErrorCode::PermissionDenied));
     }
     Ok(())

@@ -1,8 +1,9 @@
 use alcomd_application::{
-    IdempotencyKey, M5UnityError, M5UnityErrorCode, PrincipalId, ProjectId, ProjectRecord,
-    ProjectUnityLaunchConfig, Revision, UnityArchitecture, UnityInstallationCursor,
+    IdempotencyKey, M5UnityError, M5UnityErrorCode, Permission, PrincipalId, ProjectId,
+    ProjectRecord, ProjectUnityLaunchConfig, Revision, UnityArchitecture, UnityInstallationCursor,
     UnityInstallationId, UnityInstallationObservation, UnityInstallationPage,
     UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord, UnityLaunchState, UnitySourceKind,
+    workflow_resource_owner,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::Serialize;
@@ -14,27 +15,42 @@ struct LaunchConfigMutationRecord {
     changed: bool,
 }
 
-/// Private accepted argv; launch/status return only the flattened public record.
-#[derive(serde::Deserialize, Serialize)]
-struct StoredLaunch {
-    #[serde(flatten)]
-    record: UnityLaunchRecord,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    inherited_arguments: Option<Vec<String>>,
+fn require(
+    db: &Connection,
+    caller: &PrincipalId,
+    permissions: &[Permission],
+) -> Result<(), M5UnityError> {
+    super::m8_workflows::require(db, caller, permissions)
+        .map_err(|_| error(M5UnityErrorCode::PermissionDenied))
+}
+
+fn authorized_read<T>(
+    connection: &Connection,
+    caller: &PrincipalId,
+    permissions: &[Permission],
+    read: impl FnOnce(&Transaction<'_>) -> Result<T, M5UnityError>,
+) -> Result<T, M5UnityError> {
+    let tx = connection.unchecked_transaction().map_err(failure)?;
+    require(&tx, caller, permissions)?;
+    let result = read(&tx)?;
+    tx.commit().map_err(failure)?;
+    Ok(result)
 }
 
 pub(super) fn register_installation(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     observation: UnityInstallationObservation,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<(UnityInstallationRecord, bool), M5UnityError> {
     let transaction = transaction(connection)?;
+    require(&transaction, caller, &[Permission::UnityManage])?;
+    let owner = workflow_resource_owner(caller);
     let fingerprint = installation_fingerprint(&observation);
     if let Some(record) = replay::<UnityInstallationRecord>(
         &transaction,
-        owner,
+        caller,
         "unity.installations.register",
         key,
         &fingerprint,
@@ -43,7 +59,7 @@ pub(super) fn register_installation(
         return Ok((record, true));
     }
     let existing =
-        load_installation_by_identity(&transaction, owner, &observation.filesystem_identity)?;
+        load_installation_by_identity(&transaction, &owner, &observation.filesystem_identity)?;
     let record = if let Some(record) = existing {
         record
     } else {
@@ -70,18 +86,18 @@ pub(super) fn register_installation(
             .map_err(failure)?;
         insert_event(
             &transaction,
-            owner,
+            &owner,
             "unity.installation.registered",
             "unity-installation",
             &id.to_string(),
             Revision::INITIAL,
             now_ms,
         )?;
-        load_installation(&transaction, owner, id)?
+        load_installation(&transaction, &owner, id)?
     };
     save_response(
         &transaction,
-        owner,
+        caller,
         "unity.installations.register",
         key,
         &fingerprint,
@@ -91,7 +107,7 @@ pub(super) fn register_installation(
     let target = alcomd_application::log_path("unity", record.observation.executable_path.clone());
     super::operation_logs::committed(
         &transaction,
-        owner,
+        caller,
         now_ms,
         super::operation_logs::CommittedStep::succeeded(
             "unity.installations.register",
@@ -106,13 +122,26 @@ pub(super) fn register_installation(
 
 pub(super) fn get_installation(
     connection: &Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     id: UnityInstallationId,
 ) -> Result<UnityInstallationRecord, M5UnityError> {
-    load_installation(connection, owner, id)
+    authorized_read(connection, caller, &[Permission::UnityRead], |tx| {
+        load_installation(tx, &workflow_resource_owner(caller), id)
+    })
 }
 
 pub(super) fn list_installations(
+    connection: &Connection,
+    caller: &PrincipalId,
+    cursor: Option<UnityInstallationCursor>,
+    limit: u32,
+) -> Result<UnityInstallationPage, M5UnityError> {
+    authorized_read(connection, caller, &[Permission::UnityRead], |tx| {
+        installation_page(tx, &workflow_resource_owner(caller), cursor, limit)
+    })
+}
+
+fn installation_page(
     connection: &Connection,
     owner: &PrincipalId,
     cursor: Option<UnityInstallationCursor>,
@@ -167,13 +196,15 @@ pub(super) fn list_installations(
 
 pub(super) fn remove_installation(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     id: UnityInstallationId,
     expected: Revision,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<(bool, bool), M5UnityError> {
     let transaction = transaction(connection)?;
+    require(&transaction, caller, &[Permission::UnityManage])?;
+    let owner = workflow_resource_owner(caller);
     let fingerprint = format!(
         r#"{{"expectedRevision":{},"installationId":"{}","version":1}}"#,
         expected.get(),
@@ -181,7 +212,7 @@ pub(super) fn remove_installation(
     );
     if let Some(value) = replay::<bool>(
         &transaction,
-        owner,
+        caller,
         "unity.installations.remove",
         key,
         &fingerprint,
@@ -189,7 +220,7 @@ pub(super) fn remove_installation(
         transaction.commit().map_err(failure)?;
         return Ok((value, true));
     }
-    let record = load_installation(&transaction, owner, id)?;
+    let record = load_installation(&transaction, &owner, id)?;
     if record.revision != expected {
         return Err(error(M5UnityErrorCode::RevisionConflict));
     }
@@ -202,7 +233,7 @@ pub(super) fn remove_installation(
     let next = expected.checked_next().ok_or_else(corrupt)?;
     insert_event(
         &transaction,
-        owner,
+        &owner,
         "unity.installation.removed",
         "unity-installation",
         &id.to_string(),
@@ -211,7 +242,7 @@ pub(super) fn remove_installation(
     )?;
     save_response(
         &transaction,
-        owner,
+        caller,
         "unity.installations.remove",
         key,
         &fingerprint,
@@ -221,7 +252,7 @@ pub(super) fn remove_installation(
     let target = alcomd_application::log_path("unity", record.observation.executable_path);
     super::operation_logs::committed(
         &transaction,
-        owner,
+        caller,
         now_ms,
         super::operation_logs::CommittedStep::succeeded(
             "unity.installations.remove",
@@ -236,16 +267,18 @@ pub(super) fn remove_installation(
 
 pub(super) fn synchronize_installations(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     observations: Vec<UnityInstallationObservation>,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<(UnityInstallationPage, bool), M5UnityError> {
     let transaction = transaction(connection)?;
+    require(&transaction, caller, &[Permission::UnityManage])?;
+    let owner = workflow_resource_owner(caller);
     let fingerprint = discovery_fingerprint(&observations);
     if let Some(page) = replay::<UnityInstallationPage>(
         &transaction,
-        owner,
+        caller,
         "unity.installations.refresh",
         key,
         &fingerprint,
@@ -254,7 +287,7 @@ pub(super) fn synchronize_installations(
         return Ok((page, true));
     }
     for observation in observations {
-        if load_installation_by_identity(&transaction, owner, &observation.filesystem_identity)?
+        if load_installation_by_identity(&transaction, &owner, &observation.filesystem_identity)?
             .is_none()
         {
             let id = UnityInstallationId::new();
@@ -280,7 +313,7 @@ pub(super) fn synchronize_installations(
                 .map_err(failure)?;
             insert_event(
                 &transaction,
-                owner,
+                &owner,
                 "unity.installation.discovered",
                 "unity-installation",
                 &id.to_string(),
@@ -289,10 +322,10 @@ pub(super) fn synchronize_installations(
             )?;
         }
     }
-    let page = list_installations(&transaction, owner, None, 1_000)?;
+    let page = installation_page(&transaction, &owner, None, 1_000)?;
     save_response(
         &transaction,
-        owner,
+        caller,
         "unity.installations.refresh",
         key,
         &fingerprint,
@@ -301,7 +334,7 @@ pub(super) fn synchronize_installations(
     )?;
     super::operation_logs::committed(
         &transaction,
-        owner,
+        caller,
         now_ms,
         super::operation_logs::CommittedStep::succeeded(
             "unity.installations.refresh",
@@ -315,6 +348,19 @@ pub(super) fn synchronize_installations(
 }
 
 pub(super) fn get_project_launch_config(
+    connection: &Connection,
+    caller: &PrincipalId,
+    project_id: ProjectId,
+) -> Result<ProjectUnityLaunchConfig, M5UnityError> {
+    authorized_read(
+        connection,
+        caller,
+        &[Permission::ProjectsRead, Permission::UnityRead],
+        |tx| load_launch_config(tx, &workflow_resource_owner(caller), project_id),
+    )
+}
+
+fn load_launch_config(
     connection: &Connection,
     owner: &PrincipalId,
     project_id: ProjectId,
@@ -364,7 +410,7 @@ pub(super) fn get_project_launch_config(
 
 pub(super) fn set_project_launch_config(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     project_id: ProjectId,
     arguments: Vec<String>,
     expected: Option<Revision>,
@@ -372,6 +418,12 @@ pub(super) fn set_project_launch_config(
     now_ms: u64,
 ) -> Result<(ProjectUnityLaunchConfig, bool, bool), M5UnityError> {
     let transaction = transaction(connection)?;
+    require(
+        &transaction,
+        caller,
+        &[Permission::ProjectsRead, Permission::UnityManage],
+    )?;
+    let owner = workflow_resource_owner(caller);
     let arguments_json = serde_json::to_string(&arguments).map_err(|_| corrupt())?;
     let fingerprint = format!(
         r#"{{"arguments":{},"expectedRevision":{},"projectId":"{}","version":1}}"#,
@@ -381,7 +433,7 @@ pub(super) fn set_project_launch_config(
     );
     if let Some(record) = replay::<LaunchConfigMutationRecord>(
         &transaction,
-        owner,
+        caller,
         "unity.projectLaunchConfig.set",
         key,
         &fingerprint,
@@ -389,7 +441,7 @@ pub(super) fn set_project_launch_config(
         transaction.commit().map_err(failure)?;
         return Ok((record.config, record.changed, true));
     }
-    let current = get_project_launch_config(&transaction, owner, project_id)?;
+    let current = load_launch_config(&transaction, &owner, project_id)?;
     match (current.revision, expected) {
         (None, None) => {}
         (Some(current), Some(expected)) if current == expected => {}
@@ -402,7 +454,7 @@ pub(super) fn set_project_launch_config(
         };
         save_response(
             &transaction,
-            owner,
+            caller,
             "unity.projectLaunchConfig.set",
             key,
             &fingerprint,
@@ -435,41 +487,47 @@ pub(super) fn set_project_launch_config(
         .map_err(failure)?;
     insert_event(
         &transaction,
-        owner,
+        &owner,
         "unity.project_launch_config_changed",
         "project-unity-launch-config",
         &project_id.to_string(),
         revision,
         now_ms,
     )?;
-    let record = get_project_launch_config(&transaction, owner, project_id)?;
+    let record = load_launch_config(&transaction, &owner, project_id)?;
     let response = LaunchConfigMutationRecord {
         config: record,
         changed: true,
     };
     save_response(
         &transaction,
-        owner,
+        caller,
         "unity.projectLaunchConfig.set",
         key,
         &fingerprint,
         &response,
         now_ms,
     )?;
-    log_launch_config(&transaction, owner, project_id, now_ms, "saved")?;
+    log_launch_config(&transaction, caller, project_id, now_ms, "saved")?;
     transaction.commit().map_err(failure)?;
     Ok((response.config, true, false))
 }
 
 pub(super) fn clear_project_launch_config(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     project_id: ProjectId,
     expected: Option<Revision>,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<(ProjectUnityLaunchConfig, bool, bool), M5UnityError> {
     let transaction = transaction(connection)?;
+    require(
+        &transaction,
+        caller,
+        &[Permission::ProjectsRead, Permission::UnityManage],
+    )?;
+    let owner = workflow_resource_owner(caller);
     let fingerprint = format!(
         r#"{{"expectedRevision":{},"projectId":"{}","version":1}}"#,
         expected.map_or(0, Revision::get),
@@ -477,7 +535,7 @@ pub(super) fn clear_project_launch_config(
     );
     if let Some(record) = replay::<LaunchConfigMutationRecord>(
         &transaction,
-        owner,
+        caller,
         "unity.projectLaunchConfig.clear",
         key,
         &fingerprint,
@@ -485,7 +543,7 @@ pub(super) fn clear_project_launch_config(
         transaction.commit().map_err(failure)?;
         return Ok((record.config, record.changed, true));
     }
-    let current = get_project_launch_config(&transaction, owner, project_id)?;
+    let current = load_launch_config(&transaction, &owner, project_id)?;
     match (current.revision, expected) {
         (None, None) => {}
         (Some(revision), Some(expected)) if revision == expected => {}
@@ -502,7 +560,7 @@ pub(super) fn clear_project_launch_config(
                 .map_err(failure)?;
             insert_event(
                 &transaction,
-                owner,
+                &owner,
                 "unity.project_launch_config_changed",
                 "project-unity-launch-config",
                 &project_id.to_string(),
@@ -527,7 +585,7 @@ pub(super) fn clear_project_launch_config(
     };
     save_response(
         &transaction,
-        owner,
+        caller,
         "unity.projectLaunchConfig.clear",
         key,
         &fingerprint,
@@ -535,7 +593,7 @@ pub(super) fn clear_project_launch_config(
         now_ms,
     )?;
     if response.changed {
-        log_launch_config(&transaction, owner, project_id, now_ms, "cleared")?;
+        log_launch_config(&transaction, caller, project_id, now_ms, "cleared")?;
     }
     transaction.commit().map_err(failure)?;
     Ok((response.config, response.changed, false))
@@ -543,16 +601,20 @@ pub(super) fn clear_project_launch_config(
 
 fn log_launch_config(
     connection: &Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     project: ProjectId,
     now_ms: u64,
     step: &str,
 ) -> Result<(), M5UnityError> {
-    let target = super::operation_logs::project_target(connection, owner, project.to_string())
-        .map_err(|cause| unavailable().with_source(cause))?;
+    let target = super::operation_logs::project_target(
+        connection,
+        &workflow_resource_owner(caller),
+        project.to_string(),
+    )
+    .map_err(|cause| unavailable().with_source(cause))?;
     super::operation_logs::committed(
         connection,
-        owner,
+        caller,
         now_ms,
         super::operation_logs::CommittedStep::succeeded(
             "unity.projectLaunchConfig",
@@ -565,7 +627,7 @@ fn log_launch_config(
 
 pub(super) fn accept_launch(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     project: ProjectRecord,
     config: ProjectUnityLaunchConfig,
     installation_id: UnityInstallationId,
@@ -573,10 +635,10 @@ pub(super) fn accept_launch(
     now_ms: u64,
 ) -> Result<(UnityLaunchRecord, bool), M5UnityError> {
     let transaction = transaction(connection)?;
-    let fingerprint = launch_fingerprint(&project, &config, installation_id);
-    if let Some(record) =
-        replay_launch(&transaction, owner, &project, &config, installation_id, key)?
-    {
+    require(&transaction, caller, &[Permission::UnityLaunch])?;
+    let owner = workflow_resource_owner(caller);
+    let fingerprint = launch_fingerprint(&project, &config, installation_id)?;
+    if let Some(record) = replay(&transaction, caller, "unity.launch", key, &fingerprint)? {
         transaction.commit().map_err(failure)?;
         return Ok((record, true));
     }
@@ -623,7 +685,7 @@ pub(super) fn accept_launch(
     if activity_changed {
         insert_event(
             &transaction,
-            owner,
+            &owner,
             "project.activity-recorded",
             "project",
             &project.project_id.to_string(),
@@ -640,19 +702,15 @@ pub(super) fn accept_launch(
         )),
     );
     log.outcome = alcomd_application::LogOutcome::Started;
-    super::operation_logs::committed(&transaction, owner, now_ms, log)
+    super::operation_logs::committed(&transaction, caller, now_ms, log)
         .map_err(|cause| unavailable().with_source(cause))?;
     save_response(
         &transaction,
-        owner,
+        caller,
         "unity.launch",
         key,
         &fingerprint,
-        &StoredLaunch {
-            record: record.clone(),
-            inherited_arguments: (config.revision.is_none() && !config.arguments.is_empty())
-                .then_some(config.arguments),
-        },
+        &record,
         now_ms,
     )?;
     transaction.commit().map_err(failure)?;
@@ -661,69 +719,40 @@ pub(super) fn accept_launch(
 
 pub(super) fn replay_launch(
     connection: &Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     project: &ProjectRecord,
     config: &ProjectUnityLaunchConfig,
     installation_id: UnityInstallationId,
     key: &IdempotencyKey,
 ) -> Result<Option<UnityLaunchRecord>, M5UnityError> {
-    let fingerprint = launch_fingerprint(project, config, installation_id);
-    let existing = connection
-        .query_row(
-            "SELECT request_fingerprint,response_json FROM idempotency_records
-             WHERE principal_id=?1 AND method='unity.launch' AND idempotency_key=?2",
-            params![owner.as_str(), key.as_str()],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-        )
-        .optional()
-        .map_err(failure)?;
-    match existing {
-        Some((stored, _)) if stored != fingerprint => {
-            Err(error(M5UnityErrorCode::IdempotencyConflict))
-        }
-        Some((_, response)) => {
-            let stored: StoredLaunch = serde_json::from_str(&response).map_err(|_| corrupt())?;
-            if config.revision.is_none()
-                && !config.arguments.is_empty()
-                && stored.inherited_arguments.as_ref() != Some(&config.arguments)
-            {
-                return Err(error(M5UnityErrorCode::IdempotencyConflict));
-            }
-            Ok(Some(stored.record))
-        }
-        None => Ok(None),
-    }
+    authorized_read(connection, caller, &[Permission::UnityLaunch], |tx| {
+        let fingerprint = launch_fingerprint(project, config, installation_id)?;
+        replay(tx, caller, "unity.launch", key, &fingerprint)
+    })
 }
 
 fn launch_fingerprint(
     project: &ProjectRecord,
     config: &ProjectUnityLaunchConfig,
     installation_id: UnityInstallationId,
-) -> String {
-    if config.revision.is_none() && !config.arguments.is_empty() {
-        // argv belongs in the private response snapshot: request fingerprints
-        // have a 4096-character bound, smaller than valid global settings.
-        return format!(
-            r#"{{"installationId":"{installation_id}","launchConfigRevision":0,"projectId":"{}","projectRevision":{},"version":4}}"#,
-            project.project_id,
-            project.revision.get()
-        );
-    }
-    // Preserve durable keys already accepted before global defaults existed.
-    format!(
-        r#"{{"installationId":"{}","launchConfigRevision":{},"projectId":"{}","projectRevision":{},"version":3}}"#,
-        installation_id,
-        config.revision.map_or(0, Revision::get),
-        project.project_id,
-        project.revision.get()
-    )
+) -> Result<String, M5UnityError> {
+    let arguments = serde_json::to_vec(&config.arguments).map_err(|_| corrupt())?;
+    Ok(serde_json::json!({
+        "argumentsSha256": alcomd_application::digest(&arguments),
+        "installationId": installation_id.to_string(),
+        "launchConfigRevision": config.revision.map_or(0, Revision::get),
+        "projectId": project.project_id.to_string(),
+        "projectRevision": project.revision.get(),
+        "version": 1,
+    })
+    .to_string())
 }
 
 fn load_launch(
     connection: &Connection,
     owner: &PrincipalId,
     launch_id: UnityLaunchId,
-) -> Result<StoredLaunch, M5UnityError> {
+) -> Result<UnityLaunchRecord, M5UnityError> {
     connection
         .query_row(
             "SELECT response_json FROM idempotency_records
@@ -747,8 +776,8 @@ pub(super) fn set_launch_state(
 ) -> Result<UnityLaunchRecord, M5UnityError> {
     let transaction = transaction(connection)?;
     let mut stored = load_launch(&transaction, owner, launch_id)?;
-    stored.record.state = state;
-    stored.record.spawn_accepted = spawn_accepted;
+    stored.state = state;
+    stored.spawn_accepted = spawn_accepted;
     let response = serde_json::to_string(&stored).map_err(|_| corrupt())?;
     transaction
         .execute(
@@ -759,7 +788,7 @@ pub(super) fn set_launch_state(
         )
         .map_err(failure)?;
     transaction.commit().map_err(failure)?;
-    Ok(stored.record)
+    Ok(stored)
 }
 
 fn load_installation(

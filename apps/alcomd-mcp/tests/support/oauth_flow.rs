@@ -350,6 +350,97 @@ async fn raw_tool(http: &Https, token: &str, name: &str, args: Value) -> reqwest
         .json(&json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":args,"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}})).send().await.expect("raw frozen HTTP tool")
 }
 
+async fn oauth_user_package_writes(
+    root: &Path,
+    owner: &mut AlcomdClient,
+    actor_a: &mut AlcomdClient,
+    actor_b: &mut AlcomdClient,
+) {
+    use alcomd_protocol::{
+        UserPackageEnrollParams, UserPackageGetParams, UserPackageMutationParams,
+    };
+    let path = root.join("oauth-user-package");
+    std::fs::create_dir(&path).expect("isolated user package");
+    let manifest = path.join("package.json");
+    let publish = |version: &str| {
+        std::fs::write(
+            &manifest,
+            json!({"name":"com.example.oauth-package","version":version}).to_string(),
+        )
+        .expect("fixture manifest");
+    };
+    publish("1.0.0");
+    let enroll = UserPackageEnrollParams {
+        source_path: path.to_string_lossy().into_owned(),
+        idempotency_key: "oauth-user-package-enroll".into(),
+    };
+    let result = actor_a
+        .user_package_enroll(enroll.clone())
+        .await
+        .expect("OAuth enrollment");
+    assert!(
+        actor_a
+            .user_package_enroll(enroll)
+            .await
+            .expect("recover enrollment")
+            .replayed
+    );
+    let get = UserPackageGetParams {
+        user_package_id: result.user_package.user_package_id.clone(),
+    };
+    assert_eq!(
+        owner
+            .user_package_get(get.clone())
+            .await
+            .expect("owner observes enrollment")
+            .user_package,
+        result.user_package
+    );
+    publish("2.0.0");
+    let refresh = UserPackageMutationParams {
+        user_package_id: get.user_package_id.clone(),
+        expected_revision: result.user_package.revision,
+        idempotency_key: "oauth-user-package-refresh".into(),
+    };
+    let updated = actor_b
+        .user_package_refresh(refresh.clone())
+        .await
+        .expect("another OAuth client refreshes the same source");
+    assert_eq!(updated.user_package.version, "2.0.0");
+    assert!(
+        actor_b
+            .user_package_refresh(refresh)
+            .await
+            .expect("recover refresh")
+            .replayed
+    );
+    assert_eq!(
+        owner
+            .user_package_get(get)
+            .await
+            .expect("owner sees refreshed snapshot")
+            .user_package,
+        updated.user_package
+    );
+    let remove = UserPackageMutationParams {
+        user_package_id: updated.user_package.user_package_id,
+        expected_revision: updated.user_package.revision,
+        idempotency_key: "oauth-user-package-remove".into(),
+    };
+    actor_a
+        .user_package_remove(remove.clone())
+        .await
+        .expect("OAuth removal");
+    assert!(
+        actor_a
+            .user_package_remove(remove)
+            .await
+            .expect("recover removal")
+            .replayed
+    );
+    assert!(manifest.is_file());
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn oauth_environment_matches_native_settings_and_unity_reads() {
     use alcomd_application::{
@@ -698,8 +789,16 @@ async fn oauth_backup_write_works_after_consent_until_revoked() {
         accepted["operation_id"].as_str().expect("operation"),
     )
     .await;
-    assert_eq!(result["state"], "succeeded");
-    assert_eq!(result["result"]["backup_id"], accepted["backup_id"]);
+    assert_eq!(result["state"], "succeeded", "{result}");
+    let archive = result["result"]["archive_name"]
+        .as_str()
+        .expect("public archive name");
+    let file = archives.join(archive);
+    assert!(file.is_file());
+    assert_eq!(
+        result["result"]["archive_bytes"].as_u64(),
+        Some(std::fs::metadata(file).expect("published archive").len())
+    );
     let replay = data(
         call(&writer, &mut trace, "create_backup", args.clone())
             .await
@@ -952,19 +1051,164 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         == local.repository_id.as_deref().expect("local ID")
         && item["source_kind"] == "local"));
     assert!(!page.to_string().contains("local-fixture.json"));
+    let mut actor_a = AlcomdClient::connect(
+        configuration.client.clone().with_oauth_access(
+            write_token["access_token"]
+                .as_str()
+                .expect("writer token")
+                .into(),
+            http.resource(),
+        ),
+    )
+    .await
+    .expect("native RPC with authenticated MCP identity A");
+    let mut actor_b = AlcomdClient::connect(
+        configuration.client.clone().with_oauth_access(
+            foreign_token["access_token"]
+                .as_str()
+                .expect("foreign token")
+                .into(),
+            http.resource(),
+        ),
+    )
+    .await
+    .expect("native RPC with authenticated MCP identity B");
+    oauth_user_package_writes(&root, &mut owner, &mut actor_a, &mut actor_b).await;
+    let initial = owner
+        .repositories_list(None, None)
+        .await
+        .expect("owner order");
+    assert_eq!(
+        actor_a
+            .repositories_list(None, None)
+            .await
+            .expect("A order"),
+        initial
+    );
+    assert_eq!(
+        actor_b
+            .repositories_list(None, None)
+            .await
+            .expect("B order"),
+        initial
+    );
+    assert_eq!(
+        first["next_cursor"]["order_fingerprint"],
+        initial.order_fingerprint
+    );
+    let ids: Vec<_> = initial
+        .repositories
+        .iter()
+        .map(|repo| repo.repository_id.as_deref().expect("registered ID"))
+        .collect();
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&id) && ids.contains(&local.repository_id.as_deref().expect("local ID")));
+
+    let move_a = RepositoryMoveParams {
+        repository_id: ids[1].into(),
+        before_repository_id: Some(ids[0].into()),
+        expected_order_fingerprint: initial.order_fingerprint.clone(),
+        idempotency_key: "move-shared-key".into(),
+    };
+    let moved_a = actor_a
+        .repository_move(move_a.clone())
+        .await
+        .expect("A moves the shared repository");
+    assert!(moved_a.changed && !moved_a.replayed);
+    let moved = actor_b
+        .repositories_list(None, None)
+        .await
+        .expect("B sees A's move");
+    assert_ne!(moved.order_fingerprint, initial.order_fingerprint);
+    assert_eq!(moved.repositories[0].repository_id.as_deref(), Some(ids[1]));
+    assert_eq!(
+        moved,
+        owner
+            .repositories_list(None, None)
+            .await
+            .expect("owner sees A's move")
+    );
+    let reordered_page = data(
+        call(
+            &foreign,
+            &mut trace,
+            "list_repositories",
+            json!({"limit":1}),
+        )
+        .await
+        .expect("MCP tool sees A's move"),
+    );
+    assert_eq!(reordered_page["repositories"][0]["repository_id"], ids[1]);
+    assert_eq!(
+        reordered_page["next_cursor"]["order_fingerprint"],
+        moved.order_fingerprint
+    );
+    assert!(
+        matches!(actor_b.repository_move(move_a.clone()).await,
+        Err(alcomd_client::ClientError::Remote(error)) if error.code == "revision_conflict"),
+        "B cannot replay A's receipt even with identical parameters"
+    );
+    let move_b = RepositoryMoveParams {
+        repository_id: ids[0].into(),
+        before_repository_id: Some(ids[1].into()),
+        expected_order_fingerprint: moved.order_fingerprint,
+        idempotency_key: move_a.idempotency_key.clone(),
+    };
+    let moved_b = actor_b
+        .repository_move(move_b.clone())
+        .await
+        .expect("B restores order with its own key");
+    assert!(moved_b.changed && !moved_b.replayed);
+    let restored = owner
+        .repositories_list(None, None)
+        .await
+        .expect("restored shared order");
+    assert_eq!(restored.order_fingerprint, initial.order_fingerprint);
+    for (before, after) in initial.repositories.iter().zip(&restored.repositories) {
+        assert_eq!(after.repository_id, before.repository_id);
+        assert_eq!(
+            after.revision.expect("current revision"),
+            before.revision.expect("original revision") + 2
+        );
+    }
+    let refresh_revision = restored
+        .repositories
+        .iter()
+        .find(|repo| repo.repository_id.as_deref() == Some(id))
+        .and_then(|repo| repo.revision)
+        .expect("revision after the two moves");
+    for (actor, params) in [(&mut actor_a, &move_a), (&mut actor_b, &move_b)] {
+        let replay = actor
+            .repository_move(params.clone())
+            .await
+            .expect("original caller's receipt");
+        assert!(replay.changed && replay.replayed);
+        assert_eq!(
+            owner
+                .repositories_list(None, None)
+                .await
+                .expect("order after each replay"),
+            restored
+        );
+    }
     let builtin_id = alcomd_application::VRCHAT_OFFICIAL_REPOSITORY_ID;
     error(call(&writer,&mut trace,"remove_repository",json!({"repository_id":builtin_id.to_string(),"expected_revision":1,"idempotency_key":"protected-remove","confirm":true})).await.expect("protected built-in ID, even with builtin seeding disabled in the test"),"permission_denied");
-    let refresh = json!({"repository_id":id,"expected_revision":registered["revision"],"idempotency_key":"refresh-registered"});
+    let refresh = json!({"repository_id":id,"expected_revision":refresh_revision,"idempotency_key":"refresh-registered"});
     source.set_changed(false);
+    let requests_before_refresh = source.requests.lock().await.len();
     let refreshed = data(
         call(&writer, &mut trace, "refresh_repository", refresh.clone())
             .await
             .expect("refresh existing source"),
     );
+    assert_eq!(
+        source.requests.lock().await.len(),
+        requests_before_refresh + 1
+    );
     assert_eq!(refreshed["repository"]["display_name"], "M8 VPM fixture");
     assert_eq!(
         data(
-            call(&writer, &mut trace, "refresh_repository", refresh)
+            call(&writer, &mut trace, "refresh_repository", refresh.clone())
                 .await
                 .expect("refresh recovery")
         )["replayed"],
@@ -987,6 +1231,20 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         true
     );
     assert!(owner.repository_get(id.to_owned()).await.is_err());
+    let mut expected_replay = refreshed;
+    expected_replay["replayed"] = Value::Bool(true);
+    assert_eq!(
+        data(
+            call(&writer, &mut trace, "refresh_repository", refresh)
+                .await
+                .expect("replay after removal")
+        ),
+        expected_replay
+    );
+    assert_eq!(
+        source.requests.lock().await.len(),
+        requests_before_refresh + 1
+    );
     owner
         .mcp_client_revoke(McpClientMutationParams {
             client_id: a.client_id.clone(),
@@ -995,6 +1253,18 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         })
         .await
         .expect("permanently revoke repository client");
+    let revoked_move = actor_a.repository_move(move_a).await;
+    assert!(
+        matches!(&revoked_move,
+        Err(alcomd_client::ClientError::Remote(error)) if error.code == "permission_denied"
+            && error.data.as_ref().and_then(|details| details.get("oauthError")).and_then(Value::as_str) == Some("invalid_client")),
+        "revocation wins over A's previously accepted receipt: {revoked_move:?}"
+    );
+    let surviving = actor_b
+        .repository_move(move_b)
+        .await
+        .expect("B still owns its receipt");
+    assert!(surviving.changed && surviving.replayed);
     assert_eq!(
         raw_tool(
             &http,
@@ -1012,22 +1282,51 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )
         .expect("inspect only the disposable idempotency database");
-        let mut rows = db.prepare("SELECT principal_id, request_fingerprint, response_json FROM idempotency_records WHERE method LIKE 'mcp.repositories.%'").expect("registry receipts");
+        let mut move_receipts = db.prepare(
+            "SELECT principal_id FROM idempotency_records WHERE method='repositories.move' AND idempotency_key='move-shared-key' ORDER BY principal_id"
+        ).expect("read the accepted moves");
+        let principals = move_receipts
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("move principals")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("valid principals");
+        let mut expected = [
+            format!("mcp:{}", a.client_id),
+            format!("mcp:{}", b.client_id),
+        ];
+        expected.sort();
+        assert_eq!(principals, expected);
+
+        let mut rows = db.prepare("SELECT principal_id, request_fingerprint, response_json, method FROM idempotency_records WHERE method IN ('mcp.repositories.register', 'repositories.refresh', 'mcp.repositories.remove')").expect("registry receipts");
         let snapshots = rows
             .query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
                 ))
             })
             .expect("receipt rows")
             .collect::<Result<Vec<_>, _>>()
             .expect("complete receipt evidence");
         assert_eq!(snapshots.len(), 3);
-        for (principal, input, result) in snapshots {
+        for (principal, input, result, method) in snapshots {
             assert_eq!(principal, format!("mcp:{}", a.client_id));
-            assert!(!input.contains(&source.base) && !result.contains(&source.base));
+            assert!(!input.contains(&source.base));
+            if method == "repositories.refresh" {
+                assert!(result.contains(&source.base));
+                for private in [
+                    "packages",
+                    "manifest_fingerprint",
+                    "validators",
+                    "source_identity_key",
+                ] {
+                    assert!(!result.contains(private), "{private}");
+                }
+            } else {
+                assert!(!result.contains(&source.base));
+            }
             assert!(!result.contains("credentialReference") && !result.contains("downloadHeaders"));
         }
     }
@@ -1122,7 +1421,7 @@ async fn oauth_package_catalog_and_https_download(protected: bool) {
             source: Some(PackageSourceSelector::Repository {
                 repository_id: repository_id.clone(),
             }),
-            include_prerelease: false,
+            include_prerelease: Some(false),
             allow_unity_incompatible: false,
         })
         .await
@@ -2093,7 +2392,10 @@ async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
     .expect("live OAuth backend connection");
     assert!(persistent.project_get(selected.clone()).await.is_ok());
     assert!(
-        matches!(persistent.mcp_clients_list(McpClientsListParams::default()).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
+        persistent
+            .mcp_clients_list(McpClientsListParams::default())
+            .await
+            .is_ok()
     );
     let mut names: Vec<_> = sa
         .list_all_tools()

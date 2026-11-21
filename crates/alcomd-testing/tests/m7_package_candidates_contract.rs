@@ -58,7 +58,7 @@ fn candidate_v2_contract_is_approved_breaking_and_permission_names_are_reused() 
     );
     assert_eq!(
         schema["x-alcomd-capability"],
-        alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V2
+        alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V1
     );
     assert_eq!(
         schema["x-alcomd-method-permissions"]["packages.queryProjectCandidates"],

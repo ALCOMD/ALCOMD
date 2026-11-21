@@ -35,7 +35,7 @@
 
 清理前后只读 quick_check 均通过。对所有剩余34张表（包含 SQLite 内部表）逐表比较列、行数及完整记录摘要，全部一致；设置与四个模板文件逐字节一致。两张退役表均不存在。证据为 database-comparison.json、data-before 与 backup-manifest.json。
 
-更新后实际 RPC 为 ready / State31 / Config12 / packages.candidates.v2，1项目、2仓库、0活跃任务，正常候选查询成功。Core PID271004，GUI PID233792；窗口句柄非零且响应，6个 WebView 进程匹配原 profile，Core/GUI stderr 均为空。
+更新后实际 RPC 为 ready / packages.candidates.v1，1项目、2仓库、0活跃任务，正常候选查询成功。Core PID271004，GUI PID233792；窗口句柄非零且响应，6个 WebView 进程匹配原 profile，Core/GUI stderr 均为空。
 
 | 程序 | SHA256 |
 | --- | --- |

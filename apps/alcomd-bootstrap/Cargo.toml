@@ -11,8 +11,14 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-tokio.workspace = true
 alcomd-updater.workspace = true
+alcomd-platform.workspace = true
+alcomd-import.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+uuid.workspace = true
 
 [lints]
 workspace = true

@@ -2,7 +2,7 @@ import type { Operation } from "./core-models.js";
 import type { RpcError } from "./portable-ui.js";
 
 export type CoreEventAggregateKind = "operation" | "project" | "repository" | "unity-installation"
-    | "project-editor-preference" | "project-unity-launch-config" | "project-template" | "user-package";
+    | "project-unity-launch-config" | "project-template" | "user-package";
 
 export interface CoreEvent {
     sequence: number;

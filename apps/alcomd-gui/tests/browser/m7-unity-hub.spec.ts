@@ -31,7 +31,9 @@ test("Hub selection saves one narrow update, refreshes once and survives navigat
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { unity: { hubPath: path } } }]);
     await expect.poll(() => requests(page, "unityInstallationsRefresh")).toBe(1);
     await page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Projects$/ }) }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Settings$/ }) }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeVisible();
     await selectSettingsSection(page, "unity");
     await expect.poll(() => value(page)).toBe(path);
     expect(await section(page).locator("md-outlined-text-field").evaluate((element) => (element as HTMLElement & { readOnly: boolean }).readOnly)).toBe(false);
@@ -357,15 +359,24 @@ test("a blur commit queues once behind an unrelated ordinary settings write", as
     expect(await value(page)).toBe(path);
 });
 
-test("Open Unity Hub sends accepted revision and Core path without saving or refreshing Editors", async ({ page }) => {
+test("Open Unity Hub sends accepted revision and target token without saving or refreshing Editors", async ({ page }) => {
     await open(page, "hub-default=1");
     await section(page).getByRole("button", { name: "Open Unity Hub", exact: true }).click();
     await expect.poll(() => requests(page, "unityHubOpen")).toBe(1);
-    expect(await page.evaluate(() => window.unityRequests.find((request) => request.method === "unityHubOpen")!.params)).toEqual({ expectedRevision: 7, expectedPath: "C:\\Program Files\\Unity Hub\\Unity Hub.exe" });
+    expect(await page.evaluate(() => window.unityRequests.find((request) => request.method === "unityHubOpen")!.params)).toEqual({ expectedRevision: 7, expectedTargetToken: "a".repeat(64) });
     expect(await requests(page, "openUnityHubDownload")).toBe(0);
     expect(await requests(page, "unityInstallationsRefresh")).toBe(0);
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
     await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("Open Unity Hub uses the system target when it has no file path", async ({ page }) => {
+    await open(page, "hub-packaged");
+    await expect(section(page).locator("md-outlined-text-field"))
+        .toHaveJSProperty("placeholder", "Detected by the system");
+    await section(page).getByRole("button", { name: "Open Unity Hub", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.unityRequests.find((request) => request.method === "unityHubOpen")?.params))
+        .toEqual({ expectedRevision: 7, expectedTargetToken: "b".repeat(64) });
 });
 
 test("Download Unity Hub opens the closed browser adapter only after the Core decision", async ({ page }, testInfo) => {
@@ -373,7 +384,7 @@ test("Download Unity Hub opens the closed browser adapter only after the Core de
     await section(page).getByRole("button", { name: "Download Unity Hub", exact: true }).click();
     await expect.poll(() => requests(page, "openUnityHubDownload")).toBe(1);
     expect(await page.evaluate(() => window.unityRequests)).toEqual([
-        { method: "unityHubOpen", params: { expectedRevision: 7, expectedPath: null } },
+        { method: "unityHubOpen", params: { expectedRevision: 7, expectedTargetToken: null } },
         { method: "openUnityHubDownload", params: {} }
     ]);
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);

@@ -173,12 +173,12 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
     let hello = exchange(&mut client, "hello", rpc::METHOD_SYSTEM_HELLO, json!({
         "rpcVersion": 1,
         "client": {"name":"alcomd-cli","version":"test","instanceId":"isolated"},
-        "capabilities": [rpc::CAPABILITY_PROJECTS_CREATE_V1,rpc::CAPABILITY_PROJECT_TEMPLATES_V2,"templates.read.v1"],
+        "capabilities": [rpc::CAPABILITY_PROJECTS_CREATE_V1,rpc::CAPABILITY_PROJECT_TEMPLATES_V1,"templates.read.v1"],
     })).await;
     assert_eq!(
         hello["result"]["capabilities"],
         json!([
-            rpc::CAPABILITY_PROJECT_TEMPLATES_V2,
+            rpc::CAPABILITY_PROJECT_TEMPLATES_V1,
             rpc::CAPABILITY_PROJECTS_CREATE_V1
         ])
     );

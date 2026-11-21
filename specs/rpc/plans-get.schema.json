@@ -1,0 +1,96 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/plans-get.json",
+    "title": "Read a frozen plan owned by the authenticated caller",
+    "$defs": {
+        "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "kind",
+                "planId"
+            ],
+            "properties": {
+                "kind": {
+                    "enum": [
+                        "package",
+                        "project_copy",
+                        "project_delete_directory",
+                        "project_unity_migration"
+                    ]
+                },
+                "planId": {
+                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-project-copy.json#/$defs/uuid"
+                }
+            }
+        },
+        "result": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": [
+                        "kind",
+                        "plan"
+                    ],
+                    "properties": {
+                        "kind": {
+                            "const": "package"
+                        },
+                        "plan": {
+                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/plan"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "kind",
+                        "plan"
+                    ],
+                    "properties": {
+                        "kind": {
+                            "const": "project_copy"
+                        },
+                        "plan": {
+                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-project-copy.json#/$defs/projectCopyPlan"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "kind",
+                        "plan"
+                    ],
+                    "properties": {
+                        "kind": {
+                            "const": "project_delete_directory"
+                        },
+                        "plan": {
+                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-project-delete.json#/$defs/projectDeletePlan"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "kind",
+                        "plan"
+                    ],
+                    "properties": {
+                        "kind": {
+                            "const": "project_unity_migration"
+                        },
+                        "plan": {
+                            "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-unity-project-version.json#/$defs/planUnityMigrationResult/oneOf/1/properties/plan"
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            ]
+        }
+    }
+}

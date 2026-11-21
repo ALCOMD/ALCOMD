@@ -381,10 +381,12 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
         .expect("encode bulk projection");
     assert_eq!(bulk["installUpdate"]["targetCount"], 2);
     assert_eq!(
-        bulk["installUpdate"]["intents"][0]["packageId"],
-        "com.example.a"
+        bulk["installUpdate"]["intents"],
+        serde_json::json!([
+            {"kind": "install", "packageId": "com.example.a"},
+            {"kind": "install", "packageId": "com.example.b"}
+        ])
     );
-    assert_eq!(bulk["installUpdate"]["intents"][1]["kind"], "install");
     // Direct declarations without locked installation records are not removable.
     assert_eq!(bulk["remove"], serde_json::json!([]));
     assert_eq!(bulk["reinstall"], serde_json::json!([]));
@@ -535,6 +537,7 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
                 locale: None,
                 packages: Some(ConfigPackageSettingsUpdate {
                     hidden_repository_packages: None,
+                    prefer_prerelease: None,
                     show_prerelease: Some(!initial.settings.packages.show_prerelease),
                     hidden_repository_ids: None,
                     hide_local_user_packages: None,

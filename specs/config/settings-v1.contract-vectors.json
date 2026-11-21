@@ -1,0 +1,493 @@
+{
+    "schema": 1,
+    "currentConfigSchema": 1,
+    "current": {
+        "toml": "schema = 1\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nhidden_repository_packages = []\nshow_prerelease = false\nprefer_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = false\nfullscreen = false\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n\n[integrations]\nhandle_vcc_links = true\n\n[network]\nproxy_mode = \"system\"\n",
+        "getResult": {
+            "configSchema": 1,
+            "revision": 41,
+            "settings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "vibrant",
+                    "sourceColor": "#112233",
+                    "motion": "reduced"
+                },
+                "packages": {
+                    "showPrerelease": false,
+                    "preferPrerelease": false,
+                    "hiddenRepositoryIds": [],
+                    "hideLocalUserPackages": false,
+                    "hiddenRepositoryPackages": []
+                },
+                "locale": "ja-JP",
+                "unity": {
+                    "hubPath": null,
+                    "defaultLaunchArguments": null
+                },
+                "paths": {
+                    "projectDirectory": null,
+                    "backupDirectory": null
+                },
+                "window": {
+                    "rememberState": false,
+                    "fullscreen": false
+                },
+                "projects": {
+                    "autoDiscover": true
+                },
+                "backups": {
+                    "compressionMode": "fast",
+                    "includeVpmPackages": true,
+                    "includeLibrary": false
+                },
+                "integrations": {
+                    "handleVccLinks": true
+                },
+                "network": {
+                    "proxy": {
+                        "mode": "system"
+                    }
+                }
+            },
+            "unityHub": {
+                "status": "not_found",
+                "source": "none",
+                "path": null,
+                "targetToken": null,                "configuredPathStatus": "unset"
+            },
+            "directories": {
+                "projectDirectory": "/fixture/ALCOMD/Projects",
+                "backupDirectory": "/fixture/ALCOMD/Backups"
+            }
+        }
+    },
+    "rejectedUpdates": [
+        {
+            "id": "unknown-appearance-field",
+            "update": {
+                "appearance": {
+                    "unexpectedField": true
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "empty-paths",
+            "update": {
+                "paths": {}
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-paths-container",
+            "update": {
+                "paths": null
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "unknown-path",
+            "update": {
+                "paths": {
+                    "directory": "/arbitrary"
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "arguments-must-be-array",
+            "update": {
+                "unity": {
+                    "defaultLaunchArguments": "-batchmode"
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "arguments-elements-must-be-strings",
+            "update": {
+                "unity": {
+                    "defaultLaunchArguments": [
+                        1
+                    ]
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "window-null",
+            "update": {
+                "window": null,
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "window-empty",
+            "update": {
+                "window": {},
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "window-null-value",
+            "update": {
+                "window": {
+                    "rememberState": null
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "window-string-value",
+            "update": {
+                "window": {
+                    "rememberState": "true"
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "window-unknown-field",
+            "update": {
+                "window": {
+                    "rememberState": true,
+                    "width": 1000
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "empty-projects",
+            "update": {
+                "projects": {}
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-projects",
+            "update": {
+                "projects": null
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-auto-discover",
+            "update": {
+                "projects": {
+                    "autoDiscover": null
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "number-auto-discover",
+            "update": {
+                "projects": {
+                    "autoDiscover": 1
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "unknown-projects",
+            "update": {
+                "projects": {
+                    "autoDiscover": true,
+                    "scan": true
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "empty-backups",
+            "update": {
+                "backups": {}
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-backups",
+            "update": {
+                "backups": null
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-compression-mode",
+            "update": {
+                "backups": {
+                    "compressionMode": null
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "invalid-compression-mode",
+            "update": {
+                "backups": {
+                    "compressionMode": "normal"
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-include-packages",
+            "update": {
+                "backups": {
+                    "includeVpmPackages": null
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "string-include-library",
+            "update": {
+                "backups": {
+                    "includeLibrary": "false"
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-include-library",
+            "update": {
+                "backups": {
+                    "includeLibrary": null
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "unknown-backups",
+            "update": {
+                "backups": {
+                    "includeLibrary": true,
+                    "destination": "/tmp"
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "fullscreen-null",
+            "update": {
+                "window": {
+                    "fullscreen": null
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "fullscreen-string",
+            "update": {
+                "window": {
+                    "fullscreen": "true"
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "fullscreen-number",
+            "update": {
+                "window": {
+                    "fullscreen": 1
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "missing-integrations",
+            "update": {
+                "integrations": {}
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-integrations",
+            "update": {
+                "integrations": null
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-flag-integrations",
+            "update": {
+                "integrations": {
+                    "handleVccLinks": null
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "string-flag-integrations",
+            "update": {
+                "integrations": {
+                    "handleVccLinks": "true"
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "unknown-field-integrations",
+            "update": {
+                "integrations": {
+                    "handleVccLinks": false,
+                    "enabled": false
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-network",
+            "update": {
+                "network": null
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "missing-network",
+            "update": {
+                "network": {}
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-proxy-network",
+            "update": {
+                "network": {
+                    "proxy": null
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "missing-custom-url-network",
+            "update": {
+                "network": {
+                    "proxy": {
+                        "mode": "custom"
+                    }
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "extra-direct-url-network",
+            "update": {
+                "network": {
+                    "proxy": {
+                        "mode": "direct",
+                        "url": "http://example.test"
+                    }
+                }
+            },
+            "errorCode": "invalid_request"
+        }
+    ],
+    "rejectedCurrentFiles": [
+        {
+            "id": "unknown-config-field",
+            "toml": "schema = 1\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nunexpected_field = true\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nhidden_repository_packages = []\nshow_prerelease = false\nprefer_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = false\nfullscreen = false\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n\n[integrations]\nhandle_vcc_links = true\n\n[network]\nproxy_mode = \"system\"\n",
+            "error": "unknown-field"
+        },
+        {
+            "id": "unsupported-config-number",
+            "toml": "schema = 2\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nhidden_repository_packages = []\nshow_prerelease = false\nprefer_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = false\nfullscreen = false\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n\n[integrations]\nhandle_vcc_links = true\n\n[network]\nproxy_mode = \"system\"\n",
+            "error": "unsupported-schema"
+        }
+    ],
+    "acceptedPathUpdates": [
+        {
+            "paths": {
+                "projectDirectory": "/fixture/projects"
+            }
+        },
+        {
+            "paths": {
+                "backupDirectory": "/fixture/backups"
+            }
+        },
+        {
+            "paths": {
+                "projectDirectory": null,
+                "backupDirectory": null
+            }
+        }
+    ],
+    "acceptedUnityUpdates": [
+        {
+            "unity": {
+                "defaultLaunchArguments": null
+            }
+        },
+        {
+            "unity": {
+                "defaultLaunchArguments": []
+            }
+        },
+        {
+            "unity": {
+                "defaultLaunchArguments": [
+                    "-logFile",
+                    "C:\\User Data\\Unity\\editor \"debug\".log"
+                ]
+            }
+        }
+    ],
+    "acceptedWindowUpdates": [
+        {
+            "window": {
+                "rememberState": false
+            }
+        },
+        {
+            "window": {
+                "rememberState": true
+            }
+        },
+        {
+            "window": {
+                "fullscreen": false
+            }
+        },
+        {
+            "window": {
+                "fullscreen": true
+            }
+        },
+        {
+            "window": {
+                "fullscreen": true,
+                "rememberState": false
+            }
+        }
+    ],
+    "acceptedPackageUpdates": [
+        {
+            "packages": {
+                "hiddenRepositoryPackages": []
+            }
+        },
+        {
+            "packages": {
+                "hiddenRepositoryPackages": [
+                    {
+                        "repositoryId": "00000000-0000-4000-8000-000000000102",
+                        "packageIds": [
+                            "com.example.unused"
+                        ]
+                    }
+                ]
+            }
+        }
+    ]
+}

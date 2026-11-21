@@ -201,14 +201,14 @@ impl From<StoreErrorKind> for UserPackageError {
 pub trait UserPackageStore: Clone + Send + Sync + 'static {
     fn replay_user_package_enroll(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         source_path: String,
         key: IdempotencyKey,
     ) -> impl Future<Output = Result<Option<UserPackageWriteResult>, UserPackageError>> + Send;
 
     fn replay_user_package_refresh(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
         expected_revision: Revision,
         key: IdempotencyKey,
@@ -216,20 +216,20 @@ pub trait UserPackageStore: Clone + Send + Sync + 'static {
 
     fn list_user_packages(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         cursor: Option<UserPackageCursor>,
         limit: u32,
     ) -> impl Future<Output = Result<UserPackagePage, UserPackageError>> + Send;
 
     fn get_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
     ) -> impl Future<Output = Result<UserPackageRecord, UserPackageError>> + Send;
 
     fn enroll_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         snapshot: UserPackageSnapshot,
         key: IdempotencyKey,
         now_ms: u64,
@@ -237,7 +237,7 @@ pub trait UserPackageStore: Clone + Send + Sync + 'static {
 
     fn refresh_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
         expected_revision: Revision,
         snapshot: UserPackageSnapshot,
@@ -247,7 +247,7 @@ pub trait UserPackageStore: Clone + Send + Sync + 'static {
 
     fn remove_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
         expected_revision: Revision,
         key: IdempotencyKey,
@@ -310,7 +310,7 @@ where
         source_path: String,
         key: IdempotencyKey,
     ) -> Result<UserPackageWriteResult, UserPackageError> {
-        require_local_owner(access)?;
+        require_interactive_manager(access)?;
         if let Some(response) = self
             .store
             .replay_user_package_enroll(
@@ -342,7 +342,7 @@ where
         expected_revision: Revision,
         key: IdempotencyKey,
     ) -> Result<UserPackageWriteResult, UserPackageError> {
-        require_local_owner(access)?;
+        require_interactive_manager(access)?;
         if let Some(response) = self
             .store
             .replay_user_package_refresh(
@@ -391,7 +391,7 @@ where
         expected_revision: Revision,
         key: IdempotencyKey,
     ) -> Result<UserPackageRemoveResult, UserPackageError> {
-        require_local_owner(access)?;
+        require_interactive_manager(access)?;
         self.store
             .remove_user_package(
                 access.principal().clone(),
@@ -404,9 +404,9 @@ where
     }
 }
 
-fn require_local_owner(access: &AccessContext) -> Result<(), UserPackageError> {
+fn require_interactive_manager(access: &AccessContext) -> Result<(), UserPackageError> {
     require(access, Permission::PackagesManage)?;
-    if access.principal().as_str() != PrincipalId::LOCAL_OWNER {
+    if !access.is_interactive_client() {
         return Err(UserPackageError::new(
             UserPackageErrorCode::PermissionDenied,
         ));

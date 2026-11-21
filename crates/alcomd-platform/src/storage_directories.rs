@@ -45,6 +45,50 @@ fn validate_path_text(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Opens a regular file without following a link at the leaf and identifies the open object.
+#[cfg(windows)]
+pub fn open_plain_file(path: &Path) -> io::Result<(std::fs::File, Vec<u8>)> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+
+    validate_path_text(path)?;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || is_link_or_reparse(&metadata) {
+        return Err(invalid("file must be a plain regular file"));
+    }
+    let identity = crate::windows::file_identity_from_file(&file)?
+        .to_key()
+        .to_vec();
+    Ok((file, identity))
+}
+
+/// Opens a regular file without following a link at the leaf and identifies the open object.
+#[cfg(unix)]
+pub fn open_plain_file(path: &Path) -> io::Result<(std::fs::File, Vec<u8>)> {
+    use rustix::fs::{Mode, OFlags, open};
+    use std::os::unix::fs::MetadataExt;
+
+    validate_path_text(path)?;
+    let descriptor = open(
+        path,
+        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW | OFlags::NONBLOCK,
+        Mode::empty(),
+    )?;
+    let file = std::fs::File::from(descriptor);
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(invalid("file must be a plain regular file"));
+    }
+    let mut identity = Vec::with_capacity(16);
+    identity.extend_from_slice(&metadata.dev().to_le_bytes());
+    identity.extend_from_slice(&metadata.ino().to_le_bytes());
+    Ok((file, identity))
+}
+
 /// Validates a selected existing directory and returns its canonical Unicode path.
 pub fn normalize_storage_directory(path: &str) -> io::Result<String> {
     let path = Path::new(path);

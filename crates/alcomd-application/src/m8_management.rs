@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::future::Future;
 
 pub const MCP_MANAGEMENT_BYTES: usize = 65_536;
-pub const MCP_MANAGEMENT_INTERFACE: &str = "alcomd:mcp-management/clients@2.0.0";
+pub const MCP_MANAGEMENT_INTERFACE: &str = "alcomd:mcp-management/clients@1.0.0";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

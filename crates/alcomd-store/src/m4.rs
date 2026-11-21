@@ -121,8 +121,8 @@ pub(super) fn resolver_catalog(
     let incomplete =
         repository_catalog_needs_refresh(connection, owner, settings).map_err(store_error)?;
     let mut statement = connection
-        .prepare(
-            "SELECT r.repository_id, r.revision, r.priority, r.source_kind, r.source_locator,
+        .prepare(&super::m3::ordered_repository_query(
+            "SELECT r.repository_id, r.revision, o.list_rank, r.source_kind, r.source_locator,
                     r.source_identity_key, p.package_id, p.semantic_version,
                     (p.yanked OR COALESCE(json_extract(p.presentation_json,'$.yanked'),0)),
                     p.unity_text, p.author_name, p.author_email, p.artifact_url, p.zip_sha256,
@@ -130,14 +130,14 @@ pub(super) fn resolver_catalog(
                     p.legacy_metadata_present, p.local_zip_sha256, r.credential_reference, p.download_headers_present
              FROM repository_package_versions p
              JOIN repositories r ON r.repository_id=p.repository_id
-             WHERE r.owner_principal_id=?1 AND r.resolver_indexed=1 AND p.resolver_ready=1
+             JOIN repository_order o ON o.repository_id=r.repository_id
+             WHERE r.resolver_indexed=1 AND p.resolver_ready=1
              AND r.repository_id NOT IN (SELECT value FROM json_each(?2))
              AND (r.repository_id,p.package_id) NOT IN (SELECT json_extract(g.value,'$.repository_id'),disabled.value
                  FROM json_each(?4) g, json_each(g.value,'$.package_ids') disabled)
              AND (?3 OR instr(substr(p.semantic_version,1,instr(p.semantic_version||'+','+')-1),'-')=0)
-             ORDER BY p.package_id ASC, p.semantic_version ASC, r.priority ASC,
-                      r.repository_id ASC",
-        )
+             ORDER BY p.package_id ASC, p.semantic_version ASC, o.list_rank ASC",
+        ))
         .map_err(store_error)?;
     let rows = statement
         .query_map(
@@ -234,6 +234,7 @@ pub(super) fn resolver_catalog(
         entries.extend(rows.collect::<Result<Vec<_>, _>>().map_err(store_error)?);
     }
     Ok(ResolverCatalog {
+        prefer_prerelease: settings.prefer_prerelease,
         entries,
         complete: !incomplete,
     })
@@ -343,13 +344,15 @@ pub(super) fn create_package_plan_inner(
     )
     .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
     if let Some(authentication) = authentication {
-        if tool_guard.is_some() || !draft.action.uses_delegated_catalog() {
+        if tool_guard.is_some() {
             return Err(denied());
         }
         require_delegated_access(&transaction, owner, authentication, false)?;
         delegated_project_revision(&transaction, draft.project_id)?;
         validate_delegated_pins(&transaction, &draft.source_set)?;
-    } else if owner.as_str().starts_with("mcp:") && draft.action != PlanAction::Remove {
+    } else if owner.as_str().starts_with("mcp:")
+        && (tool_guard.is_none() || draft.action != PlanAction::Remove)
+    {
         return Err(denied());
     }
     let project_revision = transaction
@@ -490,7 +493,7 @@ pub(super) fn accept_package_plan_inner(
     }
     let delegated_revision = if let Some(authentication) = authentication {
         let plan = load_plan(&transaction, owner, plan_id)?;
-        if tool_guard.is_some() || !plan.action.uses_delegated_catalog() {
+        if tool_guard.is_some() {
             return Err(denied());
         }
         require_delegated_access(&transaction, owner, authentication, true)?;
@@ -499,6 +502,9 @@ pub(super) fn accept_package_plan_inner(
         }
         Some(delegated_project_revision(&transaction, plan.project_id)?)
     } else if owner.as_str().starts_with("mcp:") {
+        if tool_guard.is_none() {
+            return Err(denied());
+        }
         let plan = load_plan(&transaction, owner, plan_id)?;
         if let Some(guard) = guard {
             let now = super::m8_oauth::wall_time().map_err(|_| internal())?;

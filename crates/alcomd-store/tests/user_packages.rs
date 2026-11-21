@@ -4,6 +4,246 @@ use alcomd_application::{
 };
 use alcomd_store::StateStoreHandle;
 
+#[tokio::test]
+async fn shared_catalog_keeps_actor_receipts_and_rechecks_revocation_before_replay_or_write() {
+    use alcomd_application::{
+        AccessContext, McpIdentityApplication, McpIdentityWrite, ToolAuthentication,
+        with_log_caller, with_workflow_authentication,
+    };
+
+    let root = temporary_root("authenticated-catalog");
+    std::fs::create_dir_all(&root).expect("isolated directory");
+    let path = root.join("state.db");
+    let store = StateStoreHandle::open(path.clone()).expect("store");
+    let identities = McpIdentityApplication::new(store.clone());
+    let owner = AccessContext::local_owner();
+    let client = identities
+        .write(
+            &owner,
+            "create".into(),
+            McpIdentityWrite::Create {
+                name: "User package manager".into(),
+            },
+            1,
+        )
+        .await
+        .expect("create client")
+        .client;
+    let hash = [7; 32];
+    let issued = identities
+        .write(
+            &owner,
+            "issue".into(),
+            McpIdentityWrite::Issue {
+                id: client.client_id,
+                expected: client.revision,
+                hash,
+            },
+            2,
+        )
+        .await
+        .expect("issue credential")
+        .client;
+    let access = identities.authenticate(hash).await.expect("authenticate");
+    let caller = access.principal();
+    let key = IdempotencyKey::parse("user-package-enroll").expect("key");
+    let refresh = IdempotencyKey::parse("user-package-refresh").expect("key");
+    let remove = IdempotencyKey::parse("user-package-remove").expect("key");
+    let source = snapshot("1.0.0", b"first");
+    let source_path = source.source_root_path.clone();
+    let authentication = ToolAuthentication::Credential(hash);
+    let enrolled = with_workflow_authentication(
+        authentication.clone(),
+        with_log_caller(store.clone(), &access, async {
+            store
+                .enroll_user_package(caller.clone(), source.clone(), key.clone(), 3)
+                .await
+                .expect("MCP stores a shared package")
+        }),
+    )
+    .await;
+    let id = enrolled.user_package.user_package_id;
+    let revision = enrolled.user_package.revision;
+    assert_eq!(enrolled.user_package.owner, *owner.principal());
+    assert_eq!(
+        store
+            .get_user_package(owner.principal().clone(), id)
+            .await
+            .expect("owner reads MCP enrollment")
+            .user_package_id,
+        id
+    );
+    assert!(
+        store
+            .replay_user_package_enroll(owner.principal().clone(), source_path.clone(), key.clone())
+            .await
+            .expect("owner has no receipt")
+            .is_none()
+    );
+    with_workflow_authentication(
+        authentication.clone(),
+        with_log_caller(store.clone(), &access, async {
+            assert!(
+                store
+                    .replay_user_package_enroll(caller.clone(), source_path.clone(), key.clone())
+                    .await
+                    .expect("read own enrollment")
+                    .expect("receipt")
+                    .replayed
+            );
+            let refreshed = store
+                .refresh_user_package(
+                    caller.clone(),
+                    id,
+                    revision,
+                    snapshot("1.1.0", b"updated"),
+                    refresh.clone(),
+                    4,
+                )
+                .await
+                .expect("refresh");
+            store
+                .remove_user_package(
+                    caller.clone(),
+                    id,
+                    refreshed.user_package.revision,
+                    remove.clone(),
+                    5,
+                )
+                .await
+                .expect("remove");
+        }),
+    )
+    .await;
+    identities
+        .write(
+            &owner,
+            "revoke".into(),
+            McpIdentityWrite::Revoke {
+                id: issued.client_id,
+                expected: issued.revision,
+            },
+            6,
+        )
+        .await
+        .expect("revoke");
+    // Simulate an already authenticated request waiting for its SQLite worker.
+    with_workflow_authentication(authentication, async {
+        let denied = UserPackageErrorCode::PermissionDenied;
+        assert_eq!(
+            store
+                .list_user_packages(caller.clone(), None, 20)
+                .await
+                .expect_err("list")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .get_user_package(caller.clone(), id)
+                .await
+                .expect_err("read")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .replay_user_package_enroll(caller.clone(), source_path, key.clone())
+                .await
+                .expect_err("early enrollment replay")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .replay_user_package_refresh(caller.clone(), id, revision, refresh.clone())
+                .await
+                .expect_err("early refresh replay")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .enroll_user_package(caller.clone(), source.clone(), key, 7)
+                .await
+                .expect_err("final enroll replay")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .refresh_user_package(caller.clone(), id, revision, source.clone(), refresh, 7)
+                .await
+                .expect_err("final refresh replay")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .remove_user_package(caller.clone(), id, revision, remove, 7)
+                .await
+                .expect_err("remove replay")
+                .code(),
+            denied
+        );
+        let new_key = IdempotencyKey::parse("after-revoke").expect("key");
+        assert_eq!(
+            store
+                .enroll_user_package(caller.clone(), source, new_key, 7)
+                .await
+                .expect_err("new enrollment")
+                .code(),
+            denied
+        );
+    })
+    .await;
+    let events = store
+        .list_events(owner.principal().clone(), 0, 100)
+        .await
+        .expect("read shared package events")
+        .events;
+    for kind in [
+        "user_package.enrolled",
+        "user_package.refreshed",
+        "user_package.removed",
+    ] {
+        assert!(
+            events
+                .iter()
+                .any(|event| event.kind == kind && event.aggregate_id == id.to_string())
+        );
+    }
+    let db =
+        rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("inspect isolated audit");
+    for (query, count) in [
+        (
+            "SELECT COUNT(*) FROM idempotency_records WHERE method LIKE 'packages.userPackages.%' AND principal_id=?1",
+            3,
+        ),
+        (
+            "SELECT COUNT(*) FROM operation_log_entries WHERE action LIKE 'packages.userPackages.%' AND owner=?1",
+            3,
+        ),
+    ] {
+        assert_eq!(
+            db.query_row(query, [caller.as_str()], |row| row.get::<_, i64>(0))
+                .expect("actor attribution"),
+            count
+        );
+        assert_eq!(
+            db.query_row(query, [owner.principal().as_str()], |row| row
+                .get::<_, i64>(0))
+                .expect("local owner attribution"),
+            0
+        );
+    }
+    drop(db);
+    drop(identities);
+    drop(store);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
 fn temporary_root(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
         "alcomd-user-package-store-{name}-{}-{}",
@@ -97,12 +337,12 @@ async fn enrollment_refresh_noop_change_and_remove_are_durable() {
                     .packages
             )
             .await
-            .expect("v1 catalog")
+            .expect("repository-only lookup")
             .entries
             .is_empty(),
-        "v1 resolver must exclude User Packages"
+        "archive pin lookup scans repository artifacts"
     );
-    let v2_catalog = store
+    let catalog = store
         .resolver_catalog(
             owner.clone(),
             true,
@@ -111,10 +351,10 @@ async fn enrollment_refresh_noop_change_and_remove_are_durable() {
                 .packages,
         )
         .await
-        .expect("v2 catalog");
-    assert_eq!(v2_catalog.entries.len(), 1);
+        .expect("package catalog");
+    assert_eq!(catalog.entries.len(), 1);
     assert!(matches!(
-        v2_catalog.entries[0].source,
+        catalog.entries[0].source,
         ResolverCatalogSource::UserPackage { .. }
     ));
     drop(store);

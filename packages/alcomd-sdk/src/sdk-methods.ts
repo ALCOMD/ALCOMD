@@ -2,11 +2,8 @@ import type * as Types from "./index.js";
 
 /** Execution semantics for supported native RPC methods. */
 export const SDK_METHODS = {
-    "backups.applyRestore": "write",
     "backups.create": "write",
-    "backups.get": "read",
-    "backups.list": "read",
-    "backups.planRestore": "write",
+    "backups.restore": "write",
     "events.list": "read",
     "events.subscribe": "stream",
     "extensions.applyInstall": "write",
@@ -45,6 +42,7 @@ export const SDK_METHODS = {
     "packages.userPackages.list": "read",
     "packages.userPackages.refresh": "write",
     "packages.userPackages.remove": "write",
+    "plans.get": "read",
     "projectTemplates.edit": "write",
     "projectTemplates.export": "write",
     "projectTemplates.get": "read",
@@ -72,6 +70,7 @@ export const SDK_METHODS = {
     "repositories.inspect": "read",
     "repositories.inspectListFile": "read",
     "repositories.list": "read",
+    "repositories.move": "write",
     "repositories.packages": "read",
     "repositories.previewListExport": "read",
     "repositories.refresh": "write",
@@ -98,18 +97,21 @@ export const SDK_METHODS = {
     "unity.writerState": "read",
 } as const;
 
-export type BackupApplyRestoreParams = { planId: string; idempotencyKey: string };
 export type BackupCreateParams = {
     projectId: string;
     expectedRevision: number;
     compressionMode?: Types.BackupCompressionMode;
     excludeVpmPackages?: boolean;
     includeLibrary?: boolean;
+    destinationPath?: string;
     idempotencyKey: string;
 };
-export type BackupGetParams = { backupId: string };
-export type BackupPlanRestoreParams = { backupId: string; targetParent: string; targetLeaf: string };
-export type BackupsListParams = { projectId?: string; cursor?: string; limit?: number };
+export type BackupRestoreParams = {
+    archivePath: string;
+    projectName?: string;
+    destinationPath?: string;
+    idempotencyKey: string;
+};
 export type EmptyParams = Record<string, never>;
 export type EventsListParams = { afterSequence: number; limit?: number };
 export type EventsListResult = { events: Types.CoreEvent[]; nextSequence: number };
@@ -149,7 +151,7 @@ export type ProjectsListParams = { cursor?: Types.RegistryCursor; limit?: number
 export type ProjectsPlanCopyParams = { sourceProjectId: string; expectedRevision: number; targetParentPath: string; targetLeaf: string; idempotencyKey: string };
 export type ProjectsPlanDeleteDirectoryParams = { projectId: string; expectedRevision: number; idempotencyKey: string };
 export type ProjectsPlanUnityMigrationParams = { projectId: string; targetInstallationId: string; expectedProjectRevision: number; idempotencyKey: string };
-export type RegistryListParams = { cursor?: Types.RegistryCursor; limit?: number };
+export type RegistryListParams = { cursor?: Types.RepositoryCursor; limit?: number };
 export type RepositoryIdParams = { repositoryId: string };
 export type RepositoryInspectParams = { source: Types.RepositorySource; credentials?: Types.RepositoryCredentials };
 export type RepositoryListExportParams = { format?: Types.RepositoryListFormat; targetPath: string; expectedFingerprint: string };
@@ -197,11 +199,8 @@ type NativeRepositoriesListResult = Omit<Types.RepositoriesListResult, "reposito
 
 /** The wire DTOs accepted and returned by Core over native RPC v1. */
 export interface NativeRpcMethods {
-    "backups.applyRestore": { params: BackupApplyRestoreParams; result: Types.BackupApplyRestoreResult };
-    "backups.create": { params: BackupCreateParams; result: Types.BackupCreateResult };
-    "backups.get": { params: BackupGetParams; result: Types.BackupRecord };
-    "backups.list": { params: BackupsListParams; result: Types.BackupsListResult };
-    "backups.planRestore": { params: BackupPlanRestoreParams; result: Types.BackupRestorePlan };
+    "backups.create": { params: BackupCreateParams; result: Types.OperationAccepted };
+    "backups.restore": { params: BackupRestoreParams; result: Types.OperationAccepted };
     "events.list": { params: EventsListParams; result: EventsListResult };
     "events.subscribe": { params: Types.EventsSubscribeParams; result: Types.EventsSubscribeResult };
     "extensions.applyInstall": { params: ExtensionInstallApplyParams; result: Types.ExtensionOperationResult };
@@ -240,6 +239,7 @@ export interface NativeRpcMethods {
     "packages.userPackages.list": { params: UserPackagesListParams; result: Types.UserPackagesListResult };
     "packages.userPackages.refresh": { params: UserPackageMutationParams; result: Types.UserPackageWriteResult };
     "packages.userPackages.remove": { params: UserPackageMutationParams; result: Types.UserPackageRemoveResult };
+    "plans.get": { params: Types.PlansGetParams; result: Types.PlansGetResult };
     "projectTemplates.edit": { params: Types.ProjectTemplateEditParams; result: Types.ProjectTemplatesSaveResult };
     "projectTemplates.export": { params: Types.ProjectTemplatesExportParams; result: Types.ProjectTemplatesSaveResult };
     "projectTemplates.get": { params: Types.ProjectTemplateGetParams; result: Types.ProjectTemplateGetResult };
@@ -267,6 +267,7 @@ export interface NativeRpcMethods {
     "repositories.inspect": { params: RepositoryInspectParams; result: NativeRepositoryResult };
     "repositories.inspectListFile": { params: RepositoryListInspectParams; result: Types.RepositoryListInspection };
     "repositories.list": { params: RegistryListParams; result: NativeRepositoriesListResult };
+    "repositories.move": { params: Types.RepositoryMoveParams; result: Types.RepositoryMoveResult };
     "repositories.packages": { params: RepositoryPackagesParams; result: Types.RepositoryPackagesResult };
     "repositories.previewListExport": { params: RepositoryListPreviewParams; result: Types.RepositoryListPreview };
     "repositories.refresh": { params: RepositoryMutationParams; result: NativeRepositoryWriteResult };

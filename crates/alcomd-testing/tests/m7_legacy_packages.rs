@@ -14,8 +14,8 @@ use std::time::Duration;
 use alcomd_application::{
     AccessContext, IdempotencyKey, M3Application, M3ReadAdapter, M3RegistryStore, M4Application,
     M4ErrorCode, M4Store, OperationId, OperationLogQuery, OperationRecord, OperationState,
-    PackageBulkIntent, PackagePlanRequest, PackagePlanVersion, PlanAction, PrincipalId,
-    ProjectRecord, RepositoryArchivePinStore, RepositorySource, ResolverCatalogSource, StateStore,
+    PackageBulkIntent, PackagePlanRequest, PlanAction, PrincipalId, ProjectRecord,
+    RepositoryArchivePinStore, RepositorySource, ResolverCatalogSource, StateStore,
     read_operation_logs, with_log_caller,
 };
 use alcomd_store::StateStoreHandle;
@@ -1074,7 +1074,6 @@ impl Fixture {
             version_range: Some("2.0.0".to_owned()),
             repository_id: None,
             include_prerelease: false,
-            plan_version: PackagePlanVersion::V2,
             source_selector: None,
             reinstall_selection: None,
             reinstall_sources: Vec::new(),
@@ -1315,7 +1314,7 @@ async fn absent_legacy_obligations_allow_real_install_and_preserve_frozen_lock_i
         .plan(&access, fixture.request())
         .await
         .expect("metadata alone does not forbid installation");
-    assert_eq!(plan.change_set.format_version, 4);
+    assert_eq!(plan.change_set.format_version, 1);
     assert!(plan.change_set.legacy_removals.is_empty());
     let dependency = plan
         .change_set

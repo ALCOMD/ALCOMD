@@ -33,11 +33,7 @@ extensions.permissions.manage
 extensions.ui.use
 ```
 
-`unity.hub.open` 在当前实现中仅允许经过认证的 `builtin:local-owner`，并同时要求
-`settings.read`；它只允许打开与已接受设置 revision／effective path 一致的 Core 解析目标。
-这不是 `unity.launch` 的别名，也不授予外部客户端或扩展；不允许调用方传入 executable、
-argv、URL、项目目标或环境变量。未发现 Hub 且未设置显式位置时仅返回 `download_required`，
-不在 Core 内打开网站或下载／安装程序。此权限不包含任何项目、数据库、配置写入。
+`unity.hub.open` 与 `settings.read` 共同授权 Core 打开已解析的 Hub。Core 复验设置 revision 和 expectedTargetToken，找不到 Hub 时可返回 download_required。调用者不能提供任意可执行文件、参数或环境变量。扩展仍受宿主权限和沙箱约束。
 
 ## 扩展专用权限
 
@@ -61,8 +57,8 @@ mcp.configuration.manage
 ## 规则
 
 M8管理Host桥使用已存在的`mcp.clients.read/manage`，范围为`Global/*`；后者是全部MCP客户端的高风险管理权。
-不向扩展开放签发凭据；扩展`projects.read`按所有者2026-11-15批准的State37使用`Global/*`，不再逐项目授权。每次Host调用同时复查交互Client、
-Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-management-v2.md`。
+不向扩展开放签发凭据；扩展`projects.read`使用`Global/*`。每次Host调用同时复查交互Client、
+Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-management-v1.md`。
 
 - 第一方和第三方扩展使用同一权限名称。
 - 权限按 Principal 授予并可随时撤销。
@@ -72,7 +68,7 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
 
 ## M9 后台观察与本机通信
 
-`unity.sessions.read` 使用 `Global/*`。`local-ipc.connect` 使用 `LocalIpcTarget/<signed-target-sha256>`。两项还要求当前实例的 `background.run` 和有效租约，只服务于已协商的后台集成调用。`local-ipc.connect` 作为可选声明，安装同意不会替目标授予权限。Core 在授权时验证已安装签名包确实包含该目标，在连接、读写和关闭时重新验证 exact scope。旧实例的 scope 不会转移到更新后的不同目标声明。见 [State45](../storage/state-v45.md)。
+`unity.sessions.read` 使用 `Global/*`。`local-ipc.connect` 使用 `LocalIpcTarget/<signed-target-sha256>`。两项还要求当前实例的 `background.run` 和有效租约，只服务于已协商的后台集成调用。`local-ipc.connect` 作为可选声明，安装同意不会替目标授予权限。Core 在授权时验证已安装签名包确实包含该目标，在连接、读写和关闭时重新验证 exact scope。旧实例的 scope 不会转移到更新后的不同目标声明。见 [State1](../storage/state-v1.md)。
 
 ## M3 项目与 Repository 权限
 
@@ -82,14 +78,14 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
   `packages.manage`，也不允许创建、删除或修改项目目录。
 - `repositories.read`：允许 `repositories.inspect/list/get/packages` 的 normalized metadata 查询及
   `repositories.previewListExport` 的有界全量导出范围预览。`repositories.inspectListFile/exportListFile`
-  额外限制为经过认证的 local-owner，扩展获得此权限也不能读取或写入本机列表文件；列表登记仍需
+  仅接受已认证的交互客户端。扩展没有直接读写本机列表文件的宿主接口。列表登记仍需
   既有 `repositories.manage` 权限并经过相同的 inspect/register 用例。
 - `repositories.manage`：允许 register/refresh/unregister local 或匿名 HTTP(S) source 及
   last-known-good cache；不允许 credential、自定义 header、package payload 下载或项目写入。
-- M3 `builtin:local-owner` 获得上述四项权限。capability、client metadata、路径、URL 与资源 ID
+- GUI、CLI 和已认证 MCP 客户端拥有相同的上述权限。capability、client metadata、路径、URL 与资源 ID
   均不是身份或授权凭据。
 - 项目访问只检查对应能力；内部AccessContext也不保存项目ID授权集合或提供按项目缩小授权的入口。
-  MCP外部Principal按M8已批准的能力授权，项目新建/删除不要求重复授权。
+  MCP 每次请求校验实际客户端身份，项目新建或删除不会改变其业务权限。
   资源owner及实际调用Principal、任务和幂等隔离保持；其他尚未实现的外部权限不由名称存在而开放。
 
 ## M7 Project Directory Delete 权限
@@ -99,7 +95,7 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
   `projects.manage`、`projects.create`、package mutation 或任意目录删除能力。
 - Plan 同时要求 `projects.read`；Apply 再次要求 `projects.delete`，并复验 Plan owner、Project revision、
   root/parent filesystem identity、ProjectVersion marker、writer evidence 与 protected-root policy。
-- 外部 filesystem writer 只允许 `builtin:local-owner`。`projects.delete` 在 4.0.0 不授予 extension；
+- Core 以实际调用主体执行受权的文件操作。`projects.delete` 在 4.0.0 不授予 extension；
   first-party 身份、ExtensionId、ProjectId、PlanId、OperationId 与 client metadata 都不能替代授权。
 - `quarantine_intent` 之后只能 forward recovery。权限不允许跳过 sibling quarantine、跨 mount、跟随 link、
   触碰 quarantine 后重建的原路径，或把 `not_observed` 表述为 Unity 确定未运行。
@@ -110,7 +106,7 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
   Project Unity Version workflow；不接受 caller path、target version 双 authority、任意 package ChangeSet 或 public child Operation。
 - Plan 同时要求 `projects.read + unity.read`；Apply 再次要求 `projects.unity-migrate`，并 fresh revalidate immutable
   Plan、Project revision/root/marker、target installation identity/version 与 writer state。
-- 外部 filesystem mutation 只允许 `builtin:local-owner`。`projects.unity-migrate` 在 4.0.0 不授予 Extension，第一方
+- 受权文件变更由 Core 执行。`projects.unity-migrate` 在 4.0.0 不授予 Extension，第一方
   Extension 也没有隐藏 privileged API。
 - `preparation_intent` / `launch_intent` 之后只能按同一 Operation forward recovery，不允许普通 cancel、自动 respawn、
   kill Unity、跳过 exact Project reobservation 或产生中间 Project/package public revision/Event。
@@ -125,8 +121,7 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
 - `packages.manage` 不隐含 repository credential、legacy cleanup、任意项目路径写入或 Unity 启动。
   它只授权执行已经批准且绑定目标 ProjectId 的 package ChangeSet。
 - capability、PlanId、OperationId、package/repository ID、SID 和 client metadata 都不是身份凭据。
-- 普通Apply写路径仅允许`builtin:local-owner`；M8已批准的MCP身份另只开放原remove Plan卸载切片，
-  逐次检查当前能力/OAuth上限、原调用Principal及任务归属，不能代理owner或扩展到尚未实现的写入。
+- GUI、CLI 和经认证的 MCP 通过相同 Core 用例 Apply。Core 复验计划所属主体、项目修订、候选可见性和文件系统证据，按原幂等键记录回执。
 
 ## CLI、Unity、项目创建与备份权限
 
@@ -140,31 +135,20 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
   修改、shell command、任意 executable 或绕过 writer gate。
 - `projects.create`：只允许在显式、不存在的 destination 创建一个全新 Project；不允许删除、覆盖、
   merge 或修改既有 Project，也不扩大 `projects.manage` 的 M3 registry 语义。
-- `projects.create` 入口与 `projectTemplates.*` 目录操作只允许 `builtin:local-owner`。模板目录不新增权限。
+- `projects.create` 入口与 `projectTemplates.*` 目录操作按已认证客户端的业务权限校验。模板目录不新增权限。
   使用模板依赖创建项目时另检查 `packages.read`、`repositories.read` 和 `packages.manage`。
-- `backups.list` 与 `backups.get` 只要求 `backups.read`。Backup Create contract-first 的
-  `backups.create` 要求 `backups.manage` 与 `projects.read` 能力，另复验目标项目归属；它不要求
-  `projects.manage`、`projects.create` 或 `packages.manage`。`excludeVpmPackages` 只读取 normalized locked
-  set，不授予 package mutation authority。filesystem write 仍只对 `builtin:local-owner` 开放。
-- `backups.planRestore` 需要 `backups.read + projects.create`；它只创建永久 immutable Plan，不创建
-  staging、target 或 Operation。`backups.applyRestore` 必须重新验证相同权限，并额外需要
-  `backups.manage`。两者都只允许恢复到明确不存在的全新 Project target，不隐含 package/repository/
-  Unity 权限，也不允许 overwrite、merge、delete-then-restore 或 arbitrary ZIP。
-- 备份使用 Core 确认的本机所有者默认根。恢复的外部目标由本机所有者批准，获准 MCP 按原 Plan 提交。Schema/PlanId、
-  bundle digest、target path 与 object locator 都不是授权凭据。
-- `builtin:local-owner` 可获得 M5 已批准权限。M8 外部 Principal 仍须真实认证和显式的备份能力。高影响写入继续受默认位置、外部路径批准及原 Plan 约束。
-- capability、InstallationId、LaunchId、BackupId、路径、PID 与 client metadata 都不是
-  Principal 或授权凭据。
+- `backups.create` 根据项目身份和修订创建普通 ZIP。Core 校验备份及项目读取权限，复验项目归属、写入状态和目的文件。缺省压缩与内容选项从当前设置读取。
+- `backups.restore` 以源 ZIP、目标目录和幂等键创建恢复任务。Core 复验归属、目标目录身份、归档内容和路径范围。GUI、CLI 和 MCP 共享同一用例。
 
 ## M6 Extension Runtime 权限与 scope
 
-M6 第一条生产 slice 冻结并仅使用以下权限：
+扩展生命周期与项目摘要使用以下权限。
 
 | permission | caller | exact authority |
 |---|---|---|
-| `extensions.read` | local management Principal | list/get installed extension、desired/runtime safe summary；不返回 Host PID、路径、lease secret 或 data value |
-| `extensions.manage` | local management Principal | plan/apply install、enable、disable、plan/apply uninstall；不隐含 permission grant |
-| `extensions.permissions.manage` | local management Principal | set/revoke extension grant 与 specific resource scope；grant revision durable update 是 revoke linearization point |
+| `extensions.read` | authenticated management Principal | list/get installed extension、desired/runtime safe summary；不返回 Host PID、路径、lease secret 或 data value |
+| `extensions.manage` | authenticated management Principal | plan/apply install、enable、disable、plan/apply uninstall；不隐含 permission grant |
+| `extensions.permissions.manage` | authenticated management Principal | set/revoke extension grant 与 specific resource scope；grant revision durable update 是 revoke linearization point |
 | `background.run` | extension Principal | 允许已验证 background Component 被 Host 启动；不隐含任何业务 capability |
 | `projects.read` | extension Principal | 通过 `host-projects.get-summary` 读取当前及未来登记项目的安全摘要，须有 `Global/*` 授权 |
 
@@ -172,16 +156,15 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 
 - extension Principal 默认零权限。Manifest request、ExtensionId、publisher、first-party status、package digest、
   WIT capability 或 `ExtensionInstanceLease` ID 都不是 grant。
-- State37取代原逐项目授权：extension的`projects.read`只接受`Global/*`，覆盖当前及未来登记项目。
-  旧specific ProjectId授权清除，不自动扩大；只读取既有安全摘要，不授予路径、文件或写入。
+- 扩展的`projects.read`只接受`Global/*`，覆盖当前及未来登记项目。
+  Host 只返回安全摘要，文件路径和写入能力不在此权限范围。
 - `ExtensionInstanceLease` 绑定 current grant revision；每次 Host/data call 重新解析真实 Principal/grant/scope。
 - revoke transaction 提交后，尚未被 application 接受的 call、Host queue、session/handle 均失败或取消。
 - uninstall 无论 `retain_data|delete_data` 都在 package authority removal 前 revoke 全部 grant/lease/session/handle；
   retained namespace 不保留 active grant，未来 reinstall 重新从 deny-by-default 开始。
 - 第一方只可获得同名 permission 与同种 scope；official trust 不绕过 grant/revoke/quota。
-- `network.request`、notifications、clipboard、external-config 与 M7 UI placement 仍 planned，M6 第一条
-  slice 不链接或广告它们。
-- `mcp.sessions.read` 已由 A-023 拒绝；未来 MCP request/connection/subscription scope 属于 M8，不在 M6 重建。
+- `network.request`、notifications、clipboard 与 external-config 尚无可用宿主接口。
+- MCP 状态观察使用 `mcp.requests.read`、`mcp.connections.read` 与 `mcp.subscription-streams.read`，权限逐组检查。
 
 ## M7 Portable UI 权限与双重授权
 
@@ -200,7 +183,7 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 
 ## M7 Official GUI settings
 
-- `settings.read` 只允许读取 当前 Config Schema 7 的规范化公开设置；不允许直接读取文件、extension-owned
+- `settings.read` 只允许读取 Config1 中的规范化公开设置；不允许直接读取文件、extension-owned
   data 或未来 updater/MCP/Discord/migration setting。
 - `settings.manage` 只允许以 `expectedRevision` 更新同一 closed partial settings DTO，包括 Core
   校验后的 `unity.hubPath` 程序位置偏好；它不授权通用 key/value config、向所选路径写文件、执行
@@ -214,31 +197,32 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 
 ### MCP tool providers
 
-Optional `mcp.tools.provide` publishes signed tool declarations. Additional extension grants `repositories.read`, `packages.read`, `packages.manage`, `operations.read`, `operations.cancel` all use Global/*. Tool execution checks its declared operations, current extension grants and lease, and the actual MCP client identity. `projects.read` retains safe project projections. See `../mcp/extension-tools-v1.md`, State38 and the [MCP client contract](../rpc/m8-mcp-clients-v2.md).
+Optional `mcp.tools.provide` publishes signed tool declarations. Additional extension grants `repositories.read`, `packages.read`, `packages.manage`, `operations.read`, `operations.cancel` all use Global/*. Tool execution checks its declared operations, current extension grants and lease, and the actual MCP client identity. `projects.read` retains safe project projections. See `../mcp/extension-tools-v1.md`, [State1](../storage/state-v1.md) and the [MCP client contract](../rpc/m8-mcp-clients-v1.md).
 
 
 ## M8 Core observation reads
 
 `mcp.connections.read` and `mcp.requests.read` independently allow the bounded
 Core IPC / in-flight Core RPC projection via mcp.runtime.snapshot and the readonly
-observations@1.0.0 Host interface. Extension scopes are exactly Global/* (State40),
+observations@1.0.0 Host interface. Extension scopes are exactly Global/* ,
 optional and off by default; both interactive Client and Extension must permit each
 group. These are administrative observation permissions, not external MCP business
 grants or OAuth scopes. They grant no connection termination or Operation control.
 
-## State41：完整扩展授权目录与安装同意
+## 完整扩展授权目录与安装同意
 
 当前可授予扩展的完整目录为background.run、projects.read、mcp.clients.read、mcp.clients.manage、mcp.connections.read、mcp.requests.read、mcp.subscription-streams.read、mcp.tools.provide、repositories.read、packages.read、packages.manage、operations.read、operations.cancel。所有项目均可声明required或optional；required仅决定安装集中确认与后续运行前置，不自动扩大交互Client权限。
 
-permissions.list返回Core的availablePermissions及当前包声明/实际grants。管理页按必需权限、可选权限、其他权限三类显示；其他权限指当前可授权但未声明的项，三类均允许显式授权；仅限上述目录，原local-owner专属或planned能力不因此开放。background.run保持Extension/<ExtensionId>，其余保持Global/*，无逐项目授权。安装需extensions.manage；涉及初始required授权另需extensions.permissions.manage。撤销仍使旧lease/UI失效，不因幂等重放或恢复补回授权。
+permissions.list返回Core的availablePermissions及当前包声明/实际grants。管理页按必需权限、可选权限、其他权限三类显示；其他权限指当前可授权但未声明的项，三类均允许显式授权；仅限上述目录，扩展只可使用已实现且属于其权限目录的宿主能力。background.run保持Extension/<ExtensionId>，其余保持Global/*，无逐项目授权。安装需extensions.manage；涉及初始required授权另需extensions.permissions.manage。撤销仍使旧lease/UI失效，不因幂等重放或恢复补回授权。
 
-### Adapter-reported subscription streams (State43)
+### Adapter-reported subscription streams
 
 `mcp.subscription-streams.read` allows the subscription-stream group of
 `mcp.transport.snapshot` and `alcomd:mcp-transport/observations@1.0.0`, exactly
 `Global/*`. It can be declared required or optional and is never granted implicitly.
 Connection and request groups keep their independent existing read permissions.
 All transport rows are `adapterReported`; only an actual Core-authenticated
-request can bind a client identity. External MCP business grants do not include
-these administrative read permissions. No parameters, credentials or tool results
-are exposed. Existing Client + Extension, lease, lifecycle and UI checks apply.
+request can bind a client identity. Authenticated GUI, CLI and MCP callers use the
+same Core observation permissions. Extension calls also require the corresponding
+extension grant, lease, lifecycle and UI checks. The projection excludes parameters,
+credentials and tool results.

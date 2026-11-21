@@ -51,9 +51,7 @@ first-party extension 使用 private React page、private Tauri command、hidden
 Custom Web UI、GUI-specific code contribution 和其他高级 UI 延后到出现真实用例后独立设计，不为它们保留 Web
 fallback、兼容字段或双路 renderer。M8 MCP management extension 与 M9 Discord extension 使用同一个 Portable UI。
 
-由于合同尚未公开，implementation 获批后可直接替换 Manifest/package/WIT/ABI v1 与未发布 UI-specific 实现，不创建
-v2、alias、dual parser/world/renderer。M6 已真实广告并验收 State Schema v8，因此 Portable UI normalized declaration
-使用 v9 proposal；它不恢复旧 Web UI compatibility，开发数据库仍可 reset。
+首发 Manifest、包、WIT 与 ABI 共用当前 UI 声明。State1 保存安装记录及不可变计划所需的 UI 协议。
 
 M7 Stop A candidate 进一步冻结：每extension至多一个隐式Portable UI且不保存/传输页面identity；daemon-owned
 SnapshotRevision 与 memory-only session；17种bounded semantic node；只有activate/submit-form两种action；Client

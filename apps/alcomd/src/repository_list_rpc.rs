@@ -43,7 +43,6 @@ pub(super) async fn dispatch(
                                 configuration: entry.configuration.map(|config| {
                                     rpc::RepositoryConfiguration {
                                         display_name: config.display_name,
-                                        priority: config.priority,
                                         enabled: config.enabled,
                                         disabled_package_ids: config.disabled_package_ids,
                                     }

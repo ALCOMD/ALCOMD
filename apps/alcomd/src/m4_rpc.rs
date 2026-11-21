@@ -12,47 +12,29 @@ pub(super) async fn dispatch(
     application: &M4PackageApplication,
     access: &AccessContext,
 ) -> DispatchAction {
-    let (action, v2_only) = match request.method.as_str() {
-        rpc::METHOD_PACKAGES_PLAN_INSTALL => (app::PlanAction::Install, false),
-        rpc::METHOD_PACKAGES_PLAN_REMOVE => (app::PlanAction::Remove, false),
-        rpc::METHOD_PACKAGES_PLAN_UPGRADE => (app::PlanAction::Upgrade, false),
-        rpc::METHOD_PACKAGES_PLAN_DOWNGRADE => (app::PlanAction::Downgrade, false),
-        rpc::METHOD_PACKAGES_PLAN_RESOLVE => (app::PlanAction::Resolve, false),
-        rpc::METHOD_PACKAGES_PLAN_REINSTALL => (app::PlanAction::Reinstall, true),
-        rpc::METHOD_PACKAGES_PLAN_BULK => (app::PlanAction::Bulk, true),
+    let action = match request.method.as_str() {
+        rpc::METHOD_PACKAGES_PLAN_INSTALL => app::PlanAction::Install,
+        rpc::METHOD_PACKAGES_PLAN_REMOVE => app::PlanAction::Remove,
+        rpc::METHOD_PACKAGES_PLAN_UPGRADE => app::PlanAction::Upgrade,
+        rpc::METHOD_PACKAGES_PLAN_DOWNGRADE => app::PlanAction::Downgrade,
+        rpc::METHOD_PACKAGES_PLAN_RESOLVE => app::PlanAction::Resolve,
+        rpc::METHOD_PACKAGES_PLAN_REINSTALL => app::PlanAction::Reinstall,
+        rpc::METHOD_PACKAGES_PLAN_BULK => app::PlanAction::Bulk,
         rpc::METHOD_PACKAGES_APPLY_PLAN => return apply(request, state, application, access).await,
         _ => return error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
     };
-    if v2_only {
-        if let Some(value) =
-            require_capability(&request.id, state, rpc::CAPABILITY_PACKAGES_PLAN_V2)
-        {
-            return value;
-        }
-    } else if !state
-        .capabilities
-        .contains(rpc::CAPABILITY_PACKAGES_PLAN_V1)
-        && !state
-            .capabilities
-            .contains(rpc::CAPABILITY_PACKAGES_PLAN_V2)
-        && let Some(value) =
-            require_capability(&request.id, state, rpc::CAPABILITY_PACKAGES_PLAN_V1)
-    {
+    if let Some(value) = require_capability(&request.id, state, rpc::CAPABILITY_PACKAGES_PLAN_V1) {
         return value;
     }
-    let plan_version = if state
-        .capabilities
-        .contains(rpc::CAPABILITY_PACKAGES_PLAN_V2)
-    {
-        app::PackagePlanVersion::V2
-    } else {
-        app::PackagePlanVersion::V1
-    };
-    let plan_request = match plan_request(action, plan_version, request.params) {
+    let plan_request = match plan_request(action, request.params) {
         Ok(value) => value,
         Err(()) => return invalid(request.id),
     };
-    match application.plan(access, plan_request).await {
+    let authentication = super::m8_tools_rpc::auth(state, access).ok();
+    match application
+        .plan_authenticated(access, plan_request, authentication)
+        .await
+    {
         Ok(plan) => success_action(request.id, plan_to_rpc(plan), None),
         Err(error) => m4_error(request.id, error),
     }
@@ -102,7 +84,6 @@ async fn apply(
 
 pub(super) fn plan_request(
     action: app::PlanAction,
-    plan_version: app::PackagePlanVersion,
     params: serde_json::Value,
 ) -> Result<app::PackagePlanRequest, ()> {
     if action == app::PlanAction::Reinstall {
@@ -128,7 +109,7 @@ pub(super) fn plan_request(
             version_range: None,
             repository_id: None,
             include_prerelease: false,
-            plan_version,
+
             source_selector: None,
             reinstall_selection: Some(selection),
             reinstall_sources: sources,
@@ -151,7 +132,7 @@ pub(super) fn plan_request(
             version_range: None,
             repository_id: None,
             include_prerelease: false,
-            plan_version,
+
             source_selector: None,
             reinstall_selection: None,
             reinstall_sources: Vec::new(),
@@ -178,7 +159,7 @@ pub(super) fn plan_request(
                 value.version_range,
                 value.repository_id,
                 value.source,
-                value.include_prerelease,
+                value.include_prerelease.unwrap_or(true),
                 value.allow_unity_incompatible,
             )
         }
@@ -220,15 +201,12 @@ pub(super) fn plan_request(
                 None,
                 None,
                 None,
-                value.include_prerelease,
+                value.include_prerelease.unwrap_or(true),
                 false,
             )
         }
         app::PlanAction::Reinstall | app::PlanAction::Bulk => return Err(()),
     };
-    if source.is_some() && plan_version == app::PackagePlanVersion::V1 {
-        return Err(());
-    }
     if source.is_some() && repository_id.is_some() {
         return Err(());
     }
@@ -241,7 +219,7 @@ pub(super) fn plan_request(
         version_range,
         repository_id,
         include_prerelease: prerelease,
-        plan_version,
+
         source_selector: source.map(source_selector).transpose()?,
         reinstall_selection: None,
         reinstall_sources: Vec::new(),
@@ -273,7 +251,7 @@ fn bulk_intent(value: rpc::PackageBulkIntent) -> Result<app::PackageBulkIntent, 
             package_id,
             version_range,
             source: source.map(source_selector).transpose()?,
-            include_prerelease,
+            include_prerelease: include_prerelease.unwrap_or(true),
         },
         rpc::PackageBulkIntent::Upgrade {
             package_id,
@@ -284,7 +262,7 @@ fn bulk_intent(value: rpc::PackageBulkIntent) -> Result<app::PackageBulkIntent, 
             package_id,
             version_range,
             source: source.map(source_selector).transpose()?,
-            include_prerelease,
+            include_prerelease: include_prerelease.unwrap_or(true),
         },
         rpc::PackageBulkIntent::Remove { package_id } => {
             app::PackageBulkIntent::Remove { package_id }
@@ -460,7 +438,7 @@ mod tests {
     #[test]
     fn removal_conflicts_survive_the_core_to_rpc_projection() {
         let change_set: app::PackageChangeSet = serde_json::from_value(serde_json::json!({
-            "formatVersion":4,"mutations":[{"kind":"remove","packageId":"com.example.sdk","fromVersion":"1.0.0","toVersion":null,"source":null}],
+            "formatVersion":1,"mutations":[{"kind":"remove","packageId":"com.example.sdk","fromVersion":"1.0.0","toVersion":null,"source":null}],
             "dependencyEdges":[{"fromPackageId":"com.example.addon","toPackageId":"com.example.sdk","range":"^1.0.0","direct":false}],
             "vpmManifestSha256":"00".repeat(32),
             "removalConflicts":[{"packageId":"com.example.sdk","requiredBy":[{"packageId":"com.example.addon","range":"^1.0.0"}]}],
@@ -506,19 +484,19 @@ mod tests {
         });
         for action in [app::PlanAction::Install, app::PlanAction::Upgrade] {
             assert!(
-                !plan_request(action, app::PackagePlanVersion::V2, base.clone())
+                !plan_request(action, base.clone())
                     .expect("default")
                     .allow_unity_incompatible
             );
             let mut explicit = base.clone();
             explicit["allowUnityIncompatible"] = serde_json::json!(true);
             assert!(
-                plan_request(action, app::PackagePlanVersion::V2, explicit.clone())
+                plan_request(action, explicit.clone())
                     .expect("explicit")
                     .allow_unity_incompatible
             );
             explicit["allowUnityIncompatible"] = serde_json::json!("true");
-            assert!(plan_request(action, app::PackagePlanVersion::V2, explicit).is_err());
+            assert!(plan_request(action, explicit).is_err());
         }
         let mut downgrade = base.clone();
         downgrade
@@ -527,12 +505,7 @@ mod tests {
             .remove("versionRange");
         downgrade["version"] = serde_json::json!("2.0.0");
         downgrade["allowUnityIncompatible"] = serde_json::json!(true);
-        let parsed = plan_request(
-            app::PlanAction::Downgrade,
-            app::PackagePlanVersion::V2,
-            downgrade,
-        )
-        .expect("downgrade");
+        let parsed = plan_request(app::PlanAction::Downgrade, downgrade).expect("downgrade");
         assert!(parsed.allow_unity_incompatible);
         assert_eq!(parsed.version_range.as_deref(), Some("=2.0.0"));
         for action in [
@@ -542,7 +515,7 @@ mod tests {
             app::PlanAction::Bulk,
         ] {
             let value = serde_json::json!({"projectId": "00000000-0000-4000-8000-000000000001", "expectedRevision": 1, "packageId": "com.example.package", "allowUnityIncompatible": true});
-            assert!(plan_request(action, app::PackagePlanVersion::V2, value).is_err());
+            assert!(plan_request(action, value).is_err());
         }
     }
 }

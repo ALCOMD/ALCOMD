@@ -112,7 +112,7 @@ test("H4 install preserves its raw path, reviews expected absence, and follows o
     expect(reads.every((request) => request.params.operationId === operationId)).toBe(true);
 });
 
-test("H4 install keeps an unknown Apply result visible and never repeats the write", async ({ page }) => {
+test("H4 install retries an unknown Apply with the original consent and key and follows the accepted operation", async ({ page }) => {
     await open(page);
     await installReview(page);
     await page.evaluate(() => window.h4Management.failNext("extensions.applyInstall", "daemon_unavailable"));
@@ -121,11 +121,14 @@ test("H4 install keeps an unknown Apply result visible and never repeats the wri
     await expect(modal(page).getByRole("button", { name: "Agree and install", exact: true })).toBeDisabled();
     await expect(page.locator(".operation-follow")).toHaveCount(0);
     expect(await requests(page, "extensions.applyInstall")).toHaveLength(1);
-    await page.keyboard.press("Escape");
-    await openLocalExtensionInstall(page);
-    await expect(modal(page).getByLabel("Extension package", { exact: true })).toHaveValue("");
-    await expect(modal(page).getByRole("alert")).toHaveCount(0);
-    expect(await requests(page, "extensions.applyInstall")).toHaveLength(1);
+    const accepted = await page.evaluate(() => window.h4Management.lastOperationId);
+    await modal(page).getByRole("button", { name: "Retry", exact: true }).click();
+    await expect.poll(() => requests(page, "extensions.applyInstall").then((items) => items.length)).toBe(2);
+    const [original, replay] = await requests(page, "extensions.applyInstall");
+    expect(original!.params.idempotencyKey).toBe(original!.params.planId);
+    expect(replay!.params).toEqual(original!.params);
+    expect(await page.evaluate(() => window.h4Management.lastOperationId)).toBe(accepted);
+    expect(await requests(page, "extensions.planInstall")).toHaveLength(1);
 });
 
 test("H4 quarantined extension recovery uses explicit enable and preserves a refusal without granting permissions", async ({ page }) => {
@@ -265,7 +268,7 @@ test("H4 permission read failure stays visible until an explicit refresh and nev
     expect(await requests(page, "extensions.revokeGrant")).toHaveLength(0);
     await page.evaluate(() => window.h4Management.failNext("extensions.revokeGrant", "daemon_unavailable"));
     await background(page).getByRole("switch", { name: "Run in background", exact: true }).click();
-    await expect(modal(page).getByRole("alert")).toContainText("The permission change may have completed. Refresh permissions before trying again.");
+    await expect(modal(page).getByRole("alert")).toContainText("The permission change may have completed.");
     await expect(permissions(page)).toHaveCount(0);
     await expect(modal(page).getByRole("button", { name: /^Revoke / })).toHaveCount(0);
     await expect(modal(page).getByRole("switch")).toHaveCount(0);

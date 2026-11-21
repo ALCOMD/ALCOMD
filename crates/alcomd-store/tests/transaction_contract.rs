@@ -1,18 +1,18 @@
 use rusqlite::{Connection, Error, params};
 
-const MIGRATION_V1: &str = include_str!("../migrations/0001_state.sql");
+const INITIAL_SCHEMA: &str = include_str!("../src/schema.sql");
 const PRINCIPAL: &str = "builtin:local-owner";
 const OPERATION_A: &str = "00000000-0000-4000-8000-000000000001";
 const OPERATION_B: &str = "00000000-0000-4000-8000-000000000002";
 
-fn migrated_connection() -> Connection {
+fn current_connection() -> Connection {
     let connection = Connection::open_in_memory().expect("open database");
     connection
         .execute_batch("PRAGMA foreign_keys=ON;")
         .expect("enable foreign keys");
     connection
-        .execute_batch(MIGRATION_V1)
-        .expect("apply migration");
+        .execute_batch(INITIAL_SCHEMA)
+        .expect("initialize current schema");
     connection
 }
 
@@ -30,7 +30,7 @@ fn insert_operation(connection: &Connection, operation_id: &str, created_at_ms: 
 
 #[test]
 fn operation_acceptance_is_atomic_and_rollback_leaves_no_partial_rows() {
-    let connection = migrated_connection();
+    let connection = current_connection();
     connection
         .execute_batch("BEGIN IMMEDIATE;")
         .expect("begin transaction");
@@ -76,7 +76,7 @@ fn operation_acceptance_is_atomic_and_rollback_leaves_no_partial_rows() {
 
 #[test]
 fn committed_acceptance_has_one_operation_journal_event_and_saved_response() {
-    let connection = migrated_connection();
+    let connection = current_connection();
     connection
         .execute_batch("BEGIN IMMEDIATE;")
         .expect("begin transaction");
@@ -128,7 +128,7 @@ fn committed_acceptance_has_one_operation_journal_event_and_saved_response() {
 
 #[test]
 fn idempotency_scope_is_principal_method_and_permanent_key() {
-    let connection = migrated_connection();
+    let connection = current_connection();
     insert_operation(&connection, OPERATION_A, 10);
     connection
         .execute(
@@ -145,7 +145,7 @@ fn idempotency_scope_is_principal_method_and_permanent_key() {
         "INSERT INTO idempotency_records (
             principal_id, method, idempotency_key, request_fingerprint, state,
             operation_id, response_json, created_at_ms
-        ) VALUES (?1, 'state.check', 'same-key', '{\"version\":2}', 'completed',
+        ) VALUES (?1, 'state.check', 'same-key', '{\"version\":1}', 'completed',
             ?2, '{}', 20)",
         params![PRINCIPAL, OPERATION_A],
     );
@@ -165,7 +165,7 @@ fn idempotency_scope_is_principal_method_and_permanent_key() {
 
 #[test]
 fn operation_pagination_uses_strict_descending_tuple_cursor() {
-    let connection = migrated_connection();
+    let connection = current_connection();
     insert_operation(&connection, OPERATION_A, 20);
     insert_operation(&connection, OPERATION_B, 20);
 
@@ -190,7 +190,7 @@ fn operation_pagination_uses_strict_descending_tuple_cursor() {
 
 #[test]
 fn event_pagination_uses_exclusive_sequence_and_preserves_empty_cursor() {
-    let connection = migrated_connection();
+    let connection = current_connection();
     for (sequence, suffix) in [(2, "101"), (5, "102")] {
         connection
             .execute(

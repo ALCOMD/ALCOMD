@@ -13,7 +13,7 @@
 
 本地包目录上限沿用 4096，单份清单沿用既有限额、累计读取上限 16 MiB。拒绝链接/reparse，原包内容读取限制不放宽。普通包元数据指纹域更新为 v3，旧未执行计划需重新生成；Unity 迁移原内容指纹域和内容校验保持。这里的 v3 是指纹域修订号，不是引用参考仓库代码。
 
-缺失目录证据仅在内部 formatVersion 4 ChangeSet 中持久化并参与摘要；公开 RPC DTO 不携带该字段，Core 投影测试覆盖其不外泄。没有新增数据库列、迁移、权限、公共 RPC 字段或生产依赖。按 v3 的行为自行实现，参考仓库只读，未复制或移植源码。
+缺失目录证据仅在内部 `formatVersion: 1` ChangeSet 中持久化并参与摘要；公开 RPC DTO 不携带该字段，Core 投影测试覆盖其不外泄。没有新增数据库列、迁移、权限、公共 RPC 字段或生产依赖。按 v3 的行为自行实现，参考仓库只读，未复制或移植源码。
 
 ## 验证
 
@@ -35,7 +35,7 @@
 守卫脚本及实证：`target/m7-vpm-four-gaps-update-20261109/`。精确核对原 Core/GUI 路径、命令、profile、零活动操作，备份关闭后的完整数据及旧二进制；原生 RPC 在原 Core 停止后运行且通过，才替换候选程序。最终 Core、GUI SHA-256 与 `inputs.json` 产物摘要一致。
 
 - Core PID **260200**，SHA-256 `645C84D0CE260F88A2B448E49C060C615F2C41633A0733FD02F17F8A643F787D`；GUI PID **272600**，SHA-256 `6D8BA24CA97A3D5E8AB641D5A97FA31C12DF068B5612758A672F46FBC37DF6EA`。
-- Core ready，State31/Config12，0 活动任务；原 2 项目及路径、2 仓库与设置摘要保持；候选 v2 读取通过。
+- Core ready，0 活动任务；原 2 项目及路径、2 仓库与设置摘要保持；项目候选读取通过。
 - 原数据 `target/m7-package-navigation-100ms-20261108/native-reopen/data`、原 `webview-profile` 保持，GUI 单窗口可响应，WebView 子进程使用原 profile。备份位于本轮更新目录的 `backup/`。
 - 没有卸载用户 SDK 或写用户 Unity 项目，未执行本轮原生界面点击和截图，不将窗口响应当作真实包操作或 H7 人工验收。
 

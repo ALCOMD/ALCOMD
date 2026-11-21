@@ -20,7 +20,7 @@ fn transport_observation_interface_is_independent_and_has_no_report_or_secret_ap
         );
     }
     assert_eq!(
-        std::fs::read(root.join("specs/extensions/wit/mcp-management-v2/management.wit"))
+        std::fs::read(root.join("specs/extensions/wit/mcp-management-v1/management.wit"))
             .expect("current management WIT"),
         std::fs::read(new.join("deps/mcp-management/management.wit")).expect("frozen dependency")
     );
@@ -100,14 +100,14 @@ fn runtime_observation_interface_preserves_frozen_worlds_and_projects_only_bound
         );
     }
     assert_eq!(
-        std::fs::read(root.join("specs/extensions/wit/mcp-management-v2/management.wit"))
+        std::fs::read(root.join("specs/extensions/wit/mcp-management-v1/management.wit"))
             .expect("frozen observation contract"),
         std::fs::read(new.join("deps/mcp-management/management.wit"))
             .expect("frozen observation contract")
     );
     let wit =
         std::fs::read_to_string(new.join("runtime.wit")).expect("frozen observation contract");
-    assert!(wit.contains("include alcomd:mcp-management/management-v2@2.0.0"));
+    assert!(wit.contains("include alcomd:mcp-management/management-v1@1.0.0"));
     assert_eq!(wit.matches(": func(").count(), 1);
     assert!(!wit.contains("wasi:"));
     let rpc: Value = serde_json::from_str(include_str!(
@@ -139,14 +139,14 @@ fn runtime_observation_interface_preserves_frozen_worlds_and_projects_only_bound
         }
         assert_eq!(rpc["$defs"][row]["additionalProperties"], false);
     }
-    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 45);
+    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 1);
 }
 
 #[test]
-fn management_v2_schema_preserves_bounded_secret_free_shapes() {
+fn management_v1_schema_preserves_bounded_secret_free_shapes() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let old = root.join("specs/extensions/wit/extension-v1");
-    let new = root.join("specs/extensions/wit/mcp-management-v2");
+    let new = root.join("specs/extensions/wit/mcp-management-v1");
     for name in [
         "types.wit",
         "world.wit",
@@ -168,7 +168,7 @@ fn management_v2_schema_preserves_bounded_secret_free_shapes() {
     assert!(!wit.contains("wasi:"));
     assert!(wit.contains("can-manage: bool"));
     let schema: Value = serde_json::from_str(include_str!(
-        "../../../specs/extensions/mcp-management-v2.schema.json"
+        "../../../specs/extensions/mcp-management-v1.schema.json"
     ))
     .expect("schema");
     assert_eq!(schema["x-max-serialized-bytes"], 65536);
@@ -239,7 +239,6 @@ fn actual_component_fixture_matches_its_build_inputs() {
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     for source in [
-        include_str!("../fixtures/m8/mcp-management-v1.provenance.json"),
         include_str!("../fixtures/m8/mcp-runtime-v1.provenance.json"),
         include_str!("../fixtures/m8/mcp-transport-v1.provenance.json"),
     ] {

@@ -25,10 +25,14 @@ impl app::UnityHubLauncher for PlatformUnityHubLauncher {
                 platform::UnityHubLaunchErrorKind::Busy => app::UnityHubOpenError::Busy,
                 platform::UnityHubLaunchErrorKind::OpenFailed => app::UnityHubOpenError::OpenFailed,
             };
-            classified
+            let classified = classified
                 .with_source(error)
-                .with_path(path)
-                .with_reason("failed to open Unity Hub")
+                .with_reason("failed to open Unity Hub");
+            if std::path::Path::new(path).is_absolute() {
+                classified.with_path(path)
+            } else {
+                classified
+            }
         })
     }
 }
@@ -61,6 +65,7 @@ impl app::UnityHubPlatform for PlatformUnityHubAdapter {
                 platform::UnityHubOrigin::None => app::UnityHubSource::None,
             },
             path: value.path,
+            registered_target: value.registered_target,
             configured_path_status: match value.configured_path_status {
                 platform::ConfiguredUnityHubStatus::Unset => {
                     app::UnityHubConfiguredPathStatus::Unset

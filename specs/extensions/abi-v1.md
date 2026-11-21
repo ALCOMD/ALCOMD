@@ -39,14 +39,14 @@ directory 等 convenience configuration；未列入 exact linker allowlist 的 i
 已发布 WIT function signature 或现有 type 的 field 增删改、variant/enum 语义改变、tuple/result/option 改变、
 parameter/result 改变、existing required import 改变均 breaking。WIT record 不具有 JSON unknown-field semantics。
 
-兼容增加只能通过新的独立 optional interface、negotiated capability、optional function group 或新 world/version。
-ABI v1 exact shape 冻结在 `abi-compatibility-v1.json`；old guest/new host fixture 必须持续通过。
+首发前直接修订版本 1 的 WIT，并同步宿主、guest、生成的绑定和组件夹具。宿主只按现行 world 校验组件。
+当前接口与导出类型记录在 `abi-compatibility-v1.json`。
 
 ## Stable WIT error
 
-M8 client management uses `alcomd:mcp-management/clients@2.0.0`, negotiated by Manifest.
-Its `management-v1` world includes this frozen world and adds only the independent import.
-See `mcp-management-v2.md` for types and errors.
+M8 client management uses `alcomd:mcp-management/clients@1.0.0`, negotiated by Manifest.
+Its `management-v1` world includes the base world and adds the client management import.
+See `mcp-management-v1.md` for types and errors.
 
 The additive `alcomd:extension/background-integration-v1@1.0.0` world includes the exact base world and adds `host-unity-sessions`, `host-local-ipc`, and `guest-background`, each at `1.0.0`. A signed manifest opts into the world by declaring all three interface identifiers as required. The base Host world cannot import these capabilities. Core schedules a single awaited tick per active background instance. Interactive UI and MCP tool invocations cannot use the new imports. Local IPC handles are opaque and do not persist between daemon runs. [WIT](wit/extension-v1/background-integration.wit)
 

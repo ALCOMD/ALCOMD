@@ -6,9 +6,10 @@ export interface RepositoryPackageSettings {
     packageIds: string[];
 }
 
-/** Config13 package source preferences. Core normalizes and validates writes. */
+/** Config1 package source preferences. Core normalizes and validates writes. */
 export interface PackageSettings {
     showPrerelease: boolean;
+    preferPrerelease: boolean;
     hiddenRepositoryIds: string[];
     hiddenRepositoryPackages: RepositoryPackageSettings[];
     hideLocalUserPackages: boolean;
@@ -26,7 +27,7 @@ export const RPC_CAPABILITIES = {
     repositoriesListFiles: "repositories.list-files.v1",
     repositoriesListImport: "repositories.list-import.v1",
     unityHubOpen: "unity.hub.open.v1",
-    packagesCandidates: "packages.candidates.v2",
+    packagesCandidates: "packages.candidates.v1",
     extensionsRemoteInstall: "extensions.remote-install.v1",
     extensionsLifecycle: "extensions.lifecycle.v1",
     extensionsPermissions: "extensions.permissions.v1",
@@ -89,15 +90,15 @@ export interface HelloResponse {
     rpcVersion: typeof RPC_VERSION;
     daemonVersion: string;
     capabilities: string[];
-    dataSchema?: number;
-    configSchema?: number;
-    extensionApi?: {
-        major: number;
-        world: string;
+    dataSchema: 1;
+    configSchema: 1;
+    extensionApi: {
+        major: 1;
+        world: "alcomd:extension/extension-v1@1.0.0";
     };
 }
 
 export * from "./extension-sources.js";
 
 export type * from "./core-models.js";
-export { SDK_METHODS, type NativeRpcMethods } from "./sdk-methods.js";
+export { SDK_METHODS, type NativeRpcMethods, type BackupCreateParams, type BackupRestoreParams } from "./sdk-methods.js";

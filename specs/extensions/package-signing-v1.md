@@ -1,6 +1,6 @@
 # `.alcomdextension` v1 content identity, publisher and signature
 
-状态：当前有效合同；严格签名验证已实现。2026-11-16 所有者批准移除额外发布者确认和信任决策，State39 删除相应持久字段。
+状态：当前有效合同；严格签名验证已实现。
 
 ## 内容、来源身份与安装选择
 
@@ -44,7 +44,7 @@ for each entry:
 - Plan/Apply 仍冻结和复查 ExtensionId、签名/摘要、实际来源身份、版本与权限声明；包被替换时拒绝，不静默重新规划。
 - Manifest 申请权限不等于实际授权。安装仅在用户明确同意冻结 Plan 的必需权限后，于同一状态提交事务授予这些权限；可选及未声明能力默认不授予。原必需权限门禁和沙箱保持。
 - 留存数据仍绑定 ExtensionId 和发布者指纹，另一发布者不能继承该数据。删除发布者确认不等于删除密码学身份隔离。
-- `publisherApproval`、`trustDecision` 和 `extension_publisher_confirmation_required` 已从当前公共合同移除；旧输入按既有严格解析拒绝，不提供兼容字段。历史数据库两列由 State39 精确删除，旧迁移不改。
+
 - 长期 private/signing key 不进入 ALCOMD state；package、data、log、Event 不保存 bearer credential。
 
 ## M6 install source

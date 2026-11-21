@@ -2,43 +2,302 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.vrclearn.com/schema/config/settings-v1.json",
     "title": "ALCOMD Config Schema 1 settings",
-    "deprecated": true,
-    "x-alcomd-status": "legacy-startup-migration-input-only",
-    "x-alcomd-currentSchema": 5,
     "type": "object",
     "additionalProperties": false,
-    "required": ["schema", "revision", "appearance", "locale"],
+    "required": [
+        "schema",
+        "revision",
+        "appearance",
+        "packages",
+        "locale",
+        "window",
+        "projects",
+        "backups",
+        "integrations",
+        "network"
+    ],
     "properties": {
-        "schema": {"const": 1},
-        "revision": {"$ref": "#/$defs/revision"},
-        "appearance": {"$ref": "#/$defs/appearance"},
-        "locale": {"$ref": "#/$defs/locale"}
+        "schema": {
+            "const": 1
+        },
+        "revision": {
+            "$ref": "#/$defs/revision"
+        },
+        "appearance": {
+            "$ref": "#/$defs/appearanceToml"
+        },
+        "packages": {
+            "$ref": "#/$defs/packagesToml"
+        },
+        "locale": {
+            "$ref": "#/$defs/locale"
+        },
+        "unity": {
+            "$ref": "#/$defs/unityToml"
+        },
+        "paths": {
+            "$ref": "#/$defs/pathsToml"
+        },
+        "window": {
+            "$ref": "#/$defs/windowToml"
+        },
+        "projects": {
+            "$ref": "#/$defs/projectsToml"
+        },
+        "backups": {
+            "$ref": "#/$defs/backupsToml"
+        },
+        "integrations": {
+            "$ref": "#/$defs/integrationsToml"
+        },
+        "network": {
+            "$ref": "#/$defs/networkToml"
+        }
     },
     "$defs": {
-        "revision": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
-        "mode": {"enum": ["system", "light", "dark"]},
-        "sourceColor": {"type": ["string", "null"], "pattern": "^#[0-9A-F]{6}$"},
-        "density": {"enum": ["default", "compact"]},
-        "motion": {"enum": ["system", "reduced"]},
-        "locale": {"enum": ["system", "en-US", "zh-CN", "ja-JP"]},
-        "settings": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["appearance", "locale"],
-            "properties": {
-                "appearance": {"$ref": "#/$defs/appearance"},
-                "locale": {"$ref": "#/$defs/locale"}
-            }
+        "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 18446744073709551615
+        },
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "mode": {
+            "enum": [
+                "system",
+                "light",
+                "dark"
+            ]
+        },
+        "scheme": {
+            "enum": [
+                "tonal-spot",
+                "fidelity",
+                "monochrome",
+                "neutral",
+                "vibrant",
+                "expressive",
+                "content",
+                "rainbow",
+                "fruit-salad"
+            ]
+        },
+        "sourceColor": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "pattern": "^#[0-9A-F]{6}$"
+        },
+        "motion": {
+            "enum": [
+                "system",
+                "full",
+                "reduced"
+            ]
+        },
+        "locale": {
+            "enum": [
+                "system",
+                "en-US",
+                "zh-CN",
+                "ja-JP"
+            ]
         },
         "appearance": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["mode", "sourceColor", "density", "motion"],
+            "required": [
+                "mode",
+                "scheme",
+                "sourceColor",
+                "motion"
+            ],
             "properties": {
-                "mode": {"$ref": "#/$defs/mode"},
-                "sourceColor": {"$ref": "#/$defs/sourceColor"},
-                "density": {"$ref": "#/$defs/density"},
-                "motion": {"$ref": "#/$defs/motion"}
+                "mode": {
+                    "$ref": "#/$defs/mode"
+                },
+                "scheme": {
+                    "$ref": "#/$defs/scheme"
+                },
+                "sourceColor": {
+                    "$ref": "#/$defs/sourceColor"
+                },
+                "motion": {
+                    "$ref": "#/$defs/motion"
+                }
+            }
+        },
+        "hiddenRepositoryIds": {
+            "type": "array",
+            "maxItems": 256,
+            "uniqueItems": true,
+            "items": {
+                "$ref": "#/$defs/uuid"
+            },
+            "x-alcomd-order": "canonical-lexical-ascending",
+            "x-alcomd-duplicates": "invalid_request"
+        },
+        "packages": {
+            "type": "object",
+            "if": {
+                "properties": {
+                    "showPrerelease": {
+                        "const": false
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "preferPrerelease": {
+                        "const": false
+                    }
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "showPrerelease",
+                "preferPrerelease",
+                "hiddenRepositoryIds",
+                "hideLocalUserPackages",
+                "hiddenRepositoryPackages"
+            ],
+            "properties": {
+                "preferPrerelease": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "showPrerelease": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "hiddenRepositoryIds": {
+                    "$ref": "#/$defs/hiddenRepositoryIds"
+                },
+                "hideLocalUserPackages": {
+                    "type": "boolean"
+                },
+                "hiddenRepositoryPackages": {
+                    "$ref": "#/$defs/hiddenRepositoryPackages"
+                }
+            }
+        },
+        "hubPath": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "x-alcomd-maxUtf8Bytes": 4096,
+            "x-alcomd-validation": "Core-normalized absolute usable executable on explicit update"
+        },
+        "unitySettings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "hubPath",
+                "defaultLaunchArguments"
+            ],
+            "properties": {
+                "hubPath": {
+                    "$ref": "#/$defs/hubPath"
+                },
+                "defaultLaunchArguments": {
+                    "$ref": "#/$defs/defaultLaunchArguments"
+                }
+            }
+        },
+        "partialUnityUpdate": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+                "hubPath": {
+                    "$ref": "#/$defs/hubPath"
+                },
+                "defaultLaunchArguments": {
+                    "$ref": "#/$defs/defaultLaunchArguments"
+                }
+            },
+            "x-alcomd-field-permissions": {
+                "defaultLaunchArguments": [
+                    "settings.manage",
+                    "unity.manage"
+                ]
+            }
+        },
+        "settings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "appearance",
+                "packages",
+                "locale",
+                "unity",
+                "paths",
+                "window",
+                "projects",
+                "backups",
+                "integrations",
+                "network"
+            ],
+            "properties": {
+                "appearance": {
+                    "$ref": "#/$defs/appearance"
+                },
+                "packages": {
+                    "$ref": "#/$defs/packages"
+                },
+                "locale": {
+                    "$ref": "#/$defs/locale"
+                },
+                "unity": {
+                    "$ref": "#/$defs/unitySettings"
+                },
+                "paths": {
+                    "$ref": "#/$defs/pathSettings"
+                },
+                "window": {
+                    "$ref": "#/$defs/windowSettings"
+                },
+                "projects": {
+                    "$ref": "#/$defs/projectSettings"
+                },
+                "backups": {
+                    "$ref": "#/$defs/backupSettings"
+                },
+                "integrations": {
+                    "$ref": "#/$defs/integrationSettings"
+                },
+                "network": {
+                    "$ref": "#/$defs/networkSettings"
+                }
+            }
+        },
+        "partialPackagesUpdate": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+                "preferPrerelease": {
+                    "type": "boolean"
+                },
+                "showPrerelease": {
+                    "type": "boolean"
+                },
+                "hiddenRepositoryIds": {
+                    "$ref": "#/$defs/hiddenRepositoryIds"
+                },
+                "hideLocalUserPackages": {
+                    "type": "boolean"
+                },
+                "hiddenRepositoryPackages": {
+                    "$ref": "#/$defs/hiddenRepositoryPackages"
+                }
             }
         },
         "partialUpdate": {
@@ -51,21 +310,713 @@
                     "additionalProperties": false,
                     "minProperties": 1,
                     "properties": {
-                        "mode": {"$ref": "#/$defs/mode"},
-                        "sourceColor": {"$ref": "#/$defs/sourceColor"},
-                        "density": {"$ref": "#/$defs/density"},
-                        "motion": {"$ref": "#/$defs/motion"}
+                        "mode": {
+                            "$ref": "#/$defs/mode"
+                        },
+                        "scheme": {
+                            "$ref": "#/$defs/scheme"
+                        },
+                        "sourceColor": {
+                            "$ref": "#/$defs/sourceColor"
+                        },
+                        "motion": {
+                            "$ref": "#/$defs/motion"
+                        }
                     }
                 },
-                "locale": {"$ref": "#/$defs/locale"}
+                "packages": {
+                    "$ref": "#/$defs/partialPackagesUpdate"
+                },
+                "locale": {
+                    "$ref": "#/$defs/locale"
+                },
+                "unity": {
+                    "$ref": "#/$defs/partialUnityUpdate"
+                },
+                "paths": {
+                    "$ref": "#/$defs/partialPathUpdate"
+                },
+                "window": {
+                    "$ref": "#/$defs/partialWindowUpdate"
+                },
+                "projects": {
+                    "$ref": "#/$defs/partialProjectsUpdate"
+                },
+                "backups": {
+                    "$ref": "#/$defs/partialBackupsUpdate"
+                },
+                "integrations": {
+                    "$ref": "#/$defs/integrationSettings"
+                },
+                "network": {
+                    "$ref": "#/$defs/networkSettings"
+                }
+            }
+        },
+        "directoryPath": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "x-alcomd-maxUtf8Bytes": 4096,
+            "x-alcomd-validation": "Core-normalized absolute existing safe directory on explicit update; null uses the product directory under the user home"
+        },
+        "pathSettings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "projectDirectory",
+                "backupDirectory"
+            ],
+            "properties": {
+                "projectDirectory": {
+                    "$ref": "#/$defs/directoryPath"
+                },
+                "backupDirectory": {
+                    "$ref": "#/$defs/directoryPath"
+                }
+            }
+        },
+        "partialPathUpdate": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+                "projectDirectory": {
+                    "$ref": "#/$defs/directoryPath"
+                },
+                "backupDirectory": {
+                    "$ref": "#/$defs/directoryPath"
+                }
+            }
+        },
+        "storageDirectories": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "projectDirectory",
+                "backupDirectory"
+            ],
+            "properties": {
+                "projectDirectory": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "x-alcomd-maxUtf8Bytes": 4096
+                },
+                "backupDirectory": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "x-alcomd-maxUtf8Bytes": 4096
+                }
+            }
+        },
+        "launchArguments": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+                "type": "string",
+                "maxLength": 4096,
+                "pattern": "^[^\\u0000]*$",
+                "x-alcomd-maxUtf8Bytes": 4096
+            },
+            "x-alcomd-maxSerializedJsonBytes": 65536,
+            "x-alcomd-forbiddenSelectors": [
+                "-projectPath",
+                "-createProject",
+                "-openfile"
+            ],
+            "x-alcomd-selectorComparison": "case-insensitive-exact-or-equals-prefix",
+            "x-alcomd-passing": "literal-argv-no-shell-no-splitting"
+        },
+        "defaultLaunchArguments": {
+            "anyOf": [
+                {
+                    "$ref": "#/$defs/launchArguments"
+                },
+                {
+                    "type": "null"
+                }
+            ],
+            "description": "null uses built-in defaults (currently []); [] is an explicit empty override."
+        },
+        "windowSettings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "rememberState",
+                "fullscreen"
+            ],
+            "properties": {
+                "rememberState": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "fullscreen": {
+                    "type": "boolean",
+                    "default": false
+                }
+            }
+        },
+        "partialWindowUpdate": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+                "rememberState": {
+                    "type": "boolean"
+                },
+                "fullscreen": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "projectSettings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "autoDiscover"
+            ],
+            "properties": {
+                "autoDiscover": {
+                    "type": "boolean",
+                    "default": true
+                }
+            }
+        },
+        "backupSettings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "compressionMode",
+                "includeVpmPackages",
+                "includeLibrary"
+            ],
+            "properties": {
+                "compressionMode": {
+                    "enum": [
+                        "store",
+                        "fast",
+                        "level3",
+                        "level5",
+                        "level7",
+                        "maximum"
+                    ],
+                    "default": "level5"
+                },
+                "includeVpmPackages": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "includeLibrary": {
+                    "type": "boolean",
+                    "default": false
+                }
+            }
+        },
+        "partialProjectsUpdate": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "autoDiscover"
+            ],
+            "properties": {
+                "autoDiscover": {
+                    "type": "boolean",
+                    "default": true
+                }
+            },
+            "minProperties": 1
+        },
+        "partialBackupsUpdate": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "compressionMode": {
+                    "enum": [
+                        "store",
+                        "fast",
+                        "level3",
+                        "level5",
+                        "level7",
+                        "maximum"
+                    ],
+                    "default": "level5"
+                },
+                "includeVpmPackages": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "includeLibrary": {
+                    "type": "boolean",
+                    "default": false
+                }
+            },
+            "minProperties": 1
+        },
+        "integrationsToml": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "handle_vcc_links"
+            ],
+            "properties": {
+                "handle_vcc_links": {
+                    "type": "boolean",
+                    "default": true
+                }
+            }
+        },
+        "integrationSettings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "handleVccLinks"
+            ],
+            "properties": {
+                "handleVccLinks": {
+                    "type": "boolean",
+                    "default": true
+                }
+            }
+        },
+        "networkProxy": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "mode"
+                    ],
+                    "properties": {
+                        "mode": {
+                            "const": "system"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "mode"
+                    ],
+                    "properties": {
+                        "mode": {
+                            "const": "direct"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "mode",
+                        "url"
+                    ],
+                    "properties": {
+                        "mode": {
+                            "const": "custom"
+                        },
+                        "url": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                            "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^@\\s\\\\?#]+/?$"
+                        }
+                    }
+                }
+            ]
+        },
+        "networkSettings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "proxy"
+            ],
+            "properties": {
+                "proxy": {
+                    "$ref": "#/$defs/networkProxy"
+                }
+            }
+        },
+        "networkToml": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "proxy_mode"
+                    ],
+                    "properties": {
+                        "proxy_mode": {
+                            "const": "system"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "proxy_mode"
+                    ],
+                    "properties": {
+                        "proxy_mode": {
+                            "const": "direct"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "proxy_mode",
+                        "proxy_url"
+                    ],
+                    "properties": {
+                        "proxy_mode": {
+                            "const": "custom"
+                        },
+                        "proxy_url": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                            "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^@\\s\\\\?#]+/?$"
+                        }
+                    }
+                }
+            ]
+        },
+        "hiddenRepositoryPackages": {
+            "type": "array",
+            "maxItems": 256,
+            "default": [],
+            "x-alcomd-maxTotalPackageIds": 4096,
+            "x-alcomd-uniqueRepositoryIds": true,
+            "x-alcomd-canonicalOrder": "repositoryId and packageIds sorted by ASCII bytes; persisted input must be canonical",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "repositoryId",
+                    "packageIds"
+                ],
+                "properties": {
+                    "repositoryId": {
+                        "$ref": "#/$defs/uuid"
+                    },
+                    "packageIds": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 4096,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                        }
+                    }
+                }
+            }
+        },
+        "hiddenRepositoryPackagesToml": {
+            "type": "array",
+            "maxItems": 256,
+            "default": [],
+            "x-alcomd-maxTotalPackageIds": 4096,
+            "x-alcomd-uniqueRepositoryIds": true,
+            "x-alcomd-canonicalOrder": "repository_id and package_ids sorted by ASCII bytes; persisted input must be canonical",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "repository_id",
+                    "package_ids"
+                ],
+                "properties": {
+                    "repository_id": {
+                        "$ref": "#/$defs/uuid"
+                    },
+                    "package_ids": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 4096,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                        }
+                    }
+                }
+            }
+        },
+        "appearanceToml": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "mode",
+                "scheme",
+                "motion"
+            ],
+            "properties": {
+                "mode": {
+                    "$ref": "#/$defs/mode"
+                },
+                "scheme": {
+                    "$ref": "#/$defs/scheme"
+                },
+                "source_color": {
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/sourceColor"
+                        },
+                        {
+                            "not": {
+                                "type": "null"
+                            }
+                        }
+                    ]
+                },
+                "motion": {
+                    "$ref": "#/$defs/motion"
+                }
+            }
+        },
+        "packagesToml": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "show_prerelease",
+                "prefer_prerelease",
+                "hidden_repository_ids",
+                "hide_local_user_packages",
+                "hidden_repository_packages"
+            ],
+            "properties": {
+                "show_prerelease": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "prefer_prerelease": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "hidden_repository_ids": {
+                    "$ref": "#/$defs/hiddenRepositoryIds"
+                },
+                "hide_local_user_packages": {
+                    "type": "boolean"
+                },
+                "hidden_repository_packages": {
+                    "$ref": "#/$defs/hiddenRepositoryPackagesToml"
+                }
+            },
+            "if": {
+                "properties": {
+                    "show_prerelease": {
+                        "const": false
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "prefer_prerelease": {
+                        "const": false
+                    }
+                }
+            }
+        },
+        "unityToml": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "hub_path": {
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/hubPath"
+                        },
+                        {
+                            "not": {
+                                "type": "null"
+                            }
+                        }
+                    ]
+                },
+                "default_launch_arguments": {
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/defaultLaunchArguments"
+                        },
+                        {
+                            "not": {
+                                "type": "null"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "pathsToml": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "project_directory": {
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/directoryPath"
+                        },
+                        {
+                            "not": {
+                                "type": "null"
+                            }
+                        }
+                    ]
+                },
+                "backup_directory": {
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/directoryPath"
+                        },
+                        {
+                            "not": {
+                                "type": "null"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "windowToml": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "remember_state",
+                "fullscreen"
+            ],
+            "properties": {
+                "remember_state": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "fullscreen": {
+                    "type": "boolean",
+                    "default": false
+                }
+            }
+        },
+        "projectsToml": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "auto_discover"
+            ],
+            "properties": {
+                "auto_discover": {
+                    "type": "boolean",
+                    "default": true
+                }
+            }
+        },
+        "backupsToml": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "compression_mode",
+                "include_vpm_packages",
+                "include_library"
+            ],
+            "properties": {
+                "compression_mode": {
+                    "enum": [
+                        "store",
+                        "fast",
+                        "level3",
+                        "level5",
+                        "level7",
+                        "maximum"
+                    ],
+                    "default": "level5"
+                },
+                "include_vpm_packages": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "include_library": {
+                    "type": "boolean",
+                    "default": false
+                }
             }
         }
     },
     "x-alcomd-storage": {
         "path": "config/settings.toml",
         "writer": "alcomd",
-        "maxUtf8Bytes": 16384,
+        "maxUtf8Bytes": 1048576,
+        "maxHiddenRepositoryIds": 256,
         "unknownFields": "fail-closed",
-        "replacement": "same-directory-synced-temp-then-recoverable-rename"
+        "replacement": "same-directory-synced-temp-then-recoverable-rename",
+        "maxBaseUtf8BytesExcludingHiddenRepositoryPackages": 16384,
+        "maxHiddenRepositoryPackageGroups": 256,
+        "maxHiddenRepositoryPackageIds": 4096,
+        "acceptedVersion": 1
+    },
+    "x-alcomd-launch-inheritance": {
+        "precedence": [
+            "project-override-including-empty",
+            "global-override-including-empty",
+            "built-in-empty"
+        ],
+        "merge": false,
+        "projectGetProjection": [
+            "defaultArguments",
+            "effectiveArguments"
+        ],
+        "acceptedLaunch": "snapshot-effective-arguments-at-acceptance"
+    },
+    "x-alcomd-window-authority": {
+        "rememberState": "Core-settings-authority",
+        "geometry": "discardable-GUI-view-cache-only",
+        "newPermissionOrStateSchema": false,
+        "fullscreen": "Core-settings-authority"
+    },
+    "x-alcomd-project-discovery": {
+        "additionalUpdatePermission": "projects.manage",
+        "pathUpdatePermissionWhenAutoDiscoverEnabled": "projects.manage",
+        "scanIntervalMs": 30000,
+        "maxDirectoryEntries": 4096,
+        "recursive": false,
+        "followLinks": false,
+        "stateSchemaChange": false
+    },
+    "x-alcomd-field-permissions": {
+        "settings.update.unity.defaultLaunchArguments": [
+            "settings.manage",
+            "unity.manage"
+        ],
+        "settings.update.projects.autoDiscover": [
+            "settings.manage",
+            "projects.manage"
+        ]
+    },
+    "x-alcomd-conditional-field-permissions": {
+        "settings.update.paths.projectDirectory": {
+            "when": {
+                "field": "projects.autoDiscover",
+                "equals": true,
+                "source": "effective-update"
+            },
+            "permissions": [
+                "settings.manage",
+                "projects.manage"
+            ]
+        }
     }
 }

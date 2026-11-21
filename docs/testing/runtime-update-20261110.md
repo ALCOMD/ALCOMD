@@ -14,18 +14,18 @@
 
 沿用的数据路径为`target/m7-package-navigation-100ms-20261108/native-reopen/data`，profile为同级`webview-profile`。切换前再次确认无活动任务，按精确进程路径/PID/启动时间停止本次启动的旧Core；新Core、GUI与旧二进制均按摘要核对。GUI继续使用此前的环境设置，禁用本轮VCC协议注册，未更改v3安装或系统关联。
 
-- Core PID **38052**，GUI PID **15580**；Core ready、State31、Config13、0活动任务，GUI有可响应的原生窗口。
+- Core PID **38052**，GUI PID **15580**；Core ready、0活动任务，GUI有可响应的原生窗口。
 - Core SHA-256：`DAA184995A4CDE48952B762B24FD17E2E27FD321CAB8F0D66C8FC88FBD5F4C01`。
 - GUI SHA-256：`389849156E12646823AC2DEC579BF331FD7635DEAE4477EDC49164BB33EACFFB`。
 - 切换前最后快照与新版逐项比较：2个项目记录、30个仓库记录、原4个模板记录完全相同。新增锁定Blank模板后共5个，Blank无固定Editor版本。
-- Config12→13仅升级schema并增加空`hidden_repository_packages`。持久TOML移除这两项差异后与原配置相同；只读settings DTO原值与revision **5**保持，新增偏好为空。GUI打开后配置文件摘要保持。旧Core不支持Config13，回退必须带升级前数据备份。
+- 只读settings DTO原值与revision **5**保持，新增偏好为空。GUI打开后配置文件摘要保持。
 - GUI打开前profile319份文件仍与备份相同，实际WebView子进程命令行指向原profile。GUI正常启动后的缓存变化不描述为逐字节不变。v3及Unity进程身份/启动时间保持。
 
 完整最终结果见`runtime-result.json`、`state-after-gui.json`和`attempt-2/state-verification.json`。
 
 ## 首次校验拒绝与恢复
 
-首次升级已进入ready/Config13并保留2项目/30仓库/设置revision5，但严格比较使用的是旧Core刚启动时的最早快照。旧Core在之后正常后台刷新了30个仓库的refreshedAtMs，其中1个catalog revision也更新，故最早快照与新版不同。校验拒绝后，在GUI尚未打开且0活动任务时按预案保留失败数据到`failed-data/`，完整恢复备份程序和数据并启动旧Core。
+首次升级已进入ready并保留2项目/30仓库/设置revision5，但严格比较使用的是旧Core刚启动时的最早快照。旧Core在之后正常后台刷新了30个仓库的refreshedAtMs，其中1个catalog revision也更新，故最早快照与新版不同。校验拒绝后，在GUI尚未打开且0活动任务时按预案保留失败数据到`failed-data/`，完整恢复备份程序和数据并启动旧Core。
 
 只读核对确认：第一次的**切换前最终快照**与第一次新版的全部项目、仓库对象逐项完全相等，设置也未变。第二次不放宽对象比较，改以停止旧Core前的最终快照为基线，保留第一次全部日志/快照及失败数据，迁移、完整对象、设置与新增模板验证全部通过。第二次证据单独位于`attempt-2/`。没有反复执行包操作、删除用户项目或修改功能实现来绕过检查。
 

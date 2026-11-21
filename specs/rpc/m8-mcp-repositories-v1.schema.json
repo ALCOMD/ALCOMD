@@ -16,10 +16,6 @@
             "params": "registerInput",
             "result": "writeResult"
         },
-        "mcp.repositories.refresh": {
-            "params": "refreshInput",
-            "result": "writeResult"
-        },
         "mcp.repositories.remove": {
             "params": "removeInput",
             "result": "writeResult"
@@ -55,11 +51,16 @@
                 },
                 "id": {
                     "$ref": "#/$defs/id"
+                },
+                "orderFingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
                 }
             },
             "required": [
                 "registeredAtMs",
-                "id"
+                "id",
+                "orderFingerprint"
             ]
         },
         "entry": {
@@ -198,26 +199,6 @@
             "required": [
                 "previewId",
                 "confirm",
-                "idempotencyKey"
-            ]
-        },
-        "refreshInput": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "repositoryId": {
-                    "$ref": "#/$defs/id"
-                },
-                "expectedRevision": {
-                    "$ref": "#/$defs/revision"
-                },
-                "idempotencyKey": {
-                    "$ref": "#/$defs/key"
-                }
-            },
-            "required": [
-                "repositoryId",
-                "expectedRevision",
                 "idempotencyKey"
             ]
         },

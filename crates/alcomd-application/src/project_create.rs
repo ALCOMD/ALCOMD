@@ -78,8 +78,7 @@ pub enum ProjectTemplateSource {
         name: String,
         unity_version: String,
         dependencies: Vec<ProjectTemplateDependency>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        base_template: Option<ProjectTemplateRef>,
+        base_template: ProjectTemplateRef,
     },
 }
 
@@ -601,7 +600,7 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
         input: ProjectCreateInput,
         key: IdempotencyKey,
     ) -> Result<ProjectCreateAccepted, ProjectCreateError> {
-        require_owner(access)?;
+        require_template_permission(access, Permission::ProjectsCreate)?;
         self.create_in_destination(access, input, key, None).await
     }
 
@@ -727,16 +726,7 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
         limit: Option<u16>,
         cursor: Option<String>,
     ) -> Result<ProjectTemplatePage, ProjectCreateError> {
-        if access.is_mcp_client() {
-            access
-                .require(Permission::ProjectsCreate)
-                .map_err(|cause| {
-                    ProjectCreateError::new(ProjectCreateErrorCode::PermissionDenied)
-                        .with_source(cause)
-                })?;
-        } else {
-            require_owner(access)?;
-        }
+        require_template_permission(access, Permission::ProjectsCreate)?;
         let limit = limit.unwrap_or(100);
         if !(1..=100).contains(&limit) {
             return Err(ProjectCreateError::new(
@@ -791,9 +781,7 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
                 base_template,
             } => {
                 validate_template_metadata(id, name)?;
-                if let Some(base) = base_template {
-                    validate_template_reference(&base.id, base.revision)?;
-                }
+                validate_template_reference(&base_template.id, base_template.revision)?;
                 crate::canonical_unity_version(unity_version).map_err(|cause| {
                     ProjectCreateError::new(ProjectCreateErrorCode::InvalidInput).with_source(cause)
                 })?;
@@ -1233,26 +1221,13 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
     }
 }
 
-fn require_owner(access: &AccessContext) -> Result<(), ProjectCreateError> {
-    if access.principal().as_str() != PrincipalId::LOCAL_OWNER {
-        return Err(ProjectCreateError::new(
-            ProjectCreateErrorCode::PermissionDenied,
-        ));
-    }
-    Ok(())
-}
-
 fn require_template_permission(
     access: &AccessContext,
     permission: Permission,
 ) -> Result<(), ProjectCreateError> {
-    if access.is_mcp_client() {
-        access
-            .require(permission)
-            .map_err(|_| ProjectCreateError::new(ProjectCreateErrorCode::PermissionDenied))
-    } else {
-        require_owner(access)
-    }
+    access.require(permission).map_err(|cause| {
+        ProjectCreateError::new(ProjectCreateErrorCode::PermissionDenied).with_source(cause)
+    })
 }
 
 #[must_use]

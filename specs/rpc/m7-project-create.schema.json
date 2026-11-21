@@ -2,8 +2,6 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-project-create.json",
     "title": "ALCOMD project creation and template archives",
-    "x-alcomd-local-owner-only": false,
-    "x-alcomd-local-owner-only-methods": ["projects.create"],
     "x-alcomd-max-canonical-declaration-bytes": 24576,
     "x-alcomd-max-template-job-request-bytes": 49152,
     "x-alcomd-template-operation-results": {
@@ -21,13 +19,13 @@
     "x-alcomd-project-create-dependency-permissions": ["packages.read", "repositories.read", "packages.manage"],
     "x-alcomd-method-capabilities": {
         "projects.create": "projects.create.v1",
-        "projectTemplates.list": "projectTemplates.v2",
-        "projectTemplates.save": "projectTemplates.v2",
-        "projectTemplates.remove": "projectTemplates.v2",
-        "projectTemplates.export": "projectTemplates.v2"
+        "projectTemplates.list": "projectTemplates.v1",
+        "projectTemplates.save": "projectTemplates.v1",
+        "projectTemplates.remove": "projectTemplates.v1",
+        "projectTemplates.export": "projectTemplates.v1"
     },
     "x-alcomd-mcp-method-capabilities": {
-        "projectTemplates.list": "projectTemplates.v2",
+        "projectTemplates.list": "projectTemplates.v1",
         "projectTemplates.save": "project-templates.edit.v1",
         "projectTemplates.remove": "project-templates.edit.v1",
         "projectTemplates.export": "project-templates.edit.v1"
@@ -46,6 +44,7 @@
         "projectTemplates.remove": "#/$defs/removeResult",
         "projectTemplates.export": "#/$defs/saveResult"
     },
+    "x-alcomd-interactive-clients": ["GUI", "CLI", "MCP"],
     "$defs": {
         "templateId": {"type": "string", "minLength": 3, "maxLength": 128, "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"},
         "unityVersion": {
@@ -159,7 +158,7 @@
         "manualSource": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["kind", "id", "name", "unityVersion", "dependencies"],
+            "required": ["kind", "id", "name", "unityVersion", "dependencies", "baseTemplate"],
             "properties": {
                 "kind": {"const": "manual"},
                 "baseTemplate": {"$ref": "#/$defs/templateRef"},

@@ -6,7 +6,7 @@
 
 - Core以`com.vrclearn.alcomd.templates.blank`登记锁定的Blank，GUI显示空白并默认选择。工程含Assets、空UPM/VPM清单及ProjectSettings，创建时写入用户选择的完整Unity版本、项目名称和独立GUID。Blank无固定Editor版本；Avatar/World既有四个固定版本条目保持。
 - 空白归档沿用当前单文件ZIP格式，是唯一允许省略ProjectVersion的保留ID；一般导入、自定义模板和其他缺版本历史记录的校验保持。导出/导入Blank仍通过相同路径、大小、哈希和内容校验；内置锁保持。
-- `ProjectTemplateSource.manual`新增可选`baseTemplate:{id,revision}`，GUI创建时要求选择且默认Blank。省略仍是原最小脚手架语义。依赖为额外/覆盖条目；基础工程文件、UPM、VPM直接依赖与锁继承。具体基础模板的完整Editor固定，Blank可选任意合法完整版本。包合并后仍受128直接依赖限制。
+- `ProjectTemplateSource.manual`要求提供 `baseTemplate:{id,revision}`，可选内置或用户模板，GUI 默认选中 Blank。依赖为额外/覆盖条目；基础工程文件、UPM、VPM直接依赖与锁继承。具体基础模板的完整Editor固定，Blank可选任意合法完整版本。包合并后仍受128直接依赖限制。
 - 接受事务校验基础引用并冻结声明，未终结任务引用保护归档，恢复读取冻结内容。基础模板接受后被删除或替换不影响本任务；成功、失败和取消终态释放引用。结果自包含，不增加运行时继承链或依赖基础模板存活，因此不产生继承循环。
 - 使用既有任务、owner限定、幂等键、修订、归档安全校验和模板事件；无新RPC方法、能力、权限、SQL表/列、State/Config版本或依赖。新增可选请求字段与可选内部journal字段，既有无基础引用的请求含义保持；普通模板无版本的行为不放宽。
 - GUI共享Material控件与Unity版本输入，基础模板可分页，读取/修订变化保留草稿并要求重新选择，失效保存由Core再次拒绝。其他项目来源/文件导入入口保持。
@@ -23,4 +23,4 @@
 
 ## 2026-11-10 运行更新
 
-所有者随后明确要求“更新”，本项已随配套Core/GUI构建并替换原运行版本。原数据及profile离线备份，Config12升级13保持原设置和revision，2项目/30仓库/4原模板保持并新增空白。进程、窗口响应及只读RPC验证通过；原生界面内容读取未获Computer Use应用授权，未计入视觉签收。见[运行记录](../testing/runtime-update-20261110.md)。未提交/推送，H7保持；上方未更新描述属于原验证轮次。
+所有者随后明确要求“更新”，本项已随配套Core/GUI构建并替换原运行版本。原数据及profile离线备份，设置及 revision 核对通过，2项目/30仓库/4原模板保持并新增空白。进程、窗口响应及只读RPC验证通过；原生界面内容读取未获Computer Use应用授权，未计入视觉签收。见[运行记录](../testing/runtime-update-20261110.md)。未提交/推送，H7保持；上方未更新描述属于原验证轮次。

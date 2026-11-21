@@ -20,13 +20,9 @@
 5. 架构、A-034、RPC 正文、M7 ExecPlan、RPC 矩阵和当前状态直接同步现行有效合同。
    89 个实际 RPC 方法与矩阵 89 行集合完全一致，无缺失、额外或重复。
 
-A-034 保留 State v16 和所有现有迁移/数据，不新增版本或迁移，不清空数据库。未发布开发库
-不承诺长期兼容，仅为明确需要保留的数据维护迁移；发布前初始 Schema 整理另行审计。
-正式发布后严格维护升级和恢复链。数据库策略不自动授权公共 RPC、Extension API 或权限变更；
-已获批准的 State16 发布前字段移除继续按其现行机器合同执行，不增加别名或回退。
+数据库和设置的现行验收范围见[首发合同](../exec-plans/M11-first-release-contracts.md)。
 
-没有新增生产依赖、公共方法、capability、permission 或 wire 字段；hello 只是纠正已有
-`dataSchema` 字段的事实值，现行 Schema 已接受 v16，兼容形状/快照测试继续保持。
+握手报告 Core 实际打开的数据库格式。首发 `dataSchema` 和 `configSchema` 均为必填字段，取值为 1。
 
 ## 验证
 
@@ -46,7 +42,7 @@ A-034 保留 State v16 和所有现有迁移/数据，不新增版本或迁移�
 | 修正后的 Select 生命周期 helper 单例 | 1 passed；`gui-helper-confirmation.log/.exit` |
 | 最终完整 GUI 回归 | 237 passed / 1 failed（导航 `ERR_ADDRESS_IN_USE`）；`gui-full-final.log/.exit` |
 | 导航失败用例原样单独复核 | 1 passed / 0 failed；`gui-navigation-recheck.log/.exit` |
-| 恢复后的真实 IPC hello | State16 / Config3 / Extension ABI1，`restored-hello.json` |
+| 恢复后的真实 IPC hello | 数据库与设置就绪，Extension ABI1，`restored-hello.json` |
 
 Workspace 唯一失败为既有
 `m7_project_copy_rpc::project_copy_plan_apply_registers_an_exact_independent_copy`：预期

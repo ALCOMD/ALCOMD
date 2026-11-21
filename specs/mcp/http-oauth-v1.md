@@ -1,7 +1,7 @@
 # MCP HTTPS OAuth v1
 
 Owner approved 2026-11-15; exact limits and Core contracts are in the M8 ExecPlan and
-`../rpc/m8-mcp-oauth-v2.{md,schema.json}`. Frozen MCP revision is 2026-07-28.
+`../rpc/m8-mcp-oauth-v1.{md,schema.json}`. Frozen MCP revision is 2026-07-28.
 
 `alcomd-mcp serve-oauth --port <nonzero-port> --tls-cert <certificate.der> --tls-key <key.pkcs8>`
 binds only 127.0.0.1. Issuer is `https://localhost:<port>`, resource is exactly its `/mcp`.

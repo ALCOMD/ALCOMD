@@ -30,7 +30,7 @@ M6 优先证明一个无隐藏权限的测试扩展可以安装、启用、通�
 - M5 acceptance closure `c39fa0fc4107bc6fcb2f3873135ede04618346b7` 对应 run `32671272354`
   的 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 均成功。
 - A-022 已冻结 ABI 方向：WASI 0.2 Component Model、版本化 WIT、固定合适的 Wasmtime LTS 主版本线，
-  并持续接收兼容的安全与关键正确性补丁；WASI 0.3 不阻塞 M6，也不得破坏 ABI v1。
+  并持续接收兼容的安全与关键正确性补丁；首发扩展接口按 Extension ABI v1 的现行定义实现。
 - `specs/extensions/*.md`、`specs/security/extension-threat-model.md` 仍是 Draft；本计划已获准直接完成
   contract-first 工件，但所有工件必须在统一 Stop A 再次取得人工审批后才允许生产实现。
 
@@ -61,7 +61,7 @@ M6 优先证明一个无隐藏权限的测试扩展可以安装、启用、通�
 2. 冻结 `manifest-v1` 文档、JSON Schema、canonicalization、包目录和 hostile package vectors。
 3. 冻结 Extension API v1/WIT world、ABI negotiation 与 compatibility matrix。
 4. 冻结 permission/resource-scope/revocation、Host Capability、UI Bridge 和 extension-owned data contract。
-5. 冻结 lifecycle/state migration、RPC v1 兼容新增、错误、Operation/Plan/Apply 和 crash recovery。
+5. 冻结 lifecycle 和 State1 持久化、RPC v1 方法、错误、Operation/Plan/Apply 和 crash recovery。
 6. 冻结 exact runtime limits、Host process topology、package/signature、State migration draft、RPC/Plan/Apply/recovery
    与 Wasmtime/WASI 依赖候选评估。
 7. 运行 Schema/WIT/Manifest/permission/migration snapshot tests；全部工件在统一 Stop A 报告并取得人工审批后
@@ -214,7 +214,7 @@ Portable UI 的 Manifest/WIT/package/State/RPC/permission/Host protocol 调整�
   JSON unknown-field 兼容规则。
 - 兼容扩展通过新的独立 optional interface、negotiated capability、optional function group 或新 world/version；
   Host/Manifest negotiation 决定 guest 是否要求新增接口。ABI v1 发布后现有 type/function shape frozen，并以
-  compatibility matrix 和 old-guest/new-host golden fixture 固定。
+  compatibility matrix 和 当前 WIT Component golden fixture 固定。
 - 未知 optional capability 可忽略；不支持 required import 返回稳定 `extension_api_unsupported`，不得 trap
   后伪装成内部错误。
 - 至少冻结：`extension_manifest_invalid`、`extension_package_untrusted`、`extension_already_installed`、
@@ -239,7 +239,7 @@ Portable UI 的 Manifest/WIT/package/State/RPC/permission/Host protocol 调整�
 ### Contract/unit
 
 - Manifest/Schema/WIT golden、API negotiation、SemVer compatibility、canonical digest、hostile package vectors
-  和 old-guest/new-host compatibility fixture。
+  和 当前接口的 Component fixture。
 - permission deny/default、required/optional、scope intersection、revocation race、namespace isolation 和 quota。
 - lifecycle desired/runtime transition、lease generation/grant revision、revision/idempotency、crash-loop quarantine、
   install/uninstall journal recovery。
@@ -300,7 +300,7 @@ migration contract draft；不得修改 production Rust/TS implementation、adve
 - M8 MCP 协议/管理产品；M9 Discord Presence 产品逻辑；Local API 与新 SDK。
 - v3 migration、bootstrap/updater、installer/signing/dist 和 M12 客户端发行验证。
 - 原生动态库、任意 shell/process control、raw socket、任意 filesystem、通用 browser/desktop automation。
-- WASI 0.3、ABI v2、热重载、跨扩展 service discovery、通用 dependency injection/workflow engine。
+- WASI 0.3、热重载、跨扩展 service discovery、通用 dependency injection/workflow engine。
 - M6 第一条切片不实现 network、filesystem、clipboard、notification、Discord 或 M7 产品 UI placement。
 
 ## 生产依赖审批点
@@ -330,7 +330,7 @@ unsafe/native/build-script/lock diff 评估；不得用通用 RPC/HTTP/framework
 可按批准的 Slice A-F 开始 production：
 
 1. `.alcomdext` exact layout/quota、canonical package/publisher/signature、ExtensionId/version/API negotiation。
-2. exact WIT world/interfaces、compatibility matrix、old guest/new host fixture 与 ambient WASI deny list。
+2. exact WIT world/interfaces、compatibility matrix、当前接口的 Component fixture 与 ambient WASI deny list。
 3. exact permission names、specific ProjectId read scope、ExtensionInstanceLease 与 revoke-in-flight semantics。
 4. durable desired/runtime state、install/uninstall Plan/Apply/recovery、Schema version/tables 与 RPC/errors/capability。
 5. extension-owned key/value API/quota、UI Bridge security envelope/headless harness、exact runtime limits 与 one-host-per-ID topology。
@@ -373,7 +373,7 @@ fault matrix、Tauri no-bundle、dependency/unsafe/lockfile gates 和三平台 C
   分离、bounded key/value、Project summary read 第一能力、publisher 信任分层、exact runtime limit 与统一 Stop A；
   production implementation 和 Wasmtime/WASI/WIT 依赖仍未批准。
 - 2026-08-24：统一 Stop A 已形成 Manifest/package/signature/archive、WIT ABI v1、permission/lease/revocation、
-  lifecycle/State v8 migration contract、RPC/error/hello optional contract、bounded key/value、UI Bridge headless
+  lifecycle/State1 persistence contract、RPC/error/hello optional contract、bounded key/value、UI Bridge headless
   envelope、threat model、synthetic fixtures 与 contract tests。隔离依赖评估推荐 `wasmtime 48.0.0` 和
   `ed25519-dalek 3.0.0`，但未修改 Cargo manifest 或 lock file，也未接入生产代码。`fmt`、Clippy、Workspace
   tests、xtask、metadata、baseline freeze、diff/lock gates 全部通过；停止等待项目所有者审批。
@@ -386,10 +386,10 @@ fault matrix、Tauri no-bundle、dependency/unsafe/lockfile gates 和三平台 C
   crash evidence、受控本地 source kind 与 Host child/protocol hardening 均已冻结。M6 contract 6/6、RPC Schema
   22/22、fmt、xtask、metadata、baseline freeze、diff/三锁文件门禁通过；production source 与 Cargo manifest 未修改。
 - 2026-08-24：项目所有者批准三个窄 production 合同补充：RPC list 使用版本化 opaque keyset cursor，Host
-  protocol 使用显式 `capability-result`，State v8 的 install plan 固定 `version`、`api_major` 与
+  protocol 使用显式 `capability-result`，持久化 install plan 固定 `version`、`api_major` 与
   `profile_version`。对应合同测试已永久化，未扩大 RPC/WIT/permission、依赖、unsafe 或平台 API。
 - 2026-08-24：M6 Slice A-F 最小 production implementation 已完成：精确 `wasmtime 48.0.0` 仅进入
-  `alcomd-extension-host` graph，精确 `ed25519-dalek 3.0.0` 仅进入 `.alcomdext` 验签路径；State v8、
+  `alcomd-extension-host` graph，精确 `ed25519-dalek 3.0.0` 仅进入 `.alcomdext` 验签路径；数据库、
   install/uninstall Plan/Apply/recovery、deny-by-default grant/scope/lease、extension-owned bounded data、
   versioned RPC、one-host-per-ExtensionId、无 ambient WASI 的 Component Model Host、UI Bridge headless
   envelope、crash/quarantine 与 revoke-in-flight 已接入。真实 Component/Host/daemon 测试覆盖 install -> grant ->

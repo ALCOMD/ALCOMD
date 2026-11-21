@@ -8,12 +8,28 @@ use alcomd_application::{
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use uuid::Uuid;
 
+fn require_caller(db: &Connection, owner: &PrincipalId) -> Result<(), M7UnityMigrationError> {
+    use alcomd_application::Permission;
+    super::m8_workflows::require(
+        db,
+        owner,
+        &[
+            Permission::ProjectsRead,
+            Permission::UnityRead,
+            Permission::ProjectsUnityMigrate,
+        ],
+    )
+    .map_err(|_| error(M7UnityMigrationErrorCode::PermissionDenied))
+}
+
 pub(super) fn create_plan(
     connection: &mut Connection,
     owner: &PrincipalId,
     draft: UnityMigrationPlanDraft,
 ) -> Result<UnityMigrationPlanOutcome, M7UnityMigrationError> {
+    let request_fingerprint = json(&draft.request_fingerprint)?;
     let transaction = begin(connection)?;
+    require_caller(&transaction, owner)?;
     if let Some((stored, response)) = transaction
         .query_row(
             "SELECT request_fingerprint,response_json FROM idempotency_records
@@ -24,7 +40,7 @@ pub(super) fn create_plan(
         .optional()
         .map_err(failure)?
     {
-        if stored != draft.request_fingerprint {
+        if stored != request_fingerprint {
             return Err(error(M7UnityMigrationErrorCode::IdempotencyConflict));
         }
         let outcome = serde_json::from_str(&response).map_err(|_| internal())?;
@@ -78,7 +94,7 @@ pub(super) fn create_plan(
         "INSERT INTO idempotency_records (
             principal_id,method,idempotency_key,request_fingerprint,state,operation_id,response_json,created_at_ms
          ) VALUES (?1,'projects.planUnityMigration',?2,?3,'completed',NULL,?4,?5)",
-        params![owner.as_str(), draft.plan_idempotency_key.as_str(), draft.request_fingerprint,
+        params![owner.as_str(), draft.plan_idempotency_key.as_str(), request_fingerprint,
             json(&outcome)?, integer(draft.created_at_ms)?],
     ).map_err(failure)?;
     transaction.commit().map_err(failure)?;
@@ -99,6 +115,7 @@ pub(super) fn replay_apply(
     plan_id: PlanId,
     key: &IdempotencyKey,
 ) -> Result<Option<UnityMigrationApplyOutcome>, M7UnityMigrationError> {
+    require_caller(connection, owner)?;
     let fingerprint = apply_fingerprint(plan_id)?;
     let value = connection
         .query_row(
@@ -133,6 +150,7 @@ pub(super) fn accept(
         return Ok(outcome);
     }
     let transaction = begin(connection)?;
+    require_caller(&transaction, owner)?;
     let plan = load_plan(&transaction, owner, plan_id)?;
     if now_ms >= plan.draft.expires_at_ms {
         return Err(error(M7UnityMigrationErrorCode::PlanStale));
@@ -342,6 +360,7 @@ pub(super) fn commit_project(
     {
         return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
     }
+    let resource_owner = alcomd_application::workflow_resource_owner(&owner);
     let next_project = plan
         .draft
         .project
@@ -357,7 +376,7 @@ pub(super) fn commit_project(
                 json(&observation)?,
                 integer(next_project.get())?,
                 integer(now_ms)?,
-                owner.as_str(),
+                resource_owner.as_str(),
                 plan.draft.project.project_id.to_string(),
                 integer(plan.draft.project.revision.get())?
             ],
@@ -372,7 +391,7 @@ pub(super) fn commit_project(
         "INSERT INTO events (event_id,kind,aggregate_kind,aggregate_id,aggregate_revision,principal_id,occurred_at_ms,payload_json)
          VALUES (?1,'project.unity_version_migrated','project',?2,?3,?4,?5,?6)",
         params![Uuid::new_v4().to_string(), plan.draft.project.project_id.to_string(), integer(next_project.get())?,
-            owner.as_str(), integer(now_ms)?, json(&serde_json::json!({
+            resource_owner.as_str(), integer(now_ms)?, json(&serde_json::json!({
                 "fromUnityVersion": plan.draft.source_unity_version,
                 "toUnityVersion": plan.draft.target_unity_version,
                 "classification": plan.draft.classification.as_str(),

@@ -8,14 +8,14 @@ implementation and evidence belong to the M8 ExecPlan. Capability
 and in-flight Core RPCs for MCP Principals. It does not observe idle HTTP sockets,
 SDK queues, protocol sessions or subscription streams. A connection proves that a
 previously authenticated IPC still exists, not that current business authorization
-is valid; every business request retains its existing authentication and grant checks.
+is valid. Core reauthenticates the caller and checks its permissions on each request.
 
 Read groups require `mcp.connections.read` and `mcp.requests.read` independently.
 An absent permission omits its group and returns its canRead flag false; no permitted
 group returns the existing permission_denied. Filters cannot supply an identity.
-External MCP clients retain their existing eight business grants and cannot gain
-administrative access through this method. The Host rechecks both interactive Client
-and Extension permissions, declaration, lease, lifecycle and current UI authority.
+Authenticated GUI, CLI and MCP clients use the same Core observation permissions.
+When an extension reads these groups, the Host checks both principals, the
+extension declaration, its lease and lifecycle and the current UI authority.
 
 Default limit25, range1–100 per group; a response is at most65536 serialized UTF-8
 bytes. totalTracked refers to matching tracked rows; truncated reports row/byte
@@ -28,5 +28,5 @@ No parameters, response bodies, external request IDs, credentials/hashes, header
 paths or URLs enter the projection. Method names come from the static Core method
 allowlist. Errors mean unavailable, never zero activity. Core instanceId changes on
 restart and old rows must be discarded. Closing observations or a connection does
-not cancel accepted Operations. The unchanged MCP protocol advertises no
-subscription capability; unsupported streams are not represented as an empty list.
+not cancel accepted Operations. Adapter-reported subscription streams have a separate
+[transport observation contract](m8-mcp-transport-v1.md).

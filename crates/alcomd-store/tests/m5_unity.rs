@@ -10,6 +10,235 @@ use alcomd_store::StateStoreHandle;
 use uuid::Uuid;
 
 #[tokio::test]
+async fn shared_unity_resources_keep_caller_receipts_and_recheck_credentials_in_sqlite() {
+    use alcomd_application::{
+        AccessContext, McpIdentityApplication, McpIdentityWrite, ToolAuthentication,
+        with_log_caller, with_workflow_authentication,
+    };
+
+    let directory = TestDirectory::new();
+    let path = directory.0.join("state.db");
+    let store = StateStoreHandle::open(path.clone()).expect("open store");
+    let owner = AccessContext::local_owner();
+    let identities = McpIdentityApplication::new(store.clone());
+    let client = identities
+        .write(
+            &owner,
+            "create".into(),
+            McpIdentityWrite::Create {
+                name: "Editor manager".into(),
+            },
+            1,
+        )
+        .await
+        .expect("create client")
+        .client;
+    let hash = [13; 32];
+    let issued = identities
+        .write(
+            &owner,
+            "issue".into(),
+            McpIdentityWrite::Issue {
+                id: client.client_id,
+                expected: client.revision,
+                hash,
+            },
+            2,
+        )
+        .await
+        .expect("issue credential")
+        .client;
+    let access = identities.authenticate(hash).await.expect("authenticate");
+    let caller = access.principal().clone();
+    let auth = ToolAuthentication::Credential(hash);
+    let project = store
+        .register_project(owner.principal().clone(), project(), key("project"), 3)
+        .await
+        .expect("register shared project")
+        .value;
+    let observations = vec![installation_observation()];
+    let (page, replayed) = with_workflow_authentication(
+        auth.clone(),
+        with_log_caller(
+            store.clone(),
+            &access,
+            store.synchronize_installations(
+                caller.clone(),
+                observations.clone(),
+                key("discover"),
+                4,
+            ),
+        ),
+    )
+    .await
+    .expect("discover shared Editor");
+    assert!(!replayed);
+    let editor = &page.installations[0];
+    assert_eq!(
+        store
+            .get_installation(owner.principal().clone(), editor.installation_id)
+            .await
+            .expect("local owner sees discovered Editor"),
+        *editor
+    );
+    let config = store
+        .get_project_launch_config(owner.principal().clone(), project.project_id)
+        .await
+        .expect("default configuration");
+    let launch = with_workflow_authentication(
+        auth.clone(),
+        with_log_caller(
+            store.clone(),
+            &access,
+            store.accept_launch(
+                caller.clone(),
+                project.clone(),
+                config.clone(),
+                editor.installation_id,
+                key("launch"),
+                5,
+            ),
+        ),
+    )
+    .await
+    .expect("accept MCP launch")
+    .0;
+    assert!(
+        store
+            .replay_launch(
+                owner.principal().clone(),
+                project.clone(),
+                config.clone(),
+                editor.installation_id,
+                key("launch")
+            )
+            .await
+            .expect("check local launch receipt")
+            .is_none()
+    );
+    let events = store
+        .list_events(owner.principal().clone(), 0, 100)
+        .await
+        .expect("shared resource events");
+    for kind in ["unity.installation.discovered", "project.activity-recorded"] {
+        assert!(events.events.iter().any(|event| event.kind == kind));
+    }
+    {
+        let db = rusqlite::Connection::open_with_flags(
+            &path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .expect("read isolated audit records");
+        for action in ["unity.installations.refresh", "unity.launch"] {
+            let actor: String = db
+                .query_row(
+                    "SELECT owner FROM operation_log_entries WHERE action=?1",
+                    [action],
+                    |row| row.get(0),
+                )
+                .expect("recorded operation log");
+            assert_eq!(actor, caller.as_str());
+        }
+        let version: i64 = db.query_row(
+            "SELECT json_extract(request_fingerprint,'$.version') FROM idempotency_records WHERE method='unity.launch' AND principal_id=?1",
+            [caller.as_str()], |row| row.get(0),
+        ).expect("caller's accepted launch");
+        assert_eq!(version, 1);
+    }
+
+    identities
+        .write(
+            &owner,
+            "revoke".into(),
+            McpIdentityWrite::Revoke {
+                id: issued.client_id,
+                expected: issued.revision,
+            },
+            6,
+        )
+        .await
+        .expect("revoke");
+    with_workflow_authentication(auth, async {
+        let denied = M5UnityErrorCode::PermissionDenied;
+        assert_eq!(
+            store
+                .list_installations(caller.clone(), None, 10)
+                .await
+                .expect_err("list")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .synchronize_installations(caller.clone(), observations, key("discover"), 7)
+                .await
+                .expect_err("discovery replay")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .remove_installation(
+                    caller.clone(),
+                    editor.installation_id,
+                    editor.revision,
+                    key("remove"),
+                    7
+                )
+                .await
+                .expect_err("remove")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .set_project_launch_config(
+                    caller.clone(),
+                    project.project_id,
+                    vec![],
+                    None,
+                    key("config"),
+                    7
+                )
+                .await
+                .expect_err("set config")
+                .code(),
+            denied
+        );
+        assert_eq!(
+            store
+                .replay_launch(
+                    caller.clone(),
+                    project.clone(),
+                    config,
+                    editor.installation_id,
+                    key("launch")
+                )
+                .await
+                .expect_err("launch replay")
+                .code(),
+            denied
+        );
+    })
+    .await;
+    // A launch already accepted before revocation still finishes under its actual caller.
+    assert!(
+        store
+            .set_launch_state(caller, launch.launch_id, UnityLaunchState::Opening, true)
+            .await
+            .expect("complete accepted launch")
+            .spawn_accepted
+    );
+    assert_eq!(
+        store
+            .get_installation(owner.principal().clone(), editor.installation_id)
+            .await
+            .expect("revoked caller did not remove Editor"),
+        *editor
+    );
+}
+
+#[tokio::test]
 async fn unity_registry_launch_config_and_launch_are_revisioned_evented_and_idempotent() {
     let directory = TestDirectory::new();
     let store = StateStoreHandle::open(directory.0.join("state.db")).expect("open store");

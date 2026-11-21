@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::path::Path;
 use std::pin::Pin;
 
 use alcomd_application as app;
@@ -67,34 +66,14 @@ impl app::BackupDirectoryProvider for ConfiguredBackupDirectory {
                 .observe_storage_directories(&snapshot)
                 .await
                 .map_err(backup_settings_error)?;
-            tokio::task::spawn_blocking(move || {
-                let path = if snapshot.settings.paths.backup_directory.is_none() {
-                    platform::prepare_storage_directory(Path::new(&directories.backup_directory))
-                } else {
-                    platform::normalize_storage_directory(&directories.backup_directory)
-                        .map(std::path::PathBuf::from)
-                }
-                .map_err(|error| {
-                    app::M5BackupError::new(app::M5BackupErrorCode::BackupSourceUnsafe)
-                        .with_source(error)
-                        .with_path(&directories.backup_directory)
-                })?;
-                let directory = path.into_os_string().into_string().map_err(|path| {
-                    app::M5BackupError::new(app::M5BackupErrorCode::BackupSourceUnsafe)
-                        .with_reason("backup directory cannot be represented as UTF-8")
-                        .with_path(path.to_string_lossy().into_owned())
-                })?;
-                Ok(app::BackupDefaults {
-                    directory: Some(directory),
-                    compression_mode: snapshot.settings.backups.compression_mode,
-                    include_vpm_packages: snapshot.settings.backups.include_vpm_packages,
-                    include_library: snapshot.settings.backups.include_library,
-                })
+            Ok(app::BackupDefaults {
+                directory: Some(directories.backup_directory),
+                project_directory: Some(directories.project_directory),
+                create_default_backup_directory: snapshot.settings.paths.backup_directory.is_none(),
+                compression_mode: snapshot.settings.backups.compression_mode,
+                include_vpm_packages: snapshot.settings.backups.include_vpm_packages,
+                include_library: snapshot.settings.backups.include_library,
             })
-            .await
-            .map_err(|error| {
-                app::M5BackupError::new(app::M5BackupErrorCode::Internal).with_source(error)
-            })?
         })
     }
 }

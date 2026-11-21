@@ -242,7 +242,6 @@ fn request(f: &Fixture, action: PlanAction, target: Option<&str>) -> PackagePlan
         version_range: None,
         repository_id: None,
         include_prerelease: false,
-        plan_version: PackagePlanVersion::V2,
         source_selector: None,
         reinstall_selection: None,
         reinstall_sources: vec![],
@@ -357,15 +356,13 @@ async fn repository_configuration_round_trip_restores_names_switches_and_remaps_
         imported.configuration.display_name.as_deref(),
         Some("Renamed configuration source")
     );
-    assert!(
-        imported.configuration.priority
-            < snapshot
-                .repositories
-                .iter()
-                .find(|record| record.repository_id == target.repository.to_string())
-                .expect("retained source")
-                .configuration
-                .priority
+    assert_eq!(
+        snapshot.repositories[0].repository_id,
+        imported.repository_id
+    );
+    assert_eq!(
+        snapshot.repositories[1].repository_id,
+        target.repository.to_string()
     );
     let settings = target
         .config
@@ -567,7 +564,8 @@ async fn repository_configuration_round_trip_restores_names_switches_and_remaps_
         .find(|record| record.repository_id != original.repository_id)
         .expect("added");
     assert!(
-        added.configuration.priority > retained.configuration.priority,
+        after.repositories[0].repository_id == retained.repository_id
+            && after.repositories[1].repository_id == added.repository_id,
         "new sources append when overwrite is disabled"
     );
     assert_eq!(
@@ -736,16 +734,22 @@ async fn repository_configuration_permissions_early_stop_and_preview_changes_do_
         )
         .await
         .expect("ordinary index refresh");
+    let order = repository_order_fingerprint([&metadata.repository_id]);
     let change = RepositoryListMetadata {
         repository_id: metadata.repository_id,
         expected_display_name: metadata.configuration.display_name,
-        expected_priority: metadata.configuration.priority,
+        expected_priority: metadata.order_key,
         display_name: Some("Configuration after index refresh".into()),
-        priority: metadata.configuration.priority,
+        priority: metadata.order_key,
     };
     fixture
         .store
-        .apply_repository_list_metadata(PrincipalId::local_owner(), vec![change.clone()], 1)
+        .apply_repository_list_metadata(
+            PrincipalId::local_owner(),
+            order.clone(),
+            vec![change.clone()],
+            1,
+        )
         .await
         .expect("index revision is irrelevant to configuration");
     let mut conflict = change;
@@ -753,12 +757,155 @@ async fn repository_configuration_permissions_early_stop_and_preview_changes_do_
     assert_eq!(
         fixture
             .store
-            .apply_repository_list_metadata(PrincipalId::local_owner(), vec![conflict], 2)
+            .apply_repository_list_metadata(PrincipalId::local_owner(), order, vec![conflict], 2)
             .await
             .expect_err("actual name change conflicts")
             .code(),
         M3ErrorCode::RevisionConflict
     );
+}
+
+#[tokio::test]
+async fn repository_order_selects_the_same_source_for_candidates_and_install_plans() {
+    let f = fixture(
+        "repository-order",
+        empty(),
+        vec![package(A, "1.0.0", json!({}))],
+        None,
+    )
+    .await;
+    let mut mirror: Value =
+        serde_json::from_slice(&fs::read(f.directory.join("index.json")).expect("index"))
+            .expect("JSON");
+    mirror["id"] = json!("owned.order.mirror");
+    let mirror_path = f.directory.join("mirror.json");
+    fs::write(&mirror_path, serde_json::to_vec(&mirror).expect("JSON")).expect("mirror file");
+    let access = AccessContext::local_owner();
+    let registry = M3Application::new(f.store.clone(), f.reader.clone());
+    let mirror = registry
+        .register_repository(
+            &access,
+            RepositorySource::Local {
+                path: mirror_path.to_string_lossy().into_owned(),
+            },
+            key("register-order-mirror"),
+        )
+        .await
+        .expect("register mirror")
+        .value;
+    registry
+        .refresh_repository(
+            &access,
+            mirror.repository_id,
+            mirror.revision,
+            key("refresh-order-mirror"),
+        )
+        .await
+        .expect("refresh mirror");
+    let first_page = registry
+        .list_repositories(&access, None, 1)
+        .await
+        .expect("first page");
+    let movement = RepositoryMove {
+        id: mirror.repository_id,
+        before: Some(f.repository),
+        expected_order_fingerprint: first_page.order_fingerprint.clone(),
+    };
+    for preferred in [f.repository, mirror.repository_id] {
+        if preferred == mirror.repository_id {
+            let moved = registry
+                .move_repository(&access, movement.clone(), key("prefer-mirror"))
+                .await
+                .expect("change order");
+            assert!(moved.changed && !moved.replayed);
+            let replayed = registry
+                .move_repository(&access, movement.clone(), key("prefer-mirror"))
+                .await
+                .expect("recover the original receipt");
+            assert!(replayed.changed && replayed.replayed);
+            assert_eq!(
+                registry
+                    .move_repository(&access, movement.clone(), key("stale-order"))
+                    .await
+                    .expect_err("stale move")
+                    .code(),
+                M3ErrorCode::RevisionConflict
+            );
+            assert_eq!(
+                registry
+                    .list_repositories(&access, first_page.next_cursor.clone(), 1)
+                    .await
+                    .expect_err("stale cursor")
+                    .code(),
+                M3ErrorCode::RevisionConflict
+            );
+        }
+        let preferred = preferred.to_string();
+        let CandidatePageItems::Summary { items } = f.summary().await.page else {
+            panic!("summary")
+        };
+        let row = items
+            .iter()
+            .find(|row| row.package_id == A)
+            .expect("candidate row");
+        assert!(
+            matches!(&row.project_latest, CandidateChoice::Candidate { candidate }
+            if matches!(&candidate.source, PackageSourceSelector::Repository { repository_id } if repository_id == &preferred))
+        );
+        let plan = f
+            .packages
+            .plan(&access, install(&f, A, "1.0.0"))
+            .await
+            .expect("plan uses the earlier repository");
+        assert!(plan.source_set.iter().any(|source| matches!(source, PackageSourcePin::Repository(pin) if pin.package_id == A && pin.repository_id == preferred)));
+    }
+    let ordered = registry
+        .list_repositories(&access, None, 2)
+        .await
+        .expect("confirmed order");
+    assert_eq!(ordered.repositories[0].repository_id, mirror.repository_id);
+    let no_op = registry
+        .move_repository(
+            &access,
+            RepositoryMove {
+                expected_order_fingerprint: ordered.order_fingerprint.clone(),
+                ..movement
+            },
+            key("same-position"),
+        )
+        .await
+        .expect("same position");
+    assert!(!no_op.changed && !no_op.replayed);
+    f.settings(|settings| settings.hidden_repository_ids = vec![mirror.repository_id.to_string()])
+        .await;
+    let hidden = registry
+        .list_repositories(&access, None, 2)
+        .await
+        .expect("hidden remains registered");
+    assert_eq!(hidden.order_fingerprint, ordered.order_fingerprint);
+    let plan = f
+        .packages
+        .plan(&access, install(&f, A, "1.0.0"))
+        .await
+        .expect("fall back to enabled source");
+    assert!(plan.source_set.iter().any(|source| matches!(source, PackageSourcePin::Repository(pin) if pin.package_id == A && pin.repository_id == f.repository.to_string())));
+    f.settings(|settings| settings.hidden_repository_ids.clear())
+        .await;
+    let reopened =
+        StateStoreHandle::open(f.directory.join("state.db")).expect("independent database open");
+    let restored = reopened
+        .list_repositories(PrincipalId::local_owner(), None, 2)
+        .await
+        .expect("read persisted order");
+    assert_eq!(restored.order_fingerprint, ordered.order_fingerprint);
+    assert_eq!(restored.repositories[0].repository_id, mirror.repository_id);
+    let plan = f
+        .packages
+        .plan(&access, install(&f, A, "1.0.0"))
+        .await
+        .expect("reopened source keeps its place");
+    assert!(plan.source_set.iter().any(|source| matches!(source, PackageSourcePin::Repository(pin) if pin.package_id == A && pin.repository_id == mirror.repository_id.to_string())));
+    assert_eq!(apply(&f, plan).await.state, OperationState::Succeeded);
 }
 
 #[tokio::test]
@@ -1079,6 +1226,7 @@ impl Fixture {
                 ConfigUpdate {
                     packages: Some(ConfigPackageSettingsUpdate {
                         hidden_repository_packages: Some(value.hidden_repository_packages),
+                        prefer_prerelease: Some(value.prefer_prerelease),
                         show_prerelease: Some(value.show_prerelease),
                         hidden_repository_ids: Some(value.hidden_repository_ids),
                         hide_local_user_packages: Some(value.hide_local_user_packages),
@@ -1090,6 +1238,12 @@ impl Fixture {
             .expect("owned VPM regression fixture succeeds");
     }
     async fn summary(&self) -> ProjectCandidatePage {
+        self.summary_with_bulk(None).await
+    }
+    async fn summary_with_bulk(
+        &self,
+        bulk_package_ids: Option<Vec<String>>,
+    ) -> ProjectCandidatePage {
         ProjectCandidateApplication::new(
             self.store.clone(),
             ProjectCandidateEngine,
@@ -1105,7 +1259,7 @@ impl Fixture {
                     package_ids: None,
                     sources: None,
                     filter: None,
-                    bulk_package_ids: None,
+                    bulk_package_ids,
                 },
                 limit: None,
                 expected_snapshot: None,
@@ -1591,16 +1745,145 @@ async fn closed_local_source_is_excluded_and_invalidates_a_prepared_plan() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn default_package_plans_follow_the_visible_version_preference() {
+    let f = fixture(
+        "version-preference",
+        empty(),
+        vec![
+            package(A, "1.0.0", json!({})),
+            package(A, "2.0.0-beta.1", json!({})),
+            package(B, "1.0.0-beta.1", json!({})),
+            package(B, "2.0.0", json!({})),
+            package(C, "1.0.0-beta.1", json!({})),
+            package(D, "1.0.0", json!({A:">=2.0.0-beta.1"})),
+        ],
+        None,
+    )
+    .await;
+    for (prefer, id, expected) in [
+        (false, A, "1.0.0"),
+        (true, A, "2.0.0-beta.1"),
+        (true, B, "2.0.0"),
+        (false, C, "1.0.0-beta.1"),
+    ] {
+        f.settings(|p| p.prefer_prerelease = prefer).await;
+        let CandidatePageItems::Summary { items } = f.summary().await.page else {
+            panic!("summary")
+        };
+        let row = items
+            .iter()
+            .find(|row| row.package_id == id)
+            .expect("candidate summary contains the requested package");
+        assert!(
+            matches!(&row.recommended, CandidateChoice::Candidate { candidate } if candidate.version == expected)
+        );
+        let mut intent = request(&f, PlanAction::Install, Some(id));
+        intent.include_prerelease = true;
+        let plan = f
+            .packages
+            .plan(&AccessContext::local_owner(), intent)
+            .await
+            .expect("plan install using the configured version preference");
+        assert_eq!(
+            plan.change_set.mutations[0].to_version.as_deref(),
+            Some(expected)
+        );
+    }
+    f.settings(|p| p.prefer_prerelease = false).await;
+    let mut intent = request(&f, PlanAction::Install, Some(D));
+    intent.include_prerelease = true;
+    let plan = f
+        .packages
+        .plan(&AccessContext::local_owner(), intent)
+        .await
+        .expect("plan install requiring a prerelease dependency");
+    assert!(
+        plan.change_set
+            .mutations
+            .iter()
+            .any(|m| m.package_id == A && m.to_version.as_deref() == Some("2.0.0-beta.1"))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn bulk_recommendations_match_single_upgrades_with_an_installed_prerelease() {
+    let f = fixture("bulk-preference",
+        json!({"dependencies":{A:{"version":"1.1.0-beta.1"}},"locked":{A:{"version":"1.1.0-beta.1","dependencies":{}}}}),
+        vec![package(A,"1.0.0",json!({})), package(A,"1.2.0",json!({})),
+             package(A,"2.0.0-beta.1",json!({B:">=2.0.0-beta.1"})),
+             package(B,"2.0.0-beta.1",json!({}))], None).await;
+    for (prefer, expected) in [(false, "1.2.0"), (true, "2.0.0-beta.1")] {
+        f.settings(|p| p.prefer_prerelease = prefer).await;
+        let summary = f.summary_with_bulk(Some(vec![A.into()])).await;
+        let actions = summary.bulk.expect("bulk recommendations");
+        let intents = serde_json::to_value(actions.update_all.intents)
+            .expect("serialize recommended bulk intents");
+        let [target] = intents.as_array().expect("bulk intents array").as_slice() else {
+            panic!("one upgrade")
+        };
+        assert_eq!(target, &json!({"kind":"upgrade","packageId":A}));
+        let batch = bulk(
+            &f,
+            vec![PackageBulkIntent::Upgrade {
+                package_id: A.into(),
+                version_range: None,
+                source: None,
+                include_prerelease: true,
+            }],
+        );
+        let mut single = request(&f, PlanAction::Upgrade, Some(A));
+        single.include_prerelease = true;
+        for req in [single, batch] {
+            let plan = f
+                .packages
+                .plan(&AccessContext::local_owner(), req)
+                .await
+                .expect("compatible upgrade");
+            assert!(
+                plan.change_set
+                    .mutations
+                    .iter()
+                    .any(|m| m.package_id == A && m.to_version.as_deref() == Some(expected))
+            );
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn closing_prereleases_overrides_request_opt_in_and_invalidates_a_frozen_plan() {
     let f = fixture(
         "closed-prerelease",
         empty(),
-        vec![package(A, "1.0.0-beta.1", json!({}))],
+        vec![package(A, "1.8.0-beta.1", json!({}))],
         None,
     )
     .await;
-    f.settings(|settings| settings.show_prerelease = true).await;
-    let mut request = install(&f, A, "1.0.0-beta.1");
+    f.settings(|settings| settings.prefer_prerelease = true)
+        .await;
+    enroll_local(&f, package(B, "1.8.0-beta.1", json!({}))).await;
+    let catalog = || async {
+        let settings = f
+            .config
+            .candidate_settings()
+            .await
+            .expect("read prerelease visibility settings")
+            .settings
+            .packages;
+        f.store
+            .resolver_catalog(PrincipalId::local_owner(), true, settings)
+            .await
+            .expect("read catalog using prerelease visibility settings")
+            .entries
+    };
+    for id in [A, B] {
+        assert!(
+            catalog()
+                .await
+                .iter()
+                .any(|entry| entry.package_id == id && entry.version == "1.8.0-beta.1")
+        );
+    }
+    let mut request = install(&f, A, "1.8.0-beta.1");
     request.include_prerelease = true;
     let plan = f
         .packages
@@ -1609,6 +1892,7 @@ async fn closing_prereleases_overrides_request_opt_in_and_invalidates_a_frozen_p
         .expect("owned VPM regression fixture succeeds");
     f.settings(|settings| settings.show_prerelease = false)
         .await;
+    assert!(catalog().await.is_empty());
     assert_eq!(
         f.packages
             .plan(&AccessContext::local_owner(), request)
@@ -1633,6 +1917,12 @@ async fn closing_prereleases_overrides_request_opt_in_and_invalidates_a_frozen_p
     assert!(
         matches!(f.summary().await.page,CandidatePageItems::Summary{items} if items.is_empty())
     );
+    f.settings(|settings| settings.show_prerelease = true).await;
+    let persisted = alcomd_store::FileConfigStore::new(f.directory.join("settings.toml"))
+        .load()
+        .expect("reopen persisted prerelease settings");
+    assert!(persisted.settings.packages.show_prerelease);
+    assert!(!persisted.settings.packages.prefer_prerelease);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

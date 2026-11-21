@@ -3,7 +3,7 @@
 状态：本地功能候选，H7 最终人工签收仍待所有者。2026-11-03。
 功能代码：`1a31e2a82459eb57a7263f454fdad6e8bf07f585`。后续文档收尾不改变产品/验证输入，不为它重复技术门禁。
 
-所有者明确确认这是严重影响使用的既有核心功能遗漏，批准在 M7 补齐 Config5、公开设置及必要持久定位。
+所有者明确确认这是严重影响使用的既有核心功能遗漏，批准在 M7 补齐公开设置及必要持久定位。
 H2–H6 签收与此前 `c273c76` 的技术证据保留；本记录不代表 M7 完成，也不进入 M8。
 
 ## 行为与数据边界
@@ -12,10 +12,10 @@ H2–H6 签收与此前 `c273c76` 的技术证据保留；本记录不代表 M7 
 - 新建、模板创建、复制及恢复表单使用当前有效项目目录，允许当次覆盖；迟到读取不替换用户输入。
 - 新备份直接写入所选目录；接受任务时冻结目录及文件身份，设置变化不改动已接受任务。
 - 历史备份继续使用原定位；新定位不替代 identity/hash 校验。恢复计划保持自身冻结来源，不搬迁旧文件。
-- Config1–4 严格迁移为 Config5，保留 revision 和其他设置。State16、RPC v1、权限与生产依赖不变。
+- 用户设置保持 revision CAS，路径变更沿用项目与设置的权限检查。
 - 系统 Documents 仅为默认值来源；双显式目录不依赖它可达。配置读取不创建目录，不执行 shell。
 
-活动合同为 `specs/config/settings-v5.*`、现有 RPC Schema 及 `specs/storage/state-v6.md`、`state-v7.md` 中的当前增量说明。
+保存目录合同见[设置规范](../../specs/config/settings-v1.md)。
 Windows 不覆盖发布为窄 `MoveFileExW(flags=0)`，Unix 复用 rustix `NOREPLACE`；没有扩大 crate 级 unsafe 许可。
 Windows Documents 查询按 [Known Folder 选项](https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/ne-shlobj_core-known_folder_flag) 使用 `DONT_VERIFY` 只取得当前配置位置，存在性与写入条件由实际操作检查。
 
@@ -23,9 +23,9 @@ Windows Documents 查询按 [Known Folder 选项](https://learn.microsoft.com/en
 
 | 范围 | 实际结果 |
 | --- | --- |
-| 协议与设置 Schema | unit 15/0、Schema 35/0；旧版本形状保留，新增字段与严格 PATCH 拒绝向量通过。 |
+| 协议与设置 Schema | unit 15/0、Schema 35/0；目录字段与严格 PATCH 拒绝向量通过。 |
 | application 设置 | 最终 21/0，包含双显式目录绕过不可用默认值、清除失败不提交、CAS/权限/取消与未知发布。 |
-| 配置文件模块 | 21/0，目录保存/重开/清除、Config4 迁移及 16 KiB 总上限拒绝。 |
+| 配置文件模块 | 21/0，目录保存/重开/清除与容量校验。 |
 | 平台目录与发布 | 最终 3/0，目录规范化/准备、冲突不覆盖、Linux user-dirs 纯文本解析；后者在 Windows 宿主运行解析测试。 |
 | 归档引擎 | 7/0，旧定位、两个新目录、身份替换/冲突/源项目内目的地拒绝及旧恢复计划字节保持。 |
 | SQLite 目的地与重放 | 修正后 2/0，跨设置变化/重开冻结，排队及运行中取消均保持既有状态机。 |

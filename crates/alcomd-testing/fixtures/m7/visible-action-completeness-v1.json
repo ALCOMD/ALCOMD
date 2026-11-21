@@ -69,7 +69,6 @@
         {"id":"unity.save-project-launch-config","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
         {"id":"unity.clear-project-launch-config","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
         {"id":"unity.launch-project-exact","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
-        {"id":"backups.list","ownerMilestone":"M7","classification":"implemented","releaseBlocker":false},
         {"id":"backups.create","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
         {"id":"backups.view","ownerMilestone":"M7","classification":"implemented","releaseBlocker":false},
         {"id":"backups.restore-plan-apply","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},

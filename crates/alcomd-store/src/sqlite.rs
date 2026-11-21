@@ -1,4 +1,7 @@
+use std::fs::{self, File};
+use std::io::{ErrorKind, Read};
 use std::path::Path;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use alcomd_application::{
@@ -7,827 +10,284 @@ use alcomd_application::{
     OperationRecord, OperationState, PrincipalId, Revision, StateCheckFingerprintV1,
     StateCheckResult, StoreError, StoreErrorKind,
 };
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{
+    Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params,
+};
 use uuid::Uuid;
 
-use crate::{CURRENT_DATA_SCHEMA, StoreOpenError};
+use crate::{CURRENT_DATA_SCHEMA, StoreOpenError, is_regular_state_file};
 
 const DATA_SCHEMA_VERSION: i64 = CURRENT_DATA_SCHEMA as i64;
 const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 const CHECK_ROW_LIMIT: usize = 100;
 const CHECK_BYTE_LIMIT: usize = 65_536;
-const MIGRATION_V1: &str = include_str!("../migrations/0001_state.sql");
-const MIGRATION_V2: &str = include_str!("../migrations/0002_projects_repositories.sql");
-const MIGRATION_V3: &str = include_str!("../migrations/0003_package_transactions.sql");
-const MIGRATION_V4: &str = include_str!("../migrations/0004_local_workflows.sql");
-const MIGRATION_V5: &str = include_str!("../migrations/0005_template_plans.sql");
-const MIGRATION_V6: &str = include_str!("../migrations/0006_backup_create.sql");
-const MIGRATION_V7: &str = include_str!("../migrations/0007_backup_restore.sql");
-const MIGRATION_V8: &str = include_str!("../migrations/0008_extension_runtime.sql");
-const MIGRATION_V9: &str = include_str!("../migrations/0009_portable_extension_ui.sql");
-const MIGRATION_V10: &str = include_str!("../migrations/0010_project_copy.sql");
-const MIGRATION_V11: &str = include_str!("../migrations/0011_project_preferences.sql");
-const MIGRATION_V12: &str = include_str!("../migrations/0012_package_functional_closure.sql");
-const MIGRATION_V13: &str = include_str!("../migrations/0013_project_directory_delete.sql");
-const MIGRATION_V14: &str = include_str!("../migrations/0014_unity_project_version.sql");
-const MIGRATION_V15: &str = include_str!("../migrations/0015_project_last_modified.sql");
-const MIGRATION_V16: &str = include_str!("../migrations/0016_remove_project_observed.sql");
-const MIGRATION_V17: &str = include_str!("../migrations/0017_empty_unity_launch_override.sql");
-const MIGRATION_V18: &str = include_str!("../migrations/0018_backup_compression_levels.sql");
-const MIGRATION_V20: &str = include_str!("../migrations/0020_remove_activity.sql");
-const MIGRATION_V21: &str = include_str!("../migrations/0021_operation_logs.sql");
-const MIGRATION_V22: &str = include_str!("../migrations/0022_remove_templates.sql");
-const MIGRATION_V23: &str = include_str!("../migrations/0023_project_templates.sql");
-const MIGRATION_V24: &str = include_str!("../migrations/0024_repository_archive_pins.sql");
-const MIGRATION_V25: &str = include_str!("../migrations/0025_repository_credentials.sql");
-const MIGRATION_V26: &str = include_str!("../migrations/0026_package_download_headers.sql");
-const MIGRATION_V27: &str = include_str!("../migrations/0027_http_archive_pins.sql");
-const MIGRATION_V28: &str = include_str!("../migrations/0028_project_template_archives.sql");
-const MIGRATION_V29: &str = include_str!("../migrations/0029_repository_display_name.sql");
-const MIGRATION_V30: &str = include_str!("../migrations/0030_package_presentations.sql");
+const INITIAL_SCHEMA: &str = include_str!("schema.sql");
+const SQLITE_HEADER: &[u8; 16] = b"SQLite format 3\0";
+const USER_VERSION_OFFSET: usize = 60;
+const SQLITE_HEADER_BYTES: usize = 100;
 
-const MIGRATION_V31: &str = include_str!("../migrations/0031_remove_project_presentations.sql");
-const MIGRATION_V32: &str = include_str!("../migrations/0032_optional_package_presentation.sql");
+type SchemaObject = (String, String, Vec<u8>);
+static CURRENT_SCHEMA: OnceLock<Vec<SchemaObject>> = OnceLock::new();
 
-const MIGRATION_V33: &str = include_str!("../migrations/0033_mcp_clients.sql");
-const MIGRATION_V34: &str = include_str!("../migrations/0034_mcp_grant_snapshots.sql");
-const MIGRATION_V35: &str = include_str!("../migrations/0035_extension_mcp_permissions.sql");
-const MIGRATION_V36: &str = include_str!("../migrations/0036_mcp_oauth.sql");
-const MIGRATION_V37: &str = include_str!("../migrations/0037_capability_permission_switches.sql");
-const MIGRATION_V38: &str = include_str!("../migrations/0038_extension_mcp_tools.sql");
-const MIGRATION_V39: &str = include_str!("../migrations/0039_remove_publisher_trust.sql");
-const MIGRATION_V42: &str = include_str!("../migrations/0042_extension_remote_sources.sql");
-const MIGRATION_V43: &str = include_str!("../migrations/0043_mcp_transport_observations.sql");
-const MIGRATION_V44: &str = include_str!("../migrations/0044_mcp_connection_access.sql");
-const MIGRATION_V45: &str = include_str!("../migrations/0045_extension_local_ipc.sql");
-const MIGRATION_V41: &str = include_str!("../migrations/0041_extension_install_consent.sql");
-const MIGRATION_V40: &str = include_str!("../migrations/0040_mcp_runtime_observations.sql");
-
-#[cfg(test)]
-pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
-    initialize_connection_with_report(path).map(|(connection, _)| connection)
+/// Checks that an existing state database opens with the current on-disk schema.
+/// A missing database is valid when it has no orphaned SQLite companions.
+pub fn preflight_state_database(path: &Path) -> Result<(), StoreOpenError> {
+    check_state_database(path).map(|_| ())
 }
 
-pub(super) fn initialize_connection_with_report(
-    path: &Path,
-) -> Result<(Connection, bool), StoreOpenError> {
-    let mut connection = Connection::open(path).map_err(|_| StoreOpenError::Unavailable)?;
-    let version: i64 = connection
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
+fn check_state_database(path: &Path) -> Result<bool, StoreOpenError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) if is_regular_state_file(&metadata) => Some(metadata),
+        Ok(_) => return Err(StoreOpenError::Unavailable),
+        Err(error) if error.kind() == ErrorKind::NotFound => None,
+        Err(_) => return Err(StoreOpenError::Unavailable),
+    };
+    let mut has_companions = false;
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let mut companion = path.as_os_str().to_owned();
+        companion.push(suffix);
+        match fs::symlink_metadata(companion) {
+            Ok(metadata) if is_regular_state_file(&metadata) => has_companions = true,
+            Ok(_) => return Err(StoreOpenError::Unavailable),
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(_) => return Err(StoreOpenError::Unavailable),
+        }
+    }
+    if metadata.is_none() {
+        return if has_companions {
+            Err(StoreOpenError::Unavailable)
+        } else {
+            Ok(false)
+        };
+    }
+    // Read the main file before handing it to SQLite. Opening an old database
+    // through SQLite could recover a journal or create shared-memory files.
+    let mut header = [0; SQLITE_HEADER_BYTES];
+    File::open(path)
+        .and_then(|mut file| file.read_exact(&mut header))
         .map_err(|_| StoreOpenError::Unavailable)?;
-    if version > DATA_SCHEMA_VERSION {
+    if &header[..SQLITE_HEADER.len()] != SQLITE_HEADER {
+        return Err(StoreOpenError::Unavailable);
+    }
+    let mut version = [0; 4];
+    version.copy_from_slice(&header[USER_VERSION_OFFSET..USER_VERSION_OFFSET + 4]);
+    require_current(u32::from_be_bytes(version))?;
+
+    // The schema and user_version are committed before the database first enters
+    // WAL mode. Read only that committed main-file schema, without consulting or
+    // creating WAL/SHM files. The normal connection recovers current data below.
+    let immutable = Connection::open_with_flags(
+        immutable_database_uri(path)?,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+    )
+    .map_err(|_| StoreOpenError::Unavailable)?;
+    verify_schema(&immutable)?;
+    Ok(true)
+}
+
+fn immutable_database_uri(path: &Path) -> Result<String, StoreOpenError> {
+    use std::fmt::Write as _;
+
+    let absolute = std::path::absolute(path).map_err(|_| StoreOpenError::Unavailable)?;
+    #[cfg(windows)]
+    let absolute = absolute.to_string_lossy().replace('\\', "/");
+    #[cfg(windows)]
+    let path_bytes = absolute
+        .strip_prefix("//?/")
+        .unwrap_or(&absolute)
+        .as_bytes();
+    #[cfg(not(windows))]
+    let path_bytes = absolute.as_os_str().as_encoded_bytes();
+
+    let mut uri = String::from("file:");
+    // Escape extra leading slashes as path bytes so they can't represent a URI
+    // authority. SQLite's Windows VFS accepts ordinary absolute drive paths.
+    for (index, &byte) in path_bytes.iter().enumerate() {
+        if byte.is_ascii_alphanumeric()
+            || matches!(byte, b'-' | b'.' | b'_' | b'~' | b':')
+            || (byte == b'/' && index > 1)
+        {
+            uri.push(char::from(byte));
+        } else {
+            write!(uri, "%{byte:02X}").expect("writing to String");
+        }
+    }
+    uri.push_str("?mode=ro&immutable=1");
+    Ok(uri)
+}
+
+fn require_current(version: u32) -> Result<(), StoreOpenError> {
+    if version != CURRENT_DATA_SCHEMA {
         return Err(StoreOpenError::UnsupportedDataSchema {
-            found: u32::try_from(version).unwrap_or(u32::MAX),
+            found: version,
             supported: CURRENT_DATA_SCHEMA,
         });
     }
-    if (5..=21).contains(&version) && legacy_template_operations_active(&connection)? {
-        return Err(StoreOpenError::LegacyTemplateOperationsActive);
-    }
-    if (23..=27).contains(&version) && template_declaration_operations_active(&connection)? {
-        return Err(StoreOpenError::LegacyTemplateOperationsActive);
-    }
+    Ok(())
+}
+
+fn schema_objects(connection: &Connection) -> rusqlite::Result<Vec<SchemaObject>> {
     connection
-        .execute_batch("PRAGMA foreign_keys=ON;")
-        .map_err(|_| StoreOpenError::Unavailable)?;
-    let foreign_keys: i64 = connection
-        .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
-        .map_err(|_| StoreOpenError::Unavailable)?;
-    if foreign_keys != 1 {
+        .prepare(
+            "SELECT type, lower(name), sql FROM sqlite_schema WHERE sql IS NOT NULL ORDER BY type, lower(name)",
+        )?
+        .query_map([], |row| {
+            let sql: String = row.get(2)?;
+            Ok((row.get(0)?, row.get(1)?, ddl_tokens(sql.as_bytes())))
+        })?
+        .collect()
+}
+
+// Compare the tokens of SQLite's stored DDL. Whitespace, comments and the case
+// of unquoted identifiers/keywords have no effect. Literal bytes, token
+// boundaries, multi-character operators and quoted content remain significant.
+fn ddl_tokens(mut sql: &[u8]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(sql.len());
+    while let Some(&first) = sql.first() {
+        if first.is_ascii_whitespace() {
+            sql = &sql[1..];
+            continue;
+        }
+        if sql.starts_with(b"--") {
+            sql = &sql[sql.iter().position(|&b| b == b'\n').unwrap_or(sql.len())..];
+            continue;
+        }
+        if sql.starts_with(b"/*") {
+            sql = &sql[sql[2..]
+                .windows(2)
+                .position(|part| part == b"*/")
+                .map_or(sql.len(), |i| i + 4)..];
+            continue;
+        }
+        let word = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'$' | 128..=255);
+        let len = if matches!(first, b'\'' | b'"' | b'`' | b'[') {
+            let end = if first == b'[' { b']' } else { first };
+            let mut i = 1;
+            while i < sql.len() {
+                i += 1;
+                if sql[i - 1] == end {
+                    if first == b'[' || sql.get(i) != Some(&end) {
+                        break;
+                    }
+                    i += 1; // doubled quote
+                }
+            }
+            i
+        } else if word(first) {
+            sql.iter().position(|&b| !word(b)).unwrap_or(sql.len())
+        } else if sql.starts_with(b"->>") {
+            3
+        } else if matches!(
+            sql.get(..2),
+            Some(b"||" | b"->" | b"==" | b"!=" | b"<>" | b"<=" | b">=" | b"<<" | b">>")
+        ) {
+            2
+        } else {
+            1
+        };
+        let (token, rest) = sql.split_at(len);
+        if word(first) {
+            output.extend(token.iter().map(u8::to_ascii_lowercase));
+        } else {
+            output.extend_from_slice(token);
+        }
+        output.push(0);
+        sql = rest;
+    }
+    output
+}
+
+fn verify_schema(connection: &Connection) -> Result<(), StoreOpenError> {
+    let actual = schema_objects(connection).map_err(|_| StoreOpenError::Unavailable)?;
+    if CURRENT_SCHEMA.get().is_none() {
+        let reference = Connection::open_in_memory().map_err(|_| StoreOpenError::Unavailable)?;
+        reference
+            .execute_batch(INITIAL_SCHEMA)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+        let expected = schema_objects(&reference).map_err(|_| StoreOpenError::Unavailable)?;
+        let _ = CURRENT_SCHEMA.set(expected);
+    }
+    if CURRENT_SCHEMA.get() != Some(&actual) {
         return Err(StoreOpenError::Unavailable);
     }
-    let journal_mode: String = connection
-        .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
-        .map_err(|_| StoreOpenError::Unavailable)?;
-    if !journal_mode.eq_ignore_ascii_case("wal") {
-        return Err(StoreOpenError::Unavailable);
-    }
-    connection
-        .execute_batch("PRAGMA synchronous=FULL;")
-        .map_err(|_| StoreOpenError::Unavailable)?;
-    let synchronous: i64 = connection
-        .query_row("PRAGMA synchronous", [], |row| row.get(0))
-        .map_err(|_| StoreOpenError::Unavailable)?;
-    if synchronous != 2 {
-        return Err(StoreOpenError::Unavailable);
-    }
+    Ok(())
+}
+
+pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
+    let existing = check_state_database(path)?;
+    let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    let flags = if existing {
+        flags
+    } else {
+        flags | OpenFlags::SQLITE_OPEN_CREATE
+    };
+    let mut connection =
+        Connection::open_with_flags(path, flags).map_err(|_| StoreOpenError::Unavailable)?;
     connection
         .busy_timeout(BUSY_TIMEOUT)
         .map_err(|_| StoreOpenError::Unavailable)?;
-    if version == 0 {
-        connection
-            .execute_batch(MIGRATION_V1)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 1 {
-        connection
-            .execute_batch(MIGRATION_V2)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 2 {
-        connection
-            .execute_batch(MIGRATION_V3)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 3 {
-        connection
-            .execute_batch(MIGRATION_V4)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 4 {
-        connection
-            .execute_batch(MIGRATION_V5)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 5 {
-        connection
-            .execute_batch(MIGRATION_V6)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 6 {
-        connection
-            .execute_batch(MIGRATION_V7)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 7 {
-        connection
-            .execute_batch(MIGRATION_V8)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 8 {
-        connection
-            .execute_batch(MIGRATION_V9)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 9 {
-        connection
-            .execute_batch(MIGRATION_V10)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 10 {
-        connection
-            .execute_batch(MIGRATION_V11)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 11 {
-        connection
-            .execute_batch(MIGRATION_V12)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 12 {
-        connection
-            .execute_batch(MIGRATION_V13)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 13 {
-        connection
-            .execute_batch(MIGRATION_V14)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 14 {
-        connection
-            .execute_batch(MIGRATION_V15)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 15 {
-        connection
-            .execute_batch(MIGRATION_V16)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 16 {
-        connection
-            .execute_batch(MIGRATION_V17)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 17 {
-        migrate_backup_compression(&mut connection, MIGRATION_V18)?;
-    }
-    if version <= 19 {
-        connection
-            .execute_batch(MIGRATION_V20)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 20 {
-        connection
-            .execute_batch(MIGRATION_V21)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 21 {
-        migrate_remove_templates(&mut connection)?;
-    }
-    if version <= 22 {
-        connection
-            .execute_batch(MIGRATION_V23)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 23 {
-        connection
-            .execute_batch(MIGRATION_V24)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 24 {
-        connection
-            .execute_batch(MIGRATION_V25)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 25 {
-        connection
-            .execute_batch(MIGRATION_V26)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 26 {
-        connection
-            .execute_batch(MIGRATION_V27)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 27 {
-        migrate_template_archives(&mut connection)?;
-    }
-    if version <= 28 {
-        connection
-            .execute_batch(MIGRATION_V29)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 29 {
-        connection
-            .execute_batch(MIGRATION_V30)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 30 {
-        connection
-            .execute_batch(MIGRATION_V31)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 31 {
-        connection
-            .execute_batch(MIGRATION_V32)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 32 {
-        connection
-            .execute_batch(MIGRATION_V33)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 33 {
-        connection
-            .execute_batch(MIGRATION_V34)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 34 {
-        connection
-            .execute_batch(MIGRATION_V35)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 35 {
-        connection
-            .execute_batch(MIGRATION_V36)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 36 {
-        connection
-            .execute_batch(MIGRATION_V37)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 37 {
-        connection
-            .execute_batch(MIGRATION_V38)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 38 {
-        connection
-            .execute_batch(MIGRATION_V39)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 39 {
-        connection
-            .execute_batch(MIGRATION_V40)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 40 {
-        connection
-            .execute_batch(MIGRATION_V41)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    if version <= 41 {
-        connection
-            .execute_batch(MIGRATION_V42)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    let final_version: i64 = connection
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .map_err(|_| StoreOpenError::Unavailable)?;
-    if final_version == 42 {
-        connection
-            .execute_batch(MIGRATION_V43)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    let final_version: i64 = connection
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .map_err(|_| StoreOpenError::Unavailable)?;
-    if final_version == 43 {
-        connection
-            .execute_batch(MIGRATION_V44)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    let final_version: i64 = connection
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .map_err(|_| StoreOpenError::Unavailable)?;
-    if final_version == 44 {
-        connection
-            .execute_batch(MIGRATION_V45)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-    }
-    let final_version: i64 = connection
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .map_err(|_| StoreOpenError::Unavailable)?;
-    let final_foreign_keys: i64 = connection
-        .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
-        .map_err(|_| StoreOpenError::Unavailable)?;
-    let final_journal: String = connection
-        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
-        .map_err(|_| StoreOpenError::Unavailable)?;
-    if final_version != DATA_SCHEMA_VERSION
-        || final_foreign_keys != 1
-        || !final_journal.eq_ignore_ascii_case("wal")
-    {
-        return Err(StoreOpenError::Unavailable);
-    }
-    Ok((connection, (4..=21).contains(&version)))
-}
-
-fn migrate_backup_compression(
-    connection: &mut Connection,
-    migration: &str,
-) -> Result<(), StoreOpenError> {
-    with_foreign_keys_suspended(connection, |transaction| {
-        let objects = {
-            let mut statement = transaction
-                .prepare(
-                    "SELECT sql FROM sqlite_schema
-                     WHERE tbl_name='backups' AND type IN ('index', 'trigger') AND sql IS NOT NULL
-                     ORDER BY type, name",
-                )
-                .map_err(|_| StoreOpenError::Unavailable)?;
-            statement
-                .query_map([], |row| row.get::<_, String>(0))
-                .map_err(|_| StoreOpenError::Unavailable)?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|_| StoreOpenError::Unavailable)?
-        };
-        transaction
-            .execute_batch(migration)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-        for sql in objects {
-            transaction
-                .execute_batch(&sql)
-                .map_err(|_| StoreOpenError::Unavailable)?;
-        }
-        Ok(())
-    })
-}
-
-fn migrate_remove_templates(connection: &mut Connection) -> Result<(), StoreOpenError> {
-    with_foreign_keys_suspended(connection, |transaction| {
-        if legacy_template_operations_active(transaction)? {
-            return Err(StoreOpenError::LegacyTemplateOperationsActive);
-        }
-        transaction
-            .execute_batch(MIGRATION_V22)
-            .map_err(|_| StoreOpenError::Unavailable)
-    })
-}
-
-fn legacy_template_operations_active(connection: &Connection) -> Result<bool, StoreOpenError> {
     connection
-        .query_row(
-            "SELECT EXISTS(
-                SELECT 1 FROM operations
-                WHERE kind IN ('templates.import', 'templates.derive', 'templates.create-project')
-                  AND state NOT IN ('succeeded', 'failed', 'cancelled')
-            )",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|_| StoreOpenError::Unavailable)
-}
-
-fn migrate_template_archives(connection: &mut Connection) -> Result<(), StoreOpenError> {
-    with_foreign_keys_suspended(connection, |transaction| {
-        if template_declaration_operations_active(transaction)? {
-            return Err(StoreOpenError::LegacyTemplateOperationsActive);
-        }
-        transaction
-            .execute_batch(MIGRATION_V28)
-            .map_err(|_| StoreOpenError::Unavailable)
-    })
-}
-
-fn template_declaration_operations_active(connection: &Connection) -> Result<bool, StoreOpenError> {
-    connection
-        .query_row(
-            "SELECT EXISTS(
-                SELECT 1 FROM operations o
-                WHERE o.kind='projects.create'
-                  AND o.state NOT IN ('succeeded','failed','cancelled')
-                  AND (json_type(o.request_json,'$.template')='object'
-                       OR EXISTS(SELECT 1 FROM operation_journal j
-                                 WHERE j.operation_id=o.operation_id
-                                   AND j.kind='projects.create.declaration'))
-            )",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|_| StoreOpenError::Unavailable)
-}
-
-fn with_foreign_keys_suspended(
-    connection: &mut Connection,
-    migrate: impl FnOnce(&Transaction<'_>) -> Result<(), StoreOpenError>,
-) -> Result<(), StoreOpenError> {
-    let foreign_keys: i64 = connection
-        .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+        .execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")
         .map_err(|_| StoreOpenError::Unavailable)?;
-    if !connection.is_autocommit() || foreign_keys != 1 {
-        return Err(StoreOpenError::Unavailable);
+    if !existing {
+        initialize_schema(&mut connection)?;
     }
-    // SQLite cannot switch foreign_keys while a transaction is active. Keep
-    // every table change/version write atomic and always restore enforcement.
-    let result = (|| {
-        connection
-            .execute_batch("PRAGMA foreign_keys=OFF;")
-            .map_err(|_| StoreOpenError::Unavailable)?;
-        let disabled: i64 = connection
-            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
-            .map_err(|_| StoreOpenError::Unavailable)?;
-        if disabled != 0 {
-            return Err(StoreOpenError::Unavailable);
-        }
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreOpenError::Unavailable)?;
-        migrate(&transaction)?;
-        let invalid_foreign_keys: bool = transaction
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM pragma_foreign_key_check)",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|_| StoreOpenError::Unavailable)?;
-        if invalid_foreign_keys {
-            return Err(StoreOpenError::Unavailable);
-        }
-        transaction
-            .commit()
-            .map_err(|_| StoreOpenError::Unavailable)
-    })();
-    let restored = connection
-        .execute_batch("PRAGMA foreign_keys=ON;")
-        .and_then(|()| connection.query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0)))
-        .map_err(|_| StoreOpenError::Unavailable)
-        .and_then(|enabled| {
-            if enabled == 1 {
-                Ok(())
-            } else {
-                Err(StoreOpenError::Unavailable)
-            }
-        });
-    result.and(restored)
-}
-
-#[cfg(test)]
-#[path = "sqlite_backup_compression_tests.rs"]
-mod backup_compression_migration_tests;
-
-#[cfg(test)]
-#[path = "sqlite_template_removal_tests.rs"]
-mod template_removal_migration_tests;
-
-#[cfg(test)]
-#[path = "sqlite_template_archives_tests.rs"]
-mod template_archives_migration_tests;
-
-#[cfg(test)]
-#[path = "sqlite_mcp_clients_tests.rs"]
-mod mcp_clients_migration_tests;
-
-#[cfg(test)]
-#[path = "sqlite_mcp_snapshots_tests.rs"]
-mod mcp_snapshots_migration_tests;
-
-#[cfg(test)]
-#[path = "sqlite_extension_mcp_grants_tests.rs"]
-mod extension_mcp_grants_migration_tests;
-
-#[cfg(test)]
-#[path = "sqlite_permission_switch_tests.rs"]
-mod permission_switch_migration_tests;
-
-#[cfg(test)]
-#[path = "sqlite_oauth_tests.rs"]
-mod oauth_migration_tests;
-
-#[cfg(test)]
-pub(crate) fn mcp_state32_fixture() -> Connection {
-    mcp_clients_migration_tests::fixture()
-}
-
-#[cfg(test)]
-pub(super) fn state21_fixture(path: &Path) -> Connection {
-    let mut connection = Connection::open(path).expect("isolated database");
-    connection
-        .execute_batch("PRAGMA foreign_keys=ON;")
-        .expect("enforce foreign keys");
-    for migration in [
-        MIGRATION_V1,
-        MIGRATION_V2,
-        MIGRATION_V3,
-        MIGRATION_V4,
-        MIGRATION_V5,
-        MIGRATION_V6,
-        MIGRATION_V7,
-        MIGRATION_V8,
-        MIGRATION_V9,
-        MIGRATION_V10,
-        MIGRATION_V11,
-        MIGRATION_V12,
-        MIGRATION_V13,
-        MIGRATION_V14,
-        MIGRATION_V15,
-        MIGRATION_V16,
-        MIGRATION_V17,
-    ] {
-        connection
-            .execute_batch(migration)
-            .expect("historical schema");
-    }
-    migrate_backup_compression(&mut connection, MIGRATION_V18).expect("State18");
-    connection.execute_batch(MIGRATION_V20).expect("State20");
-    connection.execute_batch(MIGRATION_V21).expect("State21");
-    connection
-}
-
-#[cfg(test)]
-#[test]
-fn state24_and_state27_preserve_existing_rows_and_constrain_local_archive_pins() {
-    let mut connection = state21_fixture(Path::new(":memory:"));
-    migrate_remove_templates(&mut connection).expect("State22");
-    connection.execute_batch(MIGRATION_V23).expect("State23");
-    connection.execute_batch(
-        "INSERT INTO repositories(repository_id, owner_principal_id, source_kind, source_locator,
-                                  source_identity_key, issues_json, revision, registered_at_ms,
-                                  refreshed_at_ms, updated_at_ms, priority)
-         VALUES ('11111111-1111-4111-8111-111111111111', 'builtin:local-owner', 'remote',
-                 'https://fixture.invalid/index.json', x'01', '[]', 1, 1, 1, 1, 1);
-         INSERT INTO repository_package_versions(repository_id, package_id, version_text,
-                      display_name, semantic_version, author_name, author_email, artifact_url,
-                      zip_sha256, manifest_fingerprint, resolver_ready)
-         VALUES ('11111111-1111-4111-8111-111111111111', 'com.example.package', '1.0.0',
-                 'Example', '1.0.0', 'Fixture', 'fixture@example.invalid',
-                 'https://fixture.invalid/archive.zip', printf('%064d', 0), zeroblob(32), 1);",
-    ).expect("old repository and package rows");
-
-    connection.execute_batch(MIGRATION_V24).expect("State24");
     let version: u32 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
-        .expect("schema version");
-    assert_eq!(version, 24);
-    let fields: (bool, String, String, Option<Vec<u8>>) = connection
-        .query_row(
-            "SELECT r.resolver_indexed, p.author_email, p.zip_sha256, p.local_zip_sha256
-         FROM repositories r JOIN repository_package_versions p ON p.repository_id=r.repository_id",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        )
-        .expect("preserved State23 repository and package data");
-    assert_eq!(
-        fields,
-        (
-            false,
-            "fixture@example.invalid".into(),
-            "0".repeat(64),
-            None
-        )
-    );
-    assert!(
-        connection
-            .execute(
-                "UPDATE repository_package_versions SET local_zip_sha256=zeroblob(32)",
-                []
-            )
-            .is_err()
-    );
-    assert!(connection.execute("UPDATE repository_package_versions SET zip_sha256=NULL, artifact_url='http://fixture.invalid/archive.zip'", []).is_err());
-    connection.execute("UPDATE repository_package_versions SET zip_sha256=NULL, author_email=NULL, local_zip_sha256=zeroblob(32)", [])
-        .expect("HTTPS package may use a locally verified archive digest");
-    assert!(
-        connection
-            .execute(
-                "UPDATE repository_package_versions SET local_zip_sha256=zeroblob(31)",
-                []
-            )
-            .is_err()
-    );
-    assert!(
-        connection
-            .execute(
-                "UPDATE repository_package_versions SET manifest_fingerprint=NULL",
-                []
-            )
-            .is_err()
-    );
+        .map_err(|_| StoreOpenError::Unavailable)?;
+    require_current(version)?;
+    let journal_mode: String = connection
+        .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
+        .map_err(|_| StoreOpenError::Unavailable)?;
+    let foreign_keys: u32 = connection
+        .pragma_query_value(None, "foreign_keys", |row| row.get(0))
+        .map_err(|_| StoreOpenError::Unavailable)?;
+    let synchronous: u32 = connection
+        .pragma_query_value(None, "synchronous", |row| row.get(0))
+        .map_err(|_| StoreOpenError::Unavailable)?;
+    if foreign_keys != 1 || synchronous != 2 || !journal_mode.eq_ignore_ascii_case("wal") {
+        return Err(StoreOpenError::Unavailable);
+    }
+    Ok(connection)
+}
 
-    for migration in [MIGRATION_V25, MIGRATION_V26] {
-        connection
-            .execute_batch(migration)
-            .expect("historical schema");
+fn initialize_schema(connection: &mut Connection) -> Result<(), StoreOpenError> {
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|_| StoreOpenError::Unavailable)?;
+    let version: u32 = transaction
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(|_| StoreOpenError::Unavailable)?;
+    if version != 0 {
+        require_current(version)?;
+        verify_schema(&transaction)?;
+    } else {
+        if !schema_objects(&transaction)
+            .map_err(|_| StoreOpenError::Unavailable)?
+            .is_empty()
+        {
+            return Err(StoreOpenError::Unavailable);
+        }
+        transaction
+            .execute_batch(INITIAL_SCHEMA)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+        transaction
+            .pragma_update(None, "user_version", DATA_SCHEMA_VERSION)
+            .map_err(|_| StoreOpenError::Unavailable)?;
     }
-    connection
-        .execute_batch(
-            "UPDATE repositories SET revision=9, resolver_indexed=1, etag='fixture-etag';
-         UPDATE repository_package_versions SET download_headers_present=1;",
-        )
-        .expect("State26 repository metadata");
-    connection
-        .execute(
-            "UPDATE repository_package_versions SET local_zip_sha256=?1",
-            [vec![0xab_u8; 32]],
-        )
-        .expect("State26 archive pin");
-    connection.execute_batch(MIGRATION_V27).expect("State27");
-    assert_eq!(
-        connection
-            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
-            .expect("schema version"),
-        27,
-    );
-    let fields = connection.query_row(
-        "SELECT r.revision, r.resolver_indexed, r.etag, p.local_zip_sha256, p.download_headers_present
-         FROM repositories r JOIN repository_package_versions p USING(repository_id)", [],
-        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, bool>(1)?, row.get::<_, String>(2)?,
-            row.get::<_, Vec<u8>>(3)?, row.get::<_, bool>(4)?)),
-    ).expect("preserved State26 repository and archive pin");
-    assert_eq!(
-        fields,
-        (9, true, "fixture-etag".into(), vec![0xab; 32], true)
-    );
-    connection.execute("UPDATE repository_package_versions SET artifact_url='http://fixture.invalid/archive.zip'", [])
-        .expect("HTTP package may retain a locally verified digest");
-    for update in [
-        "artifact_url='file:///archive.zip', local_zip_sha256=NULL",
-        "local_zip_sha256=zeroblob(31)",
-        "zip_sha256=printf('%064d', 1)",
-        "manifest_fingerprint=NULL",
-    ] {
-        assert!(
-            connection
-                .execute(
-                    &format!("UPDATE repository_package_versions SET {update}"),
-                    []
-                )
-                .is_err(),
-            "{update}"
-        );
-    }
+    transaction
+        .commit()
+        .map_err(|_| StoreOpenError::Unavailable)
 }
 
 #[cfg(test)]
-#[test]
-fn state26_keeps_package_rows_and_requests_a_full_refresh_for_pre_marker_indexes() {
-    let mut connection = state21_fixture(Path::new(":memory:"));
-    migrate_remove_templates(&mut connection).expect("State22");
-    for migration in [MIGRATION_V23, MIGRATION_V24, MIGRATION_V25] {
-        connection
-            .execute_batch(migration)
-            .expect("historical schema");
-    }
-    connection.execute_batch(
-        "INSERT INTO repositories(repository_id, owner_principal_id, source_kind, source_locator,
-                                  source_identity_key, issues_json, revision, registered_at_ms,
-                                  refreshed_at_ms, updated_at_ms, priority, resolver_indexed, etag)
-         VALUES ('11111111-1111-4111-8111-111111111111', 'builtin:local-owner', 'remote',
-                 'https://fixture.invalid/index.json', x'01', '[]', 3, 1, 1, 1, 1, 1, 'old-etag');
-         INSERT INTO repository_package_versions(repository_id, package_id, version_text, display_name)
-         VALUES ('11111111-1111-4111-8111-111111111111', 'com.example.package', '1.0.0', 'Existing');"
-    ).expect("State25 repository with display data");
-    connection.execute_batch(MIGRATION_V26).expect("State26");
-    assert_eq!(
-        connection
-            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
-            .expect("schema version"),
-        26
-    );
-    let fields: (bool, Option<String>, i64, String, bool) = connection
-        .query_row(
-            "SELECT r.resolver_indexed,r.etag,r.revision,p.display_name,p.download_headers_present
-         FROM repositories r JOIN repository_package_versions p USING(repository_id)",
-            [],
-            |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                ))
-            },
-        )
-        .expect("existing records");
-    assert_eq!(fields, (false, None, 3, "Existing".into(), false));
-    assert!(
-        connection
-            .execute(
-                "UPDATE repository_package_versions SET download_headers_present=1",
-                []
-            )
-            .is_err()
-    );
-}
-
-#[cfg(test)]
-#[test]
-fn state32_preserves_rows_pins_and_healthy_indexes_and_allows_absent_presentation() {
-    let mut connection = state21_fixture(Path::new(":memory:"));
-    migrate_remove_templates(&mut connection).expect("State22");
-    for migration in [
-        MIGRATION_V23,
-        MIGRATION_V24,
-        MIGRATION_V25,
-        MIGRATION_V26,
-        MIGRATION_V27,
-    ] {
-        connection
-            .execute_batch(migration)
-            .expect("historical schema");
-    }
-    migrate_template_archives(&mut connection).expect("State28");
-    for migration in [MIGRATION_V29, MIGRATION_V30, MIGRATION_V31] {
-        connection.execute_batch(migration).expect("State31");
-    }
-    for (id, issues) in [
-        (
-            "11111111-1111-4111-8111-111111111111",
-            r#"[{"code":"resolver_metadata_invalid","component":"version","item":"com.example.package@1.0.0"}]"#,
-        ),
-        ("22222222-2222-4222-8222-222222222222", "[]"),
-    ] {
-        connection.execute(
-            "INSERT INTO repositories(repository_id,owner_principal_id,source_kind,source_locator,source_identity_key,issues_json,revision,registered_at_ms,refreshed_at_ms,updated_at_ms,priority,resolver_indexed,etag,last_modified,display_name)
-             VALUES (?1,'builtin:local-owner','remote','https://fixture.invalid/index.json',CAST(?1 AS BLOB),?2,9,1,2,3,7,1,'old-etag','old-last-modified','Custom display')",
-            rusqlite::params![id, issues],
-        ).expect("existing repository");
-        connection.execute(
-            "INSERT INTO repository_package_versions(repository_id,package_id,version_text,semantic_version,display_name,author_name,artifact_url,manifest_fingerprint,resolver_ready,local_zip_sha256)
-             VALUES (?1,'com.example.package','1.0.0','1.0.0','Existing','Author','https://fixture.invalid/package.zip',zeroblob(32),1,zeroblob(32))", [id],
-        ).expect("existing pinned package");
-    }
-    let before: String = connection.query_row("SELECT json_group_array(json_array(repository_id,package_id,version_text,display_name,author_name,hex(local_zip_sha256),hex(manifest_fingerprint))) FROM repository_package_versions", [], |row| row.get(0)).expect("before rows");
+pub(crate) fn current_schema_fixture() -> Connection {
+    let mut connection = Connection::open_in_memory().expect("in-memory fixture");
     connection
-        .execute_batch(MIGRATION_V32)
-        .expect("State32 proposal");
-    let after: String = connection.query_row("SELECT json_group_array(json_array(repository_id,package_id,version_text,display_name,author_name,hex(local_zip_sha256),hex(manifest_fingerprint))) FROM repository_package_versions", [], |row| row.get(0)).expect("after rows");
-    assert_eq!(before, after);
-    for (id, indexed, etag) in [
-        ("11111111-1111-4111-8111-111111111111", false, None),
-        (
-            "22222222-2222-4222-8222-222222222222",
-            true,
-            Some("old-etag".to_owned()),
-        ),
-    ] {
-        let record: (bool, Option<String>, i64, i64, String) = connection.query_row("SELECT resolver_indexed,etag,revision,priority,display_name FROM repositories WHERE repository_id=?1", [id], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?))).expect("retained repository");
-        assert_eq!(record, (indexed, etag, 9, 7, "Custom display".into()));
-    }
-    assert_eq!(
-        connection
-            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
-            .expect("schema"),
-        32
-    );
+        .execute_batch("PRAGMA foreign_keys=ON")
+        .expect("foreign keys");
+    initialize_schema(&mut connection).expect("initialize fixture schema");
     connection
-        .execute(
-            "UPDATE repository_package_versions SET author_name=NULL,display_name=NULL",
-            [],
-        )
-        .expect("UPDATE permits absent presentation");
-    connection.execute("INSERT INTO repository_package_versions(repository_id,package_id,version_text,semantic_version,artifact_url,manifest_fingerprint,resolver_ready) VALUES ('22222222-2222-4222-8222-222222222222','com.example.minimal','1.0.0','1.0.0','https://fixture.invalid/minimal.zip',zeroblob(32),1)", []).expect("INSERT permits absent presentation");
-    connection.execute("UPDATE repository_package_versions SET artifact_url='http://fixture.invalid/package.zip'", []).expect("State27 HTTP archives remain supported");
-    for update in [
-        "semantic_version=NULL",
-        "artifact_url=NULL",
-        "manifest_fingerprint=NULL",
-        "author_name=''",
-        "author_name=printf('%04097d',1)",
-    ] {
-        assert!(
-            connection
-                .execute(
-                    &format!("UPDATE repository_package_versions SET {update}"),
-                    []
-                )
-                .is_err(),
-            "{update}"
-        );
-    }
 }
 
 pub(super) fn create_state_check(
@@ -1440,11 +900,9 @@ pub(super) fn load_owned_operation(
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT phase FROM project_delete_filesystem_journal j
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
-             (SELECT phase FROM backup_restore_filesystem_journal j
-              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
               WHERE j.operation_id=operations.operation_id AND j.kind IN (
-                  'backups.create','projects.create','projectTemplates.save','projectTemplates.export')
+                  'backups.create','backups.restore','projects.create','projectTemplates.save','projectTemplates.export')
               ORDER BY step DESC LIMIT 1))
          FROM operations WHERE operation_id=?1 AND owner_principal_id=?2",
         params![operation_id.to_string(), owner.as_str()],
@@ -1466,11 +924,9 @@ fn load_operation(
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT phase FROM project_delete_filesystem_journal j
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
-             (SELECT phase FROM backup_restore_filesystem_journal j
-              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
               WHERE j.operation_id=operations.operation_id AND j.kind IN (
-                  'backups.create','projects.create','projectTemplates.save','projectTemplates.export')
+                  'backups.create','backups.restore','projects.create','projectTemplates.save','projectTemplates.export')
               ORDER BY step DESC LIMIT 1))
          FROM operations WHERE operation_id=?1",
         [operation_id.to_string()],
@@ -1558,11 +1014,9 @@ pub(super) fn list_operations(
                   WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
                  (SELECT phase FROM project_delete_filesystem_journal j
                   WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
-                 (SELECT phase FROM backup_restore_filesystem_journal j
-                  WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
                  (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
                   WHERE j.operation_id=operations.operation_id AND j.kind IN (
-                      'backups.create','projects.create','projectTemplates.save','projectTemplates.export')
+                      'backups.create','backups.restore','projects.create','projectTemplates.save','projectTemplates.export')
                   ORDER BY step DESC LIMIT 1))
              FROM operations
              WHERE owner_principal_id=?1
@@ -1864,29 +1318,5 @@ fn corrupt_state() -> StoreError {
 }
 
 #[cfg(test)]
-#[path = "sqlite_extension_tools_tests.rs"]
-mod extension_tools_migration_tests;
-
-#[cfg(test)]
-#[path = "sqlite_publisher_trust_removal_tests.rs"]
-mod publisher_trust_removal_tests;
-
-#[cfg(test)]
-#[path = "sqlite_transport_observations_tests.rs"]
-mod transport_observations_tests;
-
-#[cfg(test)]
-#[path = "sqlite_runtime_observations_tests.rs"]
-mod runtime_observations_tests;
-
-#[cfg(test)]
-#[path = "sqlite_install_consent_tests.rs"]
-mod install_consent_tests;
-
-#[cfg(test)]
-#[path = "sqlite_remote_sources_tests.rs"]
-mod remote_sources_tests;
-
-#[cfg(test)]
-#[path = "sqlite_connection_access_tests.rs"]
-mod connection_access_migration_tests;
+#[path = "sqlite_authority_tests.rs"]
+mod authority_tests;

@@ -33,7 +33,7 @@ Core 合并通知，延迟500ms避开首屏，按上次成功观测的5分钟时
 
 ## 本机更新
 
-确认原Core无活跃任务后备份原程序与数据，暂时释放Windows用户RPC端点执行测试；随后启动新Core，继续使用原数据路径。新Core PID266476，SHA256 `0CB10230D18CF6C050B5E0198B7CA2377B28384D04E9836A3F03C004B1EB8D4D`。实际RPC ready / State31 / Config12 / 候选v2，1项目、2仓库、0活跃任务。
+确认原Core无活跃任务后备份原程序与数据，暂时释放Windows用户RPC端点执行测试；随后启动新Core，继续使用原数据路径。新Core PID266476，SHA256 `0CB10230D18CF6C050B5E0198B7CA2377B28384D04E9836A3F03C004B1EB8D4D`。实际RPC ready，项目候选读取成功，1项目、2仓库、0活跃任务。
 
 GUI沿用此前已构建程序（SHA256 `6DF21CD4A29D6DCCB813FC3942DAEC7AB323551A279EEB2AFE30DF2C3DBE1B1D`）和原WebView profile重新打开，PID246852，窗口句柄非零且响应；Core/GUI stderr均为空。没有重新编译未变的GUI，也未执行原生页面内部自动化。
 

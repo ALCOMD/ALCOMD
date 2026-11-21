@@ -208,7 +208,8 @@
                                     "id",
                                     "name",
                                     "unity_version",
-                                    "dependencies"
+                                    "dependencies",
+                                    "base_template"
                                 ]
                             },
                             {

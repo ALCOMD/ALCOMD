@@ -22,9 +22,6 @@ pub struct TransportReadAccess {
 }
 impl TransportReadAccess {
     pub fn from_client(access: &AccessContext) -> Self {
-        if access.is_mcp_client() {
-            return Self::default();
-        }
         Self {
             connections: access.require(Permission::McpConnectionsRead).is_ok(),
             requests: access.require(Permission::McpRequestsRead).is_ok(),

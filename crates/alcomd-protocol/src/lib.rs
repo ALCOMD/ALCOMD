@@ -42,7 +42,7 @@ pub use project_create::*;
 pub use repository_list::*;
 
 pub const METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES: &str = "packages.queryProjectCandidates";
-pub const CAPABILITY_PACKAGES_CANDIDATES_V2: &str = "packages.candidates.v2";
+pub const CAPABILITY_PACKAGES_CANDIDATES_V1: &str = "packages.candidates.v1";
 
 /// Current ALCOMD RPC major version.
 pub const RPC_VERSION: u32 = 1;
@@ -116,6 +116,7 @@ pub const METHOD_REPOSITORIES_REFRESH: &str = "repositories.refresh";
 pub const METHOD_REPOSITORIES_REFRESH_ALL: &str = "repositories.refreshAll";
 pub const METHOD_REPOSITORIES_UNREGISTER: &str = "repositories.unregister";
 pub const METHOD_REPOSITORIES_SET_CREDENTIALS: &str = "repositories.setCredentials";
+pub const METHOD_REPOSITORIES_MOVE: &str = "repositories.move";
 pub const METHOD_REPOSITORIES_SET_DISPLAY_NAME: &str = "repositories.setDisplayName";
 pub const METHOD_PACKAGES_PLAN_INSTALL: &str = "packages.planInstall";
 pub const METHOD_PACKAGES_PLAN_REMOVE: &str = "packages.planRemove";
@@ -146,11 +147,9 @@ pub const METHOD_PROJECT_TEMPLATES_LIST: &str = "projectTemplates.list";
 pub const METHOD_PROJECT_TEMPLATES_SAVE: &str = "projectTemplates.save";
 pub const METHOD_PROJECT_TEMPLATES_EXPORT: &str = "projectTemplates.export";
 pub const METHOD_PROJECT_TEMPLATES_REMOVE: &str = "projectTemplates.remove";
-pub const METHOD_BACKUPS_LIST: &str = "backups.list";
-pub const METHOD_BACKUPS_GET: &str = "backups.get";
 pub const METHOD_BACKUPS_CREATE: &str = "backups.create";
-pub const METHOD_BACKUPS_PLAN_RESTORE: &str = "backups.planRestore";
-pub const METHOD_BACKUPS_APPLY_RESTORE: &str = "backups.applyRestore";
+pub const METHOD_BACKUPS_RESTORE: &str = "backups.restore";
+pub const METHOD_PLANS_GET: &str = "plans.get";
 pub const METHOD_PROJECTS_PLAN_COPY: &str = "projects.planCopy";
 pub const METHOD_PROJECTS_APPLY_COPY: &str = "projects.applyCopy";
 pub const METHOD_PROJECTS_PLAN_DELETE_DIRECTORY: &str = "projects.planDeleteDirectory";
@@ -186,7 +185,7 @@ pub const CAPABILITY_OPERATIONS_V1: &str = "operations.v1";
 /// Capability required by `events.list`.
 pub const CAPABILITY_EVENTS_REPLAY_V1: &str = "events.replay.v1";
 pub const CAPABILITY_PROJECTS_CREATE_V1: &str = "projects.create.v1";
-pub const CAPABILITY_PROJECT_TEMPLATES_V2: &str = "projectTemplates.v2";
+pub const CAPABILITY_PROJECT_TEMPLATES_V1: &str = "projectTemplates.v1";
 pub const CAPABILITY_PROJECTS_READ_V1: &str = "projects.read.v1";
 pub const CAPABILITY_PROJECTS_REGISTRY_V1: &str = "projects.registry.v1";
 pub const CAPABILITY_PROJECTS_COPY_V1: &str = "projects.copy.v1";
@@ -195,7 +194,6 @@ pub const CAPABILITY_PROJECTS_UNITY_MIGRATION_V1: &str = "projects.unity-migrati
 pub const CAPABILITY_REPOSITORIES_READ_V1: &str = "repositories.read.v1";
 pub const CAPABILITY_REPOSITORIES_REGISTRY_V1: &str = "repositories.registry.v1";
 pub const CAPABILITY_PACKAGES_PLAN_V1: &str = "packages.plan.v1";
-pub const CAPABILITY_PACKAGES_PLAN_V2: &str = "packages.plan.v2";
 pub const CAPABILITY_PACKAGES_APPLY_V1: &str = "packages.apply.v1";
 pub const CAPABILITY_PACKAGES_USER_PACKAGES_V1: &str = "packages.user-packages.v1";
 pub const CAPABILITY_UNITY_READ_V1: &str = "unity.read.v1";
@@ -203,7 +201,6 @@ pub const CAPABILITY_UNITY_MANAGE_V1: &str = "unity.manage.v1";
 pub const CAPABILITY_UNITY_LAUNCH_V1: &str = "unity.launch.v1";
 pub const METHOD_UNITY_HUB_OPEN: &str = "unity.hub.open";
 pub const CAPABILITY_UNITY_HUB_OPEN_V1: &str = "unity.hub.open.v1";
-pub const CAPABILITY_BACKUPS_READ_V1: &str = "backups.read.v1";
 pub const CAPABILITY_BACKUPS_CREATE_V1: &str = "backups.create.v1";
 pub const CAPABILITY_BACKUPS_RESTORE_V1: &str = "backups.restore.v1";
 pub const CAPABILITY_EXTENSIONS_REMOTE_INSTALL_V1: &str = "extensions.remote-install.v1";
@@ -325,8 +322,8 @@ pub mod error_code {
     pub const BACKUP_ARCHIVE_LIMIT_EXCEEDED: &str = "backup_archive_limit_exceeded";
     pub const PROJECT_CHANGED_DURING_BACKUP: &str = "project_changed_during_backup";
     pub const BACKUP_INTEGRITY_MISMATCH: &str = "backup_integrity_mismatch";
-    pub const BACKUP_RESTORE_PLAN_NOT_FOUND: &str = "backup_restore_plan_not_found";
-    pub const BACKUP_RESTORE_PLAN_STALE: &str = "backup_restore_plan_stale";
+    pub const BACKUP_INVALID_ARCHIVE: &str = "backup_invalid_archive";
+    pub const BACKUP_SOURCE_CHANGED: &str = "backup_source_changed";
     pub const BACKUP_TARGET_EXISTS: &str = "backup_target_exists";
     pub const BACKUP_TARGET_INVALID: &str = "backup_target_invalid";
     pub const BACKUP_RESTORE_RECOVERY_REQUIRED: &str = "backup_restore_recovery_required";
@@ -839,36 +836,54 @@ pub struct HelloResult {
     pub daemon_version: String,
     /// Capabilities accepted by both peers.
     pub capabilities: Vec<String>,
-    /// Ready state-store schema version. Absent when the store is unavailable or not initialized.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_schema_version"
-    )]
-    pub data_schema: Option<u32>,
-    /// Public settings Config Schema version, present only once durable config RPC is ready.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_schema_version"
-    )]
-    pub config_schema: Option<u32>,
-    /// Extension ABI information, present only once the M6 runtime is available.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extension_api: Option<ExtensionApiInfo>,
+    /// Schema of the initialized state store.
+    #[serde(deserialize_with = "deserialize_schema_version")]
+    pub data_schema: u32,
+    /// Schema of the public configuration.
+    #[serde(deserialize_with = "deserialize_schema_version")]
+    pub config_schema: u32,
+    /// Extension ABI major and base world supported by the running Core.
+    #[serde(deserialize_with = "current_extension_api")]
+    pub extension_api: ExtensionApiInfo,
 }
 
 fn deserialize_schema_version<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<Option<u32>, D::Error> {
-    std::num::NonZeroU32::deserialize(deserializer).map(|version| Some(version.get()))
+) -> Result<u32, D::Error> {
+    match u32::deserialize(deserializer)? {
+        1 => Ok(1),
+        _ => Err(serde::de::Error::custom("invalid schema version")),
+    }
 }
+
+fn package_change_set_version<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<u32, D::Error> {
+    match u32::deserialize(deserializer)? {
+        1 => Ok(1),
+        _ => Err(serde::de::Error::custom(
+            "expected package change set format 1",
+        )),
+    }
+}
+
+const BASE_EXTENSION_WORLD: &str = "alcomd:extension/extension-v1@1.0.0";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionApiInfo {
     pub major: u32,
     pub world: String,
+}
+
+fn current_extension_api<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<ExtensionApiInfo, D::Error> {
+    let info = ExtensionApiInfo::deserialize(deserializer)?;
+    if info.major != 1 || info.world != BASE_EXTENSION_WORLD {
+        return Err(serde::de::Error::custom("invalid extension ABI metadata"));
+    }
+    Ok(info)
 }
 
 impl HelloResult {
@@ -878,110 +893,20 @@ impl HelloResult {
         validate_capabilities(&self.capabilities)
     }
 
-    /// Creates the minimal M1 hello result.
+    /// Creates the handshake after the store and configuration are ready.
     #[must_use]
-    pub fn m1() -> Self {
-        Self {
-            rpc_version: RPC_VERSION,
-            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
-            capabilities: Vec::new(),
-            data_schema: None,
-            config_schema: None,
-            extension_api: None,
-        }
-    }
-
-    /// Creates the M2 hello result after the state store is ready.
-    #[must_use]
-    pub fn m2(capabilities: Vec<String>) -> Self {
+    pub fn ready(capabilities: Vec<String>, data_schema: u32) -> Self {
         Self {
             rpc_version: RPC_VERSION,
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
-            data_schema: Some(1),
-            config_schema: None,
-            extension_api: None,
-        }
-    }
-
-    /// Creates the M3 hello result after Schema v2 and read services are ready.
-    #[must_use]
-    pub fn m3(capabilities: Vec<String>) -> Self {
-        Self {
-            rpc_version: RPC_VERSION,
-            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
-            capabilities,
-            data_schema: Some(2),
-            config_schema: None,
-            extension_api: None,
-        }
-    }
-
-    /// Creates the M4 hello result after Schema v3 and package transactions are ready.
-    #[must_use]
-    pub fn m4(capabilities: Vec<String>) -> Self {
-        Self {
-            rpc_version: RPC_VERSION,
-            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
-            capabilities,
-            data_schema: Some(3),
-            config_schema: None,
-            extension_api: None,
-        }
-    }
-
-    /// Creates the M5 hello result after Schema v5 and local workflow services are ready.
-    #[must_use]
-    pub fn m5(capabilities: Vec<String>) -> Self {
-        Self {
-            rpc_version: RPC_VERSION,
-            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
-            capabilities,
-            data_schema: Some(6),
-            config_schema: None,
-            extension_api: None,
-        }
-    }
-
-    /// Creates the M6 hello result after Schema v8 and Extension ABI v1 are ready.
-    #[must_use]
-    pub fn m6(capabilities: Vec<String>) -> Self {
-        Self {
-            rpc_version: RPC_VERSION,
-            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
-            capabilities,
-            data_schema: Some(8),
-            config_schema: None,
-            extension_api: Some(ExtensionApiInfo {
+            data_schema,
+            config_schema: CONFIG_SCHEMA_VERSION,
+            extension_api: ExtensionApiInfo {
                 major: 1,
-                world: "alcomd:extension/extension-v1@1.0.0".to_owned(),
-            }),
+                world: BASE_EXTENSION_WORLD.to_owned(),
+            },
         }
-    }
-
-    /// Creates the M7 hello result after Schema v11 and Project preference wiring are ready.
-    #[must_use]
-    pub fn m7(capabilities: Vec<String>) -> Self {
-        Self {
-            rpc_version: RPC_VERSION,
-            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
-            capabilities,
-            data_schema: Some(11),
-            config_schema: None,
-            extension_api: Some(ExtensionApiInfo {
-                major: 1,
-                world: "alcomd:extension/extension-v1@1.0.0".to_owned(),
-            }),
-        }
-    }
-
-    /// Creates the current M7 hello result with the data schema supplied by the ready daemon.
-    #[must_use]
-    pub fn m7_official_gui(capabilities: Vec<String>, data_schema: u32) -> Self {
-        let mut result = Self::m7(capabilities);
-        result.data_schema = Some(data_schema);
-        result.config_schema = Some(CONFIG_SCHEMA_VERSION);
-        result
     }
 }
 
@@ -1394,6 +1319,7 @@ pub struct RepositoryPackageLink {
 pub struct RegistryCursor {
     pub registered_at_ms: u64,
     pub id: String,
+    pub order_fingerprint: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1573,6 +1499,23 @@ pub struct RepositorySetDisplayNameParams {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryMoveParams {
+    pub repository_id: String,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    pub before_repository_id: Option<String>,
+    pub expected_order_fingerprint: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryMoveResult {
+    pub changed: bool,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryMutationParams {
     pub repository_id: String,
     pub expected_revision: u64,
@@ -1644,6 +1587,7 @@ pub struct RepositoryResult {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepositoriesListResult {
+    pub order_fingerprint: String,
     pub repositories: Vec<RepositorySnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<RegistryCursor>,
@@ -1719,7 +1663,7 @@ pub struct UserPackageSourcePin {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PackageSourcePin {
     Repository(RepositoryPackageSourcePin),
     UserPackage(UserPackageSourcePin),
@@ -1730,8 +1674,11 @@ pub enum PackageSourcePin {
 pub struct PackageMutation {
     pub kind: PackageMutationKind,
     pub package_id: String,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     pub from_version: Option<String>,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     pub to_version: Option<String>,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     pub source: Option<PackageSourcePin>,
 }
 
@@ -1776,6 +1723,7 @@ pub struct PackageLegacyRemoval {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageChangeSet {
+    #[serde(deserialize_with = "package_change_set_version")]
     pub format_version: u32,
     pub mutations: Vec<PackageMutation>,
     pub dependency_edges: Vec<PackageDependencyEdge>,
@@ -1795,6 +1743,39 @@ pub struct PackageUnityCompatibilityOverride {
     pub version: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanKind {
+    Package,
+    ProjectCopy,
+    ProjectDeleteDirectory,
+    ProjectUnityMigration,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlansGetParams {
+    pub kind: PlanKind,
+    pub plan_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PlansGetResult {
+    Package {
+        plan: Box<PackagePlan>,
+    },
+    ProjectCopy {
+        plan: Box<ProjectCopyPlan>,
+    },
+    ProjectDeleteDirectory {
+        plan: Box<ProjectDeletePlan>,
+    },
+    ProjectUnityMigration {
+        plan: Box<ProjectUnityMigrationPlan>,
+    },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackagePlan {
@@ -1807,22 +1788,32 @@ pub struct PackagePlan {
     pub change_set: PackageChangeSet,
 }
 
+fn optional_package_field<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackagePlanInstallParams {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub allow_unity_incompatible: bool,
     pub project_id: String,
     pub expected_revision: u64,
     pub package_id: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version_range: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repository_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<PackageSourceSelector>,
-    #[serde(default)]
-    pub include_prerelease: bool,
+    #[serde(
+        default,
+        deserialize_with = "optional_package_field",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub include_prerelease: Option<bool>,
 }
 
 pub type PackagePlanUpgradeParams = PackagePlanInstallParams;
@@ -1838,15 +1829,15 @@ pub struct PackagePlanRemoveParams {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackagePlanDowngradeParams {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub allow_unity_incompatible: bool,
     pub project_id: String,
     pub expected_revision: u64,
     pub package_id: String,
     pub version: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repository_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<PackageSourceSelector>,
 }
 
@@ -1855,8 +1846,12 @@ pub struct PackagePlanDowngradeParams {
 pub struct PackagePlanResolveParams {
     pub project_id: String,
     pub expected_revision: u64,
-    #[serde(default)]
-    pub include_prerelease: bool,
+    #[serde(
+        default,
+        deserialize_with = "optional_package_field",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub include_prerelease: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1910,26 +1905,36 @@ pub struct PackagePlanReinstallParams {
 pub enum PackageBulkIntent {
     Install {
         package_id: String,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         version_range: Option<String>,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         source: Option<PackageSourceSelector>,
-        include_prerelease: bool,
+        #[serde(
+            default,
+            deserialize_with = "optional_package_field",
+            skip_serializing_if = "Option::is_none"
+        )]
+        include_prerelease: Option<bool>,
     },
     Upgrade {
         package_id: String,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         version_range: Option<String>,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         source: Option<PackageSourceSelector>,
-        include_prerelease: bool,
+        #[serde(
+            default,
+            deserialize_with = "optional_package_field",
+            skip_serializing_if = "Option::is_none"
+        )]
+        include_prerelease: Option<bool>,
     },
     Remove {
         package_id: String,
     },
     Reinstall {
         package_id: String,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         source: Option<PackageSourceSelector>,
     },
 }
@@ -2317,44 +2322,6 @@ pub enum BackupCompression {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRecord {
-    pub backup_id: String,
-    pub source_project_id: String,
-    pub archive_sha256: String,
-    pub archive_bytes: u64,
-    pub format_version: u32,
-    pub created_at_ms: u64,
-    pub compression_mode: BackupCompression,
-    pub exclude_vpm_packages: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BackupsListParams {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<u32>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupsListResult {
-    pub backups: Vec<BackupRecord>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BackupGetParams {
-    pub backup_id: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BackupCreateParams {
     pub project_id: String,
@@ -2377,66 +2344,32 @@ pub struct BackupCreateParams {
         skip_serializing_if = "Option::is_none"
     )]
     pub include_library: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub destination_path: Option<String>,
     pub idempotency_key: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupCreateResult {
-    pub operation_id: String,
-    pub backup_id: String,
-    pub replayed: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BackupPlanRestoreParams {
-    pub backup_id: String,
-    pub target_parent: String,
-    pub target_leaf: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRestoreExcludedPackage {
-    pub package_id: String,
-    pub version: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRestoreTarget {
-    pub parent: String,
-    pub leaf: String,
-    pub must_be_absent: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRestorePlan {
-    pub plan_id: String,
-    pub project_id: String,
-    pub backup_id: String,
-    pub target: BackupRestoreTarget,
-    pub archive_sha256: String,
-    pub packages_require_resolve: bool,
-    pub excluded_packages: Vec<BackupRestoreExcludedPackage>,
-    pub plan_fingerprint: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BackupApplyRestoreParams {
-    pub plan_id: String,
+pub struct BackupRestoreParams {
+    pub archive_path: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub project_name: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub destination_path: Option<String>,
     pub idempotency_key: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupApplyRestoreResult {
-    pub operation_id: String,
-    pub project_id: String,
-    pub replayed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2665,7 +2598,7 @@ pub struct ProjectsApplyUnityMigrationResult {
     pub replayed: bool,
 }
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 13;
+pub const CONFIG_SCHEMA_VERSION: u32 = 1;
 pub const MAX_OFFICIAL_GUI_PAGE_LIMIT: u32 = 200;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2916,6 +2849,8 @@ pub struct UnityHubLocation {
     pub source: UnityHubSource,
     #[serde(deserialize_with = "Option::deserialize")]
     pub path: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub target_token: Option<String>,
     pub configured_path_status: UnityHubConfiguredPathStatus,
 }
 
@@ -2924,7 +2859,7 @@ pub struct UnityHubLocation {
 pub struct UnityHubOpenParams {
     pub expected_revision: u64,
     #[serde(deserialize_with = "Option::deserialize")]
-    pub expected_path: Option<String>,
+    pub expected_target_token: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for UnityHubOpenParams {
@@ -2937,19 +2872,22 @@ impl<'de> Deserialize<'de> for UnityHubOpenParams {
         struct Fields {
             expected_revision: u64,
             #[serde(deserialize_with = "Option::deserialize")]
-            expected_path: Option<String>,
+            expected_target_token: Option<String>,
         }
         let value = Fields::deserialize(deserializer)?;
         if value.expected_revision == 0
-            || value.expected_path.as_ref().is_some_and(|path| {
-                path.is_empty() || path.len() > 4096 || path.chars().any(char::is_control)
+            || value.expected_target_token.as_deref().is_some_and(|token| {
+                token.len() != 64
+                    || !token
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
             })
         {
             return Err(serde::de::Error::custom("invalid Unity Hub evidence guard"));
         }
         Ok(Self {
             expected_revision: value.expected_revision,
-            expected_path: value.expected_path,
+            expected_target_token: value.expected_target_token,
         })
     }
 }
@@ -2957,7 +2895,7 @@ impl<'de> Deserialize<'de> for UnityHubOpenParams {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnityHubOpenOutcome {
-    Spawned,
+    LaunchRequested,
     DownloadRequired,
 }
 
@@ -2971,6 +2909,7 @@ pub struct UnityHubOpenResult {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageSettings {
     pub show_prerelease: bool,
+    pub prefer_prerelease: bool,
     pub hidden_repository_ids: Vec<String>,
     pub hidden_repository_packages: Vec<RepositoryPackageSettings>,
     pub hide_local_user_packages: bool,
@@ -3210,6 +3149,12 @@ pub struct PackageSettingsUpdate {
         deserialize_with = "deserialize_optional_non_null",
         skip_serializing_if = "Option::is_none"
     )]
+    pub prefer_prerelease: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub hidden_repository_ids: Option<Vec<String>>,
     #[serde(
         default,
@@ -3395,7 +3340,7 @@ fn validate_capabilities(capabilities: &[String]) -> Result<(), ContractViolatio
         if capability.is_empty()
             || capability.len() > MAX_CAPABILITY_BYTES
             || !capability.is_ascii()
-            || (capability != CAPABILITY_PROJECT_TEMPLATES_V2
+            || (capability != CAPABILITY_PROJECT_TEMPLATES_V1
                 && !capability.bytes().all(|byte| {
                     byte.is_ascii_lowercase()
                         || byte.is_ascii_digit()
@@ -3799,22 +3744,10 @@ mod tests {
     }
 
     #[test]
-    fn hello_and_status_do_not_advertise_future_subsystems() {
-        let hello = serde_json::to_value(HelloResult::m1()).expect("serialize hello");
-        let status = serde_json::to_value(SystemStatusResult::ready()).expect("serialize status");
-        for forbidden in ["dataSchema", "configSchema", "extensionApi", "pid"] {
-            assert!(hello.get(forbidden).is_none());
-            assert!(status.get(forbidden).is_none());
-        }
-    }
-
-    #[test]
-    fn m7_official_gui_hello_preserves_the_daemons_ready_data_schema() {
-        for data_schema in [15, 16, 17, 18] {
-            let hello = HelloResult::m7_official_gui(Vec::new(), data_schema);
-            assert_eq!(hello.data_schema, Some(data_schema));
-            assert_eq!(hello.config_schema, Some(CONFIG_SCHEMA_VERSION));
-        }
+    fn ready_hello_reports_current_contracts() {
+        let hello = HelloResult::ready(Vec::new(), 1);
+        assert_eq!(hello.data_schema, 1);
+        assert_eq!(hello.config_schema, CONFIG_SCHEMA_VERSION);
     }
 
     #[test]
@@ -3837,6 +3770,9 @@ mod tests {
                 "rpcVersion": 1,
                 "daemonVersion": "4.0.0-alpha.0",
                 "capabilities": ["future.capability"],
+                "dataSchema": 1,
+                "configSchema": 1,
+                "extensionApi": {"major":1,"world":BASE_EXTENSION_WORLD},
                 "futureOptional": true
             },
             "futureEnvelopeField": true
@@ -3881,39 +3817,37 @@ mod tests {
     }
 
     #[test]
-    fn hello_schema_versions_are_omittable_positive_u32() {
-        let legacy =
-            json!({ "rpcVersion": 1, "daemonVersion": "4.0.0-alpha.0", "capabilities": [] });
-        let decoded: HelloResult = serde_json::from_value(legacy.clone()).expect("old daemon");
-        assert_eq!((decoded.data_schema, decoded.config_schema), (None, None));
+    fn hello_requires_current_schema_versions() {
+        let hello =
+            serde_json::to_value(HelloResult::ready(Vec::new(), 1)).expect("serialize handshake");
+        let mut missing_abi = hello.clone();
+        missing_abi
+            .as_object_mut()
+            .expect("handshake fields")
+            .remove("extensionApi");
+        assert!(serde_json::from_value::<HelloResult>(missing_abi).is_err());
+        for (field, value) in [("major", json!(2)), ("world", json!("invalid"))] {
+            let mut wire = hello.clone();
+            wire["extensionApi"][field] = value;
+            assert!(serde_json::from_value::<HelloResult>(wire).is_err());
+        }
         for field in ["dataSchema", "configSchema"] {
-            for version in [json!(1), json!(u32::MAX)] {
-                let mut wire = legacy.clone();
-                wire[field] = version;
-                assert!(
-                    serde_json::from_value::<HelloResult>(wire).is_ok(),
-                    "{field}"
-                );
-            }
-            for version in [
-                json!(0),
-                json!(-1),
-                json!(1.5),
-                json!(u64::from(u32::MAX) + 1),
-                Value::Null,
-            ] {
-                let mut wire = legacy.clone();
-                wire[field] = version;
-                assert!(
-                    serde_json::from_value::<HelloResult>(wire).is_err(),
-                    "{field}"
-                );
+            let mut missing = hello.clone();
+            missing
+                .as_object_mut()
+                .expect("handshake fields")
+                .remove(field);
+            assert!(serde_json::from_value::<HelloResult>(missing).is_err());
+            for invalid in [json!(0), json!(2), json!(-1), Value::Null, json!(1.5)] {
+                let mut wire = hello.clone();
+                wire[field] = invalid;
+                assert!(serde_json::from_value::<HelloResult>(wire).is_err());
             }
         }
     }
 
     #[test]
-    fn package_source_pin_preserves_v1_repository_wire_shape_and_adds_unambiguous_v2_user_shape() {
+    fn package_source_pin_requires_distinct_repository_and_user_tags() {
         let repository = PackageSourcePin::Repository(RepositoryPackageSourcePin {
             repository_id: "00000000-0000-4000-8000-000000000001".to_owned(),
             repository_revision: 2,
@@ -3927,6 +3861,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(repository).expect("repository pin"),
             json!({
+                "kind": "repository",
                 "repositoryId": "00000000-0000-4000-8000-000000000001",
                 "repositoryRevision": 2,
                 "sourceIdentity": "repository-source",
@@ -3952,12 +3887,13 @@ mod tests {
         assert!(value.get("userPackageId").is_some());
         assert!(value.get("repositoryId").is_none());
         assert!(value.get("artifactUrl").is_none());
-        assert!(value.get("kind").is_none());
+        assert_eq!(value["kind"], "user_package");
     }
 
     #[test]
     fn repository_plan_can_defer_its_archive_digest_but_user_packages_cannot() {
         let repository = json!({
+            "kind": "repository",
             "repositoryId": "00000000-0000-4000-8000-000000000001",
             "repositoryRevision": 2,
             "sourceIdentity": "repository-source",
@@ -3970,6 +3906,7 @@ mod tests {
             serde_json::from_value(repository.clone()).expect("deferred repository digest");
         assert_eq!(serde_json::to_value(pin).expect("public plan"), repository);
         let user = json!({
+            "kind": "user_package",
             "userPackageId": "00000000-0000-4000-8000-000000000002",
             "sourceRevision": 3,
             "sourceIdentity": "opaque-user-source",

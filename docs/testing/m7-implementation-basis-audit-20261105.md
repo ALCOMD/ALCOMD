@@ -96,7 +96,7 @@ vrc-get 的辅助实现存在隔离 argv 的 Editor `-version` 查询，说明�
 ### A07 / P2：settings.toml 实际只支持未明确标注的语法子集（已复现）
 
 `alcomd-store/src/config.rs::parse_settings_with_schema/parse_string/parse_path_string` 手工按行解析。
-对同一默认Config10，仅添加行尾注释、把locale改为单引号、或把system中的s写为Unicode转义，
+对同一默认配置，仅添加行尾注释、把locale改为单引号、或把system中的s写为Unicode转义，
 `tomllib`均得到与原配置相同的值，ALCOMD却全部返回Corrupt。
 
 该结果不是“任何手写TOML都必须接受”，未知业务字段、错误类型、版本和大小限制仍须拒绝。
@@ -119,7 +119,6 @@ Unity官方定义该字段可补充具体release；M7候选合同也明确没有
 
 ### A10 / P2：历史文档仍把旧 Config 标成“当前”（静态确认）
 
-例如`settings-v1.md`、`settings-v6.md`头部仍指向Config7作为当前合同，当前实际为Config10。
 状态入口是正确的，但这些交叉引用会给后续实现者提供错误入口。整改只更新现行引用与能力声明，保留真实历史证据。
 同样，已有passing CI、synthetic fixture、平台编译与真实安装证据必须分开表述。
 
