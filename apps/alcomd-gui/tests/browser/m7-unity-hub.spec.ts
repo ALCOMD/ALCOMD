@@ -31,7 +31,9 @@ test("Hub selection saves one narrow update, refreshes once and survives navigat
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { unity: { hubPath: path } } }]);
     await expect.poll(() => requests(page, "unityInstallationsRefresh")).toBe(1);
     await page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Projects$/ }) }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Settings$/ }) }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeVisible();
     await selectSettingsSection(page, "unity");
     await expect.poll(() => value(page)).toBe(path);
     expect(await section(page).locator("md-outlined-text-field").evaluate((element) => (element as HTMLElement & { readOnly: boolean }).readOnly)).toBe(false);
