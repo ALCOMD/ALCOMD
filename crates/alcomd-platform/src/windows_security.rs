@@ -487,6 +487,9 @@ fn get_ace(dacl: *mut ACL, index: u32) -> io::Result<*mut c_void> {
     if unsafe { GetAce(dacl, index, &mut ace_pointer) } == 0 {
         return Err(io::Error::last_os_error());
     }
+    if ace_pointer.is_null() {
+        return Err(untrusted_security_descriptor());
+    }
     Ok(ace_pointer)
 }
 
