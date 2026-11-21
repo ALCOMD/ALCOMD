@@ -554,7 +554,14 @@ pub(super) fn register_project(
         return Ok(response);
     }
     let response = SyncWrite {
-        value: insert_project(&transaction, owner, owner, observation, now_ms)?,
+        value: insert_project(
+            &transaction,
+            owner,
+            owner,
+            observation,
+            now_ms,
+            Some(now_ms),
+        )?,
         replayed: false,
     };
     save_response(
@@ -606,7 +613,14 @@ pub(super) fn register_mcp_project(
         return Ok(existing);
     }
     let owner = app::workflow_resource_owner(caller);
-    let record = insert_project(&transaction, &owner, caller, observation, now_ms)?;
+    let record = insert_project(
+        &transaction,
+        &owner,
+        caller,
+        observation,
+        now_ms,
+        Some(now_ms),
+    )?;
     let response = SyncWrite {
         value: app::McpRegisteredProject {
             project_id: record.project_id,
@@ -630,12 +644,39 @@ pub(super) fn register_mcp_project(
     Ok(response)
 }
 
+impl super::StateStoreHandle {
+    /// Registers a project in the offline import stage with its recorded activity time.
+    pub async fn import_project(
+        &self,
+        observation: ProjectObservation,
+        registered_at_ms: u64,
+        last_modified_at_ms: Option<u64>,
+    ) -> Result<ProjectRecord, M3Error> {
+        self.request_m3(move |connection| {
+            let owner = PrincipalId::local_owner();
+            let transaction = begin(connection)?;
+            let record = insert_project(
+                &transaction,
+                &owner,
+                &owner,
+                observation,
+                registered_at_ms,
+                last_modified_at_ms,
+            )?;
+            transaction.commit().map_err(sql_failure)?;
+            Ok(record)
+        })
+        .await
+    }
+}
+
 fn insert_project(
     transaction: &Transaction<'_>,
     owner: &PrincipalId,
     caller: &PrincipalId,
     observation: ProjectObservation,
     now_ms: u64,
+    last_modified_at_ms: Option<u64>,
 ) -> Result<ProjectRecord, M3Error> {
     let duplicate = transaction
         .query_row(
@@ -665,7 +706,7 @@ fn insert_project(
                 project_id, owner_principal_id, root_path, path_identity_key, project_type,
                 unity_version, unity_revision, snapshot_json, revision, registered_at_ms,
                 updated_at_ms, last_modified_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?9, ?9)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?9, ?10)",
             params![
                 id.to_string(),
                 owner.as_str(),
@@ -675,7 +716,8 @@ fn insert_project(
                 observation.unity_version,
                 observation.unity_revision,
                 json(&observation)?,
-                integer(now_ms)?
+                integer(now_ms)?,
+                last_modified_at_ms.map(integer).transpose()?
             ],
         )
         .map_err(sql_failure)?;
@@ -684,7 +726,7 @@ fn insert_project(
         observation,
         revision: Revision::INITIAL,
         registered_at_ms: now_ms,
-        last_modified_at_ms: Some(now_ms),
+        last_modified_at_ms,
         favorite: false,
     };
 

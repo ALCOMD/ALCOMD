@@ -227,15 +227,13 @@ pub async fn import_native_state(
             .await
             .map_err(|_| anyhow::anyhow!("project could not be verified"))?;
         let registered = store
-            .register_project(
-                access.principal().clone(),
+            .import_project(
                 observation,
-                key("project", index)?,
                 project.registered_at_ms.unwrap_or(now),
+                project.last_modified_at_ms,
             )
             .await
-            .map_err(|_| anyhow::anyhow!("project could not be registered"))?
-            .value;
+            .map_err(|_| anyhow::anyhow!("project could not be registered"))?;
         if project.favorite {
             registry
                 .set_project_favorite(
@@ -537,6 +535,10 @@ pub async fn check_native_state(
                 "project registration time differs"
             );
         }
+        ensure!(
+            project.last_modified_at_ms == original.last_modified_at_ms,
+            "project activity time differs"
+        );
         let launch = store
             .get_project_launch_config(owner.clone(), project.project_id)
             .await

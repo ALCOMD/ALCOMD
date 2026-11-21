@@ -28,5 +28,8 @@ url = "=2.5.8"
 flate2 = { version = "=1.1.9", default-features = false, features = ["zlib-rs"] }
 zip.workspace = true
 
+[dev-dependencies]
+alcomd-daemon = { package = "alcomd", path = "../../../../apps/alcomd", features = ["test-kill-gates"] }
+
 [lints]
 workspace = true

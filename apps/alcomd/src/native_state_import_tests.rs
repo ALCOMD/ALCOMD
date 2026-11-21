@@ -22,6 +22,15 @@ impl Fixture {
     }
 
     fn bundle_with_templates(&self, templates: Vec<serde_json::Value>) -> PathBuf {
+        self.bundle_at("bundle", templates, Some(6789))
+    }
+
+    fn bundle_at(
+        &self,
+        folder: &str,
+        templates: Vec<serde_json::Value>,
+        activity: Option<u64>,
+    ) -> PathBuf {
         let project = self.0.join("Source Project");
         for subtree in ["Assets", "Packages", "ProjectSettings"] {
             fs::create_dir_all(project.join(subtree)).expect("fixture project directory");
@@ -38,7 +47,7 @@ impl Fixture {
         .expect("fixture Unity package manifest");
         let state = json!({
             "schema": 1, "sourceVersion": "3.4.0",
-            "projects": [{"path": project, "favorite": true, "registeredAtMs": 1234, "unityLaunchArguments": ["-logFile", "Launcher Output.log"]}],
+            "projects": [{"path": project, "favorite": true, "registeredAtMs": 1234, "lastModifiedAtMs": activity, "unityLaunchArguments": ["-logFile", "Launcher Output.log"]}],
             "unityInstallations": [],
             "repositories": [{"source": {"kind": "remote", "url": "https://example.invalid/vpm.json"},
                 "declaredId": "com.example.fixture", "displayName": "Offline fixture", "hidden": true, "hasCredentials": false}],
@@ -56,7 +65,7 @@ impl Fixture {
             "schema": 1, "sourceVersion": "3.4.0", "createdAt": "2026-11-21T00:00:00Z",
                 "records": typed.counts(), "files": [{"path": "state.json", "size": bytes.len(), "sha256": digest_hex(&bytes)}]
         });
-        let bundle = self.0.join("bundle");
+        let bundle = self.0.join(folder);
         fs::create_dir(&bundle).expect("fixture bundle root");
         fs::write(bundle.join("state.json"), bytes).expect("write fixture state");
         fs::write(
@@ -207,6 +216,31 @@ async fn restores_into_a_new_state_and_reconciles_after_reopen() {
     assert!(settings.contains("show_prerelease = false"));
     assert!(settings.contains("prefer_prerelease = false"));
     assert_eq!(imported["records"]["projects"], 1);
+    let reopened = alcomd_store::StateStoreHandle::open(destination.join("state.db"))
+        .expect("reopen the staged project registry");
+    let records = reopened
+        .list_projects(app::PrincipalId::local_owner(), None, 2)
+        .await
+        .expect("read stored project times");
+    assert_eq!(records.projects[0].registered_at_ms, 1234);
+    assert_eq!(records.projects[0].last_modified_at_ms, Some(6789));
+    drop(reopened);
+    let without_activity = fixture.bundle_at("unknown-activity", Vec::new(), None);
+    let mismatch = check_native_state(&without_activity, &destination, None)
+        .await
+        .expect_err("activity differs");
+    assert!(
+        mismatch
+            .to_string()
+            .contains("project activity time differs")
+    );
+    let unknown = fixture.0.join("state without activity");
+    import_native_state(&without_activity, &unknown, None)
+        .await
+        .expect("preserve unknown activity");
+    check_native_state(&without_activity, &unknown, None)
+        .await
+        .expect("reconcile unknown activity");
     assert_eq!(imported["records"]["repositories"], 1);
     assert!(
         import_native_state(&bundle, &destination, None)

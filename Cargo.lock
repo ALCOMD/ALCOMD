@@ -239,6 +239,7 @@ dependencies = [
 name = "alcomd-migrate-v3"
 version = "4.0.0-alpha.0"
 dependencies = [
+ "alcomd",
  "alcomd-client",
  "alcomd-domain",
  "alcomd-import",

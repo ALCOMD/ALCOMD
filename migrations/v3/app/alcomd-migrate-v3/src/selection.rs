@@ -353,6 +353,41 @@ async fn merge(
     Ok(summary)
 }
 
+async fn has_enrolled_source(core: &mut AlcomdClient, path: &str) -> Result<bool> {
+    #[derive(serde::Deserialize)]
+    struct PackageIdentity {
+        name: String,
+    }
+
+    let (root, selected) = alcomd_platform::resolve_directory_identity(std::path::Path::new(path))?;
+    let manifest = crate::profile::read_file(&root, "package.json", 1_048_576)?
+        .context("selected package manifest is missing")?;
+    let package = serde_json::from_slice::<PackageIdentity>(&manifest)?;
+    let mut cursor = None;
+    loop {
+        let page = core
+            .user_packages_list(alcomd_protocol::UserPackagesListParams {
+                cursor,
+                limit: None,
+            })
+            .await?;
+        for record in page.user_packages {
+            if record.package_id == package.name
+                && alcomd_platform::resolve_directory_identity(std::path::Path::new(
+                    &record.source_root_path,
+                ))
+                .is_ok_and(|(_, identity)| identity == selected)
+            {
+                return Ok(true);
+            }
+        }
+        let Some(next) = page.next_cursor else {
+            return Ok(false);
+        };
+        cursor = Some(next);
+    }
+}
+
 async fn apply_step(core: &mut AlcomdClient, step: Step) -> Result<Reply> {
     match step {
         Step::RegisterProject { path, key } => match core.project_register(path, key).await {
@@ -414,11 +449,23 @@ async fn apply_step(core: &mut AlcomdClient, step: Step) -> Result<Reply> {
             Ok(Reply::Done)
         }
         Step::EnrollLocalPackage { source_path, key } => {
-            core.user_package_enroll(alcomd_protocol::UserPackageEnrollParams {
-                source_path,
-                idempotency_key: key,
-            })
-            .await?;
+            match core
+                .user_package_enroll(alcomd_protocol::UserPackageEnrollParams {
+                    source_path: source_path.clone(),
+                    idempotency_key: key,
+                })
+                .await
+            {
+                Ok(_) => {}
+                Err(ClientError::Remote(error))
+                    if error.code == "user_package_already_enrolled" =>
+                {
+                    if !has_enrolled_source(core, &source_path).await? {
+                        return Err(ClientError::Remote(error).into());
+                    }
+                }
+                Err(error) => return Err(error.into()),
+            }
             Ok(Reply::Done)
         }
         Step::Settings(patch) => {
@@ -473,6 +520,186 @@ fn theme_update(revision: u64, mode: AppearanceMode) -> SettingsUpdateParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn resources_merge_only_identical_enrollments_and_preserve_their_revision() {
+        use alcomd_protocol::{
+            McpClientMutationParams, McpClientsCreateParams, UserPackageEnrollParams,
+            UserPackagesListParams,
+        };
+        let root = std::env::temp_dir()
+            .canonicalize()
+            .expect("temp directory")
+            .join(format!(
+                "ac-s-{}",
+                &uuid::Uuid::new_v4().simple().to_string()[..12]
+            ));
+        std::fs::create_dir(&root).expect("isolated selection root");
+        let mut config = ClientConfig::default().without_daemon_start();
+        let ipc = if cfg!(unix) {
+            config = config.with_runtime_directory(root.join("run"));
+            alcomd_platform::IpcConfig::isolated(root.join("run"))
+        } else {
+            alcomd_platform::IpcConfig::default()
+        };
+        let (stop, stopped) = tokio::sync::oneshot::channel();
+        let daemon = alcomd_daemon::test_support::start_with_data_until(
+            ipc,
+            alcomd_platform::DataConfig::isolated(root.join("data")),
+            async {
+                let _ = stopped.await;
+            },
+        )
+        .await
+        .expect("bind isolated Core before connecting");
+        let mut core = AlcomdClient::connect(config.clone())
+            .await
+            .expect("Core client");
+        let package = |folder: &str, package_id: &str| {
+            let path = root.join(folder);
+            std::fs::create_dir(&path).expect("fixture source");
+            std::fs::write(
+                path.join("package.json"),
+                json!({"name":package_id,"version":"1.0.0"}).to_string(),
+            )
+            .expect("fixture manifest");
+            path.to_str().expect("source path").to_owned()
+        };
+        let existing = package("first", "example.first");
+        let next = package("next", "example.next");
+        let before = core
+            .user_package_enroll(UserPackageEnrollParams {
+                source_path: existing.clone(),
+                idempotency_key: "previous-enrollment".into(),
+            })
+            .await
+            .expect("already enrolled source")
+            .user_package;
+        std::fs::write(
+            std::path::Path::new(&existing).join("package.json"),
+            json!({"name":"example.first","version":"2.0.0"}).to_string(),
+        )
+        .expect("change source without refreshing its registration");
+        let selected = Selection::Resources {
+            repositories: Vec::new(),
+            local_packages: vec![existing.clone(), next],
+        };
+        let merged = merge(&selected, "overlap", async |step| {
+            apply_step(&mut core, step).await
+        })
+        .await
+        .expect("merge overlapping resources");
+        assert_eq!(merged.local_packages_confirmed, 2);
+        let page = core
+            .user_packages_list(UserPackagesListParams {
+                cursor: None,
+                limit: None,
+            })
+            .await
+            .expect("enrollments");
+        assert_eq!(page.user_packages.len(), 2);
+        assert!(page.user_packages.contains(&before));
+        assert!(
+            page.user_packages
+                .iter()
+                .any(|record| record.package_id == "example.next")
+        );
+
+        let collision = package("duplicate-id", "example.first");
+        let expect_error = |error: anyhow::Error, code| {
+            assert!(
+                matches!(error.downcast_ref::<ClientError>(), Some(ClientError::Remote(remote)) if remote.code == code),
+                "{error:#}"
+            );
+        };
+        expect_error(
+            apply_step(
+                &mut core,
+                Step::EnrollLocalPackage {
+                    source_path: collision,
+                    key: "collision".into(),
+                },
+            )
+            .await
+            .expect_err("same package name in a different folder"),
+            "user_package_already_enrolled",
+        );
+        std::fs::write(
+            std::path::Path::new(&existing).join("package.json"),
+            json!({"name":"example.renamed","version":"1.0.0"}).to_string(),
+        )
+        .expect("change package identity in the same directory");
+        expect_error(
+            apply_step(
+                &mut core,
+                Step::EnrollLocalPackage {
+                    source_path: existing.clone(),
+                    key: "changed-id".into(),
+                },
+            )
+            .await
+            .expect_err("changed package identity"),
+            "user_package_source_changed",
+        );
+        std::fs::rename(&existing, root.join("original-first"))
+            .expect("keep original directory identity");
+        package("first", "example.first");
+        expect_error(
+            apply_step(
+                &mut core,
+                Step::EnrollLocalPackage {
+                    source_path: existing.clone(),
+                    key: "replacement".into(),
+                },
+            )
+            .await
+            .expect_err("the same path now refers to a different directory"),
+            "user_package_source_changed",
+        );
+
+        let client = core
+            .mcp_client_create(McpClientsCreateParams {
+                display_name: "Selection test".into(),
+                idempotency_key: "test-client".into(),
+            })
+            .await
+            .expect("identity");
+        let token = core
+            .mcp_client_issue_credential(McpClientMutationParams {
+                client_id: client.client_id.clone(),
+                expected_revision: client.revision,
+                idempotency_key: "test-token".into(),
+            })
+            .await
+            .expect("credential");
+        let mut delegated = AlcomdClient::connect(config.with_mcp_credential(token.credential))
+            .await
+            .expect("authenticated connection");
+        core.mcp_client_revoke(McpClientMutationParams {
+            client_id: client.client_id,
+            expected_revision: token.revision,
+            idempotency_key: "revoke".into(),
+        })
+        .await
+        .expect("revoke identity");
+        expect_error(
+            apply_step(
+                &mut delegated,
+                Step::EnrollLocalPackage {
+                    source_path: existing,
+                    key: "revoked".into(),
+                },
+            )
+            .await
+            .expect_err("revoked connection"),
+            "permission_denied",
+        );
+        drop(delegated);
+        drop(core);
+        stop.send(()).expect("request shutdown");
+        daemon.await.expect("daemon joined").expect("shutdown");
+        std::fs::remove_dir_all(root).expect("clean test directory");
+    }
 
     #[tokio::test]
     async fn selection_keeps_existing_registrations_and_uses_frozen_keys_for_new_records() {

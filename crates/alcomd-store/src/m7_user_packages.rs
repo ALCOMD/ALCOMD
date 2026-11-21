@@ -199,21 +199,32 @@ pub(super) fn enroll(
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
-    let duplicate: Option<i64> = transaction
+    // A package ID may collide across independent source folders. A recorded
+    // folder whose filesystem identity or manifest package ID changed is stale.
+    let duplicate = transaction
         .query_row(
-            "SELECT 1 FROM user_package_sources WHERE owner_principal_id=?1 AND
-             (source_identity_key=?2 OR package_id=?3) LIMIT 1",
+            "SELECT CASE WHEN (source_root_path=?2 OR source_identity_key=?3)
+                                AND (source_identity_key<>?3 OR package_id<>?4)
+                         THEN 1 ELSE 0 END AS changed
+             FROM user_package_sources WHERE owner_principal_id=?1
+               AND (source_root_path=?2 OR source_identity_key=?3 OR package_id=?4)
+             ORDER BY changed DESC LIMIT 1",
             params![
                 owner.as_str(),
+                snapshot.source_root_path,
                 snapshot.source_identity_key,
                 snapshot.package_id
             ],
-            |row| row.get(0),
+            |row| row.get::<_, bool>(0),
         )
         .optional()
         .map_err(sql_failure)?;
-    if duplicate.is_some() {
-        return Err(error(UserPackageErrorCode::AlreadyEnrolled));
+    if let Some(source_changed) = duplicate {
+        return Err(error(if source_changed {
+            UserPackageErrorCode::SourceChanged
+        } else {
+            UserPackageErrorCode::AlreadyEnrolled
+        }));
     }
     let id = UserPackageId::new();
     insert_snapshot(
