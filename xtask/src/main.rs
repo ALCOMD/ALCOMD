@@ -96,7 +96,7 @@ const MEMBERS: &[Member] = &[
     (
         "crates/alcomd-vpm",
         "alcomd-vpm",
-        &["alcomd-application", "alcomd-platform"],
+        &["alcomd-application", "alcomd-domain", "alcomd-platform"],
     ),
     (
         "crates/alcomd-extensions",
@@ -110,6 +110,7 @@ const MEMBERS: &[Member] = &[
         "alcomd-migrate-v3",
         &[
             "alcomd-client",
+            "alcomd-domain",
             "alcomd-import",
             "alcomd-platform",
             "alcomd-protocol",
@@ -544,7 +545,9 @@ fn check_workspace(
                         .collect::<BTreeSet<_>>()
                 })
                 .unwrap_or_default();
-            let allowed_dependencies = ["serde", "uuid"].into_iter().collect::<BTreeSet<_>>();
+            let allowed_dependencies = ["semver", "serde", "uuid"]
+                .into_iter()
+                .collect::<BTreeSet<_>>();
             if actual_dependencies != allowed_dependencies {
                 errors.push(format!(
                     "{path} dependencies differ: expected {allowed_dependencies:?}, found {actual_dependencies:?}"
