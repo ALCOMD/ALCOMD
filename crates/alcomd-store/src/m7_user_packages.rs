@@ -243,7 +243,7 @@ pub(super) fn enroll(
     };
     insert_event(
         &transaction,
-        caller,
+        &owner,
         id,
         Revision::INITIAL,
         "user_package.enrolled",
@@ -331,7 +331,7 @@ pub(super) fn refresh(
             .map_err(sql_failure)?;
         insert_event(
             &transaction,
-            caller,
+            &owner,
             id,
             next,
             "user_package.refreshed",
@@ -409,7 +409,7 @@ pub(super) fn remove(
     };
     insert_event(
         &transaction,
-        caller,
+        &owner,
         id,
         next,
         "user_package.removed",

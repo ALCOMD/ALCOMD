@@ -91,19 +91,25 @@ async fn shared_catalog_keeps_actor_receipts_and_rechecks_revocation_before_repl
                     .expect("receipt")
                     .replayed
             );
-            store
+            let refreshed = store
                 .refresh_user_package(
                     caller.clone(),
                     id,
                     revision,
-                    source.clone(),
+                    snapshot("1.1.0", b"updated"),
                     refresh.clone(),
                     4,
                 )
                 .await
                 .expect("refresh");
             store
-                .remove_user_package(caller.clone(), id, revision, remove.clone(), 5)
+                .remove_user_package(
+                    caller.clone(),
+                    id,
+                    refreshed.user_package.revision,
+                    remove.clone(),
+                    5,
+                )
                 .await
                 .expect("remove");
         }),
@@ -191,6 +197,22 @@ async fn shared_catalog_keeps_actor_receipts_and_rechecks_revocation_before_repl
         );
     })
     .await;
+    let events = store
+        .list_events(owner.principal().clone(), 0, 100)
+        .await
+        .expect("read shared package events")
+        .events;
+    for kind in [
+        "user_package.enrolled",
+        "user_package.refreshed",
+        "user_package.removed",
+    ] {
+        assert!(
+            events
+                .iter()
+                .any(|event| event.kind == kind && event.aggregate_id == id.to_string())
+        );
+    }
     let db =
         rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .expect("inspect isolated audit");
@@ -198,10 +220,6 @@ async fn shared_catalog_keeps_actor_receipts_and_rechecks_revocation_before_repl
         (
             "SELECT COUNT(*) FROM idempotency_records WHERE method LIKE 'packages.userPackages.%' AND principal_id=?1",
             3,
-        ),
-        (
-            "SELECT COUNT(*) FROM events WHERE aggregate_kind='user-package' AND principal_id=?1",
-            2,
         ),
         (
             "SELECT COUNT(*) FROM operation_log_entries WHERE action LIKE 'packages.userPackages.%' AND owner=?1",

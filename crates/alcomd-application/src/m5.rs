@@ -535,11 +535,7 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         }
         let page = self
             .store
-            .list_installations(
-                crate::workflow_resource_owner(access.principal()),
-                cursor,
-                limit,
-            )
+            .list_installations(access.principal().clone(), cursor, limit)
             .await?;
         if !include_version_options {
             return Ok((page, None));
@@ -580,11 +576,7 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         loop {
             let page = self
                 .store
-                .list_installations(
-                    crate::workflow_resource_owner(access.principal()),
-                    cursor,
-                    1_000,
-                )
+                .list_installations(access.principal().clone(), cursor, 1_000)
                 .await?;
             page.installations.into_iter().for_each(&mut visit);
             cursor = page.next_cursor;
@@ -667,10 +659,7 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         require(access, Permission::UnityRead)?;
         let config = self
             .store
-            .get_project_launch_config(
-                crate::workflow_resource_owner(access.principal()),
-                project_id,
-            )
+            .get_project_launch_config(access.principal().clone(), project_id)
             .await?;
         let default_arguments = self.defaults.arguments().await?;
         let effective_arguments = if config.revision.is_some() {
@@ -746,7 +735,7 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             .store
             .get_project(access.principal().clone(), project_id)
             .await
-            .map_err(|_| M5UnityError::new(M5UnityErrorCode::ProjectNotRegistered))?;
+            .map_err(project_read_error)?;
         let installations = self
             .store
             .list_installations(access.principal().clone(), None, 1_000)
@@ -780,7 +769,7 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             .store
             .get_project(access.principal().clone(), project_id)
             .await
-            .map_err(|_| M5UnityError::new(M5UnityErrorCode::ProjectNotRegistered))?;
+            .map_err(project_read_error)?;
         if project.revision != expected_project_revision {
             return Err(M5UnityError::new(M5UnityErrorCode::RevisionConflict));
         }
@@ -846,7 +835,7 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             .store
             .get_project(access.principal().clone(), project_id)
             .await
-            .map_err(|_| M5UnityError::new(M5UnityErrorCode::ProjectNotRegistered))?;
+            .map_err(project_read_error)?;
         if project.revision != expected_project_revision {
             return Err(M5UnityError::new(M5UnityErrorCode::RevisionConflict));
         }
@@ -1238,6 +1227,15 @@ const fn source_order(source: UnitySourceKind) -> u8 {
         UnitySourceKind::UnityCliHint => 2,
         UnitySourceKind::KnownInstallRoot => 3,
     }
+}
+
+fn project_read_error(error: crate::M3Error) -> M5UnityError {
+    M5UnityError::new(match error.code() {
+        crate::M3ErrorCode::PermissionDenied => M5UnityErrorCode::PermissionDenied,
+        crate::M3ErrorCode::ProjectNotRegistered => M5UnityErrorCode::ProjectNotRegistered,
+        crate::M3ErrorCode::StoreUnavailable => M5UnityErrorCode::StoreUnavailable,
+        _ => M5UnityErrorCode::Internal,
+    })
 }
 
 fn require(access: &AccessContext, permission: Permission) -> Result<(), M5UnityError> {
