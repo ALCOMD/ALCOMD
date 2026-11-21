@@ -9,7 +9,7 @@ use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::io::AsRawHandle;
 use std::path::Path;
 use std::process::Command;
-use std::ptr::{addr_of, null, null_mut};
+use std::ptr::{NonNull, addr_of, null, null_mut};
 
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use windows_sys::Win32::Foundation::{
@@ -370,7 +370,7 @@ pub(super) fn validate_current_user_only_dacl(
     }
     let ace_pointer = get_ace(dacl, 0)?;
     // SAFETY: the ACE header is part of the live security descriptor.
-    let header = unsafe { &*ace_pointer.cast::<ACE_HEADER>() };
+    let header = unsafe { ace_pointer.cast::<ACE_HEADER>().as_ref() };
     if u32::from(header.AceFlags) & INHERIT_ONLY_ACE != 0 {
         return Err(untrusted_security_descriptor());
     }
@@ -402,7 +402,7 @@ pub(super) fn validate_installation_dacl(
     for index in 0..ace_count(dacl)? {
         let ace_pointer = get_ace(dacl, index)?;
         // SAFETY: the ACE header is part of the live security descriptor.
-        let header = unsafe { &*ace_pointer.cast::<ACE_HEADER>() };
+        let header = unsafe { ace_pointer.cast::<ACE_HEADER>().as_ref() };
         if u32::from(header.AceFlags) & INHERIT_ONLY_ACE != 0 || header.AceType == 1 {
             continue;
         }
@@ -481,24 +481,22 @@ fn ace_count(dacl: *mut ACL) -> io::Result<u32> {
     Ok(info.AceCount)
 }
 
-fn get_ace(dacl: *mut ACL, index: u32) -> io::Result<*mut c_void> {
-    let mut ace_pointer = null_mut();
+fn get_ace(dacl: *mut ACL, index: u32) -> io::Result<NonNull<c_void>> {
+    let mut ace_pointer: Option<NonNull<c_void>> = None;
     // SAFETY: the caller keeps the descriptor alive and provides an in-range ACE index.
-    if unsafe { GetAce(dacl, index, &mut ace_pointer) } == 0 {
+    // Option<NonNull<c_void>> has the layout of a nullable C pointer.
+    if unsafe { GetAce(dacl, index, (&raw mut ace_pointer).cast()) } == 0 {
         return Err(io::Error::last_os_error());
     }
-    if ace_pointer.is_null() {
-        return Err(untrusted_security_descriptor());
-    }
-    Ok(ace_pointer)
+    ace_pointer.ok_or_else(untrusted_security_descriptor)
 }
 
-fn allowed_access(ace_pointer: *mut c_void, header: &ACE_HEADER) -> io::Result<(u32, String)> {
+fn allowed_access(ace_pointer: NonNull<c_void>, header: &ACE_HEADER) -> io::Result<(u32, String)> {
     if header.AceType != 0 || usize::from(header.AceSize) < size_of::<ACCESS_ALLOWED_ACE>() {
         return Err(untrusted_security_descriptor());
     }
     // SAFETY: a live ACE with the expected type and layout was checked above.
-    let ace = unsafe { &*ace_pointer.cast::<ACCESS_ALLOWED_ACE>() };
+    let ace = unsafe { ace_pointer.cast::<ACCESS_ALLOWED_ACE>().as_ref() };
     let sid_pointer = addr_of!(ace.SidStart).cast_mut().cast::<c_void>();
     // SAFETY: SidStart is the first word of the variable-length SID embedded
     // in ACCESS_ALLOWED_ACE and remains live with the containing descriptor.
