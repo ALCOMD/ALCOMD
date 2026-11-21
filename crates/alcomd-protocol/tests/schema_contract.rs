@@ -2060,7 +2060,7 @@ fn project_creation_and_template_archives_round_trip() {
     let mut missing_base = vectors["saveWithBase"].clone();
     missing_base["source"]
         .as_object_mut()
-        .unwrap()
+        .expect("manual template source in saveWithBase vector")
         .remove("baseTemplate");
     assert!(serde_json::from_value::<ProjectTemplatesSaveParams>(missing_base).is_err());
     let mut null_base = vectors["saveWithBase"].clone();
