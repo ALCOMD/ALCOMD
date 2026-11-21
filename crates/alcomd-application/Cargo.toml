@@ -22,6 +22,7 @@ tokio.workspace = true
 url = "=2.5.8"
 
 [dev-dependencies]
+getrandom.workspace = true
 
 [lints]
 workspace = true

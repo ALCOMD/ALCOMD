@@ -100,7 +100,13 @@ mod cursor_binding_tests {
     }
     #[test]
     fn a_client_known_token_digest_is_not_the_core_cursor_key() {
-        let guard = OAuthAccessGuard::new([23; 32], "https://localhost:5443/mcp".into());
+        let mut token_hash = [0; 32];
+        let mut process_key = [0; 32];
+        let mut next_process_key = [0; 32];
+        for value in [&mut token_hash, &mut process_key, &mut next_process_key] {
+            getrandom::fill(value).expect("OS entropy for cursor binding test");
+        }
+        let guard = OAuthAccessGuard::new(token_hash, "https://localhost:5443/mcp".into());
         let cursor = RegistryCursor {
             registered_at_ms: 1,
             id: ProjectId::new(),
@@ -108,7 +114,7 @@ mod cursor_binding_tests {
         };
         assert!(oauth_project_cursor_binding(&guard, 1, &cursor).is_err());
         let mut signed = guard.clone();
-        signed.cursor_key = Some([17; 32]);
+        signed.cursor_key = Some(process_key);
         let mac = oauth_project_cursor_binding(&signed, 1, &cursor).expect("private Core key");
         let mut forged = guard;
         forged.cursor_key = Some(forged.token_hash);
@@ -116,7 +122,7 @@ mod cursor_binding_tests {
             oauth_project_cursor_binding(&forged, 1, &cursor).expect("client guess"),
             mac
         );
-        signed.cursor_key = Some([18; 32]);
+        signed.cursor_key = Some(next_process_key);
         assert_ne!(
             oauth_project_cursor_binding(&signed, 1, &cursor).expect("new process key"),
             mac
