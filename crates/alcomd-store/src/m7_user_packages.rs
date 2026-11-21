@@ -1,7 +1,7 @@
 use alcomd_application::{
-    IdempotencyKey, PrincipalId, Revision, UserPackageCursor, UserPackageError,
+    IdempotencyKey, Permission, PrincipalId, Revision, UserPackageCursor, UserPackageError,
     UserPackageErrorCode, UserPackageId, UserPackagePage, UserPackageRecord,
-    UserPackageRemoveResult, UserPackageSnapshot, UserPackageWriteResult,
+    UserPackageRemoveResult, UserPackageSnapshot, UserPackageWriteResult, workflow_resource_owner,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use serde::Serialize;
@@ -13,19 +13,38 @@ const ENROLL: &str = "packages.userPackages.enroll";
 const REFRESH: &str = "packages.userPackages.refresh";
 const REMOVE: &str = "packages.userPackages.remove";
 
+fn require(
+    connection: &Connection,
+    caller: &PrincipalId,
+    permission: Permission,
+) -> Result<(), UserPackageError> {
+    super::m8_workflows::require(connection, caller, &[permission])
+        .map_err(|_| error(UserPackageErrorCode::PermissionDenied))
+}
+
+fn authorized_read<T>(
+    connection: &Connection,
+    caller: &PrincipalId,
+    permission: Permission,
+    read: impl FnOnce(&Transaction<'_>) -> Result<T, UserPackageError>,
+) -> Result<T, UserPackageError> {
+    let transaction = connection.unchecked_transaction().map_err(sql_failure)?;
+    require(&transaction, caller, permission)?;
+    let result = read(&transaction)?;
+    transaction.commit().map_err(sql_failure)?;
+    Ok(result)
+}
+
 pub(super) fn replay_enroll(
     connection: &Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     source_path: &str,
     key: &IdempotencyKey,
 ) -> Result<Option<UserPackageWriteResult>, UserPackageError> {
-    let mut response: Option<UserPackageWriteResult> = replay(
-        connection,
-        owner,
-        ENROLL,
-        key,
-        &enroll_fingerprint(source_path)?,
-    )?;
+    let mut response: Option<UserPackageWriteResult> =
+        authorized_read(connection, caller, Permission::PackagesManage, |tx| {
+            replay(tx, caller, ENROLL, key, &enroll_fingerprint(source_path)?)
+        })?;
     if let Some(response) = &mut response {
         response.replayed = true;
     }
@@ -34,18 +53,21 @@ pub(super) fn replay_enroll(
 
 pub(super) fn replay_refresh(
     connection: &Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     id: UserPackageId,
     expected: Revision,
     key: &IdempotencyKey,
 ) -> Result<Option<UserPackageWriteResult>, UserPackageError> {
-    let mut response: Option<UserPackageWriteResult> = replay(
-        connection,
-        owner,
-        REFRESH,
-        key,
-        &mutation_fingerprint(id, expected)?,
-    )?;
+    let mut response: Option<UserPackageWriteResult> =
+        authorized_read(connection, caller, Permission::PackagesManage, |tx| {
+            replay(
+                tx,
+                caller,
+                REFRESH,
+                key,
+                &mutation_fingerprint(id, expected)?,
+            )
+        })?;
     if let Some(response) = &mut response {
         response.replayed = true;
     }
@@ -53,6 +75,20 @@ pub(super) fn replay_refresh(
 }
 
 pub(super) fn list(
+    connection: &Connection,
+    caller: &PrincipalId,
+    cursor: Option<UserPackageCursor>,
+    limit: u32,
+) -> Result<UserPackagePage, UserPackageError> {
+    authorized_read(
+        connection,
+        caller,
+        Permission::PackagesRead,
+        |transaction| list_page(transaction, &workflow_resource_owner(caller), cursor, limit),
+    )
+}
+
+fn list_page(
     connection: &Connection,
     owner: &PrincipalId,
     cursor: Option<UserPackageCursor>,
@@ -110,6 +146,19 @@ pub(super) fn list(
 
 pub(super) fn get(
     connection: &Connection,
+    caller: &PrincipalId,
+    id: UserPackageId,
+) -> Result<UserPackageRecord, UserPackageError> {
+    authorized_read(
+        connection,
+        caller,
+        Permission::PackagesRead,
+        |transaction| load(transaction, &workflow_resource_owner(caller), id),
+    )
+}
+
+fn load(
+    connection: &Connection,
     owner: &PrincipalId,
     id: UserPackageId,
 ) -> Result<UserPackageRecord, UserPackageError> {
@@ -130,16 +179,22 @@ pub(super) fn get(
 
 pub(super) fn enroll(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     snapshot: UserPackageSnapshot,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<UserPackageWriteResult, UserPackageError> {
     let fingerprint = enroll_fingerprint(&snapshot.source_root_path)?;
     let transaction = begin(connection)?;
-    if let Some(mut response) =
-        existing_response::<UserPackageWriteResult>(&transaction, owner, ENROLL, key, &fingerprint)?
-    {
+    require(&transaction, caller, Permission::PackagesManage)?;
+    let owner = workflow_resource_owner(caller);
+    if let Some(mut response) = existing_response::<UserPackageWriteResult>(
+        &transaction,
+        caller,
+        ENROLL,
+        key,
+        &fingerprint,
+    )? {
         response.replayed = true;
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
@@ -163,21 +218,21 @@ pub(super) fn enroll(
     let id = UserPackageId::new();
     insert_snapshot(
         &transaction,
-        owner,
+        &owner,
         id,
         Revision::INITIAL,
         now_ms,
         now_ms,
         &snapshot,
     )?;
-    let record = get(&transaction, owner, id)?;
+    let record = load(&transaction, &owner, id)?;
     let response = UserPackageWriteResult {
         user_package: record,
         replayed: false,
     };
     insert_event(
         &transaction,
-        owner,
+        caller,
         id,
         Revision::INITIAL,
         "user_package.enrolled",
@@ -185,7 +240,7 @@ pub(super) fn enroll(
     )?;
     log_package(
         &transaction,
-        owner,
+        caller,
         &response.user_package,
         ENROLL,
         "registered",
@@ -193,7 +248,7 @@ pub(super) fn enroll(
     )?;
     save_response(
         &transaction,
-        owner,
+        caller,
         ENROLL,
         key,
         &fingerprint,
@@ -206,7 +261,7 @@ pub(super) fn enroll(
 
 pub(super) fn refresh(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     id: UserPackageId,
     expected: Revision,
     snapshot: UserPackageSnapshot,
@@ -215,9 +270,11 @@ pub(super) fn refresh(
 ) -> Result<UserPackageWriteResult, UserPackageError> {
     let fingerprint = mutation_fingerprint(id, expected)?;
     let transaction = begin(connection)?;
+    require(&transaction, caller, Permission::PackagesManage)?;
+    let owner = workflow_resource_owner(caller);
     if let Some(mut response) = existing_response::<UserPackageWriteResult>(
         &transaction,
-        owner,
+        caller,
         REFRESH,
         key,
         &fingerprint,
@@ -226,7 +283,7 @@ pub(super) fn refresh(
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
-    let current = get(&transaction, owner, id)?;
+    let current = load(&transaction, &owner, id)?;
     if current.revision != expected {
         return Err(error(UserPackageErrorCode::RevisionConflict));
     }
@@ -263,13 +320,13 @@ pub(super) fn refresh(
             .map_err(sql_failure)?;
         insert_event(
             &transaction,
-            owner,
+            caller,
             id,
             next,
             "user_package.refreshed",
             now_ms,
         )?;
-        get(&transaction, owner, id)?
+        load(&transaction, &owner, id)?
     } else {
         current
     };
@@ -279,7 +336,7 @@ pub(super) fn refresh(
     };
     log_package(
         &transaction,
-        owner,
+        caller,
         &response.user_package,
         REFRESH,
         "refreshed",
@@ -287,7 +344,7 @@ pub(super) fn refresh(
     )?;
     save_response(
         &transaction,
-        owner,
+        caller,
         REFRESH,
         key,
         &fingerprint,
@@ -300,7 +357,7 @@ pub(super) fn refresh(
 
 pub(super) fn remove(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     id: UserPackageId,
     expected: Revision,
     key: &IdempotencyKey,
@@ -308,9 +365,11 @@ pub(super) fn remove(
 ) -> Result<UserPackageRemoveResult, UserPackageError> {
     let fingerprint = mutation_fingerprint(id, expected)?;
     let transaction = begin(connection)?;
+    require(&transaction, caller, Permission::PackagesManage)?;
+    let owner = workflow_resource_owner(caller);
     if let Some(mut response) = existing_response::<UserPackageRemoveResult>(
         &transaction,
-        owner,
+        caller,
         REMOVE,
         key,
         &fingerprint,
@@ -319,7 +378,7 @@ pub(super) fn remove(
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
-    let current = get(&transaction, owner, id)?;
+    let current = load(&transaction, &owner, id)?;
     if current.revision != expected {
         return Err(error(UserPackageErrorCode::RevisionConflict));
     }
@@ -339,7 +398,7 @@ pub(super) fn remove(
     };
     insert_event(
         &transaction,
-        owner,
+        caller,
         id,
         next,
         "user_package.removed",
@@ -347,7 +406,7 @@ pub(super) fn remove(
     )?;
     log_package(
         &transaction,
-        owner,
+        caller,
         &current,
         REMOVE,
         "unregistered",
@@ -355,7 +414,7 @@ pub(super) fn remove(
     )?;
     save_response(
         &transaction,
-        owner,
+        caller,
         REMOVE,
         key,
         &fingerprint,

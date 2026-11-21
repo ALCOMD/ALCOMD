@@ -807,7 +807,7 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
     fn get_repository(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
     ) -> impl Future<Output = Result<RepositoryRecord, M3Error>> + Send;
     fn set_repository_display_name(
@@ -821,20 +821,20 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
     fn move_repository(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         movement: RepositoryMove,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<RepositoryMoveResult, M3Error>> + Send;
     fn list_repositories(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         cursor: Option<RepositoryCursor>,
         limit: u32,
     ) -> impl Future<Output = Result<RepositoryPage, M3Error>> + Send;
     fn list_repository_packages(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
         cursor: Option<PackageCursor>,
         limit: u32,

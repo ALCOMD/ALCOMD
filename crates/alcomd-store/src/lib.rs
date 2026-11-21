@@ -613,11 +613,14 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn get_repository(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
     ) -> Result<RepositoryRecord, M3Error> {
-        self.request_m3(move |connection| m3::get_repository(connection, &owner, id))
-            .await
+        let access = m3::RepositoryAccess::new(caller)?;
+        self.request_m3(move |connection| {
+            access.read(connection, |db, owner| m3::get_repository(db, owner, id))
+        })
+        .await
     }
 
     async fn set_repository_display_name(
@@ -645,36 +648,45 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn move_repository(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         movement: alcomd_application::RepositoryMove,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<alcomd_application::RepositoryMoveResult, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
-            m3::move_repository(connection, &owner, movement, &key, now_ms)
+            m3::move_repository(connection, &access, movement, &key, now_ms)
         })
         .await
     }
 
     async fn list_repositories(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         cursor: Option<alcomd_application::RepositoryCursor>,
         limit: u32,
     ) -> Result<RepositoryPage, M3Error> {
-        self.request_m3(move |connection| m3::list_repositories(connection, &owner, cursor, limit))
-            .await
+        let access = m3::RepositoryAccess::new(caller)?;
+        self.request_m3(move |connection| {
+            access.read(connection, |db, owner| {
+                m3::list_repositories(db, owner, cursor, limit)
+            })
+        })
+        .await
     }
 
     async fn list_repository_packages(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: RepositoryId,
         cursor: Option<PackageCursor>,
         limit: u32,
     ) -> Result<PackagePage, M3Error> {
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |connection| {
-            m3::list_repository_packages(connection, &owner, id, cursor, limit)
+            access.read(connection, |db, owner| {
+                m3::list_repository_packages(db, owner, id, cursor, limit)
+            })
         })
         .await
     }
@@ -686,7 +698,7 @@ impl M3RegistryStore for StateStoreHandle {
         expected: Revision,
         key: IdempotencyKey,
     ) -> Result<Option<SyncWrite<alcomd_application::RepositoryRefreshReceipt>>, M3Error> {
-        let access = m3::RepositoryRefreshAccess::new(caller)?;
+        let access = m3::RepositoryAccess::new(caller)?;
         self.request_m3(move |db| m3::replay_repository_refresh(db, &access, id, expected, &key))
             .await
     }
@@ -700,7 +712,7 @@ impl M3RegistryStore for StateStoreHandle {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<alcomd_application::RepositoryRefreshReceipt>, M3Error> {
-        let access = m3::RepositoryRefreshAccess::new(owner)?;
+        let access = m3::RepositoryAccess::new(owner)?;
         self.request_m3(move |connection| {
             m3::refresh_repository(connection, &access, id, expected, observation, &key, now_ms)
         })
@@ -716,7 +728,7 @@ impl M3RegistryStore for StateStoreHandle {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<alcomd_application::RepositoryRefreshReceipt>, M3Error> {
-        let access = m3::RepositoryRefreshAccess::new(owner)?;
+        let access = m3::RepositoryAccess::new(owner)?;
         self.request_m3(move |connection| {
             m3::update_repository_validators(
                 connection, &access, id, expected, validators, &key, now_ms,
@@ -1023,13 +1035,13 @@ impl M4Store for StateStoreHandle {
 impl UserPackageStore for StateStoreHandle {
     async fn replay_user_package_enroll(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         source_path: String,
         key: IdempotencyKey,
     ) -> Result<Option<UserPackageWriteResult>, UserPackageError> {
         self.request_worker(
             move |connection| {
-                m7_user_packages::replay_enroll(connection, &owner, &source_path, &key)
+                m7_user_packages::replay_enroll(connection, &caller, &source_path, &key)
             },
             || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
         )
@@ -1038,7 +1050,7 @@ impl UserPackageStore for StateStoreHandle {
 
     async fn replay_user_package_refresh(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
         expected_revision: Revision,
         key: IdempotencyKey,
@@ -1047,7 +1059,7 @@ impl UserPackageStore for StateStoreHandle {
             move |connection| {
                 m7_user_packages::replay_refresh(
                     connection,
-                    &owner,
+                    &caller,
                     user_package_id,
                     expected_revision,
                     &key,
@@ -1060,12 +1072,12 @@ impl UserPackageStore for StateStoreHandle {
 
     async fn list_user_packages(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         cursor: Option<UserPackageCursor>,
         limit: u32,
     ) -> Result<UserPackagePage, UserPackageError> {
         self.request_worker(
-            move |connection| m7_user_packages::list(connection, &owner, cursor, limit),
+            move |connection| m7_user_packages::list(connection, &caller, cursor, limit),
             || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
         )
         .await
@@ -1073,11 +1085,11 @@ impl UserPackageStore for StateStoreHandle {
 
     async fn get_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
     ) -> Result<UserPackageRecord, UserPackageError> {
         self.request_worker(
-            move |connection| m7_user_packages::get(connection, &owner, user_package_id),
+            move |connection| m7_user_packages::get(connection, &caller, user_package_id),
             || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
         )
         .await
@@ -1085,13 +1097,13 @@ impl UserPackageStore for StateStoreHandle {
 
     async fn enroll_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         snapshot: UserPackageSnapshot,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<UserPackageWriteResult, UserPackageError> {
         self.request_worker(
-            move |connection| m7_user_packages::enroll(connection, &owner, snapshot, &key, now_ms),
+            move |connection| m7_user_packages::enroll(connection, &caller, snapshot, &key, now_ms),
             || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
         )
         .await
@@ -1099,7 +1111,7 @@ impl UserPackageStore for StateStoreHandle {
 
     async fn refresh_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
         expected_revision: Revision,
         snapshot: UserPackageSnapshot,
@@ -1110,7 +1122,7 @@ impl UserPackageStore for StateStoreHandle {
             move |connection| {
                 m7_user_packages::refresh(
                     connection,
-                    &owner,
+                    &caller,
                     user_package_id,
                     expected_revision,
                     snapshot,
@@ -1125,7 +1137,7 @@ impl UserPackageStore for StateStoreHandle {
 
     async fn remove_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
         expected_revision: Revision,
         key: IdempotencyKey,
@@ -1135,7 +1147,7 @@ impl UserPackageStore for StateStoreHandle {
             move |connection| {
                 m7_user_packages::remove(
                     connection,
-                    &owner,
+                    &caller,
                     user_package_id,
                     expected_revision,
                     &key,

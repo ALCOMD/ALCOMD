@@ -201,14 +201,14 @@ impl From<StoreErrorKind> for UserPackageError {
 pub trait UserPackageStore: Clone + Send + Sync + 'static {
     fn replay_user_package_enroll(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         source_path: String,
         key: IdempotencyKey,
     ) -> impl Future<Output = Result<Option<UserPackageWriteResult>, UserPackageError>> + Send;
 
     fn replay_user_package_refresh(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
         expected_revision: Revision,
         key: IdempotencyKey,
@@ -216,20 +216,20 @@ pub trait UserPackageStore: Clone + Send + Sync + 'static {
 
     fn list_user_packages(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         cursor: Option<UserPackageCursor>,
         limit: u32,
     ) -> impl Future<Output = Result<UserPackagePage, UserPackageError>> + Send;
 
     fn get_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
     ) -> impl Future<Output = Result<UserPackageRecord, UserPackageError>> + Send;
 
     fn enroll_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         snapshot: UserPackageSnapshot,
         key: IdempotencyKey,
         now_ms: u64,
@@ -237,7 +237,7 @@ pub trait UserPackageStore: Clone + Send + Sync + 'static {
 
     fn refresh_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
         expected_revision: Revision,
         snapshot: UserPackageSnapshot,
@@ -247,7 +247,7 @@ pub trait UserPackageStore: Clone + Send + Sync + 'static {
 
     fn remove_user_package(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         user_package_id: UserPackageId,
         expected_revision: Revision,
         key: IdempotencyKey,

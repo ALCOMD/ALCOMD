@@ -68,6 +68,14 @@ impl<'a> RepositoryWriteScope<'a> {
     }
 
     fn require(&self, connection: &Connection) -> Result<(), M3Error> {
+        self.require_permission(connection, app::Permission::RepositoriesManage)
+    }
+
+    fn require_permission(
+        &self,
+        connection: &Connection,
+        permission: app::Permission,
+    ) -> Result<(), M3Error> {
         if let Some(authority) = self.authority {
             let denied = || M3Error::new(M3ErrorCode::PermissionDenied);
             let client = super::m8_tools::authenticate(connection, &authority.authentication)
@@ -79,7 +87,7 @@ impl<'a> RepositoryWriteScope<'a> {
                 .authentication
                 .access(client)
                 .map_err(|_| denied())?
-                .require(app::Permission::RepositoriesManage)
+                .require(permission)
                 .map_err(|_| denied())?;
         }
         Ok(())
@@ -97,12 +105,12 @@ impl<'a> RepositoryWriteScope<'a> {
     }
 }
 
-pub(super) struct RepositoryRefreshAccess {
+pub(super) struct RepositoryAccess {
     owner: PrincipalId,
     authority: Option<app::McpRepositoryAuthority>,
 }
 
-impl RepositoryRefreshAccess {
+impl RepositoryAccess {
     // Capture the authenticated credential on the calling task before handing work to SQLite.
     pub(super) fn new(caller: PrincipalId) -> Result<Self, M3Error> {
         let owner = app::workflow_resource_owner(&caller);
@@ -125,11 +133,24 @@ impl RepositoryRefreshAccess {
             command: None,
         }
     }
+
+    pub(super) fn read<T>(
+        &self,
+        connection: &mut Connection,
+        read: impl FnOnce(&Connection, &PrincipalId) -> Result<T, M3Error>,
+    ) -> Result<T, M3Error> {
+        let transaction = connection.transaction().map_err(sql_failure)?;
+        self.scope()
+            .require_permission(&transaction, app::Permission::RepositoriesRead)?;
+        let result = read(&transaction, &self.owner)?;
+        transaction.commit().map_err(sql_failure)?;
+        Ok(result)
+    }
 }
 
 pub(super) fn replay_repository_refresh(
     connection: &Connection,
-    access: &RepositoryRefreshAccess,
+    access: &RepositoryAccess,
     id: RepositoryId,
     expected: Revision,
     key: &IdempotencyKey,
@@ -1918,7 +1939,7 @@ pub(super) fn list_repositories(
 
 pub(super) fn move_repository(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    access: &RepositoryAccess,
     movement: app::RepositoryMove,
     key: &IdempotencyKey,
     now_ms: u64,
@@ -1931,9 +1952,12 @@ pub(super) fn move_repository(
         movement.expected_order_fingerprint
     ]))?;
     let transaction = begin(connection)?;
+    let scope = access.scope();
+    scope.require(&transaction)?;
+    let owner = scope.owner;
     if let Some(mut result) = existing_response::<app::RepositoryMoveResult>(
         &transaction,
-        owner,
+        scope.caller(),
         REPOSITORY_MOVE,
         key,
         &request,
@@ -1986,9 +2010,25 @@ pub(super) fn move_repository(
         changed,
         replayed: false,
     };
+    committed(
+        &transaction,
+        scope.caller(),
+        now_ms,
+        CommittedStep::succeeded(
+            REPOSITORY_MOVE,
+            if changed { "updated" } else { "no_changes" },
+            Some(app::LogTarget {
+                kind: "repository".into(),
+                id: Some(id),
+                name: None,
+                path: None,
+            }),
+        ),
+    )
+    .map_err(sql_failure)?;
     save_response(
         &transaction,
-        owner,
+        scope.caller(),
         REPOSITORY_MOVE,
         key,
         &request,
@@ -2148,7 +2188,7 @@ fn restore_repository_archive_pins(
 
 pub(super) fn refresh_repository(
     connection: &mut Connection,
-    access: &RepositoryRefreshAccess,
+    access: &RepositoryAccess,
     id: RepositoryId,
     expected: Revision,
     observation: RepositoryObservation,
@@ -2285,7 +2325,7 @@ pub(super) fn refresh_repository(
 
 pub(super) fn update_repository_validators(
     connection: &mut Connection,
-    access: &RepositoryRefreshAccess,
+    access: &RepositoryAccess,
     id: RepositoryId,
     expected: Revision,
     validators: RepositoryValidators,
