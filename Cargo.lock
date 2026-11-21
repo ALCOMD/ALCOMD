@@ -130,6 +130,7 @@ dependencies = [
 name = "alcomd-domain"
 version = "4.0.0-alpha.0"
 dependencies = [
+ "semver",
  "serde",
  "uuid",
 ]
@@ -239,6 +240,7 @@ name = "alcomd-migrate-v3"
 version = "4.0.0-alpha.0"
 dependencies = [
  "alcomd-client",
+ "alcomd-domain",
  "alcomd-import",
  "alcomd-platform",
  "alcomd-protocol",
@@ -246,6 +248,7 @@ dependencies = [
  "chrono",
  "clap",
  "flate2",
+ "semver",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -337,6 +340,7 @@ name = "alcomd-vpm"
 version = "4.0.0-alpha.0"
 dependencies = [
  "alcomd-application",
+ "alcomd-domain",
  "alcomd-platform",
  "chrono",
  "reqwest",

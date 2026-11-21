@@ -2057,6 +2057,12 @@ fn project_creation_and_template_archives_round_trip() {
     round_trip::<alcomd_protocol::ProjectTemplateRecord>(&vectors["blank"]);
     round_trip::<ProjectTemplatesSaveParams>(&vectors["save"]);
     round_trip::<ProjectTemplatesSaveParams>(&vectors["saveWithBase"]);
+    let mut missing_base = vectors["saveWithBase"].clone();
+    missing_base["source"]
+        .as_object_mut()
+        .unwrap()
+        .remove("baseTemplate");
+    assert!(serde_json::from_value::<ProjectTemplatesSaveParams>(missing_base).is_err());
     let mut null_base = vectors["saveWithBase"].clone();
     null_base["source"]["baseTemplate"] = Value::Null;
     assert!(serde_json::from_value::<ProjectTemplatesSaveParams>(null_base).is_err());

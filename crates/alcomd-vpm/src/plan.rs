@@ -162,8 +162,9 @@ impl ProjectPackageSnapshot {
         explicit: BTreeSet<String>,
         preserve_unselected: bool,
     ) -> Result<crate::resolver::ProjectResolutionRules, M4Error> {
-        use crate::range::{ProjectDependencyRange, VpmRange};
+        use crate::range::ProjectDependencyRange;
         use crate::resolver::{LockedPackage, ProjectResolutionRules};
+        use alcomd_domain::vpm_range::VpmRange;
 
         let invalid = || M4Error::new(M4ErrorCode::PackageManifestInvalid);
         let mut locked = BTreeMap::new();

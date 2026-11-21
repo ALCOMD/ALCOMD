@@ -78,8 +78,7 @@ pub enum ProjectTemplateSource {
         name: String,
         unity_version: String,
         dependencies: Vec<ProjectTemplateDependency>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        base_template: Option<ProjectTemplateRef>,
+        base_template: ProjectTemplateRef,
     },
 }
 
@@ -782,9 +781,7 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
                 base_template,
             } => {
                 validate_template_metadata(id, name)?;
-                if let Some(base) = base_template {
-                    validate_template_reference(&base.id, base.revision)?;
-                }
+                validate_template_reference(&base_template.id, base_template.revision)?;
                 crate::canonical_unity_version(unity_version).map_err(|cause| {
                     ProjectCreateError::new(ProjectCreateErrorCode::InvalidInput).with_source(cause)
                 })?;

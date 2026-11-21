@@ -82,12 +82,16 @@ fn main() -> ExitCode {
             println!();
             ExitCode::SUCCESS
         }
-        Err(_) => {
+        Err(error) => {
             // Parser and filesystem errors may contain arbitrary v3 strings or
             // absolute private paths. Keep command output independent of them.
-            eprintln!(
-                "The migration input, destination, or requested credential transfer could not be completed."
-            );
+            if let Some(reason) = error.downcast_ref::<templates::UnsupportedTemplatePackages>() {
+                eprintln!("{reason}");
+            } else {
+                eprintln!(
+                    "The migration input, destination, or requested credential transfer could not be completed."
+                );
+            }
             ExitCode::FAILURE
         }
     }
@@ -97,9 +101,11 @@ fn run(command: Command) -> Result<serde_json::Value> {
     match command {
         Command::PreviewMcpClient(arguments) => external_mcp::preview(arguments),
         Command::Select(arguments) => selection::run(arguments),
-        Command::Inventory { source_root } => Ok(serde_json::to_value(
-            profile::read(&source_root)?.native.counts(),
-        )?),
+        Command::Inventory { source_root } => {
+            let source = profile::read(&source_root)?;
+            report_skipped_templates(source.skipped_templates);
+            Ok(serde_json::to_value(source.native.counts())?)
+        }
         Command::Export {
             source_root,
             output,
@@ -111,6 +117,15 @@ fn run(command: Command) -> Result<serde_json::Value> {
             transfer_credentials,
             credential_transfer_id,
         )?)?),
+    }
+}
+
+fn report_skipped_templates(count: usize) {
+    if count != 0 {
+        eprintln!(
+            "Skipped {count} derived template(s) incompatible with Unity {}.",
+            templates::DERIVED_EDITOR
+        );
     }
 }
 
@@ -225,6 +240,7 @@ fn export(
         }
         completed.push(reference);
     }
+    report_skipped_templates(source.skipped_templates);
     Ok(records)
 }
 

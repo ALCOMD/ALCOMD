@@ -158,7 +158,7 @@
         "manualSource": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["kind", "id", "name", "unityVersion", "dependencies"],
+            "required": ["kind", "id", "name", "unityVersion", "dependencies", "baseTemplate"],
             "properties": {
                 "kind": {"const": "manual"},
                 "baseTemplate": {"$ref": "#/$defs/templateRef"},

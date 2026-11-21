@@ -4,6 +4,7 @@ use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
+use alcomd_domain::vpm_range::VpmRange;
 use alcomd_import::{Template, TemplateSource};
 use anyhow::{Context, Result, ensure};
 use flate2::bufread::GzDecoder;
@@ -12,6 +13,20 @@ use sha2::{Digest, Sha256};
 use zip::write::SimpleFileOptions;
 
 use crate::profile::{checked_path, read_file};
+
+pub const DERIVED_EDITOR: &str = "2022.3.22f1";
+#[derive(Debug)]
+pub struct UnsupportedTemplatePackages;
+
+impl std::fmt::Display for UnsupportedTemplatePackages {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "A derived template includes Unity package attachments that cannot be imported.",
+        )
+    }
+}
+
+impl std::error::Error for UnsupportedTemplatePackages {}
 
 const TEMPLATE_BYTES: u64 = 256 * 1024 * 1024;
 const EXPANDED_BYTES: u64 = 1024 * 1024 * 1024;
@@ -74,7 +89,13 @@ struct LegacyArchive {
     unity_version: String,
 }
 
-pub fn inventory(root: &Path) -> Result<(Vec<Template>, Vec<Archive>)> {
+pub struct Inventory {
+    pub templates: Vec<Template>,
+    pub attachments: Vec<Archive>,
+    pub skipped_derived: usize,
+}
+
+pub fn inventory(root: &Path) -> Result<Inventory> {
     let mut templates = Vec::new();
     let mut attachments = Vec::new();
     let mut id_claims = BTreeSet::new();
@@ -129,23 +150,24 @@ pub fn inventory(root: &Path) -> Result<(Vec<Template>, Vec<Archive>)> {
                 .filter(|id| valid_id(id))
                 .map_or(stable_id, str::to_owned);
             ensure!(
-                !is_builtin(&id) && id_claims.insert(id.clone()),
+                builtin(&id).is_none() && !is_builtin(&id) && id_claims.insert(id.clone()),
                 "duplicate source template identifier"
             );
             if let Some(old_id) = entry.id {
-                mappings.insert(old_id, id.clone());
+                ensure!(
+                    mappings.insert(old_id, id.clone()).is_none(),
+                    "duplicate source template identifier"
+                );
             }
             let source = match (
                 entry.format_version.as_str(),
                 entry.template_kind.as_deref(),
                 entry.archive,
             ) {
-                ("1.0", None | Some("derived"), None) => {
+                ("1.0", None | Some("derived"), None) | ("2.0", Some("derived"), None) => {
                     ensure!(content.is_empty(), "unexpected derived template payload");
                     let base_template = entry.base.context("derived template lacks a base")?;
-                    let unity_range = entry
-                        .unity_version
-                        .context("derived template lacks a Unity range")?;
+                    let unity_range = entry.unity_version.unwrap_or_else(|| "*".into());
                     ensure!(
                         entry.vpm_dependencies.len() <= 512 && entry.unity_packages.len() <= 128,
                         "too many template ingredients"
@@ -194,16 +216,20 @@ pub fn inventory(root: &Path) -> Result<(Vec<Template>, Vec<Archive>)> {
         if let TemplateSource::Manual { base_template, .. } = &mut template.source {
             if let Some(id) = mappings.get(base_template) {
                 base_template.clone_from(id);
-            } else if let Some(id) = builtin(base_template) {
-                *base_template = id.into();
+            } else {
+                *base_template = builtin(base_template)
+                    .context("unresolved template base")?
+                    .into();
             }
-            ensure!(
-                is_builtin(base_template) || id_claims.contains(base_template),
-                "unresolved template base"
-            );
         }
     }
-    Ok((templates, attachments))
+    let source_count = templates.len();
+    let templates = select_derived_templates(templates)?;
+    Ok(Inventory {
+        skipped_derived: source_count - templates.len(),
+        templates,
+        attachments,
+    })
 }
 
 fn separate(bytes: &[u8]) -> Result<(&[u8], &[u8])> {
@@ -219,14 +245,109 @@ fn separate(bytes: &[u8]) -> Result<(&[u8], &[u8])> {
     }
 }
 
-pub fn builtin(id: &str) -> Option<&'static str> {
+fn select_derived_templates(templates: Vec<Template>) -> Result<Vec<Template>> {
+    let target = semver::Version::new(2022, 3, 22);
+    let ordered = alcomd_import::order_template_bases(templates).map_err(anyhow::Error::msg)?;
+    // Only the old derived declarations add dependency constraints. A standalone
+    // project archive already carries the exact package manifest it was saved with.
+    let mut eligible = BTreeMap::<String, BTreeMap<String, String>>::new();
+    for base_id in [
+        "com.vrclearn.alcomd.templates.blank",
+        "com.vrclearn.alcomd.templates.vrchat.avatars.2022",
+        "com.vrclearn.alcomd.templates.vrchat.worlds.2022",
+    ] {
+        eligible.insert(base_id.into(), BTreeMap::new());
+    }
+    let mut selected = Vec::new();
+    for mut template in ordered {
+        let id = template
+            .id
+            .as_ref()
+            .context("missing migrated template ID")?;
+        match &mut template.source {
+            TemplateSource::ProjectArchive { unity_version, .. } => {
+                if unity_version == DERIVED_EDITOR {
+                    eligible.insert(id.clone(), BTreeMap::new());
+                }
+            }
+            TemplateSource::Manual {
+                base_template,
+                unity_range,
+                dependencies,
+                unity_packages,
+            } => {
+                let range = VpmRange::parse(unity_range).context("invalid derived Unity range")?;
+                for constraint in dependencies.values_mut() {
+                    *constraint = VpmRange::parse(constraint)
+                        .context("invalid derived package range")?
+                        .canonical();
+                    // The v3 declaration uses an ordinary exact range. Preserve
+                    // that meaning when the native project reads a direct requirement.
+                    if semver::Version::parse(constraint).is_ok() {
+                        constraint.insert(0, '=');
+                    }
+                }
+                let Some(parent) = eligible.get(base_template) else {
+                    continue;
+                };
+                if !range.matches(&target, false) {
+                    continue;
+                }
+                if !unity_packages.is_empty() {
+                    return Err(UnsupportedTemplatePackages.into());
+                }
+                let mut merged = parent.clone();
+                for (package, constraint) in dependencies.iter_mut() {
+                    if let Some(inherited) = parent.get(package) {
+                        *constraint = intersect_package_constraints(inherited, constraint)?;
+                    }
+                    merged.insert(package.clone(), constraint.clone());
+                }
+                ensure!(merged.len() <= 128, "too many derived dependencies");
+                eligible.insert(id.clone(), merged);
+                *unity_range = DERIVED_EDITOR.into();
+            }
+        }
+        selected.push(template);
+    }
+    Ok(selected)
+}
+
+fn intersect_package_constraints(inherited: &str, declared: &str) -> Result<String> {
+    if inherited == declared || declared == "*" {
+        return Ok(inherited.to_owned());
+    }
+    if inherited == "*" {
+        return Ok(declared.to_owned());
+    }
+    let mut intersection = String::new();
+    for left in inherited.split(" || ") {
+        for right in declared.split(" || ") {
+            if !intersection.is_empty() {
+                intersection.push_str(" || ");
+            }
+            intersection.push_str(left);
+            intersection.push(' ');
+            intersection.push_str(right);
+            ensure!(
+                intersection.len() <= alcomd_domain::vpm_range::MAX_RANGE_BYTES,
+                "derived dependency intersection exceeds limit"
+            );
+        }
+    }
+    Ok(VpmRange::parse(&intersection)
+        .context("unrepresentable derived dependency intersection")?
+        .canonical())
+}
+
+fn builtin(id: &str) -> Option<&'static str> {
     match id {
         "com.anatawa12.vrc-get.blank" => Some("com.vrclearn.alcomd.templates.blank"),
         "com.anatawa12.vrc-get.vrchat.avatars" => {
-            Some("com.vrclearn.alcomd.templates.vrchat.avatars")
+            Some("com.vrclearn.alcomd.templates.vrchat.avatars.2022")
         }
         "com.anatawa12.vrc-get.vrchat.worlds" => {
-            Some("com.vrclearn.alcomd.templates.vrchat.worlds")
+            Some("com.vrclearn.alcomd.templates.vrchat.worlds.2022")
         }
         _ => None,
     }
@@ -235,8 +356,10 @@ pub fn builtin(id: &str) -> Option<&'static str> {
 fn is_builtin(id: &str) -> bool {
     [
         "com.vrclearn.alcomd.templates.blank",
-        "com.vrclearn.alcomd.templates.vrchat.avatars",
-        "com.vrclearn.alcomd.templates.vrchat.worlds",
+        "com.vrclearn.alcomd.templates.vrchat.avatars.2019",
+        "com.vrclearn.alcomd.templates.vrchat.avatars.2022",
+        "com.vrclearn.alcomd.templates.vrchat.worlds.2019",
+        "com.vrclearn.alcomd.templates.vrchat.worlds.2022",
     ]
     .contains(&id)
 }

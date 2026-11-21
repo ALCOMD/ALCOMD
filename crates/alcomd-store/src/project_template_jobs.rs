@@ -70,11 +70,7 @@ pub(super) fn add_archive_references(
                 ..
             } => Some(declaration),
             ProjectTemplateJobRequest::Save {
-                source:
-                    ProjectTemplateSource::Manual {
-                        base_template: Some(_),
-                        ..
-                    },
+                source: ProjectTemplateSource::Manual { .. },
                 ..
             } => Some(context.journal.base_declaration.ok_or_else(internal)?),
             _ => None,
@@ -220,7 +216,7 @@ pub(super) fn accept(
         ProjectTemplateJobRequest::Save {
             source:
                 ProjectTemplateSource::Manual {
-                    base_template: Some(reference),
+                    base_template: reference,
                     unity_version,
                     ..
                 },

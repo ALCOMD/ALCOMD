@@ -5,9 +5,10 @@ use std::fmt;
 use semver::Version;
 use serde_json::Value;
 
-use crate::range::{VpmRange, compare_precedence};
+use crate::range::compare_precedence;
 use crate::unity_version::{UnityVersion, meets_minimum, package_minimum};
 use alcomd_application::{PackageSourceSelector, ResolverCatalog, ResolverCatalogSource};
+use alcomd_domain::vpm_range::VpmRange;
 
 const MAX_REQUIREMENTS: usize = 4_096;
 

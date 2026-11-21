@@ -2,6 +2,8 @@
 //!
 //! This crate must not depend on Tauri, SQLite, HTTP, MCP, or operating-system APIs.
 
+pub mod vpm_range;
+
 use std::fmt;
 
 use serde::{Deserialize, Serialize};

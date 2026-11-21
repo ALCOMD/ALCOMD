@@ -1551,9 +1551,9 @@ class DeterministicGuiClient implements GuiRpcClient {
             if (expectedRevision !== undefined && existing?.revision !== expectedRevision) throw { code: "revision_conflict" };
             if (existing?.locked) throw { code: "template_builtin_immutable" };
             if (source.kind === "project" && (source.projectId !== PROJECT_ID || source.expectedProjectRevision !== this.currentProjectRevision)) throw { code: "revision_conflict" };
-            if (source.kind === "manual" && source.baseTemplate !== undefined) {
-                const base = this.projectTemplates.find((template) => template.id === source.baseTemplate?.id)
-                    ?? (query.has("template-pages") ? Array.from({ length: 101 }, (_, index) => catalogTemplate(index + 1)).find(({ id }) => id === source.baseTemplate?.id) : undefined);
+            if (source.kind === "manual") {
+                const base = this.projectTemplates.find((template) => template.id === source.baseTemplate.id)
+                    ?? (query.has("template-pages") ? Array.from({ length: 101 }, (_, index) => catalogTemplate(index + 1)).find(({ id }) => id === source.baseTemplate.id) : undefined);
                 if (base?.revision !== source.baseTemplate.revision) throw { code: "revision_conflict" };
                 if (base.editorVersion !== undefined && base.editorVersion !== source.unityVersion) throw { code: "template_dependency_unsatisfied" };
             }

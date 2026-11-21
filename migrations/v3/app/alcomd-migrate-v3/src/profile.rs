@@ -23,6 +23,7 @@ pub struct Profile {
     pub native: NativeState,
     pub credentials: Vec<Option<Headers>>,
     pub template_files: Vec<templates::Archive>,
+    pub skipped_templates: usize,
 }
 
 #[derive(Serialize)]
@@ -151,7 +152,7 @@ pub fn read(root: &Path) -> Result<Profile> {
         &gui.gui_hidden_repositories,
         repo_settings.display_names,
     )?;
-    let (templates, template_files) = templates::inventory(&root)?;
+    let inventory = templates::inventory(&root)?;
     let extensions = extensions(&gui);
     let discord_extension_enabled = extensions
         .iter()
@@ -207,13 +208,14 @@ pub fn read(root: &Path) -> Result<Profile> {
             unity_installations,
             repositories,
             local_packages,
-            templates,
+            templates: inventory.templates,
             settings,
             extensions,
             discord,
         },
         credentials,
-        template_files,
+        template_files: inventory.attachments,
+        skipped_templates: inventory.skipped_derived,
     })
 }
 

@@ -37,6 +37,7 @@
             "kind": "manual",
             "id": "com.example.avatar",
             "name": "Avatar kit",
+            "baseTemplate": {"id": "com.vrclearn.alcomd.templates.blank", "revision": 1},
             "unityVersion": "2022.3.22f1",
             "dependencies": [
                 {
@@ -99,8 +100,8 @@
                 }
             ],
             "baseTemplate": {
-                "id": "com.vrclearn.alcomd.templates.blank",
-                "revision": 1
+                "id": "com.example.user-base",
+                "revision": 3
             }
         },
         "idempotencyKey": "template-with-base"

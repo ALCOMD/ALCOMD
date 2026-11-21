@@ -126,6 +126,43 @@ pub struct Template {
     pub source: TemplateSource,
 }
 
+/// Orders a bounded transfer inventory so a derived template can read its saved base.
+pub fn order_template_bases(mut pending: Vec<Template>) -> Result<Vec<Template>, &'static str> {
+    if pending.len() > 128 {
+        return Err("too many staged templates");
+    }
+    let mut pending_ids = std::collections::BTreeSet::new();
+    for template in &pending {
+        if let Some(id) = &template.id
+            && !pending_ids.insert(id.clone())
+        {
+            return Err("duplicate template identifier");
+        }
+        if matches!(&template.source, TemplateSource::Manual { base_template, .. } if base_template.is_empty())
+        {
+            return Err("manual template requires a base");
+        }
+    }
+    let mut ordered = Vec::with_capacity(pending.len());
+    while !pending.is_empty() {
+        let next = pending
+            .iter()
+            .position(|template| match &template.source {
+                TemplateSource::Manual { base_template, .. } => {
+                    !pending_ids.contains(base_template)
+                }
+                TemplateSource::ProjectArchive { .. } => true,
+            })
+            .ok_or("cyclic template base references")?;
+        let template = pending.remove(next);
+        if let Some(id) = &template.id {
+            pending_ids.remove(id);
+        }
+        ordered.push(template);
+    }
+    Ok(ordered)
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(
     tag = "kind",

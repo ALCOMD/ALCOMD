@@ -19,7 +19,8 @@ use crate::archive::{
     ArchiveErrorCode, ArchiveLimits, ArchivePreflight, extract_archive_checked, normalize_path,
     preflight_archive,
 };
-use crate::range::{ProjectDependencyRange, VpmRange};
+use crate::range::ProjectDependencyRange;
+use alcomd_domain::vpm_range::VpmRange;
 
 const LIMITS: ArchiveLimits = ArchiveLimits::package();
 const TEMPLATE_EXTENSION: &str = "alcomdtemplate";
@@ -87,7 +88,8 @@ impl TemplateArchiveStore {
                 dependencies,
                 base_template,
             } => {
-                if base_template.is_some() != base.is_some() {
+                let base = base.ok_or_else(stale)?;
+                if base.id != base_template.id {
                     return Err(stale());
                 }
                 self.manual(id, name, unity_version, dependencies, base)
@@ -411,44 +413,39 @@ impl TemplateArchiveStore {
         name: String,
         version: String,
         dependencies: Vec<ProjectTemplateDependency>,
-        base: Option<ProjectTemplateDeclaration>,
+        base: ProjectTemplateDeclaration,
     ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
         validate_editor(&version)?;
         let additions = dependency_map(dependencies)?;
         let scratch = Scratch::new(&self.root)?;
-        let mut inventory = if let Some(base) = base {
-            if base
-                .editor_version
-                .as_ref()
-                .is_some_and(|expected| expected != &version)
-                || base.editor_version.is_none()
-                    && base.id != alcomd_application::BLANK_PROJECT_TEMPLATE_ID
+        if base
+            .editor_version
+            .as_ref()
+            .is_some_and(|expected| expected != &version)
+            || base.editor_version.is_none()
+                && base.id != alcomd_application::BLANK_PROJECT_TEMPLATE_ID
+        {
+            return Err(ProjectCreateError::new(
+                ProjectCreateErrorCode::DependencyUnsatisfied,
+            ));
+        }
+        let unpacked = scratch.path.join("base");
+        fs::create_dir(&unpacked).map_err(|error| io_error(&unpacked, error))?;
+        unpack(&self.verified_object(&base)?, &unpacked)?;
+        let mut inventory = Inventory::default();
+        for folder in ROOTS {
+            inventory.add_tree(&unpacked, folder)?;
+        }
+        for entry in fs::read_dir(&unpacked).map_err(|error| io_error(&unpacked, error))? {
+            let entry = entry.map_err(|error| io_error(&unpacked, error))?;
+            if let Some(name) = entry
+                .file_name()
+                .to_str()
+                .filter(|name| optional_root_file(name))
             {
-                return Err(ProjectCreateError::new(
-                    ProjectCreateErrorCode::DependencyUnsatisfied,
-                ));
+                inventory.add_file(&unpacked, name)?;
             }
-            let unpacked = scratch.path.join("base");
-            fs::create_dir(&unpacked).map_err(|error| io_error(&unpacked, error))?;
-            unpack(&self.verified_object(&base)?, &unpacked)?;
-            let mut contents = Inventory::default();
-            for folder in ROOTS {
-                contents.add_tree(&unpacked, folder)?;
-            }
-            for entry in fs::read_dir(&unpacked).map_err(|error| io_error(&unpacked, error))? {
-                let entry = entry.map_err(|error| io_error(&unpacked, error))?;
-                if let Some(name) = entry
-                    .file_name()
-                    .to_str()
-                    .filter(|name| optional_root_file(name))
-                {
-                    contents.add_file(&unpacked, name)?;
-                }
-            }
-            contents
-        } else {
-            blank_inventory()?
-        };
+        }
         let original_manifest = match inventory.entries.get(VPM) {
             Some(Content::File(path, _)) => {
                 fs::read(path).map_err(|error| io_error(path, error))?

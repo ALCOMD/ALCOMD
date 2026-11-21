@@ -63,12 +63,7 @@ pub enum ProjectTemplateSource {
         name: String,
         unity_version: String,
         dependencies: Vec<ProjectTemplateDependency>,
-        #[serde(
-            default,
-            deserialize_with = "crate::deserialize_optional_non_null",
-            skip_serializing_if = "Option::is_none"
-        )]
-        base_template: Option<ProjectTemplateRef>,
+        base_template: ProjectTemplateRef,
     },
 }
 

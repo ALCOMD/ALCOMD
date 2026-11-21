@@ -18,6 +18,10 @@ impl Fixture {
     }
 
     fn bundle(&self) -> PathBuf {
+        self.bundle_with_templates(Vec::new())
+    }
+
+    fn bundle_with_templates(&self, templates: Vec<serde_json::Value>) -> PathBuf {
         let project = self.0.join("Source Project");
         for subtree in ["Assets", "Packages", "ProjectSettings"] {
             fs::create_dir_all(project.join(subtree)).expect("fixture project directory");
@@ -38,7 +42,7 @@ impl Fixture {
             "unityInstallations": [],
             "repositories": [{"source": {"kind": "remote", "url": "https://example.invalid/vpm.json"},
                 "declaredId": "com.example.fixture", "displayName": "Offline fixture", "hidden": true, "hasCredentials": false}],
-            "localPackages": [], "templates": [], "extensions": [],
+            "localPackages": [], "templates": templates, "extensions": [],
             "discord": {"enabled": false, "projectName": true, "unityVersion": true, "editorCount": true, "customText": ""},
             "settings": {"locale": "zh-CN", "appearanceMode": "dark", "appearanceMotion": "reduced", "fullscreen": false,
                 "handleVccLinks": true, "showPrerelease": false, "hideLocalUserPackages": false,
@@ -61,6 +65,118 @@ impl Fixture {
         )
         .expect("write fixture manifest");
         bundle
+    }
+}
+
+fn manual_template(id: &str, base: &str, package: &str) -> serde_json::Value {
+    json!({
+        "id": id, "name": id, "source": {
+            "kind": "manual", "baseTemplate": base, "unityRange": "2022.3.22f1",
+            "dependencies": {(package): "1.0.0"}, "unityPackages": []
+        }
+    })
+}
+
+#[tokio::test]
+async fn imports_derived_templates_as_independent_archives_regardless_of_bundle_order() {
+    let fixture = Fixture::new();
+    let child = "dev.example.child";
+    let parent = "dev.example.parent";
+    let bundle = fixture.bundle_with_templates(vec![
+        manual_template(child, parent, "dev.example.extra"),
+        manual_template(parent, app::BLANK_PROJECT_TEMPLATE_ID, "dev.example.shared"),
+    ]);
+    let original = fs::read(bundle.join("state.json")).expect("original transfer");
+    let destination = fixture.0.join("native");
+    let receipt = import_native_state(&bundle, &destination, None)
+        .await
+        .expect("import chain");
+    assert_eq!(
+        receipt,
+        check_native_state(&bundle, &destination, None)
+            .await
+            .expect("reopen")
+    );
+    let data = alcomd_platform::DataConfig::isolated(destination);
+    let store = alcomd_store::StateStoreHandle::open(
+        alcomd_platform::state_database_path(&data).expect("state path"),
+    )
+    .expect("staged registry");
+    let record = store
+        .project_template_get(app::PrincipalId::local_owner(), child.into())
+        .await
+        .expect("derived archive");
+    assert_eq!(
+        record.declaration.editor_version.as_deref(),
+        Some("2022.3.22f1")
+    );
+    let packages: BTreeSet<_> = record
+        .declaration
+        .dependencies
+        .iter()
+        .map(|dep| dep.package_id.as_str())
+        .collect();
+    assert_eq!(
+        packages,
+        BTreeSet::from(["dev.example.extra", "dev.example.shared"])
+    );
+    let base = store
+        .project_template_get(app::PrincipalId::local_owner(), parent.into())
+        .await
+        .expect("base archive");
+    assert_ne!(
+        record.declaration.archive_sha256,
+        base.declaration.archive_sha256
+    );
+    assert_eq!(
+        fs::read(bundle.join("state.json")).expect("transfer bytes"),
+        original
+    );
+}
+
+#[tokio::test]
+async fn rejects_duplicate_or_cyclic_templates_before_creating_a_stage() {
+    let a = "dev.example.a";
+    let b = "dev.example.b";
+    for (templates, expected) in [
+        (
+            vec![manual_template(a, "", "dev.example.one")],
+            "requires a base",
+        ),
+        (vec![manual_template(a, a, "dev.example.one")], "cyclic"),
+        (
+            vec![
+                manual_template(a, b, "dev.example.one"),
+                manual_template(b, a, "dev.example.two"),
+            ],
+            "cyclic",
+        ),
+        (
+            vec![
+                manual_template(a, app::BLANK_PROJECT_TEMPLATE_ID, "dev.example.one"),
+                manual_template(a, app::BLANK_PROJECT_TEMPLATE_ID, "dev.example.two"),
+            ],
+            "duplicate",
+        ),
+    ] {
+        let fixture = Fixture::new();
+        let bundle = fixture.bundle_with_templates(templates);
+        let original = fs::read(bundle.join("state.json")).expect("source transfer");
+        let manifest = fs::read(bundle.join("manifest.json")).expect("source manifest");
+        let destination = fixture.0.join("native");
+        let error = import_native_state(&bundle, &destination, None)
+            .await
+            .expect_err("invalid dependency graph");
+        assert!(error.to_string().contains(expected), "{error}");
+        assert!(!destination.exists());
+        assert_eq!(
+            fs::read(bundle.join("state.json")).expect("preserved state"),
+            original
+        );
+        assert_eq!(
+            fs::read(bundle.join("manifest.json")).expect("preserved manifest"),
+            manifest
+        );
     }
 }
 

@@ -310,10 +310,10 @@ fn manual_template_base_is_frozen_pinned_recovered_and_released_at_completion() 
             name: "Derived".to_owned(),
             unity_version: version.to_owned(),
             dependencies: Vec::new(),
-            base_template: Some(ProjectTemplateRef {
+            base_template: ProjectTemplateRef {
                 id: base.id.clone(),
                 revision,
-            }),
+            },
         },
         expected_revision: None,
     };

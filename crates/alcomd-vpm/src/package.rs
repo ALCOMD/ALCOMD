@@ -7,10 +7,10 @@ use semver::Version;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-use crate::range::VpmRange;
 use crate::resolver::{PackageCandidate, PackageDependency, PackageSource, PackageSourceAuthority};
 use crate::unity_version::package_minimum;
 use crate::{JSON_COLLECTION_LIMIT, M3ErrorCode, parse_bounded_json};
+use alcomd_domain::vpm_range::VpmRange;
 
 const PACKAGE_ID_LIMIT: usize = 128;
 const VERSION_LIMIT: usize = 1_024;

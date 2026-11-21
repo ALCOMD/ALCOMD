@@ -149,6 +149,167 @@ fn synthetic_v3_profile_normalizes_records_without_writing_the_source_or_printin
 }
 
 #[test]
+fn derived_templates_select_the_supported_editor_and_intersect_parent_constraints() {
+    let fixture = Fixture::new();
+    fixture.write("settings.json", &json!({}));
+    fs::create_dir(fixture.source().join("templates")).expect("template directory");
+    let mut originals = Vec::new();
+    for (name, id, base, unity, package) in [
+        (
+            "00",
+            "dev.example.child",
+            "dev.example.parent",
+            Some("2022.x"),
+            ">=2.0.0",
+        ),
+        (
+            "01",
+            "dev.example.old",
+            "com.anatawa12.vrc-get.vrchat.worlds",
+            Some("2019.x || =2022.3.6"),
+            "*",
+        ),
+        ("02", "dev.example.excluded", "dev.example.old", None, "*"),
+        (
+            "03",
+            "dev.example.world",
+            "com.anatawa12.vrc-get.vrchat.worlds",
+            None,
+            "1.0.0",
+        ),
+        (
+            "04",
+            "dev.example.blank",
+            "com.anatawa12.vrc-get.blank",
+            Some("2022.3.22"),
+            "*",
+        ),
+        (
+            "05",
+            "dev.example.parent",
+            "com.anatawa12.vrc-get.vrchat.avatars",
+            Some(">=2019 <2023"),
+            "<3.0.0",
+        ),
+    ] {
+        let mut value = json!({"$type":"com.anatawa12.vrc-get.custom-template","formatVersion":"1.0","id":id,
+            "displayName":id,"base":base,"vpmDependencies":{"dev.example.shared":package}});
+        if id == "dev.example.parent" {
+            value["formatVersion"] = json!("2.0");
+            value["templateKind"] = json!("derived");
+            value["vpmDependencies"]["dev.example.disjunction"] =
+                json!(">=1.0.0 <2.0.0 || >=3.0.0");
+        } else if id == "dev.example.child" {
+            value["vpmDependencies"]["dev.example.disjunction"] =
+                json!(">=1.5.0-beta.1 <1.6.0 || >=3.1.0-beta.1 <4.0.0");
+        }
+        if let Some(unity) = unity {
+            value["unityVersion"] = json!(unity);
+        }
+        let path = format!("templates/{name}.alcomtemplate");
+        fixture.write(&path, &value);
+        originals.push((
+            fixture.source().join(&path),
+            fs::read(fixture.source().join(&path)).expect("original"),
+        ));
+    }
+    let inventory = fixture.run("inventory", None);
+    let export = fixture.run("export", Some(&fixture.bundle()));
+    for result in [&inventory, &export] {
+        assert!(result.status.success(), "{:?}", result.stderr);
+        assert_eq!(
+            String::from_utf8_lossy(&result.stderr).trim(),
+            "Skipped 2 derived template(s) incompatible with Unity 2022.3.22f1."
+        );
+    }
+    let state: Value =
+        serde_json::from_slice(&fs::read(fixture.bundle().join("state.json")).expect("export"))
+            .expect("state");
+    let templates = state["templates"].as_array().expect("templates");
+    assert_eq!(templates.len(), 4);
+    let source = |id| {
+        &templates
+            .iter()
+            .find(|t| t["id"] == id)
+            .expect("included template")["source"]
+    };
+    assert_eq!(
+        source("dev.example.parent")["baseTemplate"],
+        "com.vrclearn.alcomd.templates.vrchat.avatars.2022"
+    );
+    assert_eq!(
+        source("dev.example.world")["baseTemplate"],
+        "com.vrclearn.alcomd.templates.vrchat.worlds.2022"
+    );
+    assert_eq!(
+        source("dev.example.blank")["baseTemplate"],
+        "com.vrclearn.alcomd.templates.blank"
+    );
+    assert_eq!(
+        source("dev.example.child")["dependencies"]["dev.example.shared"],
+        "<3.0.0 >=2.0.0"
+    );
+    let merged = alcomd_domain::vpm_range::VpmRange::parse(
+        source("dev.example.child")["dependencies"]["dev.example.disjunction"]
+            .as_str()
+            .expect("intersection"),
+    )
+    .expect("valid project dependency");
+    for (version, matches) in [
+        ("1.4.0", false),
+        ("1.5.0-beta.1", true),
+        ("1.5.0", true),
+        ("2.5.0-beta.1", false),
+        ("3.0.5", false),
+        ("3.1.0-beta.1", true),
+        ("4.0.0", false),
+    ] {
+        assert_eq!(
+            merged.matches(&semver::Version::parse(version).expect("version"), true),
+            matches,
+            "{version}"
+        );
+    }
+    for template in templates {
+        assert_eq!(template["source"]["unityRange"], "2022.3.22f1");
+    }
+    for (path, bytes) in originals {
+        assert_eq!(fs::read(path).expect("preserved source"), bytes);
+    }
+}
+
+#[test]
+fn cyclic_and_unsupported_template_inputs_do_not_publish_or_modify_sources() {
+    for (base, attachment) in [
+        ("dev.example.self", false),
+        ("com.anatawa12.vrc-get.blank", true),
+    ] {
+        let fixture = Fixture::new();
+        fixture.write("settings.json", &json!({}));
+        fs::create_dir(fixture.source().join("templates")).expect("templates");
+        let path = fixture
+            .source()
+            .join("templates/private-name.alcomtemplate");
+        let mut value = json!({"$type":"com.anatawa12.vrc-get.custom-template","formatVersion":"1.0","id":"dev.example.self",
+            "displayName":"private-name","base":base,"unityVersion":"*"});
+        if attachment {
+            value["unityPackages"] = json!([fixture.source().join("example.unitypackage")]);
+        }
+        let bytes = serde_json::to_vec(&value).expect("encode");
+        fs::write(&path, &bytes).expect("source");
+        let result = fixture.run("export", Some(&fixture.bundle()));
+        assert!(!result.status.success());
+        let message = String::from_utf8_lossy(&result.stderr);
+        assert!(!message.contains("private-name"));
+        if attachment {
+            assert!(message.contains("Unity package attachments"), "{message}");
+        }
+        assert!(!fixture.bundle().exists());
+        assert_eq!(fs::read(path).expect("preserved source"), bytes);
+    }
+}
+
+#[test]
 fn synthetic_archived_template_becomes_a_native_zip_with_verified_manifest_entry() {
     let f = Fixture::new();
     f.write("settings.json", &json!({}));
@@ -157,7 +318,7 @@ fn synthetic_archived_template_becomes_a_native_zip_with_verified_manifest_entry
     let file = folder.join("synthetic.alcomtemplate");
     let mut source = serde_json::to_vec(&json!({"$type":"com.anatawa12.vrc-get.custom-template","formatVersion":"2.0",
         "displayName":"Fixture Template","id":"dev.example.template","templateKind":"projectArchive",
-        "archive":{"format":"tar.gz","unityVersion":"2022.3.22f1"}})).expect("fixture metadata");
+        "archive":{"format":"tar.gz","unityVersion":"2019.4.31f1"}})).expect("fixture metadata");
     source.push(0);
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     for (path, body) in [
@@ -168,7 +329,7 @@ fn synthetic_archived_template_becomes_a_native_zip_with_verified_manifest_entry
         ),
         (
             "ProjectSettings/ProjectVersion.txt",
-            b"m_EditorVersion: 2022.3.22f1\n".as_slice(),
+            b"m_EditorVersion: 2019.4.31f1\n".as_slice(),
         ),
     ] {
         append_tar(&mut encoder, path, body);
@@ -176,8 +337,15 @@ fn synthetic_archived_template_becomes_a_native_zip_with_verified_manifest_entry
     encoder.write_all(&[0; 1024]).expect("tar terminator");
     source.extend(encoder.finish().expect("archive bytes"));
     fs::write(&file, &source).expect("synthetic archive");
+    let child = json!({"$type":"com.anatawa12.vrc-get.custom-template","formatVersion":"1.0",
+        "id":"dev.example.child","displayName":"Child","base":"dev.example.template"});
+    f.write("templates/child.alcomtemplate", &child);
     let export = f.run("export", Some(&f.bundle()));
     assert!(export.status.success(), "{:?}", export.stderr);
+    assert_eq!(
+        String::from_utf8_lossy(&export.stderr).trim(),
+        "Skipped 1 derived template(s) incompatible with Unity 2022.3.22f1."
+    );
     let manifest: Value =
         serde_json::from_slice(&fs::read(f.bundle().join("manifest.json")).expect("manifest"))
             .expect("manifest JSON");
@@ -201,6 +369,17 @@ fn synthetic_archived_template_becomes_a_native_zip_with_verified_manifest_entry
         .read_to_string(&mut contents)
         .expect("asset bytes");
     assert_eq!(contents, "fixture");
+    contents.clear();
+    zip.by_name("ProjectSettings/ProjectVersion.txt")
+        .expect("version marker")
+        .read_to_string(&mut contents)
+        .expect("marker");
+    assert_eq!(contents, "m_EditorVersion: 2019.4.31f1\n");
+    assert_eq!(manifest["records"]["templates"], 1);
+    assert_eq!(
+        fs::read(f.source().join("templates/child.alcomtemplate")).expect("original child"),
+        serde_json::to_vec(&child).expect("original bytes")
+    );
     assert_eq!(fs::read(file).expect("original archive"), source);
 }
 

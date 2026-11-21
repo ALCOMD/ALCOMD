@@ -145,7 +145,7 @@ fn validate_bundle(root: &Path) -> Result<(NativeState, BTreeSet<String>)> {
             );
         }
     }
-    let state = state.context("native state is missing")?;
+    let mut state = state.context("native state is missing")?;
     ensure!(
         state.schema == manifest.schema && state.source_version == manifest.source_version,
         "state and bundle versions differ"
@@ -172,6 +172,8 @@ fn validate_bundle(root: &Path) -> Result<(NativeState, BTreeSet<String>)> {
         identity == final_identity,
         "bundle directory changed during verification"
     );
+    state.templates =
+        alcomd_import::order_template_bases(state.templates).map_err(anyhow::Error::msg)?;
     Ok((state, names))
 }
 
@@ -431,18 +433,10 @@ pub async fn import_native_state(
                     unity_packages.is_empty(),
                     "manual template contains unsupported Unity package overrides"
                 );
-                let base = if base_template.is_empty() {
-                    None
-                } else {
-                    let (observed, _) = templates
-                        .template_detail(&access, base_template.clone())
-                        .await
-                        .map_err(|_| anyhow::anyhow!("template base could not be reconciled"))?;
-                    Some(app::ProjectTemplateRef {
-                        id: base_template,
-                        revision: observed.revision,
-                    })
-                };
+                let (observed, _) = templates
+                    .template_detail(&access, base_template.clone())
+                    .await
+                    .map_err(|_| anyhow::anyhow!("template base could not be reconciled"))?;
                 app::ProjectTemplateSource::Manual {
                     id: template.id.context("manual template identifier missing")?,
                     name: template.name,
@@ -456,7 +450,10 @@ pub async fn import_native_state(
                             },
                         )
                         .collect(),
-                    base_template: base,
+                    base_template: app::ProjectTemplateRef {
+                        id: base_template,
+                        revision: observed.revision,
+                    },
                 }
             }
         };
