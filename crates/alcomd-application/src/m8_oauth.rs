@@ -64,24 +64,12 @@ pub fn oauth_project_cursor_binding(
     Ok(oauth_hex(&cursor_hmac(key, &message)))
 }
 
-// RFC2104 construction over the existing SHA256 implementation. Production
-// keys are exactly32 bytes; the short-key branch is checked by RFC4231 vectors.
 pub(crate) fn cursor_hmac(key: &[u8], message: &[u8]) -> [u8; 32] {
-    let mut block = [0u8; 64];
-    if key.len() > block.len() {
-        block[..32].copy_from_slice(&Sha256::digest(key));
-    } else {
-        block[..key.len()].copy_from_slice(key);
-    }
-    let inner_pad = block.map(|b| b ^ 0x36);
-    let outer_pad = block.map(|b| b ^ 0x5c);
-    let mut inner = Sha256::new();
-    inner.update(inner_pad);
-    inner.update(message);
-    let mut outer = Sha256::new();
-    outer.update(outer_pad);
-    outer.update(inner.finalize());
-    outer.finalize().into()
+    use hmac::{Hmac, KeyInit, Mac};
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC accepts keys of any length");
+    mac.update(message);
+    mac.finalize().into_bytes().into()
 }
 
 #[cfg(test)]
