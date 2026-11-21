@@ -303,7 +303,8 @@ async fn initialize_daemon_with_adapters(
         Arc::new(hub_platform::PlatformUnityHubAdapter),
         Arc::new(hub_platform::PlatformUnityHubLauncher::default()),
         directory_platform,
-    );
+    )
+    .with_mcp_identity_store(store.clone());
     official_gui
         .initialize_settings()
         .await

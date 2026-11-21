@@ -711,6 +711,144 @@ mod tests {
 
     struct TestHubLauncher;
 
+    #[tokio::test]
+    async fn hub_open_rechecks_the_waiting_mcp_credential_before_launch() {
+        use alcomd_application::{
+            McpIdentityApplication, McpIdentityWrite, ToolAuthentication,
+            UnityHubConfiguredPathStatus, UnityHubLauncher, UnityHubLocation, UnityHubOpenError,
+            UnityHubOpenOutcome, UnityHubPlatform, UnityHubSource, UnityHubStatus,
+            with_workflow_authentication,
+        };
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::task::Poll;
+
+        use tokio::sync::oneshot;
+        struct Hub {
+            location: UnityHubLocation,
+            launches: AtomicUsize,
+            inspection: std::sync::Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
+        }
+        impl UnityHubPlatform for Hub {
+            fn normalize_path(&self, _: &str) -> Result<String, OfficialGuiError> {
+                unreachable!("open only uses the configured target")
+            }
+            fn inspect(&self, _: Option<&str>) -> UnityHubLocation {
+                if let Some((entered, resume)) =
+                    self.inspection.lock().expect("inspection gate").take()
+                {
+                    entered.send(()).expect("signal inspection");
+                    resume.blocking_recv().expect("resume inspection");
+                }
+                self.location.clone()
+            }
+        }
+        impl UnityHubLauncher for Hub {
+            fn launch(&self, target: &str) -> Result<(), UnityHubOpenError> {
+                assert_eq!(Some(target), self.location.path.as_deref());
+                self.launches.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+        let directory = crate::events_tests::Directory::new();
+        let database = directory.database();
+        let path = database.with_file_name("settings.toml");
+        let store = crate::StateStoreHandle::open(database).expect("isolated state");
+        let identities = McpIdentityApplication::new(store.clone());
+        let hub = Arc::new(Hub {
+            location: UnityHubLocation {
+                status: UnityHubStatus::Available,
+                source: UnityHubSource::Configured,
+                registered_target: None,
+                configured_path_status: UnityHubConfiguredPathStatus::Available,
+                path: Some("/fixture/hub".into()),
+            },
+            launches: AtomicUsize::new(0),
+            inspection: Default::default(),
+        });
+        let application = M7OfficialApplication::new(
+            Arc::new(FileConfigStore::new(path)),
+            hub.clone(),
+            hub.clone(),
+            Arc::new(TestDirectories),
+        )
+        .with_mcp_identity_store(store);
+        application.initialize_settings().await.expect("settings");
+        let revision = application
+            .candidate_settings()
+            .await
+            .expect("snapshot")
+            .revision;
+        let owner = AccessContext::local_owner();
+        let client = identities
+            .write(
+                &owner,
+                "create-hub".into(),
+                McpIdentityWrite::Create {
+                    name: "Hub client".into(),
+                },
+                1,
+            )
+            .await
+            .expect("create caller")
+            .client;
+        let hash = alcomd_application::mcp_credential_hash(&uuid::Uuid::new_v4().to_string());
+        let client = identities
+            .write(
+                &owner,
+                "issue-hub".into(),
+                McpIdentityWrite::Issue {
+                    id: client.client_id,
+                    expected: client.revision,
+                    hash,
+                },
+                2,
+            )
+            .await
+            .expect("issue credential")
+            .client;
+        let caller = identities
+            .authenticate(hash)
+            .await
+            .expect("authenticate caller");
+        let open = || {
+            with_workflow_authentication(
+                ToolAuthentication::Credential(hash),
+                application.open_unity_hub(&caller, revision, hub.location.target_token()),
+            )
+        };
+        assert_eq!(open().await, Ok(UnityHubOpenOutcome::LaunchRequested));
+        let (entered, inspecting) = oneshot::channel();
+        let (resume, gate) = oneshot::channel();
+        *hub.inspection.lock().expect("inspection gate") = Some((entered, gate));
+        let mut first = std::pin::pin!(open());
+        tokio::select! {
+            result = &mut first => panic!("completed before inspecting: {result:?}"),
+            signal = inspecting => signal.expect("first request is inspecting its target"),
+        }
+        let mut pending = std::pin::pin!(open());
+        std::future::poll_fn(|cx| {
+            assert!(pending.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        identities
+            .write(
+                &owner,
+                "revoke-hub".into(),
+                McpIdentityWrite::Revoke {
+                    id: client.client_id,
+                    expected: client.revision,
+                },
+                3,
+            )
+            .await
+            .expect("revoke while open is queued");
+        resume.send(()).expect("finish inspecting target");
+        assert_eq!(first.await, Err(UnityHubOpenError::PermissionDenied));
+        assert_eq!(pending.await, Err(UnityHubOpenError::PermissionDenied));
+        assert_eq!(hub.launches.load(Ordering::SeqCst), 1);
+    }
+
     impl alcomd_application::UnityHubLauncher for TestHubLauncher {
         fn launch(&self, _: &str) -> Result<(), alcomd_application::UnityHubOpenError> {
             unreachable!("configuration tests must never execute a Hub process")

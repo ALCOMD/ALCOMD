@@ -168,20 +168,14 @@ impl<S: StateStore> EventSubscription<S> {
         )
         .await?;
         if let Some(credential) = &self.authentication {
-            let client = match credential {
-                crate::ToolAuthentication::Credential(hash) => store
-                    .mcp_authenticate(*hash)
-                    .await
-                    .map_err(|_| ApplicationError::PermissionDenied)?,
-                crate::ToolAuthentication::OAuth(guard) => {
-                    let now = crate::m3_time_ms().map_err(|_| unavailable())?;
-                    store
-                        .oauth_authenticate(guard.clone(), now)
-                        .await
-                        .map_err(|_| ApplicationError::PermissionDenied)?
-                }
-            };
-            if client.principal_id != self.owner || client.revoked_at_ms.is_some() {
+            let access = credential
+                .authenticate(store)
+                .await
+                .map_err(|error| match error {
+                    crate::ToolError::Unavailable => unavailable(),
+                    _ => ApplicationError::PermissionDenied,
+                })?;
+            if access.principal() != &self.owner {
                 return Err(ApplicationError::PermissionDenied);
             }
         }

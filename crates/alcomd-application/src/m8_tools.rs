@@ -383,6 +383,26 @@ pub fn require_tool_permissions(
 }
 
 impl ToolAuthentication {
+    pub(crate) async fn authenticate(
+        &self,
+        store: &impl crate::OAuthStore,
+    ) -> Result<AccessContext, ToolError> {
+        let client = match self {
+            Self::Credential(hash) => store
+                .mcp_authenticate(*hash)
+                .await
+                .map_err(|_| ToolError::PermissionDenied)?,
+            Self::OAuth(guard) => {
+                let now = crate::m3_time_ms().map_err(|_| ToolError::Unavailable)?;
+                store
+                    .oauth_authenticate(guard.clone(), now)
+                    .await
+                    .map_err(|_| ToolError::PermissionDenied)?
+            }
+        };
+        self.access(client)
+    }
+
     pub fn access(&self, client: crate::McpClient) -> Result<AccessContext, ToolError> {
         let access = crate::mcp_access(&client)
             .map_err(|_| ToolError::PermissionDenied)?

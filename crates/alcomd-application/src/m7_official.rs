@@ -467,11 +467,15 @@ pub struct M7OfficialApplication {
     config: Arc<dyn ConfigStore>,
     hub_platform: Arc<dyn UnityHubPlatform>,
     hub_launcher: Arc<dyn UnityHubLauncher>,
+    mcp_hub_access: Option<Arc<McpHubAccess>>,
     directory_platform: Arc<dyn StorageDirectoryPlatform>,
     directory_defaults: Arc<OnceLock<StorageDirectories>>,
     settings_lock: Arc<Mutex<Option<ConfigSnapshot>>>,
     project_discovery_notify: Arc<Notify>,
 }
+
+type McpHubAccess =
+    dyn Fn(&crate::ToolAuthentication) -> Result<AccessContext, UnityHubOpenError> + Send + Sync;
 
 /// Retained only through a single registry acceptance, never through filesystem reads.
 pub struct ProjectDiscoveryFence {
@@ -498,11 +502,26 @@ impl M7OfficialApplication {
             config,
             hub_platform,
             hub_launcher,
+            mcp_hub_access: None,
             directory_platform,
             directory_defaults: Arc::new(OnceLock::new()),
             settings_lock: Arc::new(Mutex::new(None)),
             project_discovery_notify: Arc::new(Notify::new()),
         }
+    }
+
+    #[must_use]
+    pub fn with_mcp_identity_store(mut self, store: impl crate::OAuthStore) -> Self {
+        self.mcp_hub_access = Some(Arc::new(move |authentication| {
+            // This check runs in the blocking launch worker. The store has its own worker.
+            tokio::runtime::Handle::current()
+                .block_on(authentication.authenticate(&store))
+                .map_err(|error| match error {
+                    crate::ToolError::Unavailable => UnityHubOpenError::Unavailable,
+                    _ => UnityHubOpenError::PermissionDenied,
+                })
+        }));
+        self
     }
 
     pub async fn get_settings(
@@ -632,7 +651,7 @@ impl M7OfficialApplication {
             .unwrap_or_else(|_| UnityHubLocation::unavailable(has_configured))
     }
 
-    /// Opens only the current authoritative Hub target for the authenticated local owner.
+    /// Opens only the current authoritative Hub target for an authenticated client.
     /// expected_target_token is a comparison guard, never an executable or argument instruction.
     pub async fn open_unity_hub(
         &self,
@@ -656,6 +675,17 @@ impl M7OfficialApplication {
         {
             return Err(UnityHubOpenError::InvalidInput);
         }
+        let mcp_caller = if access.is_mcp_client() {
+            Some((
+                access.principal().clone(),
+                crate::workflow_authentication().ok_or(UnityHubOpenError::PermissionDenied)?,
+                self.mcp_hub_access
+                    .clone()
+                    .ok_or(UnityHubOpenError::PermissionDenied)?,
+            ))
+        } else {
+            None
+        };
         let mut guard = Arc::clone(&self.settings_lock).lock_owned().await;
         let config = Arc::clone(&self.config);
         let platform = Arc::clone(&self.hub_platform);
@@ -687,6 +717,15 @@ impl M7OfficialApplication {
                 }
                 if location.target_token() != expected_target_token {
                     return Err(UnityHubOpenError::PathChanged);
+                }
+                if let Some((caller, authentication, verify)) = &mcp_caller {
+                    let current = verify(authentication)?;
+                    if current.principal() != caller
+                        || current.require(Permission::SettingsRead).is_err()
+                        || current.require(Permission::UnityHubOpen).is_err()
+                    {
+                        return Err(UnityHubOpenError::PermissionDenied);
+                    }
                 }
                 match location.status {
                     UnityHubStatus::Available => {
