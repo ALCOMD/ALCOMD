@@ -437,6 +437,19 @@ where
         Ok(())
     }
 
+    pub async fn get_plan(
+        &self,
+        access: &AccessContext,
+        plan_id: PlanId,
+    ) -> Result<UnityMigrationPlanRecord, M7UnityMigrationError> {
+        require(access, Permission::ProjectsRead)?;
+        require(access, Permission::UnityRead)?;
+        require(access, Permission::ProjectsUnityMigrate)?;
+        self.store
+            .get_unity_migration_plan(access.principal().clone(), plan_id)
+            .await
+    }
+
     pub async fn plan(
         &self,
         access: &AccessContext,
@@ -448,10 +461,13 @@ where
         require(access, Permission::ProjectsRead)?;
         require(access, Permission::UnityRead)?;
         require(access, Permission::ProjectsUnityMigrate)?;
-        local_owner(access)?;
+        require_interactive_client(access)?;
         let project = self
             .store
-            .get_project(access.principal().clone(), project_id)
+            .get_project(
+                crate::workflow_resource_owner(access.principal()),
+                project_id,
+            )
             .await
             .map_err(|cause| {
                 error(M7UnityMigrationErrorCode::ProjectNotRegistered).with_source(cause)
@@ -461,14 +477,20 @@ where
         }
         let target = self
             .store
-            .get_installation(access.principal().clone(), target_installation_id)
+            .get_installation(
+                crate::workflow_resource_owner(access.principal()),
+                target_installation_id,
+            )
             .await
             .map_err(|cause| {
                 error(M7UnityMigrationErrorCode::InstallationNotFound).with_source(cause)
             })?;
         let writer = self
             .writer
-            .observe_backup_source(access, project_id)
+            .observe_backup_source(
+                &AccessContext::new(crate::workflow_resource_owner(access.principal()), []),
+                project_id,
+            )
             .await
             .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         require_no_target_writer(writer.state)?;
@@ -515,7 +537,7 @@ where
         key: IdempotencyKey,
     ) -> Result<UnityMigrationApplyOutcome, M7UnityMigrationError> {
         require(access, Permission::ProjectsUnityMigrate)?;
-        local_owner(access)?;
+        require_interactive_client(access)?;
         if let Some(outcome) = self
             .store
             .replay_unity_migration_apply(access.principal().clone(), plan_id, key.clone())
@@ -536,7 +558,10 @@ where
             .await;
         let project = self
             .store
-            .get_project(access.principal().clone(), plan.draft.project.project_id)
+            .get_project(
+                crate::workflow_resource_owner(access.principal()),
+                plan.draft.project.project_id,
+            )
             .await
             .map_err(|cause| {
                 error(M7UnityMigrationErrorCode::ProjectNotRegistered).with_source(cause)
@@ -544,7 +569,7 @@ where
         let target = self
             .store
             .get_installation(
-                access.principal().clone(),
+                crate::workflow_resource_owner(access.principal()),
                 plan.draft.target_installation.installation_id,
             )
             .await
@@ -553,7 +578,10 @@ where
             })?;
         let writer = self
             .writer
-            .observe_backup_source(access, plan.draft.project.project_id)
+            .observe_backup_source(
+                &AccessContext::new(crate::workflow_resource_owner(access.principal()), []),
+                plan.draft.project.project_id,
+            )
             .await
             .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         require_no_target_writer(writer.state)?;
@@ -604,11 +632,11 @@ where
             return Ok(());
         }
         if record.phase == UnityMigrationPhase::Accepted {
-            let access = AccessContext::local_owner();
+            let access = AccessContext::new(crate::workflow_resource_owner(&record.plan.owner), []);
             let project = match self
                 .store
                 .get_project(
-                    record.plan.owner.clone(),
+                    crate::workflow_resource_owner(&record.plan.owner),
                     record.plan.draft.project.project_id,
                 )
                 .await
@@ -628,7 +656,7 @@ where
             let target = match self
                 .store
                 .get_installation(
-                    record.plan.owner.clone(),
+                    crate::workflow_resource_owner(&record.plan.owner),
                     record.plan.draft.target_installation.installation_id,
                 )
                 .await
@@ -847,7 +875,8 @@ where
                 | UnityMigrationPhase::UnityExited
         ) {
             loop {
-                let access = AccessContext::local_owner();
+                let access =
+                    AccessContext::new(crate::workflow_resource_owner(&record.plan.owner), []);
                 let writer = match self
                     .writer
                     .observe_backup_source(&access, record.plan.draft.project.project_id)
@@ -957,7 +986,7 @@ where
             }
         }
         if record.phase == UnityMigrationPhase::ProjectReobserved {
-            let access = AccessContext::local_owner();
+            let access = AccessContext::new(crate::workflow_resource_owner(&record.plan.owner), []);
             let writer = match self
                 .writer
                 .observe_backup_source(&access, record.plan.draft.project.project_id)
@@ -1244,8 +1273,9 @@ fn require(access: &AccessContext, permission: Permission) -> Result<(), M7Unity
         .map_err(|cause| error(M7UnityMigrationErrorCode::PermissionDenied).with_source(cause))
 }
 
-fn local_owner(access: &AccessContext) -> Result<(), M7UnityMigrationError> {
-    (access.principal().as_str() == PrincipalId::LOCAL_OWNER)
+fn require_interactive_client(access: &AccessContext) -> Result<(), M7UnityMigrationError> {
+    access
+        .is_interactive_client()
         .then_some(())
         .ok_or_else(|| error(M7UnityMigrationErrorCode::PermissionDenied))
 }

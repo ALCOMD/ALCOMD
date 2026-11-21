@@ -9,7 +9,7 @@ may hint a separate Core background refresh command under the [current contract]
 The query implementation itself remains side-effect free; refresh is not awaited by the
 query and does not change its read permissions, snapshot checks or Plan/Apply authority.
 
-2026-11-08: the owner subsequently approved [presentation completion](M7-package-presentation-completion.md), replacing the v1 read capability with `packages.candidates.v2` and adding State30 presentation observations. Its approved read DTO/storage sections supersede the corresponding v1/no-migration constraints below. Existing permissions and frozen mutation authority remain in force.
+2026-11-08: the owner subsequently approved [presentation completion](M7-package-presentation-completion.md), replacing the v1 read capability with `packages.candidates.v1`. Its approved read DTO/storage sections supersede the corresponding v1/no-migration constraints below. Existing permissions and frozen mutation authority remain in force.
 
 2026-11-08 owner clarification supersedes the earlier retained-disabled prerelease policy:
 closed sources and prerelease versions are absent from the visible candidate set. Core applies
@@ -68,13 +68,12 @@ and `versions` views. Keep existing DTOs and methods unchanged.
 | One Project candidate query | One bounded read combines existing normalized evidence and exposes lazy versions plus summary. Recommended; no catalog persistence or new resolver. |
 
 Capability comparison: `repositories.read.v1` and `packages.user-packages.v1` each cover
-only one source family; `packages.plan.v2` means mutation planning, not this query.
+only one source family; `packages.plan.v1` means mutation planning, not this query.
 After that comparison, propose **`packages.candidates.v1`** for feature detection, with no
 RPC envelope/protocol version bump. Require **all four existing permissions**:
 `projects.read`, `repositories.read`, `packages.read`, `settings.read`, on the current
 principal. No new permission, `packages.manage`, owner-only bypass or GUI-only route.
-An old daemon lacking the capability yields unavailable evidence; clients must not invent
-Latest or fall back to string comparison. Active capability registration is authorized by this approval.
+When capability negotiation fails, report unavailable candidate evidence. Core computes Latest from the negotiated query.
 
 Audited existing code: protocol `RepositoryPackageVersion`, `UserPackageRecord`,
 `ProjectSnapshot`, `PackageSourceSelector`; store `m3.rs::list_repository_packages` and

@@ -310,7 +310,7 @@ where
         source_path: String,
         key: IdempotencyKey,
     ) -> Result<UserPackageWriteResult, UserPackageError> {
-        require_local_owner(access)?;
+        require_interactive_manager(access)?;
         if let Some(response) = self
             .store
             .replay_user_package_enroll(
@@ -342,7 +342,7 @@ where
         expected_revision: Revision,
         key: IdempotencyKey,
     ) -> Result<UserPackageWriteResult, UserPackageError> {
-        require_local_owner(access)?;
+        require_interactive_manager(access)?;
         if let Some(response) = self
             .store
             .replay_user_package_refresh(
@@ -391,7 +391,7 @@ where
         expected_revision: Revision,
         key: IdempotencyKey,
     ) -> Result<UserPackageRemoveResult, UserPackageError> {
-        require_local_owner(access)?;
+        require_interactive_manager(access)?;
         self.store
             .remove_user_package(
                 access.principal().clone(),
@@ -404,9 +404,9 @@ where
     }
 }
 
-fn require_local_owner(access: &AccessContext) -> Result<(), UserPackageError> {
+fn require_interactive_manager(access: &AccessContext) -> Result<(), UserPackageError> {
     require(access, Permission::PackagesManage)?;
-    if access.principal().as_str() != PrincipalId::LOCAL_OWNER {
+    if !access.is_interactive_client() {
         return Err(UserPackageError::new(
             UserPackageErrorCode::PermissionDenied,
         ));

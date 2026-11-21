@@ -128,13 +128,20 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
         plans.set(result.planId, result);
         return structuredClone(result);
     }
-    function accept(planId: string, action: "install" | "uninstall") {
+    const receipts = new Map<string, { planId: string; action: string; operationId: string }>();
+    function accept(planId: string, action: "install" | "uninstall", key: string) {
+        const receipt = receipts.get(key);
+        if (receipt !== undefined) {
+            if (receipt.planId !== planId || receipt.action !== action) throw { code: "idempotency_conflict" };
+            return { operationId: receipt.operationId, replayed: true };
+        }
         const reviewed = plans.get(planId);
         if (reviewed === undefined || reviewed.action !== action || reviewed.state !== "unapplied") throw { code: "revision_conflict" };
         reviewed.state = "applied";
         const operationId = `00000000-0000-4000-8000-${String(900 + ++nextOperation).padStart(12, "0")}`;
         tasks.set(operationId, { plan: reviewed, operation: { operationId, kind: `extensions.${action}`, state: "running", revision: 1,
             createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000, progress: { phase: action === "install" ? "source_verified" : "grants_revoked" } } });
+        receipts.set(key, { planId, action, operationId });
         fixture.lastOperationId = operationId;
         browserCoreEvents.emit("operation", operationId, "operation.created", 1);
         if (action === "uninstall") {
@@ -205,13 +212,12 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             if (extensions.has(H4_ADDED)) throw { code: "extension_already_installed" };
             return response("extensions.planInstall", { plan: plan("install", H4_ADDED, "not_applicable") });
         },
-        async extensionApplyInstall(planId, consent) {
-            log("extensions.applyInstall", { planId, consent });
+        async extensionApplyInstall(planId, consent, idempotencyKey) {
+            log("extensions.applyInstall", { planId, consent, idempotencyKey });
             const reviewed = plans.get(planId)!;
             if (consent.planFingerprint !== reviewed.planFingerprint) throw { code: "extension_plan_stale" };
             if ((reviewed.installationTerms !== undefined && !consent.installationTermsAccepted) || (reviewed.requiredPermissions.length > 0 && !consent.requiredPermissionsAccepted)) throw { code: "permission_denied" };
-            // A lost reply can follow actual acceptance; the UI must not retry it.
-            return response("extensions.applyInstall", accept(planId, "install"));
+            return response("extensions.applyInstall", accept(planId, "install", idempotencyKey));
         },
         async extensionEnable(extensionId, expectedRevision, activationPackageDigest) {
             log("extensions.enable", { extensionId, expectedRevision, ...(activationPackageDigest === undefined ? {} : { activationPackageDigest }) });
@@ -246,9 +252,9 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             if (installed(extensionId).revision !== expectedRevision) throw { code: "revision_conflict" };
             return response("extensions.planUninstall", { plan: plan("uninstall", extensionId, dataDisposition) });
         },
-        async extensionApplyUninstall(planId) {
-            log("extensions.applyUninstall", { planId });
-            return response("extensions.applyUninstall", accept(planId, "uninstall"));
+        async extensionApplyUninstall(planId, idempotencyKey) {
+            log("extensions.applyUninstall", { planId, idempotencyKey });
+            return response("extensions.applyUninstall", accept(planId, "uninstall", idempotencyKey));
         },
         async operationGet(operationId) {
             log("operations.get", { operationId });

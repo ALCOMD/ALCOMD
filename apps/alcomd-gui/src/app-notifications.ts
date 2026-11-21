@@ -57,7 +57,7 @@ const ACTIONS = {
     projectPlanCopy: { action: "Copy project" },
     projectPlanDeleteDirectory: { action: "Delete project directory" },
     projectPlanUnityMigration: { action: "Unity migration" },
-    backupPlanRestore: { action: "Restore project" }
+
 } satisfies Partial<Record<keyof GuiRpcClient, ActionFeedback>>;
 const TEMPLATE_TASKS = { projectTemplatesSave: "Save template", projectTemplatesExport: "Export template" };
 

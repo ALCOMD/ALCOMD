@@ -8,7 +8,7 @@
 
 升级按钮及目标版本回到最新列；行尾为已安装包的直接移除或未安装包的直接安装。更多菜单依次为重装、更新日志、文档。单来源显示名称，多来源保留完整提示和已有来源选择。补齐Shift范围选择，保留搜索隐藏项、Core批量资格及单个原子Plan。版本/资格技术说明进入提示，不再混入选项文字和额外行。
 
-`allowUnityIncompatible`默认false，仅三个既有单包Plan v2接口允许用户确认后指定精确根目标。Core提供`manualUnityOverrideAllowed`，GUI取消不创建计划；确认意图进入既有formatVersion 4的可选`unityCompatibilityOverrides`和计划摘要。依赖、撤回、范围、来源、权限、过期及冻结Apply继续校验。无新数据库结构、迁移、权限或生产依赖，State31保持；闭合DTO扩展需要Core/SDK/GUI配套更新。
+`allowUnityIncompatible`默认false，仅三个既有单包 Plan 接口允许用户确认后指定精确根目标。Core提供`manualUnityOverrideAllowed`，GUI取消不创建计划；确认意图进入既有`formatVersion: 1`的可选`unityCompatibilityOverrides`和计划摘要。依赖、撤回、范围、来源、权限、过期及冻结Apply继续校验。无新数据库结构、迁移、权限或生产依赖；闭合DTO扩展需要Core/SDK/GUI配套更新。
 
 异步版本菜单的焦点可能仍停在触发字段，已通过Material正常focusout路径处理该处Escape；选项内部键盘事件继续交给Material处理。没有访问其私有open状态或引入假当前版本占位。
 
@@ -26,7 +26,7 @@
 
 ## 本机更新与数据
 
-更新前只读RPC确认无活动任务，核对原Core PID266476和GUI PID273676路径，备份程序和数据后关闭。新Core PID269324，SHA256 `8597568BC09E39D0EA0E54DA34605B866B82143D8E5414AAAE50E3C4C582DD80`；新GUI PID239804，SHA256 `BA748AC32DE2BA464D31AE6D56F64632D82FCEAF2D5F640E2C82E9E7A53281E0`，已打开且响应，沿用原WebView profile。Core实际RPC为ready、State31/Config12、2项目、2仓库、0活动任务及候选v2。
+更新前只读RPC确认无活动任务，核对原Core PID266476和GUI PID273676路径，备份程序和数据后关闭。新Core PID269324，SHA256 `8597568BC09E39D0EA0E54DA34605B866B82143D8E5414AAAE50E3C4C582DD80`；新GUI PID239804，SHA256 `BA748AC32DE2BA464D31AE6D56F64632D82FCEAF2D5F640E2C82E9E7A53281E0`，已打开且响应，沿用原WebView profile。Core实际RPC为ready、2项目、2仓库、0活动任务，项目候选读取成功。
 
 继续使用`target/m7-package-navigation-100ms-20261108/native-reopen/data`，未恢复旧数据库或修改真实项目。更新后34张表保持；项目、计划、操作、仓库软件包索引及配置/模板文件一致。自动仓库检查更新了仓库检查时间，新增对应幂等记录、事件和日志及序列号；这些属于已批准的后台刷新，不描述为所有数据库字节不变。
 

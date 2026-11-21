@@ -452,8 +452,14 @@ pub struct ExtensionRuntimePoll {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExtensionCrashDecision {
+pub struct ExtensionRuntimeTarget {
+    pub owner: PrincipalId,
     pub extension_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExtensionCrashDecision {
+    pub target: ExtensionRuntimeTarget,
     pub restart_delay_ms: Option<u64>,
     pub quarantined: bool,
 }
@@ -849,7 +855,7 @@ pub trait M6Store: Clone + Send + Sync + 'static {
         &self,
         daemon_epoch: String,
         now_ms: u64,
-    ) -> impl Future<Output = Result<Vec<String>, M6Error>> + Send;
+    ) -> impl Future<Output = Result<Vec<ExtensionRuntimeTarget>, M6Error>> + Send;
     fn project_summary(
         &self,
         lease: ExtensionInstanceLease,
@@ -1067,7 +1073,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         access: &AccessContext,
         url: String,
     ) -> Result<crate::ExtensionSourcePreview, M6Error> {
-        require_remote_owner(access)?;
+        require_remote_install_permission(access)?;
         self.packages.inspect_source(url).await
     }
     pub async fn plan_install_from_source(
@@ -1078,7 +1084,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         fingerprint: String,
         now_ms: u64,
     ) -> Result<ExtensionPlanRecord, M6Error> {
-        require_remote_owner(access)?;
+        require_remote_install_permission(access)?;
         let prepared = self
             .packages
             .prepare_source(url, version, fingerprint)
@@ -1416,7 +1422,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
     }
 
     pub async fn recover(&self, now_ms: u64) -> Result<(), M6Error> {
-        for extension_id in self
+        for target in self
             .store
             .recover_instances(self.runtime.daemon_epoch(), now_ms)
             .await?
@@ -1424,7 +1430,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
             // One malformed or crashing extension must not prevent the daemon from
             // recovering other extensions or durable Operations.
             let _ = self
-                .start_enabled(PrincipalId::local_owner(), extension_id, now_ms)
+                .start_enabled(target.owner, target.extension_id, now_ms)
                 .await;
         }
         for operation_id in self.store.recover_operations(now_ms).await? {
@@ -1459,7 +1465,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
                 Err(error) => return Err(error),
             };
             if let Some(delay_ms) = decision.restart_delay_ms {
-                self.schedule_restart(decision.extension_id, delay_ms);
+                self.schedule_restart(decision.target, delay_ms);
             }
         }
         Ok(())
@@ -1482,7 +1488,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         });
     }
 
-    pub(crate) fn schedule_restart(&self, extension_id: String, delay_ms: u64) {
+    pub(crate) fn schedule_restart(&self, target: ExtensionRuntimeTarget, delay_ms: u64) {
         let application = self.clone();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
@@ -1490,7 +1496,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
                 return;
             };
             let _ = application
-                .start_enabled(PrincipalId::local_owner(), extension_id, now_ms)
+                .start_enabled(target.owner, target.extension_id, now_ms)
                 .await;
         });
     }
@@ -1590,7 +1596,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
                 .record_instance_crash(context.lease, "host_start_failed".to_owned(), m6_time_ms()?)
                 .await?;
             if let Some(delay_ms) = decision.restart_delay_ms {
-                self.schedule_restart(decision.extension_id, delay_ms);
+                self.schedule_restart(decision.target, delay_ms);
             }
             return Err(start_error);
         }
@@ -1647,10 +1653,7 @@ fn m6_test_kill_gate(_checkpoint: &str) -> Result<(), M6Error> {
     Ok(())
 }
 
-fn require_remote_owner(access: &AccessContext) -> Result<(), M6Error> {
-    if access.principal() != &PrincipalId::local_owner() {
-        return Err(M6Error::new(M6ErrorCode::PermissionDenied));
-    }
+fn require_remote_install_permission(access: &AccessContext) -> Result<(), M6Error> {
     access
         .require(Permission::ExtensionsManage)
         .map_err(map_access)

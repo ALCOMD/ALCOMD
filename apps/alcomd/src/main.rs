@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
 /// ALCOMD per-user core daemon.
@@ -12,11 +12,62 @@ struct Arguments {
     /// Override the state data directory for isolated testing.
     #[arg(long, hide = true)]
     data_dir: Option<PathBuf>,
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    #[command(hide = true)]
+    ImportNativeState(NativeStage),
+    #[command(hide = true)]
+    CheckNativeState(NativeStage),
+}
+
+#[derive(Debug, Args)]
+struct NativeStage {
+    #[arg(long)]
+    bundle: PathBuf,
+    #[arg(long)]
+    data_dir: PathBuf,
+    #[arg(long, requires_all = ["discord_sha256", "publish_data_dir"])]
+    discord_package: Option<PathBuf>,
+    #[arg(long, requires = "discord_package")]
+    discord_sha256: Option<String>,
+    #[arg(long, requires = "discord_package")]
+    publish_data_dir: Option<PathBuf>,
+    #[arg(long, requires = "discord_package")]
+    discord_consent_digest: Option<String>,
+}
+
+impl NativeStage {
+    fn discord_options(&self) -> Option<alcomd::DiscordImportOptions<'_>> {
+        Some(alcomd::DiscordImportOptions {
+            package: self.discord_package.as_deref()?,
+            package_sha256: self.discord_sha256.as_deref()?,
+            publish_data_dir: self.publish_data_dir.as_deref()?,
+            consent_digest: self.discord_consent_digest.as_deref(),
+        })
+    }
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let arguments = Arguments::parse();
+    if let Some(command) = arguments.command {
+        let receipt = match command {
+            Command::ImportNativeState(stage) => {
+                alcomd::import_native_state(&stage.bundle, &stage.data_dir, stage.discord_options())
+                    .await?
+            }
+            Command::CheckNativeState(stage) => {
+                alcomd::check_native_state(&stage.bundle, &stage.data_dir, stage.discord_options())
+                    .await?
+            }
+        };
+        println!("{}", serde_json::to_string(&receipt)?);
+        return Ok(());
+    }
     let config = arguments
         .runtime_dir
         .map(alcomd_platform::IpcConfig::isolated)

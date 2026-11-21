@@ -52,7 +52,7 @@
 
 所有者于2026-11-08明确回复“批准该窄合同，继续补齐”。同步Core、协议、SDK、GUI、RPC Schema与向量，验证缺省拒绝、未授权拒绝、取消零计划、确认后的精确根目标、依赖继续校验、计划失效与Apply/recovery冻结证据。
 
-具体承载：上述三个参数增加可选布尔值；仅Plan v2允许true，Install/Upgrade必须为`=完整SemVer`，Downgrade使用既有精确version。Core候选增加可选`manualUnityOverrideAllowed`资格，只有已知Unity、仅因Unity限制被拒绝且不存在同来源版本歧义的具体候选获得资格；GUI还要求来源已消歧后才弹出确认；自动/批量资格仍为blocked。ChangeSet增加可选`unityCompatibilityOverrides: [{packageId, version}]`，最多一个、必须匹配有固定来源的目标mutation，使用既有formatVersion 4并纳入摘要。缺省空数组不序列化，旧计划不获得覆盖权。沿用既有持久JSON证据，无新增数据库列或迁移，State31保持。公开闭合DTO发生配套扩展，需要Core/SDK/GUI一起更新；不保留并行v1实现或新权限。
+具体承载：上述三个参数增加可选布尔值；Install/Upgrade必须为`=完整SemVer`，Downgrade使用既有精确version。Core候选增加可选`manualUnityOverrideAllowed`资格，只有已知Unity、仅因Unity限制被拒绝且不存在同来源版本歧义的具体候选获得资格；GUI还要求来源已消歧后才弹出确认；自动/批量资格仍为blocked。ChangeSet增加可选`unityCompatibilityOverrides: [{packageId, version}]`，最多一个、必须匹配有固定来源的目标mutation，使用既有`formatVersion: 1`并纳入摘要。缺省空数组不序列化。沿用既有持久JSON证据，无新增数据库列或迁移。公开闭合DTO发生配套扩展，需要Core/SDK/GUI一起更新；使用统一的计划能力。
 
 ## 验收结果与保留差异
 

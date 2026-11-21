@@ -18,7 +18,7 @@
 
 ## 实际运行与保全
 
-- Core PID **101844**，GUI PID **131692**；ready、GUI实际连接且窗口响应，State32/Config13、活动任务0。
+- Core PID **101844**，GUI PID **131692**；ready、GUI实际连接且窗口响应，活动任务0。
 - 原4项目、30仓库、5模板、1Unity登记、0扩展的身份/配置保持；模板定义完整保持。持久设置文件SHA及完整RPC设置/revision7保持，12个项目标志检查位保持。
 - 原删除任务仍failed/project_delete_source_missing、revision9，原completedAt不变，没有重删或改库。
 - 原4个Unity编辑器及6个Hub进程的PID、路径和启动时间均保持，原WebView profile实际打开；没有关闭Unity/Hub。

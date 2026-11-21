@@ -1,6 +1,6 @@
 # M10 原生 GUI 接入与 SDK
 
-状态为实施中。所有者选择同一系统用户直接使用，并要求官方与第三方桌面 GUI 的完整 Core 业务等价。当前阶段见[项目状态](../status.md)。
+状态为已完成。所有者选择同一系统用户直接使用，并要求官方与第三方桌面 GUI 的完整 Core 业务等价。当前阶段见[项目状态](../status.md)。
 
 ## 合同
 
@@ -28,3 +28,21 @@
 - Windows x86_64、Ubuntu 22.04 x86_64 和 macOS arm64 上，用独立 Node 与 Rust 消费者完成真实 IPC 握手、冷启动、已启动再连接、并发连接和空闲退出后重启。验证安装登记失效拒绝启动，拒绝不符合平台 IPC 安全边界的端点。
 - 目录覆盖所有官方 GUI Core 调用。至少复验项目分页、包 Plan/Apply 与显式同键恢复、任务与事件、备份、设置和扩展管理。异常响应不得污染另一条请求或伪造成功。
 - 通过整仓 Rust、仓库检查、前端检查和构建、Chromium 回归，以及同一候选 SHA 的 SDK 消费者、三平台 Hosted CI 和 CodeQL。收尾时记录实际执行结果，更新项目状态与结构化覆盖。
+
+## 2026-11-20 验收结果
+
+签名候选 `dab76fcd539bd72c0e32f9ef8829db1ffd14d1e5` 已普通快进推送至 `main`。同一提交的三平台 Hosted CI 和 Actions、JavaScript/TypeScript、Python、Rust 四项 CodeQL 全部通过，两个工作流均为首轮自动运行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/44740160653) [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/44740160572)
+
+| 平台 | SDK 外部消费 | 完整 Chromium | 开发包 |
+| --- | --- | --- | --- |
+| Windows Server 2025 x86_64 | 通过 | 738 通过，13.3 分钟 | [Windows x64](https://github.com/ALCOMD/ALCOMD/actions/runs/44740160653/artifacts/14635145220) |
+| Ubuntu 22.04 x86_64 | 通过 | 738 通过，12.7 分钟 | [Linux x64](https://github.com/ALCOMD/ALCOMD/actions/runs/44740160653/artifacts/14633446370) |
+| macOS 15 arm64 | 通过 | 738 通过，25.5 分钟 | [macOS arm64](https://github.com/ALCOMD/ALCOMD/actions/runs/44740160653/artifacts/14634987755) |
+
+从干净 checkout 完成整仓 Rust、前端检查与构建、发布二进制、Tauri 无包构建及适用的系统目标检查。三平台在真实 IPC 上完成仓库外 Rust 源码消费者与离线 npm 消费者的并发冷启动、运行中直连、空闲退出与重启、缺失及失效登记拒绝、项目分页、包 Plan/Apply 和丢回包后同键恢复、任务与事件、备份、设置和扩展管理。Windows 实机另复验了同账号隔离 IPC、旧 CLI 并发自启动，以及新启动进程不会继承调用方的管道写端。
+
+方法目录与两个 SDK 对齐了 94 个公开方法，其中 93 个对应官方 GUI，另一个用于事件回放。目录记录 21 组稳定错误码。部分既有 RPC 在内部失败未记录诊断时可能省略 `diagnosticId`，SDK 可处理该响应。登记前的安装验收使用独立的有界初始化等待，登记后的 SDK 冷启动仍使用五秒就绪预算。
+
+三个 npm 包均从本次 CI 下载，核验了原始 SHA-256，并检查 ESM、类型声明和对应平台 helper。实际运行索引、三份作业日志、包摘要与机器可读验收结果保存在本地 `target/m10-ci-dab76fcd/`，覆盖状态同步到项目的 feature parity 和测试计划。正式安装器对登记的维护归 M12。
+
+此前各轮结果独立保留。早期 macOS 和 Windows 遇到预先创建的数据目录，Windows 随后暴露并发探测的同步等待和进程间句柄继承，Unix 也发现一个测试写死了 Windows 的错误类型。Ubuntu 的两条浏览器失败分别发生在 Unity 对话框重开和软件包版本选择，已按实际组件生命周期同步测试。最新候选在三平台跑完原完整门禁。

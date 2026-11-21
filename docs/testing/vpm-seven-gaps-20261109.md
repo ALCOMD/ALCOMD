@@ -58,7 +58,7 @@ GUI、SDK、前端产物等250项既有输入摘要匹配，复用[此前48个�
 
 - Core PID **285544**，SHA-256 `DEDCEE083EC726B76000D652A4B469E2EBEE4BA1631D79CCC069F6155DEEC9D3`。
 - GUI PID **291160**，SHA-256 `D8166FBB4ACCED6718F5D9D2A3DE9A05A90EE9D7A14475DAEAB43D1270B09ED5`。
-- Core ready，State31/Config12，0活动任务；原2项目的ID/路径、2仓库、设置摘要均保持。
+- Core ready，0活动任务；原2项目的ID/路径、2仓库、设置摘要均保持。
 - 数据仍为`target/m7-package-navigation-100ms-20261108/native-reopen/data`，WebView仍使用同级原`webview-profile`；GUI窗口响应正常。实际二进制摘要与独立候选相同。
 
 本轮没有原生界面点击或截图，不将窗口响应当成用户项目安装/卸载的端到端验收。

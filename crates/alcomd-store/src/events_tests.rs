@@ -425,6 +425,87 @@ async fn dropped_reply_receiver_does_not_drop_a_committed_notification() {
 }
 
 #[tokio::test]
+async fn authenticated_subscription_filters_by_owner_and_rechecks_revocation() {
+    use alcomd_application::{
+        ApplicationError, McpIdentityApplication, McpIdentityWrite, ToolAuthentication,
+        with_workflow_authentication,
+    };
+
+    let directory = Directory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("isolated event store");
+    let app = Application::new(store.clone());
+    let identities = McpIdentityApplication::new(store.clone());
+    let owner = AccessContext::local_owner();
+    let client = identities
+        .write(
+            &owner,
+            "create-reader".into(),
+            McpIdentityWrite::Create {
+                name: "Reader".into(),
+            },
+            1,
+        )
+        .await
+        .expect("create reader")
+        .client;
+    let hash = [7; 32];
+    let issued = identities
+        .write(
+            &owner,
+            "issue-reader".into(),
+            McpIdentityWrite::Issue {
+                id: client.client_id,
+                expected: client.revision,
+                hash,
+            },
+            2,
+        )
+        .await
+        .expect("issue reader credential")
+        .client;
+    let actor = identities
+        .authenticate(hash)
+        .await
+        .expect("authenticate reader");
+    let mut subscription =
+        with_workflow_authentication(ToolAuthentication::Credential(hash), async {
+            app.subscribe_events(&actor, None, 100, true)
+        })
+        .await
+        .expect("authenticated subscription with logs");
+    store
+        .create_state_check(owner.principal().clone(), key("private"), 3)
+        .await
+        .expect("owner task");
+    let visible = store
+        .create_state_check(actor.principal().clone(), key("visible"), 4)
+        .await
+        .expect("reader task");
+    let page = subscription.next_page().await.expect("read owned events");
+    assert_eq!(page.events.len(), 1);
+    assert_eq!(
+        page.events[0].aggregate_id,
+        visible.operation_id.to_string()
+    );
+    identities
+        .write(
+            &owner,
+            "revoke-reader".into(),
+            McpIdentityWrite::Revoke {
+                id: issued.client_id,
+                expected: issued.revision,
+            },
+            5,
+        )
+        .await
+        .expect("revoke subscription owner");
+    assert!(matches!(
+        subscription.next_page().await,
+        Err(ApplicationError::PermissionDenied)
+    ));
+}
+
+#[tokio::test]
 async fn live_subscription_resumes_prefixes_and_resets_a_new_instance() {
     let directory = Directory::new();
     let store = StateStoreHandle::open(directory.database()).expect("open isolated store");
@@ -687,27 +768,39 @@ async fn public_package_phase_is_atomic_and_duplicate_phase_is_not_a_new_change(
 #[test]
 fn restore_stages_publish_revisions_once_without_an_ipc_endpoint_or_project_io() {
     use alcomd_application::{
-        BackupRestorePhase, BackupRestorePlanDraft, BackupRestoreTarget, ManifestState, ProjectType,
+        BackupRestoreInput, BackupRestorePhase, BackupRestoreRequest, ManifestState, ProjectType,
     };
     let directory = Directory::new();
     let mut connection =
         sqlite::initialize_connection(&directory.database()).expect("isolated database");
     let owner = PrincipalId::local_owner();
-    let backup = BackupId::new();
-    connection.execute("INSERT INTO backups(backup_id,owner_principal_id,source_project_id,archive_locator,file_identity_key,archive_sha256,byte_size,format_version,created_at_ms,compression_mode,exclude_vpm_packages) VALUES(?1,'builtin:local-owner',NULL,'backup:isolated-stages',x'01',zeroblob(32),42,1,1,'fast',1)", [backup.to_string()]).expect("backup metadata fixture");
     let project = ProjectId::new();
-    let plan = m5_backup_restore::create_plan(&mut connection, &owner, BackupRestorePlanDraft {
-        plan_id: PlanId::new(), project_id: project, backup_id: backup,
-        archive_sha256: [0;32], archive_file_identity: vec![1], archive_bytes: 42,
-        manifest_fingerprint: [0;32], exclude_vpm_packages: true, excluded_packages: vec![],
-        target: BackupRestoreTarget { parent: directory.0.to_string_lossy().into_owned(), leaf: "Restored".to_owned(), must_be_absent: true },
-        target_parent_identity: vec![2], expected_unity_project_json: "{}".to_owned(),
-        plan_fingerprint: [0;32], plan_json: serde_json::json!({"version":1,"backupId":backup,"preallocatedProjectId":project,"targetMustBeAbsent":true}).to_string(),
-    }, 1).expect("immutable plan fixture");
+    let input = BackupRestoreInput {
+        archive_path: directory
+            .0
+            .join("project.zip")
+            .to_string_lossy()
+            .into_owned(),
+        project_name: None,
+        destination_path: Some(directory.0.join("Restored").to_string_lossy().into_owned()),
+    };
+    let request = BackupRestoreRequest {
+        project_id: project,
+        archive_path: directory.0.join("project.zip"),
+        archive_parent_identity: vec![1],
+        archive_directory_fingerprint: [0; 32],
+        archive_file_identity: vec![5],
+        archive_bytes: 42,
+        archive_modified_at: std::time::UNIX_EPOCH,
+        target_parent: directory.0.clone(),
+        target_parent_identity: vec![2],
+        target_name: "Restored".to_owned(),
+    };
     let accepted = m5_backup_restore::accept(
         &mut connection,
         &owner,
-        plan.draft.plan_id,
+        &input,
+        request,
         &key("restore-stages"),
         2,
     )
@@ -728,7 +821,6 @@ fn restore_stages_publish_revisions_once_without_an_ipc_endpoint_or_project_io()
             locked_dependencies: vec![],
             issues: vec![],
         },
-        target_identity: vec![3],
         project_fingerprint: [0; 32],
     };
     let phases = [
@@ -789,6 +881,11 @@ fn restore_stages_publish_revisions_once_without_an_ipc_endpoint_or_project_io()
     m5_backup_restore::finish_success(&mut connection, operation, 14).expect("repeat finish");
     let complete =
         sqlite::load_owned_operation(&connection, &owner, operation).expect("terminal task");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(complete.result_json.as_deref().expect("result"))
+            .expect("valid task JSON"),
+        serde_json::json!({"projectId": project, "targetName": "Restored"}),
+    );
     assert_eq!(complete.revision.get(), 10);
     assert_eq!(
         complete.state,

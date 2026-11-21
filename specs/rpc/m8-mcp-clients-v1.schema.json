@@ -1,44 +1,8 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.vrclearn.com/schema/rpc/m8-mcp-clients-v1.json",
-    "title": "M8 MCP client identity (approved; runtime wiring in progress)",
+    "title": "M8 MCP client identity and connection access",
     "$defs": {
-        "grant": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "permission": {
-                    "enum": [
-                        "projects.read",
-                        "packages.manage",
-                        "state.check",
-                        "operations.read",
-                        "operations.cancel",
-                        "events.read",
-                        "repositories.read",
-                        "repositories.manage",
-                        "packages.read",
-                        "backups.read",
-                        "backups.manage",
-                        "projects.manage",
-                        "projects.create",
-                        "settings.read",
-                        "unity.read"
-                    ]
-                },
-                "resourceKind": {
-                    "const": "global"
-                },
-                "resourceId": {
-                    "const": "*"
-                }
-            },
-            "required": [
-                "permission",
-                "resourceKind",
-                "resourceId"
-            ]
-        },
         "authentication": {
             "type": "object",
             "additionalProperties": false,
@@ -67,15 +31,6 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 128
-                },
-                "grants": {
-                    "type": "array",
-                    "maxItems": 4096,
-                    "uniqueItems": true,
-                    "items": {
-                        "$ref": "#/$defs/grant"
-                    },
-                    "default": []
                 },
                 "idempotencyKey": {
                     "type": "string",
@@ -110,40 +65,6 @@
             "required": [
                 "clientId",
                 "expectedRevision",
-                "idempotencyKey"
-            ]
-        },
-        "setGrantsParams": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "clientId": {
-                    "type": "string",
-                    "format": "uuid"
-                },
-                "expectedRevision": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 9223372036854775807
-                },
-                "grants": {
-                    "type": "array",
-                    "maxItems": 4096,
-                    "uniqueItems": true,
-                    "items": {
-                        "$ref": "#/$defs/grant"
-                    }
-                },
-                "idempotencyKey": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128
-                }
-            },
-            "required": [
-                "clientId",
-                "expectedRevision",
-                "grants",
                 "idempotencyKey"
             ]
         },
@@ -216,14 +137,6 @@
                             "type": "null"
                         }
                     ]
-                },
-                "grants": {
-                    "type": "array",
-                    "maxItems": 4096,
-                    "uniqueItems": true,
-                    "items": {
-                        "$ref": "#/$defs/grant"
-                    }
                 }
             },
             "required": [
@@ -232,8 +145,7 @@
                 "displayName",
                 "revision",
                 "createdAtMs",
-                "revokedAtMs",
-                "grants"
+                "revokedAtMs"
             ]
         },
         "listResult": {
@@ -316,16 +228,6 @@
             "permission": "mcp.clients.manage",
             "idempotencyKeyRequired": true
         },
-        "mcp.clients.setGrants": {
-            "params": {
-                "$ref": "#/$defs/setGrantsParams"
-            },
-            "result": {
-                "$ref": "#/$defs/record"
-            },
-            "permission": "mcp.clients.manage",
-            "idempotencyKeyRequired": true
-        },
         "mcp.clients.revoke": {
             "params": {
                 "$ref": "#/$defs/mutationParams"
@@ -347,5 +249,6 @@
             "localOwnerOnly": true,
             "idempotencyKeyRequired": true
         }
-    }
+    },
+    "x-alcomd-capability": "mcp.clients.v1"
 }

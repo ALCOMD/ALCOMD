@@ -172,6 +172,7 @@ pub struct CandidateSummary {
     pub installed: CandidateInstalled,
     pub latest: CandidateChoice,
     pub latest_stable: CandidateChoice,
+    pub recommended: CandidateChoice,
     pub project_latest: CandidateChoice,
     pub project_latest_stable: CandidateChoice,
     pub update: CandidateUpdate,

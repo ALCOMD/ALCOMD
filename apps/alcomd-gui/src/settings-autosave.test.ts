@@ -2,9 +2,9 @@ import type { SettingsGetResult, SettingsUpdate } from "./core-models.ts";
 import { SettingsAutosave, StorageDirectoryConflictError, UnityArgumentsConflictError, UnityHubConflictError } from "./settings-autosave.ts";
 
 const initial: SettingsGetResult = {
-    configSchema: 13, revision: 7,
+    configSchema: 1, revision: 7,
     directories: { projectDirectory: "C:\\Projects", backupDirectory: "C:\\Backups" },
-    unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
+    unityHub: { status: "not_found", source: "none", path: null, targetToken: null, configuredPathStatus: "unset" },
     settings: {
         projects: { autoDiscover: true },
         backups: { compressionMode: "fast", includeVpmPackages: true, includeLibrary: false },
@@ -15,7 +15,7 @@ const initial: SettingsGetResult = {
         network: { proxy: { mode: "system" } },
         locale: "en-US",
         appearance: { mode: "system", scheme: "vibrant", sourceColor: null, motion: "system" },
-        packages: { showPrerelease: false, hideLocalUserPackages: false, hiddenRepositoryIds: [], hiddenRepositoryPackages: [] }
+        packages: { showPrerelease: false, preferPrerelease: false, hideLocalUserPackages: false, hiddenRepositoryIds: [], hiddenRepositoryPackages: [] }
     }
 };
 
@@ -40,7 +40,7 @@ function model() {
             requests.push({ expectedRevision, update: structuredClone(update) });
             assert(expectedRevision === current.revision, "CAS expected current revision");
             current = {
-                configSchema: 13, revision: expectedRevision + 1,
+                configSchema: 1, revision: expectedRevision + 1,
                 directories: {
                     projectDirectory: update.paths?.projectDirectory ?? current.directories.projectDirectory,
                     backupDirectory: update.paths?.backupDirectory ?? current.directories.backupDirectory
@@ -212,7 +212,7 @@ async function idle(writer: SettingsAutosave) {
 
 {
     const fixture = model();
-    const fresh: SettingsGetResult = { ...structuredClone(initial), unityHub: { status: "available", source: "discovered", path: "C:\\Detected\\Unity Hub.exe", configuredPathStatus: "unset" } };
+    const fresh: SettingsGetResult = { ...structuredClone(initial), unityHub: { status: "available", source: "discovered", path: "C:\\Detected\\Unity Hub.exe", targetToken: "a".repeat(64), configuredPathStatus: "unset" } };
     fixture.writer.seed(fresh);
     equal(fixture.writer.getSnapshot().accepted!.unityHub, fresh.unityHub, "filesystem evidence refreshes at the same settings revision");
     fixture.writer.seed({ ...initial, revision: 6 });
@@ -226,7 +226,7 @@ async function idle(writer: SettingsAutosave) {
     const original = fixture.client.settingsGet;
     fixture.client.settingsGet = async () => {
         reads += 1;
-        return { ...await original(), unityHub: { status: "available", source: "discovered", path: "C:\\Detected\\Unity Hub.exe", configuredPathStatus: "unset" } };
+        return { ...await original(), unityHub: { status: "available", source: "discovered", path: "C:\\Detected\\Unity Hub.exe", targetToken: "a".repeat(64), configuredPathStatus: "unset" } };
     };
     await fixture.writer.saveUnityHub(null);
     equal(reads, 1, "automatic mode always rereads Core evidence");
@@ -465,7 +465,7 @@ function customizedModel() {
         network: { proxy: { mode: "system" } },
         locale: "zh-CN",
         appearance: { mode: "dark", sourceColor: "#112233", scheme: "expressive", motion: "full" },
-        packages: { showPrerelease: true, hideLocalUserPackages: true, hiddenRepositoryIds: ["00000000-0000-4000-8000-000000000101"], hiddenRepositoryPackages: [] }
+        packages: { showPrerelease: true, preferPrerelease: false, hideLocalUserPackages: true, hiddenRepositoryIds: ["00000000-0000-4000-8000-000000000101"], hiddenRepositoryPackages: [] }
     };
     current.directories = { projectDirectory: "D:\\Projects", backupDirectory: "E:\\Backups" };
     fixture.writer.seed(structuredClone(current));

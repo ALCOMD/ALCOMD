@@ -60,7 +60,6 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
         (&["project", "list"][..], "project list"),
         (&["repository", "list"][..], "repository list"),
         (&["unity", "list"][..], "unity list"),
-        (&["backup", "list"][..], "backup list"),
     ] {
         let output = run_group_cli(runtime.clone(), arguments);
         assert!(output.status.success(), "{expected_command}");
@@ -73,6 +72,11 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     let project_parent =
         std::env::temp_dir().join(format!("alcomd-cli-create-{}", std::process::id()));
     std::fs::create_dir(&project_parent).expect("owned project fixture directory");
+    // Unix temporary directories can have symlinked ancestors (e.g. /var on macOS).
+    #[cfg(unix)]
+    let project_parent = project_parent
+        .canonicalize()
+        .expect("resolve fixture directory");
     let target_parent = project_parent.to_str().expect("UTF-8 fixture path");
     let creation = run_group_cli(
         runtime.clone(),
@@ -100,6 +104,189 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     assert!(
         project_parent
             .join("CLI Project/ProjectSettings/ProjectVersion.txt")
+            .is_file()
+    );
+    let archive = project_parent.join("CLI archive.zip");
+    let archive = archive.to_str().expect("UTF-8 archive path");
+    let created_id = created["result"]["result"]["projectId"]
+        .as_str()
+        .expect("new project ID");
+    let refused = run_group_cli(
+        runtime.clone(),
+        &[
+            "backup",
+            "create",
+            created_id,
+            "--expected-revision",
+            "1",
+            "--destination",
+            archive,
+            "--idempotency-key",
+            "must-not-write",
+            "--dry-run",
+            "--yes",
+        ],
+    );
+    assert!(!refused.status.success());
+    assert!(!std::path::Path::new(archive).exists());
+    let error: serde_json::Value =
+        serde_json::from_slice(&refused.stderr).expect("structured usage error");
+    assert_eq!(error["error"]["code"], "invalid_arguments");
+
+    let copy_target = project_parent.join("Reviewed copy");
+    let preview = run_group_cli(
+        runtime.clone(),
+        &[
+            "project",
+            "copy",
+            created_id,
+            target_parent,
+            "Reviewed copy",
+            "--expected-revision",
+            "1",
+            "--plan-idempotency-key",
+            "copy-review",
+            "--dry-run",
+            "--yes",
+        ],
+    );
+    assert!(
+        preview.status.success(),
+        "{}",
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    assert!(!copy_target.exists());
+    let document: serde_json::Value =
+        serde_json::from_slice(&preview.stdout).expect("copy preview JSON");
+    let plan_id = document["result"]["plan"]["planId"]
+        .as_str()
+        .expect("frozen copy plan ID");
+    let apply = [
+        "project",
+        "apply-copy",
+        plan_id,
+        "--idempotency-key",
+        "copy-apply",
+        "--no-wait",
+        "--yes",
+    ];
+    let mut accepted = None;
+    for _ in 0..2 {
+        let response = run_group_cli(runtime.clone(), &apply);
+        assert!(
+            response.status.success(),
+            "{}",
+            String::from_utf8_lossy(&response.stderr)
+        );
+        let document: serde_json::Value =
+            serde_json::from_slice(&response.stdout).expect("copy result JSON");
+        let operation = document["result"]["operationId"]
+            .as_str()
+            .expect("accepted operation ID")
+            .to_owned();
+        if let Some(previous) = &accepted {
+            assert_eq!(previous, &operation);
+            assert_eq!(document["result"]["replayed"], true);
+        }
+        accepted = Some(operation);
+    }
+    let copy_result = run_group_cli(
+        runtime.clone(),
+        &[
+            "operation",
+            "follow",
+            &accepted.expect("accepted copy operation"),
+        ],
+    );
+    assert!(
+        copy_result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&copy_result.stderr)
+    );
+    assert!(
+        copy_target
+            .join("ProjectSettings/ProjectVersion.txt")
+            .is_file()
+    );
+    let page = run_group_cli(runtime.clone(), &["project", "list", "--limit", "1"]);
+    assert!(page.status.success());
+    let page: serde_json::Value = serde_json::from_slice(&page.stdout).expect("first project page");
+    let cursor = &page["result"]["nextCursor"];
+    assert!(cursor.is_object());
+    let next = run_group_cli(
+        runtime.clone(),
+        &[
+            "project",
+            "list",
+            "--limit",
+            "1",
+            "--cursor",
+            &cursor.to_string(),
+        ],
+    );
+    assert!(
+        next.status.success(),
+        "{}",
+        String::from_utf8_lossy(&next.stderr)
+    );
+    let next: serde_json::Value =
+        serde_json::from_slice(&next.stdout).expect("second project page");
+    let first_item = &page["result"]["projects"][0]["projectId"];
+    let next_item = &next["result"]["projects"][0]["projectId"];
+    assert!(first_item.is_string() && next_item.is_string());
+    assert_ne!(first_item, next_item);
+
+    let backup = run_group_cli(
+        runtime.clone(),
+        &[
+            "backup",
+            "create",
+            created_id,
+            "--expected-revision",
+            "1",
+            "--destination",
+            archive,
+            "--idempotency-key",
+            "cli-backup-file",
+        ],
+    );
+    assert!(
+        backup.status.success(),
+        "{}",
+        String::from_utf8_lossy(&backup.stderr)
+    );
+    let saved: serde_json::Value =
+        serde_json::from_slice(&backup.stdout).expect("backup create JSON");
+    assert_eq!(saved["command"], "backup create");
+    assert_eq!(saved["result"]["state"], "succeeded");
+    assert_eq!(saved["result"]["result"]["archiveName"], "CLI archive.zip");
+
+    let restored = project_parent.join("CLI Restored");
+    let restore = run_group_cli(
+        runtime.clone(),
+        &[
+            "backup",
+            "restore",
+            archive,
+            "--destination",
+            restored.to_str().expect("UTF-8 project path"),
+            "--idempotency-key",
+            "cli-restore-file",
+            "--yes",
+        ],
+    );
+    assert!(
+        restore.status.success(),
+        "{}",
+        String::from_utf8_lossy(&restore.stderr)
+    );
+    let restore: serde_json::Value =
+        serde_json::from_slice(&restore.stdout).expect("backup restore JSON");
+    assert_eq!(restore["command"], "backup restore");
+    assert_eq!(restore["result"]["state"], "succeeded");
+    assert!(
+        restored
+            .join("ProjectSettings/ProjectVersion.txt")
             .is_file()
     );
     std::fs::remove_dir_all(&project_parent).expect("remove owned project fixture directory");

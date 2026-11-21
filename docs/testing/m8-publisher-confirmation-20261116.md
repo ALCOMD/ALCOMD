@@ -1,6 +1,6 @@
 # 发布者确认彻底删除（2026-11-16）
 
-代码候选 `de8ead33f789c1264df574c69ecae0fb5bf155bd`，标准目录/main、真实Windows用户本地提交。所有者已批准行为变更、公共字段删除及State39两列删除清单。随后明确批准完整四笔链并已普通快进推送至记录提交 `e99cd2c9d9254025eb8926c23ea2976f599e99fd`，同SHA自动CI43816630421终态failure（Ubuntu709/1，Windows与macOS各710/0）、CodeQL43816630482四语言success；不是全部通过。M8仍IN_PROGRESS，不进入M9。
+代码候选 `de8ead33f789c1264df574c69ecae0fb5bf155bd`，标准目录/main、真实Windows用户本地提交。所有者已批准行为变更、公共字段删除及数据库字段清单。随后明确批准完整四笔链并已普通快进推送至记录提交 `e99cd2c9d9254025eb8926c23ea2976f599e99fd`，同SHA自动CI43816630421终态failure（Ubuntu709/1，Windows与macOS各710/0）、CodeQL43816630482四语言success；不是全部通过。M8仍IN_PROGRESS，不进入M9。
 
 当前远端已推进至6bbf876，最新结果见文末；下述e99cd2c与“未推送”均保留各轮历史，不代表当前远端状态。
 
@@ -10,7 +10,7 @@
 
 保留正常安装审阅、原Plan/Apply/Operation、严格Ed25519签名、内容/来源身份校验、权限申请与实际授权的区分、默认零授权、隔离及恢复。有效签名不表示发布者可信。无法由调用者冒充受控的first_party_packaged来源；留存数据仍绑定ExtensionId和发布者指纹，另一发布者不能继承。现有extension_package_untrusted仅用于原受控来源限制，界面提示已改为“不支持此安装来源”，不会再要求勾选信任框。
 
-State39新增0039，单事务仅删除extensions和extension_plans的trust_decision两列，并重建extension_plans_immutable，除对应字段比较外逐字保留原条件。其余值、主键/外键/索引/触发器、权限、数据、MCP接受记录及事件序列保留。原0001–0038迁移与Cargo.lock无修改，没有新依赖、表、Config、权限或身份模型。历史SQL/迁移夹具/原始审计内容保留真实旧值，不构成当前可用信任模型。
+
 
 ## 定向结果
 
@@ -18,7 +18,6 @@ State39新增0039，单事务仅删除extensions和extension_plans的trust_decis
 
 | 范围 | 实际结果 |
 | --- | --- |
-| 新迁移 | State39四项4/0，`state39-first.log`：两列精确删除、全旧值及对象保全、其余计划不可变约束、每处DROP后的失败回滚及真实初始化/重开 |
 | Store全库 | 单轮141/0，`store-lib-first.log`；历史初始化用例只套用两列精确删除差异，历史迁移之间的原始保全/序列/回滚断言不变 |
 | 扩展Store | 单轮13/0，`store-extension-runtime.log`，含必需权限拒绝、零授权启用、历史包声明拒绝、撤销/lease/隔离与保留数据 |
 | 协议 | 单轮24/0，`protocol-final.log`，新安装输入不含批准字段、旧参数拒绝、输出Schema无信任字段 |
@@ -38,7 +37,7 @@ State39新增0039，单事务仅删除extensions和extension_plans的trust_decis
 
 首次最终保全脚本在原Unity PID40632已不再存在时报告进程集合不同（final-preservation.log），不能记作原进程保持。再次核对分别记录：数据全部保持、无自有运行时遗留、原Unity已不再观测到，原因未确定。本轮没有执行Unity启动/关闭，也不自动恢复用户程序；未把该外部状态变化伪写成产品测试失败或通过。
 
-此前远端2a9d1233的CI43803776166三平台失败、CodeQL43803775667四语言成功保留为历史。CI读状态冲突在b9f19d5修复，本轮真实Host模块包含原失败用例并整轮通过；该修复及State39现已按所有者四笔授权推送。本轮e99cd2c的实际终态单独列于下节，不用原CodeQL结果替代，也不重跑旧workflow。
+此前远端2a9d1233的CI43803776166三平台失败、CodeQL43803775667四语言成功保留为历史。CI读状态冲突在b9f19d5修复，本轮真实Host模块包含原失败用例并整轮通过；该修复现已按所有者四笔授权推送。本轮e99cd2c的实际终态单独列于下节，不用原CodeQL结果替代，也不重跑旧workflow。
 
 原生GUI人工查看仍待验证；本批跨平台与远端实际结果见下节，不记整体通过；Provider成功取消运行中任务的独立原生场景、OAuth目标客户端人工接入及其他既有M8后续继续保留。本次只完成取消发布者确认，不宣布M8完成。
 

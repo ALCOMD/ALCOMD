@@ -6,7 +6,7 @@
     "x-alcomd-approval": "owner-approved",
     "x-alcomd-active-rpc-modified": true,
     "x-alcomd-method": "packages.queryProjectCandidates",
-    "x-alcomd-capability": "packages.candidates.v2",
+    "x-alcomd-capability": "packages.candidates.v1",
     "x-alcomd-method-permissions": {
         "packages.queryProjectCandidates": [
             "projects.read",
@@ -659,6 +659,9 @@
                 "latestStable": {
                     "$ref": "#/$defs/Choice"
                 },
+                "recommended": {
+                    "$ref": "#/$defs/Choice"
+                },
                 "projectLatest": {
                     "$ref": "#/$defs/Choice"
                 },
@@ -723,6 +726,7 @@
                 "installed",
                 "latest",
                 "latestStable",
+                "recommended",
                 "projectLatest",
                 "projectLatestStable",
                 "update",
@@ -773,11 +777,6 @@
                     "minLength": 1,
                     "maxLength": 128
                 },
-                "versionRange": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 257
-                },
                 "source": {
                     "$ref": "#/$defs/SourceSelector"
                 },
@@ -798,19 +797,13 @@
                                 "upgrade"
                             ]
                         }
-                    },
-                    "required": [
-                        "versionRange",
-                        "source",
-                        "includePrerelease"
-                    ]
+                    }
                 },
                 {
                     "properties": {
                         "kind": {
                             "const": "remove"
                         },
-                        "versionRange": false,
                         "source": false,
                         "includePrerelease": false
                     }
@@ -820,7 +813,6 @@
                         "kind": {
                             "const": "reinstall"
                         },
-                        "versionRange": false,
                         "includePrerelease": false
                     }
                 }
@@ -1127,5 +1119,5 @@
         "guiConcurrentRequests": 2,
         "rpcFrameEnvelopeIncluded": true
     },
-    "x-alcomd-state-version": 31
+    "x-alcomd-state-version": 1
 }

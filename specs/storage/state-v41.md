@@ -1,5 +1,0 @@
-# State41: frozen extension installation terms
-
-Approved on 2026-11-17. The incremental 40→41 transaction adds nullable installation_terms_json to extension_plans and recreates its immutable trigger with the additional frozen comparison. Existing rows, grants, accepted Operations, ids and sequences remain unchanged. No table, permission, Config, historical migration or running user data is removed or upgraded by development.
-
-The Core stores bounded validated signed terms as JSON. Consent is bound to the Plan fingerprint and saved in existing Operation/idempotency request evidence; the new install Apply wire shape requires this consent, so old pending plans require explicit review under the new contract. Historical accepted work retains its accepted authority and receives no new grants. Required grants and registry insertion share the state_committed transaction; recovery cannot regrant permissions revoked after it. Reopening does not repeat initial grants. Old Core rejects State41 data.

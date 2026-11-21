@@ -28,13 +28,30 @@ pub(super) async fn dispatch(
             let Some(((project_id, revision), key)) = parsed else {
                 return invalid(request.id);
             };
+            let parent = std::path::PathBuf::from(params.target_parent_path);
+            let Ok(resolved) = tokio::task::spawn_blocking(move || {
+                alcomd_platform::resolve_plain_storage_directory(&parent)
+            })
+            .await
+            else {
+                return error_action(Some(request.id), rpc::RpcError::store_unavailable(), false);
+            };
+            let Ok((parent, identity)) = resolved else {
+                return copy_error(
+                    request.id,
+                    app::M7CopyError::new(app::M7CopyErrorCode::ProjectCopyTargetUnsafe),
+                );
+            };
             match application
                 .plan_copy(
                     access,
                     project_id,
                     revision,
-                    std::path::PathBuf::from(params.target_parent_path),
-                    params.target_leaf,
+                    app::ProjectDestination {
+                        parent,
+                        identity,
+                        leaf: params.target_leaf,
+                    },
                     key,
                 )
                 .await

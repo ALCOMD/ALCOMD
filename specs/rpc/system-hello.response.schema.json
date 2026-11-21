@@ -20,7 +20,10 @@
             "required": [
                 "rpcVersion",
                 "daemonVersion",
-                "capabilities"
+                "capabilities",
+                "dataSchema",
+                "configSchema",
+                "extensionApi"
             ],
             "properties": {
                 "rpcVersion": {
@@ -45,13 +48,11 @@
                 },
                 "dataSchema": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 4294967295
+                    "const": 1
                 },
                 "configSchema": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 4294967295
+                    "const": 1
                 },
                 "extensionApi": {
                     "type": "object",
@@ -67,7 +68,8 @@
                         "world": {
                             "const": "alcomd:extension/extension-v1@1.0.0"
                         }
-                    }
+                    },
+                    "description": "Extension ABI major and base WIT world supported by the running Core."
                 }
             }
         }

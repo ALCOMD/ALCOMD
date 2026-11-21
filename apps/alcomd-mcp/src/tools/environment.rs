@@ -10,18 +10,7 @@ use serde_json::Value;
 use super::{Failure, failure, invalid, ipc_fields, read, snake, success};
 
 pub(super) fn recognized(name: &str) -> bool {
-    matches!(
-        name,
-        "alcomd_get_settings"
-            | "alcomd_list_unity_installations"
-            | "alcomd_get_project_launch_config"
-            | "alcomd_list_installed_packages"
-            | "alcomd_get_project_template"
-            | "alcomd_edit_project_template"
-            | "alcomd_create_project_template"
-            | "alcomd_export_project_template"
-            | "alcomd_remove_project_template"
-    )
+    name == "alcomd_get_settings" || rpc::mcp_environment_tool_capability(name).is_some()
 }
 
 fn params<T: DeserializeOwned>(value: Value) -> Result<T, ErrorData> {

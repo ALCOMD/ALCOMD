@@ -10,7 +10,7 @@
         "projects.planDeleteDirectory": ["projects.read", "projects.delete"],
         "projects.applyDeleteDirectory": ["projects.delete"]
     },
-    "x-alcomd-filesystem-writer": "builtin:local-owner",
+    "x-alcomd-filesystem-writer": "Core",
     "$comment": "Owner-approved project-scoped writer gate: confirmed/suspected target occupancy rejects; unattributed unknown alone does not. Target filesystem/identity checks and pre-quarantine writer recheck remain required.",
     "x-alcomd-extension-grantable": false,
     "x-alcomd-operation-kind": "projects.delete-directory",

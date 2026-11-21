@@ -1,12 +1,12 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.vrclearn.com/schema/proposals/m7-unity-project-version.json",
-    "title": "ALCOMD M7 Unity project version and exact launch proposal",
-    "x-alcomd-publication": "owner-sealed-contract-not-yet-active",
+    "title": "ALCOMD Unity project version and exact launch contract",
+    "x-alcomd-publication": "implemented-active-contract-evidence",
     "x-alcomd-owner-review": "PASS WITH IMPLEMENTATION AMENDMENTS",
-    "x-alcomd-active-rpc-modified": false,
-    "x-alcomd-state-schema-proposed": 14,
-    "x-alcomd-filesystem-writer": "builtin:local-owner",
+    "x-alcomd-active-rpc-modified": true,
+    "x-alcomd-state-schema": 1,
+    "x-alcomd-filesystem-writer": "Core",
     "$comment": "Owner-approved project-scoped writer gate: confirmed/suspected target occupancy rejects; unattributed unknown alone does not. Unknown does not override an observed owned-child exit; recovery without exit evidence remains unresolved and must not respawn or report success.",
     "$defs": {
         "uuid": {
@@ -252,7 +252,6 @@
         "methods",
         "permissions",
         "operationKind",
-        "removedSurface",
         "launchCardinality",
         "launchConfigSemantics",
         "launchOptionsAuthority",
@@ -301,17 +300,6 @@
             }
         },
         "operationKind": {"const": "projects.unity-migration"},
-        "removedSurface": {
-            "const": [
-                "ProjectEditorPreference",
-                "ProjectEditorSelection",
-                "ProjectEditorSelectionState",
-                "unity.projectEditor.get",
-                "unity.projectEditor.set",
-                "unity.projectEditor.selection.get",
-                "unity.projectEditor.clear"
-            ]
-        },
         "launchCardinality": {
             "const": {
                 "zero": "launch-options-empty-no-launch-call",

@@ -1,5 +1,5 @@
 export type RepositoryListFormat = "native" | "legacy";
-export interface RepositoryConfiguration { displayName: string | null; priority: number; enabled: boolean; disabledPackageIds: string[] }
+export interface RepositoryConfiguration { displayName: string | null; enabled: boolean; disabledPackageIds: string[] }
 /** Bounded repository configuration and legacy text-list exchange. */
 export interface RepositoryListEntry {
     credentialsConfigured?: boolean;
@@ -20,7 +20,7 @@ export interface RepositorySetDisplayNameParams {
     idempotencyKey: string;
     displayName: string | null;
 }
-export interface RepositoryListInspection { format?: RepositoryListFormat; entries: RepositoryListEntry[]; ignoredLines: number; fingerprint: string }
+export interface RepositoryListInspection { format: RepositoryListFormat; entries: RepositoryListEntry[]; ignoredLines: number; fingerprint: string }
 export interface RepositoryListImportParams { path: string; expectedFingerprint: string; idempotencyKey: string; overwriteExisting?: boolean }
 export type RepositoryListImportItem =
     | { line: number; status: "added" | "existing" | "updated" | "unprocessed" }

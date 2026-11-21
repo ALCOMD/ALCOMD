@@ -43,6 +43,15 @@ fn key(value: &str) -> IdempotencyKey {
     IdempotencyKey::parse(value).expect("key")
 }
 
+fn selection(request: &BackupCreateRequest) -> BackupCreateOptions {
+    BackupCreateOptions {
+        compression_mode: Some(request.compression_mode),
+        exclude_vpm_packages: Some(request.exclude_vpm_packages),
+        include_library: Some(request.include_library),
+        destination_path: None,
+    }
+}
+
 #[tokio::test]
 async fn mcp_backup_acceptance_uses_shared_project_and_checks_live_authority() {
     let directory = TestDirectory::new();
@@ -108,18 +117,21 @@ async fn mcp_backup_acceptance_uses_shared_project_and_checks_live_authority() {
         panic!("two distinct clients");
     };
     let new_backup = || BackupCreateRequest {
-        backup_id: Default::default(),
         project_id: project.project_id,
         expected_revision: project.revision,
         compression_mode: BackupCompression::Fast,
         exclude_vpm_packages: true,
         include_library: false,
         created_at_ms: 4,
-        destination: None,
+        destination: BackupDestination {
+            directory: directory.0.join("backups").to_string_lossy().into_owned(),
+            identity: vec![8; 24],
+            file_name: None,
+        },
     };
     let accept = |caller: PrincipalId| {
         let request = new_backup();
-        let options = BackupCreateOptions::from(&request);
+        let options = selection(&request);
         store.accept_backup_create(caller, request, options, key("same-key"))
     };
     for unauthorized in [
@@ -143,7 +155,6 @@ async fn mcp_backup_acceptance_uses_shared_project_and_checks_live_authority() {
             .expect("authorized replay");
     assert!(replay.replayed);
     assert_eq!(replay.operation_id, result.operation_id);
-    assert_eq!(replay.backup_id, result.backup_id);
     let independent =
         with_workflow_authentication(second_auth.clone(), accept(second.principal_id.clone()))
             .await
@@ -196,17 +207,17 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
         .expect("project")
         .value;
     let request = BackupCreateRequest {
-        backup_id: Default::default(),
         project_id: project.project_id,
         expected_revision: project.revision,
         compression_mode: BackupCompression::Fast,
         exclude_vpm_packages: true,
         include_library: false,
         created_at_ms: 2,
-        destination: Some(BackupDestination {
+        destination: BackupDestination {
             directory: directory.0.join("first").to_string_lossy().into_owned(),
             identity: vec![2; 24],
-        }),
+            file_name: None,
+        },
     };
     assert!(
         store
@@ -214,7 +225,7 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
                 owner.clone(),
                 request.project_id,
                 request.expected_revision,
-                BackupCreateOptions::from(&request),
+                selection(&request),
                 key("create")
             )
             .await
@@ -225,24 +236,24 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
         .accept_backup_create(
             owner.clone(),
             request.clone(),
-            BackupCreateOptions::from(&request),
+            selection(&request),
             key("create"),
         )
         .await
         .expect("accept");
     let mut replay_request = request.clone();
-    replay_request.backup_id = Default::default();
     replay_request.created_at_ms = 3;
-    replay_request.destination = Some(BackupDestination {
+    replay_request.destination = BackupDestination {
         directory: directory.0.join("second").to_string_lossy().into_owned(),
         identity: vec![3; 24],
-    });
+        file_name: None,
+    };
     let replayed = store
         .replay_backup_create(
             owner.clone(),
             replay_request.project_id,
             replay_request.expected_revision,
-            BackupCreateOptions::from(&replay_request),
+            selection(&replay_request),
             key("create"),
         )
         .await
@@ -251,12 +262,11 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
     assert!(replayed.replayed);
     assert!(!replayed.schedule);
     assert_eq!(replayed.operation_id, accepted.operation_id);
-    assert_eq!(replayed.backup_id, accepted.backup_id);
     let accepted_replay = store
         .accept_backup_create(
             owner.clone(),
             replay_request.clone(),
-            BackupCreateOptions::from(&replay_request),
+            selection(&replay_request),
             key("create"),
         )
         .await
@@ -294,6 +304,29 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
             .code(),
         M5BackupErrorCode::IdempotencyConflict
     );
+    assert_eq!(
+        store
+            .replay_backup_create(
+                owner.clone(),
+                project.project_id,
+                project.revision,
+                BackupCreateOptions {
+                    destination_path: Some(
+                        directory
+                            .0
+                            .join("different.zip")
+                            .to_string_lossy()
+                            .into_owned()
+                    ),
+                    ..BackupCreateOptions::default()
+                },
+                key("create"),
+            )
+            .await
+            .expect_err("different requested file")
+            .code(),
+        M5BackupErrorCode::IdempotencyConflict,
+    );
     replay_request.exclude_vpm_packages = true;
     replay_request.include_library = false;
     replay_request.compression_mode = BackupCompression::Maximum;
@@ -303,7 +336,7 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
                 owner,
                 replay_request.project_id,
                 replay_request.expected_revision,
-                BackupCreateOptions::from(&replay_request),
+                selection(&replay_request),
                 key("create")
             )
             .await
@@ -315,11 +348,15 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
         rusqlite::Connection::open(directory.database()).expect("read fingerprint evidence");
     let fingerprint: String = connection.query_row("SELECT request_fingerprint FROM idempotency_records WHERE method='backups.create' AND idempotency_key='create'", [], |row| row.get(0)).expect("stored fingerprint");
     assert_eq!(
-        fingerprint,
-        format!(
-            "{{\"compressionMode\":\"fast\",\"excludeVpmPackages\":true,\"expectedRevision\":1,\"projectId\":\"{}\"}}",
-            project.project_id
-        )
+        serde_json::from_str::<serde_json::Value>(&fingerprint).expect("intent fingerprint"),
+        serde_json::json!({
+            "compressionMode": "fast",
+            "destinationPath": null,
+            "excludeVpmPackages": true,
+            "expectedRevision": 1,
+            "includeLibrary": false,
+            "projectId": project.project_id,
+        }),
     );
     drop(connection);
     drop(store);
@@ -333,7 +370,7 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
         .accept_backup_create(
             PrincipalId::local_owner(),
             request.clone(),
-            BackupCreateOptions::from(&request),
+            selection(&request),
             key("cancel-create"),
         )
         .await
@@ -377,7 +414,7 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
         .accept_backup_create(
             PrincipalId::local_owner(),
             request.clone(),
-            BackupCreateOptions::from(&request),
+            selection(&request),
             key("running-cancel-create"),
         )
         .await
@@ -433,25 +470,4 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
             .expect("terminal revision")
     );
     drop(reopened);
-}
-
-#[test]
-fn retained_backup_request_without_destination_still_decodes_as_legacy() {
-    let request: BackupCreateRequest = serde_json::from_value(serde_json::json!({
-        "backupId": "00000000-0000-4000-8000-000000000001",
-        "projectId": "00000000-0000-4000-8000-000000000002",
-        "expectedRevision": 1,
-        "compressionMode": "fast",
-        "excludeVpmPackages": true,
-        "createdAtMs": 1,
-    }))
-    .expect("retained request");
-    assert!(request.destination.is_none());
-    assert!(!request.include_library);
-    assert!(
-        serde_json::to_value(request)
-            .expect("request")
-            .get("destination")
-            .is_none()
-    );
 }

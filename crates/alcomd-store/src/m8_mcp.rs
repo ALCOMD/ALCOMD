@@ -25,9 +25,38 @@ pub(super) fn client(db: &Connection, id: &str) -> Result<McpClient, E> {
             .map_err(unavailable)?,
     })
 }
+pub(super) struct AdministrativeActor {
+    pub(super) principal: PrincipalId,
+    authentication: Option<alcomd_application::ToolAuthentication>,
+}
+
+impl From<PrincipalId> for AdministrativeActor {
+    fn from(principal: PrincipalId) -> Self {
+        Self {
+            principal,
+            authentication: alcomd_application::workflow_authentication(),
+        }
+    }
+}
+
+impl AdministrativeActor {
+    pub(super) fn verify(&self, db: &Connection) -> Result<(), E> {
+        if let Some(authentication) = &self.authentication {
+            let client = super::m8_tools::authenticate(db, authentication)
+                .map_err(|_| E::PermissionDenied)?;
+            if client.principal_id == self.principal {
+                return Ok(());
+            }
+        } else if self.principal == PrincipalId::local_owner() {
+            return Ok(());
+        }
+        Err(E::PermissionDenied)
+    }
+}
+
 fn write(
     db: &mut Connection,
-    actor: PrincipalId,
+    actor: AdministrativeActor,
     key: String,
     command: W,
     now: u64,
@@ -35,7 +64,8 @@ fn write(
     let tx = db
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(unavailable)?;
-    let result = write_on(&tx, actor, key, command, now)?;
+    actor.verify(&tx)?;
+    let result = write_on(&tx, actor.principal, key, command, now)?;
     tx.commit().map_err(unavailable)?;
     Ok(result)
 }
@@ -171,6 +201,7 @@ impl McpIdentityStore for StateStoreHandle {
         command: W,
         now: u64,
     ) -> Result<R, E> {
+        let actor = AdministrativeActor::from(actor);
         self.request_worker(
             move |db| write(db, actor, key, command, now),
             || E::Unavailable,
@@ -227,30 +258,7 @@ fn authorized_projects_on(
     limit: u32,
     guard: Option<&alcomd_application::OAuthAccessGuard>,
 ) -> Result<ProjectPage, M3Error> {
-    if let Some(guard) = guard {
-        let now = super::m8_oauth::wall_time()
-            .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
-        let limited = super::m8_oauth::authenticate(db, guard, now)
-            .map_err(|_| M3Error::new(M3ErrorCode::PermissionDenied))?;
-        if &limited.principal_id != principal {
-            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
-        }
-        if let Some(c) = &cursor {
-            let expected = super::m8_oauth::project_cursor_binding(db, guard, now, c)
-                .map_err(|_| M3Error::new(M3ErrorCode::RevisionConflict))?;
-            let matches = c.authorization_binding.as_deref().is_some_and(|actual| {
-                actual.len() == expected.len()
-                    && actual
-                        .bytes()
-                        .zip(expected.bytes())
-                        .fold(0u8, |difference, (a, b)| difference | (a ^ b))
-                        == 0
-            });
-            if !matches {
-                return Err(M3Error::new(M3ErrorCode::RevisionConflict));
-            }
-        }
-    }
+    validate_project_cursor(db, principal, cursor.as_ref(), guard)?;
     let mut q=db.prepare("SELECT p.project_id FROM projects p WHERE EXISTS (SELECT 1 FROM mcp_clients c WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL) AND (?2 IS NULL OR p.registered_at_ms<?2 OR (p.registered_at_ms=?2 AND p.project_id<?3)) ORDER BY p.registered_at_ms DESC,p.project_id DESC LIMIT ?4").map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?;
     let cursor_time = cursor
         .as_ref()
@@ -288,7 +296,53 @@ fn authorized_projects_on(
     } else {
         None
     };
-    if let (Some(guard), Some(next)) = (guard, next_cursor.as_mut()) {
+    bind_project_cursor(db, guard, next_cursor.as_mut())?;
+    Ok(ProjectPage {
+        projects: records,
+        next_cursor,
+        directory_states: Default::default(),
+    })
+}
+
+pub(super) fn validate_project_cursor(
+    db: &Connection,
+    principal: &PrincipalId,
+    cursor: Option<&RegistryCursor<ProjectId>>,
+    guard: Option<&alcomd_application::OAuthAccessGuard>,
+) -> Result<(), M3Error> {
+    if let Some(guard) = guard {
+        let now = super::m8_oauth::wall_time()
+            .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
+        let limited = super::m8_oauth::authenticate(db, guard, now)
+            .map_err(|_| M3Error::new(M3ErrorCode::PermissionDenied))?;
+        if &limited.principal_id != principal {
+            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+        }
+        if let Some(c) = cursor {
+            let expected = super::m8_oauth::project_cursor_binding(db, guard, now, c)
+                .map_err(|_| M3Error::new(M3ErrorCode::RevisionConflict))?;
+            let matches = c.authorization_binding.as_deref().is_some_and(|actual| {
+                actual.len() == expected.len()
+                    && actual
+                        .bytes()
+                        .zip(expected.bytes())
+                        .fold(0u8, |difference, (a, b)| difference | (a ^ b))
+                        == 0
+            });
+            if !matches {
+                return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn bind_project_cursor(
+    db: &Connection,
+    guard: Option<&alcomd_application::OAuthAccessGuard>,
+    next_cursor: Option<&mut RegistryCursor<ProjectId>>,
+) -> Result<(), M3Error> {
+    if let (Some(guard), Some(next)) = (guard, next_cursor) {
         let now = super::m8_oauth::wall_time()
             .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
         next.authorization_binding = Some(
@@ -296,11 +350,7 @@ fn authorized_projects_on(
                 .map_err(|_| M3Error::new(M3ErrorCode::RevisionConflict))?,
         );
     }
-    Ok(ProjectPage {
-        projects: records,
-        next_cursor,
-        directory_states: Default::default(),
-    })
+    Ok(())
 }
 
 #[cfg(test)]
@@ -313,11 +363,7 @@ mod tests {
         use alcomd_application::{
             PackageApplyCompletion, PackageChangeSet, PackagePlanDraft, PlanAction, Revision,
         };
-        let mut db = crate::sqlite::mcp_state32_fixture();
-        db.execute_batch(include_str!("../migrations/0033_mcp_clients.sql"))
-            .expect("State33");
-        db.execute_batch(include_str!("../migrations/0034_mcp_grant_snapshots.sql"))
-            .expect("State34");
+        let mut db = crate::sqlite::current_schema_fixture();
         let owner = PrincipalId::local_owner();
         let observation = ProjectObservation {
             root_path: "C:/owned-registry-fixture".into(),
@@ -342,7 +388,7 @@ mod tests {
         .value;
         let client = write(
             &mut db,
-            owner.clone(),
+            owner.clone().into(),
             "create".into(),
             W::Create {
                 name: "Scoped writer".into(),
@@ -351,6 +397,21 @@ mod tests {
         )
         .expect("client")
         .client;
+        let hash = mcp_credential_hash("isolated-mcp-credential");
+        let client = write(
+            &mut db,
+            owner.clone().into(),
+            "issue".into(),
+            W::Issue {
+                id: client.client_id,
+                expected: client.revision,
+                hash,
+            },
+            3,
+        )
+        .expect("issue connection credential")
+        .client;
+        let authentication = alcomd_application::ToolAuthentication::Credential(hash);
         let draft = || PackagePlanDraft {
             project_id: project.project_id,
             action: PlanAction::Remove,
@@ -371,38 +432,44 @@ mod tests {
                 unity_compatibility_overrides: vec![],
             },
         };
-        let plan = crate::m4::create_package_plan(&mut db, &client.principal_id, draft(), 3)
-            .expect("actual caller plan");
+        let plan = crate::m4::create_package_plan_inner(
+            &mut db,
+            &client.principal_id,
+            draft(),
+            3,
+            Some(&authentication),
+        )
+        .expect("authenticated caller plan");
         let key = IdempotencyKey::parse("apply").expect("key");
-        let accepted = crate::m4::accept_package_plan(
-            &mut db,
-            &client.principal_id,
-            plan.plan_id,
-            project.revision,
-            &key,
-            4,
-        )
-        .expect("authorized acceptance");
-        let replay = crate::m4::accept_package_plan(
-            &mut db,
-            &client.principal_id,
-            plan.plan_id,
-            project.revision,
-            &key,
-            5,
-        )
-        .expect("same-key replay");
+        let apply = |db: &mut Connection, now| {
+            crate::m4::accept_package_plan_inner(
+                db,
+                &client.principal_id,
+                plan.plan_id,
+                project.revision,
+                &key,
+                now,
+                None,
+                Some(&authentication),
+            )
+        };
+        let accepted = apply(&mut db, 4).expect("authorized acceptance");
+        let replay = apply(&mut db, 5).expect("same-key replay");
         assert_eq!(accepted.operation_id, replay.operation_id);
         assert!(replay.replayed);
         let mut nonremoval = draft();
         nonremoval.action = PlanAction::Install;
-        let install = crate::m4::create_package_plan(&mut db, &client.principal_id, nonremoval, 5);
-        assert!(
-            matches!(install,Err(e) if e.code()==alcomd_application::M4ErrorCode::PermissionDenied)
-        );
+        crate::m4::create_package_plan_inner(
+            &mut db,
+            &client.principal_id,
+            nonremoval,
+            5,
+            Some(&authentication),
+        )
+        .expect("authenticated caller can also create an install plan");
         write(
             &mut db,
-            owner.clone(),
+            owner.clone().into(),
             "revoke".into(),
             W::Revoke {
                 id: client.client_id,
@@ -412,7 +479,7 @@ mod tests {
         )
         .expect("revoke before task runs");
         assert!(
-            matches!(crate::m4::accept_package_plan(&mut db,&client.principal_id,plan.plan_id,project.revision,&key,7),Err(e) if e.code()==alcomd_application::M4ErrorCode::PermissionDenied)
+            matches!(apply(&mut db, 7), Err(error) if error.code() == alcomd_application::M4ErrorCode::PermissionDenied)
         );
         assert_eq!(
             crate::m4::operation_project(&db, accepted.operation_id)

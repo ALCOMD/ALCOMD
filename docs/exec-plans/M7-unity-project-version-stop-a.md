@@ -46,19 +46,9 @@ core/application 是 canonicalization 与 equality authority，TypeScript 只显
 Installation 双方均有 verified revision metadata 且明确不同时，该 installation 不得成为 exact launch match 或被描述为
 verified identical build。任一侧 revision unavailable 时 canonical equality 仍允许其成为候选，但不得声称 build revision 已验证一致。
 
-## 删除 Automatic / Explicit model
+## Unity 目标
 
-State v14 production 获批后必须一次性删除：
-
-- `ProjectEditorPreference`；
-- `ProjectEditorSelection` 与 Automatic/Explicit；
-- `ProjectEditorSelectionState`；
-- per-project preferred installation ID；
-- `unity.projectEditor.get/set/selection.get/clear`；
-- `unity.project-editor.updated` 与 `unity.project-editor.selection_cleared` 的新写入；
-- 对应 capability advertisement、client/CLI/GUI、store、idempotency、fixtures、tests 与文档。
-
-4.0.0 尚未公开，不创建 compatibility alias 或 dual-write。历史 Event 可保留为 inert append-only evidence，但不再产生。
+启动默认解析项目要求的 Unity 版本。同版本有多个可用安装时，由调用方明确选择本次启动的目标。持久化的启动参数与 Editor 安装选择独立。
 
 ## Launch Config exact public contract
 
@@ -78,17 +68,6 @@ config state 固定为 ProjectId、arguments、revision、updatedAtMs。missing 
 set/clear 使用永久 idempotency；replay 返回原结果。bounds、禁止 `-projectPath` 及其等价 authoritative selector、无 shell、
 隐私规则保持 M5 合同。config 不包含 selection mode 或 installation ID。Project Unity Migration 绝不读取 launch config，固定
 使用 host-owned argv profile。
-
-## State v11 preference -> v14 launch config migration
-
-State v1-v13 历史 migration 不改写。0014 对每个旧 `project_editor_preferences` row：
-
-- `arguments_json` canonical 等于默认空数组 `[]`：不创建 launch-config row；
-- 非空且合法：迁移 arguments，并原样保留 positive revision 与 updated timestamp；
-- malformed/out-of-bounds：整个 0014 transaction fail closed，不静默丢弃；
-- automatic/explicit 一视同仁，selection mode 与 installation ID 永久丢弃。
-
-完成迁移后删除旧表；0011/0013 保持历史不变。
 
 ## launchOptions exact-match resolver
 
@@ -310,17 +289,9 @@ revision；不含 path、PID、argv、executable、stdout/stderr 或 installatio
 - `unity_project_running`；
 - `revision_conflict` / `idempotency_conflict` / `permission_denied` / `internal_error`。
 
-## State Schema v14 final contract
+## 持久化
 
-State v1-v13 migration history不改写。State v14 已 owner-sealed 为 final contract，但在 production slice 接线前仍不是 active
-Schema。业务变化精确保持：
-
-1. 新建 `project_unity_launch_config`，只迁移非空 `arguments_json`、revision 与 timestamp；不迁移 selection mode 或
-   installation ID；空参数不创建 row。
-2. 删除 `project_editor_preferences`。
-3. 删除 removed projectEditor methods 的未完成/可重放 idempotency records；保留合法历史 launch/Operation/Event evidence。
-4. 新建 `project_unity_migration_plans` 与 `project_unity_migration_journal` 两张 migration business tables。
-5. 不增加第三张 migration table、generic workflow/process/filesystem framework 或 State v15+。
+State1 直接创建项目启动配置和 Unity 迁移 Plan、journal。项目的 Unity 版本取自项目快照。每次迁移均以固定目标 Editor、冻结的项目修订、文件证据及任务归属为依据。结构见 [State1](../../specs/storage/state-v1.md)。
 
 ## Contract vectors
 
@@ -347,7 +318,7 @@ partial marker、reobservation exact success、argv/output redaction 与 VRChat 
 
 contract remote checkpoint 通过后按依赖顺序推进：
 
-1. U1：State v14、删除 editor preference model、launch config active contract/store/client。
+1. U1：launch config active contract/store/client。
 2. U2：canonical exact launchOptions、required one-shot `unity.launch` 与 GUI/CLI exact launch flow。
 3. U3：Unity migration active RPC/Permission/Plan/State foundation。
 4. U4：migration-private `vrchat-2019-to-2022-v1` preparation profile。
@@ -355,7 +326,7 @@ contract remote checkpoint 通过后按依赖顺序推进：
 6. U6：official GUI Unity Version selector、Migration Review、Backup/Copy composition、migrate-and-open composition。
 7. U7：完整 tests、P8 visible-action rerun、metadata/status closure。
 
-production tests 至少覆盖 owner-sealed required matrix：State 13->14 的四种 mode/args 组合、malformed rollback 与 FK/index；
+production tests 至少覆盖 owner-sealed required matrix：项目启动配置保存、参数边界与外键；
 launch config sentinel/no-op/CAS/clear/Event/argument protection；exact launch 0/1/>1、China/revision/identity/revision race 与不持久选择；
 Plan same/upgrade/unsupported downgrade/China/TTL/idempotency/writer four states/source marker；VRChat fixed UPM/package/transitive/
 legacy/unlocked/cache-integrity 与每个 preparation phase crash；process cancel boundary、每个 durable phase kill/restart、spawn window、
@@ -377,7 +348,7 @@ Hosted CI 与 CodeQL。完成后停止等待 owner technical review，不自动�
 
 ## Amendment progress
 
-- 2026-08-31：按 owner review 补齐 non-empty-only v11→v14 argument migration、Launch Config get/set/clear no-op/revision/
+- 2026-08-31：按 owner review 补齐 首发 State1 的项目启动参数、Launch Config get/set/clear no-op/revision/
   Event、`unity.launchOptions`、required one-shot InstallationId launch、Core canonical authority 与 Plan single authority。
 - downgrade 在 4.0.0 全部 fail closed；classification 另带 `supportedForApply`。VRChat unsupported versions 仍不可 Apply；
   2019→2022 使用 owner-sealed `vrchat-2019-to-2022-v1` private preparation profile。
@@ -385,9 +356,8 @@ Hosted CI 与 CodeQL。完成后停止等待 owner technical review，不自动�
   migration-private bounded preparation，并必须纳入同一 journal 的 preparation intent/complete/recovery evidence。
 - owner 批准 narrow `UnityMigrationProcess` safe surface；本 contract-only commit 仍没有 production wiring、dependency、unsafe
   或 platform API 变化。
-- State v14、Operation phases、cancel/recovery、A/B reuse 与 preparation profile 已 final seal。
-- 2026-08-31：U1-U7 local production candidate 已接线；State v14 四种 legacy preference/arguments migration、malformed
-  rollback、immutable Plan、normal resolver differential、migration-only legacy obligations、private preparation、spawn 后先 durable
+- 项目持久化、Operation phases、cancel/recovery、A/B reuse 与 preparation profile 已 final seal。
+- 2026-08-31：U1-U7 local production candidate 已接线；项目启动参数测试
   `unity_started` 再 wait、restart recovery、never-auto-respawn、单次 Project revision/Event、Launch Config、exact Open Unity
   0/1/>1、migration selector 与 migrate-and-open 均有 focused automated evidence。
 - P8 visible-action inventory 已移除 Automatic/Preferred/Clear Editor Preference，加入独立 Launch Config、Project Unity
@@ -401,7 +371,7 @@ Hosted CI 与 CodeQL。完成后停止等待 owner technical review，不自动�
 
 ## Stop conditions
 
-出现新 production dependency、新 unsafe、新 platform API、State v15+、第三张 migration business table、generic workflow
+出现新 production dependency、新 unsafe、新 platform API、第三张 migration business table、generic workflow
 engine、generic process supervisor、generic filesystem writer、P6 semantic expansion、M11 work 或 H3-H7 时停止并请求审批。
 
 ## Stop A completion

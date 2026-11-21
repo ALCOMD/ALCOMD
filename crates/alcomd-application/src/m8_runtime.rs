@@ -27,9 +27,6 @@ pub struct RuntimeReadAccess {
 }
 impl RuntimeReadAccess {
     pub fn from_client(access: &AccessContext) -> Self {
-        if access.is_mcp_client() {
-            return Self::default();
-        }
         Self {
             connections: access.require(Permission::McpConnectionsRead).is_ok(),
             requests: access.require(Permission::McpRequestsRead).is_ok(),
@@ -499,7 +496,7 @@ mod tests {
         );
     }
     #[test]
-    fn mcp_connection_does_not_grant_extension_observation_permissions() {
+    fn connected_client_can_observe_runtime() {
         let id = crate::McpClientId::new();
         let client = crate::McpClient {
             client_id: id,
@@ -516,7 +513,7 @@ mod tests {
             alcomd_domain::Permission::McpRequestsRead,
             alcomd_domain::Permission::McpSubscriptionStreamsRead,
         ] {
-            assert!(access.require(permission).is_err());
+            assert!(access.require(permission).is_ok());
         }
     }
     #[test]

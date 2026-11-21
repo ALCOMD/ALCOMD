@@ -17,8 +17,7 @@
             "const": 1
         },
         "sourceVersion": {
-            "type": "string",
-            "minLength": 1
+            "const": "3.4.0"
         },
         "createdAt": {
             "type": "string",
@@ -29,7 +28,8 @@
             "additionalProperties": {
                 "type": "integer",
                 "minimum": 0
-            }
+            },
+            "maxProperties": 16
         },
         "files": {
             "type": "array",
@@ -44,7 +44,7 @@
                 "properties": {
                     "path": {
                         "type": "string",
-                        "minLength": 1
+                        "pattern": "^(state\\.json|templates/[0-9]{4}\\.alcomdtemplate)$"
                     },
                     "sha256": {
                         "type": "string",
@@ -52,10 +52,13 @@
                     },
                     "size": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "maximum": 268435456
                     }
                 }
-            }
+            },
+            "minItems": 1,
+            "maxItems": 129
         }
     }
 }

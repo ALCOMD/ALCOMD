@@ -1,8 +1,0 @@
-package alcomd:extension@1.0.0;
-
-interface guest-lifecycle {
-    use types.{activation-context, stop-reason, extension-error};
-
-    activate: func(context: activation-context) -> result<_, extension-error>;
-    deactivate: func(reason: stop-reason) -> result<_, extension-error>;
-}

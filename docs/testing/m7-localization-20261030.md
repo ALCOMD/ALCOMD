@@ -17,7 +17,7 @@ Visual Gate 2 仍 PENDING；前次两项列表长文本行高缺口不属于本�
 
 ## 实现及边界
 
-项目时间的用户语义与翻译覆盖分别验收：`ProjectSnapshot.lastModifiedAtMs` 由独立 Core 记录提供，列表、卡片与排序均使用该字段。项目通用检查时间已按所有者指令移除，不提供其他时间替代最后修改。v3 对应规则、最后修改时间权威边界及验证见 [项目最后修改时间](m7-project-last-modified-20261030.md)，当前 State 16 的字段删除与独立验证见 [项目观察时间移除](m7-remove-project-observed-20261030.md)。本文的三语言专项不替代功能验证，也不据此宣称整个 Project 用户模型或 Visual Gate 2 已完成。
+项目时间的用户语义与翻译覆盖分别验收：`ProjectSnapshot.lastModifiedAtMs` 由独立 Core 记录提供，列表、卡片与排序均使用该字段。项目通用检查时间已按所有者指令移除，不提供其他时间替代最后修改。v3 对应规则、最后修改时间权威边界及验证见 [项目最后修改时间](m7-project-last-modified-20261030.md)，项目快照字段调整与独立验证见 [项目观察时间移除](m7-remove-project-observed-20261030.md)。本文的三语言专项不替代功能验证，也不据此宣称整个 Project 用户模型或 Visual Gate 2 已完成。
 
 - 复用现有 `settings.get/update`、三种语言枚举及 daemon 持久化；保存成功后切换，放弃草稿不改变应用语言。跟随系统支持语言及区域标签，未支持语言采用英语。HTML `lang` 与实际 locale 同步，包括设置初读失败时的系统语言。
 - 使用独立编写的 React locale context、显式 `t` 调用、静态词条和 React 节点插值。无新依赖、HTML 解释、DOM 文本替换、GUI 直写配置或运行时 v3 访问。共享组件只翻译自己持有的默认文案，不自动翻译调用方／扩展提供的任意文字。

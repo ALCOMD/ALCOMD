@@ -46,6 +46,7 @@ version = "4.0.0-alpha.0"
 dependencies = [
  "alcomd-application",
  "alcomd-extensions",
+ "alcomd-import",
  "alcomd-platform",
  "alcomd-protocol",
  "alcomd-store",
@@ -55,6 +56,7 @@ dependencies = [
  "getrandom 0.4.3",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tokio",
 ]
 
@@ -73,6 +75,8 @@ name = "alcomd-application"
 version = "4.0.0-alpha.0"
 dependencies = [
  "alcomd-domain",
+ "getrandom 0.4.3",
+ "hmac",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -84,10 +88,15 @@ dependencies = [
 name = "alcomd-bootstrap"
 version = "4.0.0-alpha.0"
 dependencies = [
+ "alcomd-import",
+ "alcomd-platform",
  "alcomd-updater",
  "anyhow",
  "clap",
- "tokio",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "uuid",
 ]
 
 [[package]]
@@ -100,6 +109,7 @@ dependencies = [
  "alcomd-protocol",
  "anyhow",
  "clap",
+ "serde",
  "serde_json",
  "tokio",
 ]
@@ -187,6 +197,11 @@ dependencies = [
 [[package]]
 name = "alcomd-import"
 version = "4.0.0-alpha.0"
+dependencies = [
+ "serde",
+ "sha2 0.11.0",
+ "uuid",
+]
 
 [[package]]
 name = "alcomd-mcp"
@@ -223,8 +238,22 @@ dependencies = [
 name = "alcomd-migrate-v3"
 version = "4.0.0-alpha.0"
 dependencies = [
+ "alcomd-client",
+ "alcomd-import",
+ "alcomd-platform",
+ "alcomd-protocol",
  "anyhow",
+ "chrono",
  "clap",
+ "flate2",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "toml 1.1.4+spec-1.1.0",
+ "url",
+ "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -233,8 +262,10 @@ version = "4.0.0-alpha.0"
 dependencies = [
  "objc2",
  "objc2-app-kit",
+ "objc2-foundation",
  "rustix",
  "security-framework",
+ "serde_json",
  "sysinfo",
  "tokio",
  "toml 1.1.4+spec-1.1.0",
@@ -288,6 +319,18 @@ dependencies = [
 [[package]]
 name = "alcomd-updater"
 version = "4.0.0-alpha.0"
+dependencies = [
+ "alcomd-platform",
+ "anyhow",
+ "clap",
+ "ed25519-dalek",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "toml 1.1.4+spec-1.1.0",
+ "uuid",
+]
 
 [[package]]
 name = "alcomd-vpm"
@@ -938,6 +981,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmov"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
+
+[[package]]
 name = "cobs"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1319,6 +1368,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52560adf09603e58c9a7ee1fe1dcb95a16927b17c127f0ac02d6e768a0e25bc1"
 
 [[package]]
+name = "ctutils"
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "261af4dc7a06ea8a527a8717d8cbba3417530d6ea14e1edb3de6b67806be474f"
+dependencies = [
+ "cmov",
+]
+
+[[package]]
 name = "curve25519-dalek"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1475,6 +1533,7 @@ dependencies = [
  "block-buffer 0.12.1",
  "const-oid",
  "crypto-common 0.2.2",
+ "ctutils",
 ]
 
 [[package]]
@@ -2381,6 +2440,15 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "hmac"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
+dependencies = [
+ "digest 0.11.3",
+]
 
 [[package]]
 name = "html5ever"

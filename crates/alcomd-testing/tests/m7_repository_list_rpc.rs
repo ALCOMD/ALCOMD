@@ -1,6 +1,8 @@
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
-use alcomd_protocol::{RepositoryListEntryStatus, RepositoryListSource, RepositorySource};
+use alcomd_protocol::{
+    RepositoryListEntryStatus, RepositoryListSource, RepositoryMoveParams, RepositorySource,
+};
 use std::fs;
 use std::path::PathBuf;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -26,7 +28,7 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     );
     let (stop, shutdown) = tokio::sync::oneshot::channel();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        ipc,
+        ipc.clone(),
         DataConfig::isolated(data.clone()),
         async {
             let _ = shutdown.await;
@@ -34,7 +36,7 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     )
     .await
     .expect("owned test daemon");
-    let mut client = AlcomdClient::connect(config).await.expect("client");
+    let mut client = AlcomdClient::connect(config.clone()).await.expect("client");
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("loopback");
@@ -115,7 +117,7 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
         .expect("explicit append reuses the single remote response");
     server.await.expect("server");
     let old_preview = client
-        .repository_list_preview_export()
+        .repository_configuration_preview_export(alcomd_protocol::RepositoryListFormat::Legacy)
         .await
         .expect("preview");
     assert_eq!(old_preview.exportable_count, 1);
@@ -133,9 +135,10 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     let output = fixture.0.join("export.txt");
     assert_code(
         client
-            .repository_list_export_file(
+            .repository_configuration_export_file(
                 output.to_str().expect("path").into(),
                 old_preview.fingerprint,
+                alcomd_protocol::RepositoryListFormat::Legacy,
             )
             .await
             .expect_err("stale preview"),
@@ -143,15 +146,16 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     );
     assert!(!output.exists());
     let preview = client
-        .repository_list_preview_export()
+        .repository_configuration_preview_export(alcomd_protocol::RepositoryListFormat::Legacy)
         .await
         .expect("fresh preview");
     assert_eq!(preview.exportable_count, 1);
     assert_eq!(preview.excluded.len(), 1);
     let exported = client
-        .repository_list_export_file(
+        .repository_configuration_export_file(
             output.to_str().expect("path").into(),
             preview.fingerprint.clone(),
+            alcomd_protocol::RepositoryListFormat::Legacy,
         )
         .await
         .expect("export");
@@ -162,9 +166,10 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     );
     assert_code(
         client
-            .repository_list_export_file(
+            .repository_configuration_export_file(
                 output.to_str().expect("path").into(),
                 preview.fingerprint.clone(),
+                alcomd_protocol::RepositoryListFormat::Legacy,
             )
             .await
             .expect_err("no overwrite"),
@@ -176,9 +181,10 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     );
     assert_code(
         client
-            .repository_list_export_file(
+            .repository_configuration_export_file(
                 data.join("blocked.txt").to_str().expect("path").into(),
                 preview.fingerprint,
+                alcomd_protocol::RepositoryListFormat::Legacy,
             )
             .await
             .expect_err("protected data"),
@@ -208,6 +214,92 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
             .to_string_lossy()
             .ends_with(".partial")
     }));
+    let page = client
+        .repositories_list(None, Some(1))
+        .await
+        .expect("first page");
+    let remote_id = page.repositories[0]
+        .repository_id
+        .clone()
+        .expect("remote ID");
+    let last_page = client
+        .repositories_list(page.next_cursor.clone(), Some(1))
+        .await
+        .expect("second page");
+    let local_id = last_page.repositories[0]
+        .repository_id
+        .clone()
+        .expect("local ID");
+    assert_eq!(page.order_fingerprint, last_page.order_fingerprint);
+    let movement = RepositoryMoveParams {
+        repository_id: local_id.clone(),
+        before_repository_id: Some(remote_id.clone()),
+        expected_order_fingerprint: page.order_fingerprint.clone(),
+        idempotency_key: "move-local-first".into(),
+    };
+    let applied = client
+        .repository_move(movement.clone())
+        .await
+        .expect("move");
+    assert!(applied.changed && !applied.replayed);
+    let replayed = client
+        .repository_move(movement.clone())
+        .await
+        .expect("idempotent replay");
+    assert!(replayed.changed && replayed.replayed);
+    assert_code(
+        client
+            .repository_move(RepositoryMoveParams {
+                idempotency_key: "competing-move".into(),
+                ..movement
+            })
+            .await
+            .expect_err("stale order"),
+        "revision_conflict",
+    );
+    assert_code(
+        client
+            .repositories_list(page.next_cursor, Some(1))
+            .await
+            .expect_err("stale cursor"),
+        "revision_conflict",
+    );
+    let moved = client
+        .repositories_list(None, None)
+        .await
+        .expect("new order");
+    assert_ne!(moved.order_fingerprint, page.order_fingerprint);
+    assert_eq!(
+        moved.repositories[0].repository_id.as_deref(),
+        Some(local_id.as_str())
+    );
+    assert_eq!(
+        moved.repositories[1].repository_id.as_deref(),
+        Some(remote_id.as_str())
+    );
+    let no_op = client
+        .repository_move(RepositoryMoveParams {
+            repository_id: local_id.clone(),
+            before_repository_id: Some(remote_id.clone()),
+            expected_order_fingerprint: moved.order_fingerprint.clone(),
+            idempotency_key: "confirm-same-position".into(),
+        })
+        .await
+        .expect("no change");
+    assert!(!no_op.changed && !no_op.replayed);
+    assert_code(
+        client
+            .repository_move(RepositoryMoveParams {
+                repository_id: alcomd_application::VRCHAT_OFFICIAL_REPOSITORY_ID.into(),
+                before_repository_id: None,
+                expected_order_fingerprint: moved.order_fingerprint.clone(),
+                idempotency_key: "reject-builtin-move".into(),
+            })
+            .await
+            .expect_err("built-in cannot be moved"),
+        "invalid_request",
+    );
+
     let native = alcomd_protocol::RepositoryListFormat::Native;
     let preview = client
         .repository_configuration_preview_export(native)
@@ -272,6 +364,33 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     );
     drop(client);
     stop.send(()).expect("stop");
+    daemon.await.expect("join").expect("daemon result");
+    let (stop, shutdown) = tokio::sync::oneshot::channel();
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        async {
+            let _ = shutdown.await;
+        },
+    )
+    .await
+    .expect("reopen fixture");
+    let mut client = AlcomdClient::connect(config).await.expect("reconnect");
+    let reopened = client
+        .repositories_list(None, None)
+        .await
+        .expect("persisted order");
+    assert_eq!(
+        reopened.repositories[0].repository_id.as_deref(),
+        Some(local_id.as_str())
+    );
+    assert_eq!(
+        reopened.repositories[1].repository_id.as_deref(),
+        Some(remote_id.as_str())
+    );
+    assert_eq!(reopened.order_fingerprint, moved.order_fingerprint);
+    drop(client);
+    stop.send(()).expect("stop reopened fixture");
     daemon.await.expect("join").expect("daemon result");
 }
 

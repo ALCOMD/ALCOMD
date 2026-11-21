@@ -47,7 +47,7 @@ async fn packaged_mcp_startup_installs_once_and_preserves_user_removal() {
         "Packaged MCP startup fixture",
         "[permissions]\nrequired = []\noptional = [\"mcp.subscription-streams.read\"]\n[ui]\nprotocol = \"portable-v1\"\n",
         &[
-            "alcomd:mcp-management/clients@2.0.0",
+            "alcomd:mcp-management/clients@1.0.0",
             "alcomd:mcp-runtime/observations@1.0.0",
             "alcomd:mcp-transport/observations@1.0.0",
         ],

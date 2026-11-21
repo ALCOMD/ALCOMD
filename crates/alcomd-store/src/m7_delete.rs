@@ -7,6 +7,16 @@ use alcomd_application::{
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use uuid::Uuid;
 
+fn require_caller(db: &Connection, owner: &PrincipalId) -> Result<(), M7DeleteError> {
+    use alcomd_application::Permission;
+    super::m8_workflows::require(
+        db,
+        owner,
+        &[Permission::ProjectsRead, Permission::ProjectsDelete],
+    )
+    .map_err(|_| error(M7DeleteErrorCode::PermissionDenied))
+}
+
 pub(super) fn create_plan(
     connection: &mut Connection,
     owner: &PrincipalId,
@@ -14,6 +24,7 @@ pub(super) fn create_plan(
 ) -> Result<ProjectDeletePlanOutcome, M7DeleteError> {
     let fingerprint = plan_request_fingerprint(&draft)?;
     let transaction = begin(connection)?;
+    require_caller(&transaction, owner)?;
     if let Some((stored, response)) = transaction
         .query_row(
             "SELECT request_fingerprint,response_json FROM idempotency_records
@@ -115,6 +126,7 @@ pub(super) fn replay_apply(
     expected_revision: Revision,
     key: &IdempotencyKey,
 ) -> Result<Option<ProjectDeleteApplyOutcome>, M7DeleteError> {
+    require_caller(connection, owner)?;
     let expected = apply_request_fingerprint(plan_id, expected_revision)?;
     let Some((stored, response)) = connection
         .query_row(
@@ -151,6 +163,7 @@ pub(super) fn accept(
     }
     let fingerprint = apply_request_fingerprint(plan_id, expected_revision)?;
     let transaction = begin(connection)?;
+    require_caller(&transaction, owner)?;
     let plan = load_plan(&transaction, owner, plan_id)?;
     if now_ms >= plan.draft.expires_at_ms || plan.draft.project.revision != expected_revision {
         return Err(error(M7DeleteErrorCode::ProjectDeletePlanStale));
@@ -342,11 +355,12 @@ pub(super) fn commit_registry(
         return Err(internal());
     }
     let plan = load_plan(&transaction, &owner, plan_id)?;
+    let resource_owner = alcomd_application::workflow_resource_owner(&owner);
     let deleted = transaction
         .execute(
             "DELETE FROM projects WHERE owner_principal_id=?1 AND project_id=?2 AND revision=?3",
             params![
-                owner.as_str(),
+                resource_owner.as_str(),
                 plan.draft.project.project_id.to_string(),
                 integer(plan.draft.project.revision.get())?,
             ],
@@ -366,7 +380,7 @@ pub(super) fn commit_registry(
     }
     let (previous_phase, evidence) = latest_evidence(&transaction, operation_id)?;
     if !already_committed {
-        insert_project_deleted_event(&transaction, &owner, &plan, now_ms)?;
+        insert_project_deleted_event(&transaction, &resource_owner, &plan, now_ms)?;
     }
     insert_journal(
         &transaction,

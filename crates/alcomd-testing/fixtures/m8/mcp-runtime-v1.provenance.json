@@ -1,6 +1,6 @@
 {
   "artifact": "crates/alcomd-testing/fixtures/m8/mcp-runtime-v1.wasm",
-  "sha256": "d39111f344a6d2acd40ebaf4950b7c55492e00c4b071b9d5b7b31daaa5b8b486",
+  "sha256": "32507ff6175d22e094a259d0f2ce2283bb8900d42c10605f19789039a5609e7b",
   "toolchain": "1.97.1",
   "target": "wasm32-unknown-unknown",
   "profile": "release",
@@ -18,9 +18,9 @@
     "specs/extensions/wit/mcp-runtime-v1/deps/extension/host-projects.wit": "aa7fd7d38f2af28ca3606d7f70471586b134abb5a76dd4f82154bebd31a4dacb",
     "specs/extensions/wit/mcp-runtime-v1/deps/extension/types.wit": "4fe1c69e2779b043f2f6ca81ca836e1e8f4132fa000f38cac256e03e9d2147bd",
     "specs/extensions/wit/mcp-runtime-v1/deps/extension/world.wit": "27f577baa5510bde52ba57a7b1179e79f61511f81d3b290665cb06b967c17ffd",
-    "specs/extensions/wit/mcp-runtime-v1/deps/mcp-management/management.wit": "e2532b532df5c0dfda584f7161b1179ce043ee7358f4e2faf7e90df4edb7fe15",
-    "specs/extensions/wit/mcp-runtime-v1/runtime.wit": "6bd12c2cc2113c0f84528460c1e64aa747486321b68b2a1daef254d1f7524eb7",
-    "specs/extensions/wit/mcp-transport-v1/transport.wit": "a94cf2586575dc2d49b5323283b4b86175af53457e66590f30f113897901c53b"
+    "specs/extensions/wit/mcp-runtime-v1/deps/mcp-management/management.wit": "53520ae3dfddb2248429faf8ee5080e125b38aa4d45d70e7875bb393863fc1fd",
+    "specs/extensions/wit/mcp-runtime-v1/runtime.wit": "825a5d0ac1a4fa39da2ea5a5e3a1287fb477c46841fcfd7b152b811bd7b34f8f",
+    "specs/extensions/wit/mcp-transport-v1/transport.wit": "72cf59022a46984cce3221d888ed86426c73d506e7953c22ee143af4eeed0cdd"
   },
-  "sourceCandidate": "connection-level management Host v2 with existing activity and transport observations"
+  "sourceCandidate": "MCP client management and observation interfaces for the first release"
 }

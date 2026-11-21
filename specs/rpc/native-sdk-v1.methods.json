@@ -11,10 +11,10 @@
         "backup": [
             "backup_archive_limit_exceeded",
             "backup_integrity_mismatch",
+            "backup_invalid_archive",
             "backup_not_found",
-            "backup_restore_plan_not_found",
-            "backup_restore_plan_stale",
             "backup_restore_recovery_required",
+            "backup_source_changed",
             "backup_source_unsafe",
             "backup_target_exists",
             "backup_target_invalid",
@@ -305,20 +305,6 @@
         ]
     },
     "methods": {
-        "backups.applyRestore": {
-            "kind": "write",
-            "capabilities": [
-                "backups.restore.v1"
-            ],
-            "rustMethod": "backup_apply_restore",
-            "requestType": "BackupApplyRestoreParams",
-            "resultType": "BackupApplyRestoreResult",
-            "requestSchema": "m5-backup-restore.schema.json#/$defs/applyRestoreParams",
-            "resultSchema": "m5-backup-restore.schema.json#/$defs/applyRestoreResult",
-            "errorProfiles": [
-                "backup"
-            ]
-        },
         "backups.create": {
             "kind": "write",
             "capabilities": [
@@ -326,51 +312,23 @@
             ],
             "rustMethod": "backup_create",
             "requestType": "BackupCreateParams",
-            "resultType": "BackupCreateResult",
-            "requestSchema": "m5-backup-create.schema.json#/$defs/createParams",
-            "resultSchema": "m5-backup-create.schema.json#/$defs/createResult",
+            "resultType": "OperationAccepted",
+            "requestSchema": "zip-backup.schema.json#/$defs/createParams",
+            "resultSchema": "state-check.response.schema.json#/properties/result",
             "errorProfiles": [
                 "backup"
             ]
         },
-        "backups.get": {
-            "kind": "read",
-            "capabilities": [
-                "backups.read.v1"
-            ],
-            "rustMethod": "backup_get",
-            "requestType": "BackupGetParams",
-            "resultType": "BackupRecord",
-            "requestSchema": "m5-backup-create.schema.json#/$defs/getParams",
-            "resultSchema": "m5-backup-create.schema.json#/$defs/backupRecord",
-            "errorProfiles": [
-                "backup"
-            ]
-        },
-        "backups.list": {
-            "kind": "read",
-            "capabilities": [
-                "backups.read.v1"
-            ],
-            "rustMethod": "backups_list",
-            "requestType": "BackupsListParams",
-            "resultType": "BackupsListResult",
-            "requestSchema": "m5-backup-create.schema.json#/$defs/listParams",
-            "resultSchema": "native-sdk-v1.schema.json#/$defs/BackupsListResult",
-            "errorProfiles": [
-                "backup"
-            ]
-        },
-        "backups.planRestore": {
+        "backups.restore": {
             "kind": "write",
             "capabilities": [
                 "backups.restore.v1"
             ],
-            "rustMethod": "backup_plan_restore",
-            "requestType": "BackupPlanRestoreParams",
-            "resultType": "BackupRestorePlan",
-            "requestSchema": "m5-backup-restore.schema.json#/$defs/planRestoreParams",
-            "resultSchema": "m5-backup-restore.schema.json#/$defs/restorePlan",
+            "rustMethod": "backup_restore",
+            "requestType": "BackupRestoreParams",
+            "resultType": "OperationAccepted",
+            "requestSchema": "zip-backup.schema.json#/$defs/restoreParams",
+            "resultSchema": "state-check.response.schema.json#/properties/result",
             "errorProfiles": [
                 "backup"
             ]
@@ -712,7 +670,7 @@
         "packages.planBulk": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_bulk",
             "requestType": "PackagePlanBulkParams",
@@ -726,8 +684,7 @@
         "packages.planDowngrade": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v1",
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_downgrade",
             "requestType": "PackagePlanDowngradeParams",
@@ -741,8 +698,7 @@
         "packages.planInstall": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v1",
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_install",
             "requestType": "PackagePlanInstallParams",
@@ -756,7 +712,7 @@
         "packages.planReinstall": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_reinstall",
             "requestType": "PackagePlanReinstallParams",
@@ -770,8 +726,7 @@
         "packages.planRemove": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v1",
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_remove",
             "requestType": "PackagePlanRemoveParams",
@@ -785,8 +740,7 @@
         "packages.planResolve": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v1",
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_resolve",
             "requestType": "PackagePlanResolveParams",
@@ -800,8 +754,7 @@
         "packages.planUpgrade": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v1",
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_upgrade",
             "requestType": "PackagePlanUpgradeParams",
@@ -829,7 +782,7 @@
         "packages.queryProjectCandidates": {
             "kind": "read",
             "capabilities": [
-                "packages.candidates.v2"
+                "packages.candidates.v1"
             ],
             "rustMethod": "package_query_project_candidates",
             "requestType": "ProjectCandidateRequest",
@@ -910,6 +863,27 @@
                 "userPackage"
             ]
         },
+        "plans.get": {
+            "kind": "read",
+            "capabilities": [],
+            "capabilityByKind": {
+                "package": "packages.plan.v1",
+                "project_copy": "projects.copy.v1",
+                "project_delete_directory": "projects.delete.v1",
+                "project_unity_migration": "projects.unity-migration.v1"
+            },
+            "rustMethod": "get_plan",
+            "requestType": "PlansGetParams",
+            "resultType": "PlansGetResult",
+            "requestSchema": "plans-get.schema.json#/$defs/params",
+            "resultSchema": "plans-get.schema.json#/$defs/result",
+            "errorProfiles": [
+                "packageTransaction",
+                "projectCopy",
+                "projectDelete",
+                "unityMigration"
+            ]
+        },
         "projectTemplates.edit": {
             "kind": "write",
             "capabilities": [
@@ -927,7 +901,7 @@
         "projectTemplates.export": {
             "kind": "write",
             "capabilities": [
-                "projectTemplates.v2"
+                "projectTemplates.v1"
             ],
             "rustMethod": "project_templates_export",
             "requestType": "ProjectTemplatesExportParams",
@@ -956,7 +930,7 @@
         "projectTemplates.list": {
             "kind": "read",
             "capabilities": [
-                "projectTemplates.v2"
+                "projectTemplates.v1"
             ],
             "rustMethod": "project_templates_list",
             "requestType": "ProjectTemplatesListParams",
@@ -970,7 +944,7 @@
         "projectTemplates.remove": {
             "kind": "write",
             "capabilities": [
-                "projectTemplates.v2"
+                "projectTemplates.v1"
             ],
             "rustMethod": "project_templates_remove",
             "requestType": "ProjectTemplatesRemoveParams",
@@ -984,7 +958,7 @@
         "projectTemplates.save": {
             "kind": "write",
             "capabilities": [
-                "projectTemplates.v2"
+                "projectTemplates.v1"
             ],
             "rustMethod": "project_templates_save",
             "requestType": "ProjectTemplatesSaveParams",
@@ -1285,6 +1259,20 @@
             "resultType": "RepositoriesListResult",
             "requestSchema": "m3-project-repository.schema.json#/$defs/registryListParams",
             "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoriesListResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
+        "repositories.move": {
+            "kind": "write",
+            "capabilities": [
+                "repositories.registry.v1"
+            ],
+            "rustMethod": "repository_move",
+            "requestType": "RepositoryMoveParams",
+            "resultType": "RepositoryMoveResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryMoveParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryMoveResult",
             "errorProfiles": [
                 "repositoryRegistry"
             ]

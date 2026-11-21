@@ -175,38 +175,6 @@ impl fmt::Display for ProjectId {
     }
 }
 
-/// Stable identifier for one managed native backup archive.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct BackupId(Uuid);
-
-impl BackupId {
-    #[must_use]
-    pub fn new() -> Self {
-        Self(Uuid::new_v4())
-    }
-
-    pub fn parse(value: &str) -> Result<Self, DomainValueError> {
-        Uuid::parse_str(value)
-            .ok()
-            .filter(|parsed| parsed.to_string() == value)
-            .map(Self)
-            .ok_or(DomainValueError::InvalidBackupId)
-    }
-}
-
-impl Default for BackupId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl fmt::Display for BackupId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(formatter)
-    }
-}
-
 /// Stable identifier for one enrolled loose local package source.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -720,7 +688,6 @@ pub enum DomainValueError {
     InvalidPlanId,
     /// Template ID was not a valid UUID.
     /// Backup ID was not a canonical UUID.
-    InvalidBackupId,
     /// User Package ID was not a canonical UUID.
     InvalidUserPackageId,
     /// Principal ID was empty, non-ASCII, or exceeded its frozen limit.
@@ -740,7 +707,6 @@ impl fmt::Display for DomainValueError {
             Self::InvalidUnityLaunchId => formatter.write_str("invalid Unity launch identifier"),
             Self::InvalidOperationId => formatter.write_str("invalid Operation identifier"),
             Self::InvalidPlanId => formatter.write_str("invalid Plan identifier"),
-            Self::InvalidBackupId => formatter.write_str("invalid Backup identifier"),
             Self::InvalidUserPackageId => formatter.write_str("invalid User Package identifier"),
             Self::InvalidPrincipalId => formatter.write_str("invalid Principal identifier"),
             Self::InvalidIdempotencyKey => formatter.write_str("invalid idempotency key"),

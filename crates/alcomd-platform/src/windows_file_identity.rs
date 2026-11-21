@@ -6,6 +6,7 @@ use std::ffi::{OsStr, c_void};
 use std::io;
 use std::mem::{MaybeUninit, size_of};
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::io::AsRawHandle;
 use std::path::Path;
 use std::ptr::{null, null_mut};
 
@@ -49,13 +50,21 @@ impl Drop for OwnedHandle {
 /// Returns the final target object's volume serial and 128-bit file ID.
 pub fn file_identity(path: &Path) -> io::Result<WindowsFileIdentity> {
     let handle = open_object(path)?;
+    identity_from_handle(handle.0)
+}
+
+pub(crate) fn file_identity_from_file(file: &std::fs::File) -> io::Result<WindowsFileIdentity> {
+    identity_from_handle(file.as_raw_handle())
+}
+
+fn identity_from_handle(handle: HANDLE) -> io::Result<WindowsFileIdentity> {
     let mut information = MaybeUninit::<FILE_ID_INFO>::zeroed();
     // SAFETY: `handle` is a valid owned HANDLE. `information` is writable,
     // correctly aligned storage exactly `size_of::<FILE_ID_INFO>()` bytes long;
     // GetFileInformationByHandleEx initializes it on a nonzero return.
     let succeeded = unsafe {
         GetFileInformationByHandleEx(
-            handle.0,
+            handle,
             FileIdInfo,
             information.as_mut_ptr().cast::<c_void>(),
             size_of::<FILE_ID_INFO>() as u32,

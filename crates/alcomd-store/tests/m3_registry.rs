@@ -4,29 +4,16 @@ use std::thread;
 use std::time::Duration;
 
 use alcomd_application::{
-    CandidateStore, DependencyIdentity, IdempotencyKey, M3ErrorCode, M3RegistryStore, M4ErrorCode,
-    M4Store, M5UnityStore, ManifestState, PrincipalId, ProjectId, ProjectObservation,
-    ProjectRecord, ProjectType, RepositoryArchivePinStore, RepositoryId, RepositoryObservation,
+    AccessContext, CandidateStore, DependencyIdentity, IdempotencyKey, M3ErrorCode,
+    M3RegistryStore, M4ErrorCode, M4Store, ManifestState, PrincipalId, ProjectObservation,
+    ProjectType, RepositoryArchivePinStore, RepositoryId, RepositoryObservation,
     RepositoryPackageLinks, RepositoryPackageSourcePin, RepositoryPackageVersion, RepositorySource,
     RepositoryValidators, ResolverCatalogSource, ResolverPackageMetadata, Revision, StateStore,
-    SyncWrite, UnityInstallationId, VRCHAT_CURATED_REPOSITORY_ID, VRCHAT_OFFICIAL_REPOSITORY_ID,
+    VRCHAT_CURATED_REPOSITORY_ID, VRCHAT_OFFICIAL_REPOSITORY_ID,
 };
 use alcomd_store::StateStoreHandle;
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
 use uuid::Uuid;
-
-const MIGRATIONS_V1_TO_V10: [&str; 10] = [
-    include_str!("../migrations/0001_state.sql"),
-    include_str!("../migrations/0002_projects_repositories.sql"),
-    include_str!("../migrations/0003_package_transactions.sql"),
-    include_str!("../migrations/0004_local_workflows.sql"),
-    include_str!("../migrations/0005_template_plans.sql"),
-    include_str!("../migrations/0006_backup_create.sql"),
-    include_str!("../migrations/0007_backup_restore.sql"),
-    include_str!("../migrations/0008_extension_runtime.sql"),
-    include_str!("../migrations/0009_portable_extension_ui.sql"),
-    include_str!("../migrations/0010_project_copy.sql"),
-];
 
 struct TestDirectory(PathBuf);
 
@@ -270,7 +257,7 @@ async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
         descending: true,
     };
     let first = store
-        .list_project_view(owner.clone(), None, 2, view.clone(), None)
+        .list_project_view(AccessContext::local_owner(), None, 2, view.clone(), None)
         .await
         .expect("first view page");
     assert_eq!(
@@ -284,7 +271,7 @@ async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
     );
     let second = store
         .list_project_view(
-            owner.clone(),
+            AccessContext::local_owner(),
             first.page.next_cursor.clone(),
             2,
             view.clone(),
@@ -304,7 +291,7 @@ async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
     assert!(second.page.next_cursor.is_none());
     let ascending = store
         .list_project_view(
-            owner.clone(),
+            AccessContext::local_owner(),
             None,
             10,
             ProjectListView {
@@ -331,7 +318,7 @@ async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
     );
     let by_name = store
         .list_project_view(
-            owner.clone(),
+            AccessContext::local_owner(),
             None,
             10,
             ProjectListView {
@@ -359,7 +346,7 @@ async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
     );
     let by_unity = store
         .list_project_view(
-            owner.clone(),
+            AccessContext::local_owner(),
             None,
             2,
             ProjectListView {
@@ -387,7 +374,13 @@ async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
         .await
         .expect("invalidate the ordered view");
     let stale = store
-        .list_project_view(owner, first.page.next_cursor, 2, view, Some(first.sequence))
+        .list_project_view(
+            AccessContext::local_owner(),
+            first.page.next_cursor,
+            2,
+            view,
+            Some(first.sequence),
+        )
         .await
         .expect_err("reordered view must restart at the beginning");
     assert_eq!(stale.code(), M3ErrorCode::RevisionConflict);
@@ -732,199 +725,6 @@ async fn concurrent_favorite_mutations_use_exact_project_revision_cas() {
     assert_eq!(current.revision.get(), 2);
 }
 
-#[test]
-fn legacy_durable_project_record_json_defaults_favorite_to_false() {
-    let record = ProjectRecord {
-        project_id: alcomd_application::ProjectId::new(),
-        observation: project(10),
-        revision: alcomd_application::Revision::INITIAL,
-        registered_at_ms: 10,
-        last_modified_at_ms: None,
-        favorite: true,
-    };
-    let mut legacy = serde_json::to_value(record).expect("serialize record");
-    legacy
-        .as_object_mut()
-        .expect("record object")
-        .remove("favorite");
-    let restored: ProjectRecord = serde_json::from_value(legacy).expect("read v10 record JSON");
-    assert!(!restored.favorite);
-}
-
-#[tokio::test]
-async fn v10_project_idempotency_and_unity_arguments_survive_current_migration() {
-    let directory = TestDirectory::new();
-    let database = directory.database();
-    let owner = PrincipalId::local_owner();
-    let project_id = ProjectId::parse("00000000-0000-4000-8000-000000000711").expect("project ID");
-    let installation_id = UnityInstallationId::parse("00000000-0000-4000-8000-000000000712")
-        .expect("installation ID");
-    let observation = project(11);
-    {
-        let connection = Connection::open(&database).expect("open v10 fixture");
-        for migration in MIGRATIONS_V1_TO_V10 {
-            connection
-                .execute_batch(migration)
-                .expect("apply v10 chain");
-        }
-        let mut semantic =
-            serde_json::to_value(&observation).expect("serialize historical snapshot");
-        semantic["observed_at_ms"] = serde_json::json!(0);
-        connection
-            .execute(
-                "INSERT INTO projects (
-                    project_id, owner_principal_id, root_path, path_identity_key, project_type,
-                    unity_version, unity_revision, snapshot_json, revision, registered_at_ms,
-                    observed_at_ms, updated_at_ms
-                 ) VALUES (?1, ?2, ?3, ?4, 'avatars', ?5, NULL, ?6, 1, 10, 10, 10)",
-                params![
-                    project_id.to_string(),
-                    owner.as_str(),
-                    observation.root_path,
-                    observation.path_identity_key,
-                    observation.unity_version,
-                    serde_json::to_string(&semantic).expect("serialize semantic project"),
-                ],
-            )
-            .expect("insert v10 project");
-        connection
-            .execute(
-                "INSERT INTO unity_installations (
-                    installation_id, owner_principal_id, executable_path,
-                    filesystem_identity_key, unity_version, architecture, source_kind,
-                    revision, observed_at_ms, updated_at_ms
-                 ) VALUES (?1, ?2, 'X:/Unity.exe', x'12', '2022.3.40f1', 'x86_64',
-                           'manual', 1, 10, 10)",
-                params![installation_id.to_string(), owner.as_str()],
-            )
-            .expect("insert v10 installation");
-        connection
-            .execute(
-                "INSERT INTO project_editor_preferences (
-                    project_id, installation_id, arguments_json, revision, updated_at_ms
-                 ) VALUES (?1, ?2, '[\"-logFile\",\"-\"]', 1, 10)",
-                params![project_id.to_string(), installation_id.to_string()],
-            )
-            .expect("insert v10 preference");
-
-        let record = ProjectRecord {
-            project_id,
-            observation: observation.clone(),
-            revision: Revision::INITIAL,
-            registered_at_ms: 10,
-            last_modified_at_ms: None,
-            favorite: false,
-        };
-        let mut project_response = serde_json::to_value(SyncWrite {
-            value: record,
-            replayed: false,
-        })
-        .expect("serialize project response");
-        project_response["value"]["observation"]["observed_at_ms"] = serde_json::json!(10);
-        project_response["value"]
-            .as_object_mut()
-            .expect("project record")
-            .remove("favorite");
-        let register_fingerprint = serde_json::to_string(&serde_json::json!({
-            "pathIdentityKey": observation.path_identity_key,
-            "rootPath": observation.root_path,
-            "version": 1
-        }))
-        .expect("register fingerprint");
-        let refresh_fingerprint = serde_json::to_string(&serde_json::json!({
-            "expectedRevision": 1,
-            "id": project_id.to_string(),
-            "version": 1
-        }))
-        .expect("refresh fingerprint");
-        for (method, key, fingerprint) in [
-            ("projects.register", "legacy-register", register_fingerprint),
-            ("projects.refresh", "legacy-refresh", refresh_fingerprint),
-        ] {
-            connection
-                .execute(
-                    "INSERT INTO idempotency_records (
-                        principal_id, method, idempotency_key, request_fingerprint, state,
-                        operation_id, response_json, created_at_ms
-                     ) VALUES (?1, ?2, ?3, ?4, 'completed', NULL, ?5, 10)",
-                    params![
-                        owner.as_str(),
-                        method,
-                        key,
-                        fingerprint,
-                        serde_json::to_string(&project_response)
-                            .expect("serialize legacy project response"),
-                    ],
-                )
-                .expect("insert legacy project response");
-        }
-    }
-
-    let store = StateStoreHandle::open(database.clone()).expect("open and migrate v10 fixture");
-    {
-        let connection = Connection::open(&database).expect("inspect migrated raw JSON");
-        let snapshot_json: String = connection
-            .query_row(
-                "SELECT snapshot_json FROM projects WHERE project_id=?1",
-                [project_id.to_string()],
-                |row| row.get(0),
-            )
-            .expect("read persisted project snapshot");
-        let snapshot: serde_json::Value =
-            serde_json::from_str(&snapshot_json).expect("parse persisted project snapshot");
-        assert!(snapshot.get("observed_at_ms").is_none());
-        let mut responses = connection
-            .prepare("SELECT response_json FROM idempotency_records WHERE method IN ('projects.register', 'projects.refresh') ORDER BY method")
-            .expect("prepare persisted project responses");
-        let response_json = responses
-            .query_map([], |row| row.get::<_, String>(0))
-            .expect("read persisted project responses")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("collect persisted project responses");
-        assert_eq!(response_json.len(), 2);
-        for encoded in response_json {
-            let response: serde_json::Value =
-                serde_json::from_str(&encoded).expect("parse persisted project response");
-            assert!(response["value"]["observation"].is_object());
-            assert!(
-                response["value"]["observation"]
-                    .get("observed_at_ms")
-                    .is_none()
-            );
-        }
-    }
-    let register = store
-        .register_project(
-            owner.clone(),
-            observation.clone(),
-            key("legacy-register"),
-            20,
-        )
-        .await
-        .expect("replay v10 project register");
-    assert!(register.replayed);
-    assert!(!register.value.favorite);
-    let refresh = store
-        .refresh_project(
-            owner.clone(),
-            project_id,
-            Revision::INITIAL,
-            observation,
-            key("legacy-refresh"),
-            21,
-        )
-        .await
-        .expect("replay v10 project refresh");
-    assert!(refresh.replayed);
-    assert!(!refresh.value.favorite);
-    let config = store
-        .get_project_launch_config(owner, project_id)
-        .await
-        .expect("read migrated launch arguments");
-    assert_eq!(config.arguments, ["-logFile", "-"]);
-    assert_eq!(config.revision, Some(Revision::INITIAL));
-}
-
 #[tokio::test]
 async fn repository_refresh_preserves_snapshot_on_error_and_304_is_no_op() {
     let directory = TestDirectory::new();
@@ -950,7 +750,14 @@ async fn repository_refresh_preserves_snapshot_on_error_and_304_is_no_op() {
         .expect("304 refresh");
     assert_eq!(not_modified.value.revision.get(), 1);
     assert_eq!(
-        not_modified.value.observation.validators.etag.as_deref(),
+        store
+            .get_repository(owner.clone(), first.value.repository_id)
+            .await
+            .expect("updated conditional retrieval metadata")
+            .observation
+            .validators
+            .etag
+            .as_deref(),
         Some("\"two\"")
     );
 
@@ -1222,6 +1029,16 @@ async fn large_repository_write_replays_keep_metadata_and_paginate_package_versi
     let store = StateStoreHandle::open(directory.database()).expect("open store");
     let owner = PrincipalId::local_owner();
     let mut index = repository(1, 10);
+    index.declared_url = Some("https://example.invalid/public-index.json".into());
+    index.issues.push(alcomd_application::ReadIssue {
+        code: "invalid_metadata".into(),
+        component: "repository".into(),
+        item: "display name".into(),
+        line: Some(3),
+        column: Some(8),
+    });
+    let mut small_index = index.clone();
+    small_index.refreshed_at_ms = 50;
     let package = index.packages.pop().expect("fixture package");
     index.packages = (0..1100)
         .map(|version| RepositoryPackageVersion {
@@ -1253,7 +1070,12 @@ async fn large_repository_write_replays_keep_metadata_and_paginate_package_versi
         .await
         .expect("refresh index above replay budget");
     assert_eq!(refreshed.value.revision.get(), 2);
-    assert!(refreshed.value.observation.packages.is_empty());
+    assert_eq!(refreshed.value.observation.issues, refreshed_index.issues);
+    assert_eq!(
+        refreshed.value.observation.declared_url,
+        refreshed_index.declared_url
+    );
+    assert_eq!(refreshed.value.observation.refreshed_at_ms, 20);
 
     let not_modified = store
         .update_repository_validators(
@@ -1268,7 +1090,6 @@ async fn large_repository_write_replays_keep_metadata_and_paginate_package_versi
         .expect("record 304 without serializing the index");
     assert_eq!(not_modified.value.revision, refreshed.value.revision);
     assert_eq!(not_modified.value.observation.refreshed_at_ms, 30);
-    assert!(not_modified.value.observation.packages.is_empty());
 
     let register_replay = store
         .register_repository(owner.clone(), index, key("large-register"), 40)
@@ -1296,20 +1117,20 @@ async fn large_repository_write_replays_keep_metadata_and_paginate_package_versi
         )
         .await
         .expect("replay original 304");
-    for (original, replay) in [
-        (first, register_replay),
-        (refreshed, refresh_replay),
-        (not_modified, validator_replay),
-    ] {
-        assert!(replay.replayed);
-        assert_eq!(replay.value.repository_id, original.value.repository_id);
-        assert_eq!(replay.value.revision, original.value.revision);
-        assert_eq!(
-            replay.value.registered_at_ms,
-            original.value.registered_at_ms
-        );
-        assert_eq!(replay.value.observation, original.value.observation);
-    }
+    assert!(register_replay.replayed);
+    assert_eq!(
+        register_replay.value.repository_id,
+        first.value.repository_id
+    );
+    assert_eq!(register_replay.value.revision, first.value.revision);
+    assert_eq!(
+        register_replay.value.registered_at_ms,
+        first.value.registered_at_ms
+    );
+    assert_eq!(register_replay.value.observation, first.value.observation);
+    assert!(refresh_replay.replayed && validator_replay.replayed);
+    assert_eq!(refresh_replay.value, refreshed.value);
+    assert_eq!(validator_replay.value, not_modified.value);
 
     let mut cursor = None;
     let mut count = 0;
@@ -1328,6 +1149,64 @@ async fn large_repository_write_replays_keep_metadata_and_paginate_package_versi
         }
     }
     assert_eq!(count, 1100);
+    let small = store
+        .refresh_repository(
+            owner.clone(),
+            id,
+            refreshed.value.revision,
+            small_index,
+            key("small-refresh"),
+            50,
+        )
+        .await
+        .expect("refresh with one package");
+    store
+        .unregister_repository(
+            owner.clone(),
+            id,
+            small.value.revision,
+            key("remove-before-replay"),
+            60,
+        )
+        .await
+        .expect("remove the registered repository");
+    for (name, expected_revision, original) in [
+        ("large-refresh", first.value.revision, refreshed.value),
+        (
+            "large-304",
+            refresh_replay.value.revision,
+            not_modified.value,
+        ),
+    ] {
+        let restored = store
+            .replay_repository_refresh(owner.clone(), id, expected_revision, key(name))
+            .await
+            .expect("lookup after removal")
+            .expect("durable refresh receipt");
+        assert!(restored.replayed);
+        assert_eq!(restored.value, original);
+    }
+    let db = rusqlite::Connection::open(directory.database()).expect("receipt database");
+    let receipt = |key: &str| -> String {
+        db.query_row(
+            "SELECT response_json FROM idempotency_records WHERE method='repositories.refresh' AND idempotency_key=?1",
+            [key],
+            |row| row.get(0),
+        ).expect("frozen receipt")
+    };
+    let large = receipt("large-refresh");
+    assert_eq!(large.len(), receipt("small-refresh").len());
+    for value in [large, receipt("large-304")] {
+        for private in [
+            "com.example.package",
+            "packages",
+            "manifest_fingerprint",
+            "validators",
+            "source_identity_key",
+        ] {
+            assert!(!value.contains(private), "{private}");
+        }
+    }
 }
 
 fn resolver_index_fixture() -> RepositoryObservation {
@@ -1661,7 +1540,13 @@ async fn only_unindexed_snapshots_block_catalog_and_require_a_full_refresh() {
         .await
         .expect("accept unchanged full index under current rules")
         .value;
-    assert!(fresh.resolver_indexed);
+    assert!(
+        store
+            .get_repository(owner.clone(), registered.repository_id)
+            .await
+            .expect("current registry")
+            .resolver_indexed
+    );
     assert_eq!(fresh.revision, registered.revision);
     let current = store
         .candidate_snapshot(

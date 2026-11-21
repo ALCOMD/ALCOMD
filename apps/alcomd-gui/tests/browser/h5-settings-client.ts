@@ -1,4 +1,4 @@
-import type { RegistryCursor, RepositorySnapshot, SettingsGetResult, SettingsUpdate } from "../../src/core-models";
+import type { RepositoryCursor, RepositorySnapshot, SettingsGetResult, SettingsUpdate } from "../../src/core-models";
 import type { GuiRpcClient } from "../../src/rpc";
 
 export const H5_SETTINGS_SECRET = "h5-settings-secret-never-rendered";
@@ -6,7 +6,7 @@ export const H5_SETTINGS_DIAGNOSTIC = "h5-settings-diagnostic";
 export const H5_HUB_PATH = "\\\\?\\C:\\H5 fixture\\Unity Hub.exe";
 export const H5_HIDDEN_ID = "00000000-0000-4000-8000-000000000801";
 export const H5_VISIBLE_ID = "00000000-0000-4000-8000-000000000802";
-export const H5_REPOSITORY_CURSOR: RegistryCursor = { registeredAtMs: 1_700_000_000_000, id: H5_HIDDEN_ID };
+export const H5_REPOSITORY_CURSOR: RepositoryCursor = { registeredAtMs: 1_700_000_000_000, id: H5_HIDDEN_ID, orderFingerprint: "a".repeat(64) };
 
 interface SettingsRequest { method: string; params: Record<string, unknown> }
 interface SettingsFailure { code: string; afterCommit: boolean }
@@ -97,8 +97,8 @@ export function withH5SettingsClient(base: GuiRpcClient, query: URLSearchParams)
                         backupDirectory: update.paths?.backupDirectory === undefined ? previous.directories.backupDirectory : update.paths.backupDirectory ?? "C:\\Fixture\\Backups"
                     },
                     unityHub: update.unity?.hubPath === undefined ? previous.unityHub : hubPath === null
-                        ? { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" }
-                        : { status: "available", source: "configured", path: hubPath, configuredPathStatus: "available" },
+                        ? { status: "not_found", source: "none", path: null, targetToken: null, configuredPathStatus: "unset" }
+                        : { status: "available", source: "configured", path: hubPath, targetToken: "a".repeat(64), configuredPathStatus: "available" },
                     settings: {
                         projects: { ...previous.settings.projects, ...update.projects },
                         backups: { ...previous.settings.backups, ...update.backups },
@@ -117,11 +117,11 @@ export function withH5SettingsClient(base: GuiRpcClient, query: URLSearchParams)
             });
         },
         selectUnityHub(currentPath) { return response("selectUnityHub", { currentPath }, () => H5_HUB_PATH); },
-        unityInstallationsRefresh() { return response("unity.installations.refresh", {}, () => base.unityInstallationsRefresh()); },
+        unityInstallationsRefresh(idempotencyKey) { return response("unity.installations.refresh", {}, () => base.unityInstallationsRefresh(idempotencyKey)); },
         repositoriesList(cursor) {
             return response("repositories.list", cursor === undefined ? {} : { cursor }, () => cursor === undefined
-                ? { repositories: [repository(H5_HIDDEN_ID, "H5 hidden source")], nextCursor: H5_REPOSITORY_CURSOR }
-                : { repositories: [repository(H5_VISIBLE_ID, "H5 visible source")] });
+                ? { orderFingerprint: H5_REPOSITORY_CURSOR.orderFingerprint, repositories: [repository(H5_HIDDEN_ID, "H5 hidden source")], nextCursor: H5_REPOSITORY_CURSOR }
+                : { orderFingerprint: H5_REPOSITORY_CURSOR.orderFingerprint, repositories: [repository(H5_VISIBLE_ID, "H5 visible source")] });
         }
     };
     return new Proxy(base, {

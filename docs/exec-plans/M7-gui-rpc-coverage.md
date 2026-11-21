@@ -36,9 +36,9 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `projects.planUnityMigration` | `projects.unity-migration.v1` | Project Unity migration | plan supported Unity migration | R/Plan | review follows | no | data/writer/stale | `gui.m7-project-action-contract` |
 | `projects.applyUnityMigration` | `projects.unity-migration.v1` | Project Unity migration | apply reviewed migration Plan | W | required | yes | mutation/recovery | `gui.m7-project-action-contract` |
 | `repositories.inspect` | `repositories.read.v1` | Repositories add dialog | validate source | R | no | no | dialog data | `gui.m7-core-surfaces` |
-| `repositories.inspectListFile` | `repositories.list-files.v1` | Resources / Import list | select and parse a bounded list file; local-owner only | R/file | explicit native file selection | no | loading/classification/duplicate/invalid/unsupported/read error | `gui.m7-core-surfaces` |
+| `repositories.inspectListFile` | `repositories.list-files.v1` | Resources / Import list | select and parse a bounded list file; authenticated interactive caller | R/file | explicit native file selection | no | loading/classification/duplicate/invalid/unsupported/read error | `gui.m7-core-surfaces` |
 | `repositories.previewListExport` | `repositories.list-files.v1` | Resources / Export list | preview full Core snapshot, exclusions and fingerprint | R | no | no | loading/scope/exclusions/credential-sharing warning | `gui.m7-core-surfaces` |
-| `repositories.exportListFile` | `repositories.list-files.v1` | Resources / Export list | create a new list file from confirmed preview; local-owner only | W/file | reviewed scope/address risk and explicit new name/folder | no | changed snapshot/existing target/write failure/saved result | `gui.m7-operation-flows` |
+| `repositories.exportListFile` | `repositories.list-files.v1` | Resources / Export list | create a new list file from confirmed preview; authenticated interactive caller | W/file | reviewed scope/address risk and explicit new name/folder | no | changed snapshot/existing target/write failure/saved result | `gui.m7-operation-flows` |
 | `repositories.list` | `repositories.read.v1` | Repositories | page repositories | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `repositories.get` | `repositories.read.v1` | Repository detail | load repository | R | no | no | data | `gui.m7-core-surfaces` |
 | `repositories.packages` | `repositories.read.v1` | Repository detail, Project Packages | browse catalog | R | no | no | data/keyset | `gui.m7-core-surfaces` |
@@ -51,9 +51,9 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `packages.planUpgrade` | `packages.plan.v1` | Project Packages | plan upgrade | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
 | `packages.planDowngrade` | `packages.plan.v1` | Project Packages | plan downgrade | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
 | `packages.planResolve` | `packages.plan.v1` | Project Packages | plan deterministic resolve | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
-| `packages.planReinstall` | `packages.plan.v2` | Project Packages | plan reinstall locked packages | R/Plan | review follows | no | data/stale/source ambiguity | `gui.m7-package-workspace` |
-| `packages.planBulk` | `packages.plan.v2` | Project Packages | one Plan for full selected set or Update All | R/Plan | review follows | no | data/complete evidence/256 limit/stale | `gui.m7-package-workspace` |
-| `packages.queryProjectCandidates` | `packages.candidates.v2` | Project Packages | read Core summaries and lazy version pages | R | no | no | data/snapshot/paging/quota/stale | `gui.m7-package-workspace` |
+| `packages.planReinstall` | `packages.plan.v1` | Project Packages | plan reinstall locked packages | R/Plan | review follows | no | data/stale/source ambiguity | `gui.m7-package-workspace` |
+| `packages.planBulk` | `packages.plan.v1` | Project Packages | one Plan for full selected set or Update All | R/Plan | review follows | no | data/complete evidence/256 limit/stale | `gui.m7-package-workspace` |
+| `packages.queryProjectCandidates` | `packages.candidates.v1` | Project Packages | read Core summaries and lazy version pages | R | no | no | data/snapshot/paging/quota/stale | `gui.m7-package-workspace` |
 | `packages.applyPlan` | `packages.apply.v1` | Project Packages | apply reviewed Plan | W | required | yes | mutation/stale/recovery | `gui.m7-operation-flows` |
 | `packages.userPackages.list` | `packages.user-packages.v1` | Resources / User Packages | page enrolled packages | R | no | no | data/keyset | `gui.m7-package-workspace` |
 | `packages.userPackages.get` | `packages.user-packages.v1` | User Package detail | load enrolled package | R | no | no | data | `gui.m7-package-workspace` |
@@ -72,10 +72,10 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `unity.launchOptions` | `unity.launch.v1` | Projects / Open Unity | resolve exact-version 0/1/many installations | R | no | no | data/unknown | `gui.m7-project-action-contract` |
 | `unity.launch` | `unity.launch.v1` | Projects / Open Unity | launch explicit one-shot installation | W | explicit action/selection | launch record | mutation/writer gate | `gui.m7-operation-flows` |
 | `unity.hub.open` | `unity.hub.open.v1` | Settings / Unity | open revalidated Hub or return download_required | W | explicit action | no | revision/path/local-owner/unknown result | `gui.m7-core-surfaces` |
-| `projectTemplates.list` | `projectTemplates.v2` | Resources / Templates, Projects / New project | page the template catalog by ID | R | no | no | keyset, retained data, committed invalidation | `gui.m7-core-surfaces` |
-| `projectTemplates.save` | `projectTemplates.v2` | Resources / Templates editor | create, import or replace a template archive | W | explicit save | no | same ID and content, conflict, revision, locked record | `gui.m7-operation-flows` |
-| `projectTemplates.export` | `projectTemplates.v2` | Resources / Templates | export a template archive | W | explicit export | no | immutable revision, destination collision | `gui.m7-operation-flows` |
-| `projectTemplates.remove` | `projectTemplates.v2` | Resources / Templates | remove a user template by ID and revision | W | yes | no | revision, locked record, committed invalidation | `gui.m7-operation-flows` |
+| `projectTemplates.list` | `projectTemplates.v1` | Resources / Templates, Projects / New project | page the template catalog by ID | R | no | no | keyset, retained data, committed invalidation | `gui.m7-core-surfaces` |
+| `projectTemplates.save` | `projectTemplates.v1` | Resources / Templates editor | create, import or replace a template archive | W | explicit save | no | same ID and content, conflict, revision, locked record | `gui.m7-operation-flows` |
+| `projectTemplates.export` | `projectTemplates.v1` | Resources / Templates | export a template archive | W | explicit export | no | immutable revision, destination collision | `gui.m7-operation-flows` |
+| `projectTemplates.remove` | `projectTemplates.v1` | Resources / Templates | remove a user template by ID and revision | W | yes | no | revision, locked record, committed invalidation | `gui.m7-operation-flows` |
 | `backups.list` | `backups.read.v1` | Project Backups | page backups | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `backups.get` | `backups.read.v1` | Backup detail | load backup | R | no | no | data | `gui.m7-core-surfaces` |
 | `backups.create` | `backups.create.v1` | Project Backups | create backup | W | yes | yes | mutation/recovery | `gui.m7-operation-flows` |
@@ -102,7 +102,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 ## Coverage rules
 
 - New methods, public capabilities and breaking DTO changes require owner approval. The methods above include the later approved Project/Package, exact Unity, candidate evidence and Hub contracts; the original four M7 utility additions are not the full current set.
-- `packages.plan.v2` also supports the original package Plan methods; `planReinstall` and `planBulk` require v2. GUI candidate/source filters use complete Core evidence; optional display metadata does not determine business state.
+- `packages.plan.v1` covers install, remove, upgrade, downgrade, resolve, reinstall and bulk plans. GUI candidate and source filters use Core eligibility and source evidence. Display metadata is optional.
 - A method is complete only when typed Rust and TypeScript adapters, real page/action behavior, common states and its test owner all exist.
 - 旧 Activity/Diagnostics 接口及其专属 capability、权限和 GUI 入口已撤销。现行单页业务日志正文仅由 `logs.read` 读取，沿用 `operations.read` 与 local-owner 边界；`events.list/subscribe` 承担业务变化、失效与恢复，不投影或补写日志正文。
 - Direct registry/lifecycle writes that do not have a Core Plan method receive explicit confirmation but must not invent a GUI Plan.

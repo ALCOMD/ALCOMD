@@ -55,7 +55,7 @@ test("settings show supplied paths without rewriting them or sending edits on fo
     await hubField.focus();
     await page.getByRole("button", { name: "Open Unity Hub", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.unityRequests.find((request) => request.method === "unityHubOpen")?.params))
-        .toMatchObject({ expectedPath: hub });
+        .toMatchObject({ expectedTargetToken: "a".repeat(64) });
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
 });
 
@@ -121,19 +121,19 @@ test("user package source folders use the same UNC display rule", async ({ page 
     await expect(page.locator("dd").filter({ hasText: "\\\\?\\" })).toHaveCount(0);
 });
 
-test("restore review displays the destination without modifying its plan request", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/backups/00000000-0000-4000-8000-000000000104&windows-paths=1");
-    await page.getByRole("button", { name: "Restore backup", exact: true }).click();
+test("restore formats the Windows destination only for display", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/projects&windows-paths=1");
+    await selectActionMenuItem(page.getByRole("button", { name: "More project creation options", exact: true }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
     const dialog = page.locator("md-dialog[open]");
-    const parent = dialog.getByRole("textbox", { name: "Restore target parent", exact: true });
-    await parent.fill("\\\\?\\C:\\Restores");
-    await expect(parent).toHaveValue("\\\\?\\C:\\Restores");
-    await dialog.getByRole("textbox", { name: "Restore project name", exact: true }).fill("Restored");
-    await expect(parent).toHaveValue("C:\\Restores");
-    await dialog.getByRole("button", { name: "Review restore", exact: true }).click();
-    await expect(dialog).toContainText("C:\\Restores\\Restored");
-    await expect(dialog).not.toContainText("\\\\?\\");
-    expect(await page.evaluate(() => window.h3Requests.filter((request) => request.method === "backups.planRestore"))).toEqual([
-        { method: "backups.planRestore", params: { backupId: "00000000-0000-4000-8000-000000000104", targetParent: "\\\\?\\C:\\Restores", targetLeaf: "Restored" } }
+    const archive = dialog.getByLabel("Backup", { exact: true });
+    const destination = dialog.getByLabel("Destination", { exact: true });
+    await archive.fill("C:\\Outside\\Archive.zip");
+    await destination.fill("\\\\?\\C:\\Restores\\New Project");
+    await expect(destination).toHaveValue("\\\\?\\C:\\Restores\\New Project");
+    await archive.focus();
+    await expect(destination).toHaveValue("C:\\Restores\\New Project");
+    await dialog.getByRole("button", { name: "Restore project", exact: true }).click();
+    expect(await page.evaluate(() => window.h3Requests.filter((request) => request.method === "backups.restore"))).toEqual([
+        { method: "backups.restore", params: { archivePath: "C:\\Outside\\Archive.zip", destinationPath: "\\\\?\\C:\\Restores\\New Project", idempotencyKey: expect.any(String) } }
     ]);
 });

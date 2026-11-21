@@ -1,4 +1,4 @@
-schema = 2
+schema = 1
 
 [metadata]
 status_values = ["unknown", "in_progress", "blocked", "verified"]
@@ -37,7 +37,7 @@ status = "verified"
 implementation_status = "in_progress"
 evidence = ["docs/architecture/ALCOMD-V4.md::核心不变量", "apps/alcomd/src/lib.rs", "crates/alcomd-platform/src/lib.rs", "crates/alcomd-store/src/lib.rs", "specs/storage/state-v1.md"]
 coverage = ["single instance", "single writer", "entrypoint bypass"]
-tests = ["daemon.single-writer", "architecture.dependency-direction", "state.sqlite-migrations", "state.transaction-boundaries", "state.crash-recovery"]
+tests = ["daemon.single-writer", "architecture.dependency-direction", "state.sqlite-initialization", "state.transaction-boundaries", "state.crash-recovery"]
 
 [[feature]]
 id = "rpc.local"
@@ -105,7 +105,7 @@ implementation = "alcomd-vpm"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/baselines/vrc-get-audit.md::事务与恢复风险", "docs/adr/0017-vpm-package-transaction.md", "specs/storage/state-v3.md"]
+evidence = ["docs/baselines/vrc-get-audit.md::事务与恢复风险", "docs/adr/0017-vpm-package-transaction.md", "specs/storage/state-v1.md"]
 coverage = ["extract", "rename", "manifest commits", "process kill", "same/different project concurrency"]
 tests = ["packages.m4-contract", "packages.transaction-faults", "packages.concurrency-locking"]
 
@@ -161,7 +161,7 @@ implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::模板", "docs/adr/0020-native-template-bundle.md", "specs/templates/template-bundle-v1.schema.json", "specs/templates/builtin-inventory-v1.toml"]
+evidence = ["docs/baselines/alcomd3-v3-audit.md::模板", "docs/exec-plans/M7-template-bases.md", "specs/rpc/m7-project-create.schema.json", "specs/templates/vrchat-avatars.json", "specs/templates/vrchat-worlds.json"]
 coverage = ["GUI", "file association", "conflicts", "round trip"]
 tests = ["templates.v3-parity", "templates.m5-bundle", "templates.m5-registry", "templates.m5-import-export", "templates.m5-derive", "templates.m5-create-project", "templates.m5-transaction-faults", "migration.fixture-chain"]
 
@@ -175,9 +175,9 @@ implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::备份", "docs/baselines/vrc-get-audit.md::GUI backup", "docs/adr/0021-native-backup-archive.md", "specs/backups/backup-archive-v1.md"]
+evidence = ["docs/baselines/alcomd3-v3-audit.md::备份", "docs/baselines/vrc-get-audit.md::GUI backup", "specs/rpc/zip-backup.schema.json", "specs/backups/project-zip.md"]
 coverage = ["GUI", "progress", "partial archive", "restore target"]
-tests = ["backups.v3-parity", "backups.m5-create-contract", "backups.m5-create", "backups.m5-restore", "migration.fixture-chain"]
+tests = ["backups.v3-parity", "backups.project-zip", "migration.fixture-chain"]
 
 [[feature]]
 id = "unity.integration"
@@ -245,7 +245,7 @@ implementation = "apps/alcomd-gui"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/exec-plans/M7-official-gui-extension-ui.md::Restored Official GUI Completion", "docs/exec-plans/M7-gui-rpc-coverage.md", "docs/gui/m7-current-layout-gap.md", "docs/gui/m7-material-component-audit.md", "apps/alcomd-gui/src/App.tsx", "apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/src/CoreActions.tsx", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts", "specs/config/settings-v10.md", "crates/alcomd-testing/tests/m7_storage_directories.rs", "apps/alcomd-gui/tests/browser/m7-storage-directories.spec.ts", "apps/alcomd-gui/tests/browser/m7-project-backup-defaults.spec.ts", "docs/testing/m7-project-backup-defaults-20261103.md"]
+evidence = ["docs/exec-plans/M7-official-gui-extension-ui.md::Restored Official GUI Completion", "docs/exec-plans/M7-gui-rpc-coverage.md", "docs/gui/m7-current-layout-gap.md", "docs/gui/m7-material-component-audit.md", "apps/alcomd-gui/src/App.tsx", "apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/src/CoreActions.tsx", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts", "specs/config/settings-v1.md", "crates/alcomd-testing/tests/m7_storage_directories.rs", "apps/alcomd-gui/tests/browser/m7-storage-directories.spec.ts", "apps/alcomd-gui/tests/browser/m7-project-backup-defaults.spec.ts", "docs/testing/m7-project-backup-defaults-20261103.md"]
 coverage = ["functional routes/pages", "typed adapter", "read states", "mutation/Plan/Operation", "settings/activity/diagnostics", "default project/backup directories and retained backup recovery", "Core default-directory discovery and frozen backup defaults including Library selection", "browser accessibility", "pending v3 layout/Material component/visual acceptance"]
 tests = ["gui.m7-core-surfaces", "gui.m7-v3-layout-translation", "gui.m7-material-component-foundation", "gui.m7-visual-gates", "gui.m7-operation-flows", "gui.m7-accessibility-automation", "gui.m7-visual-flow-evidence", "settings.authoritative-storage", "activity.log-redaction", "diagnostics.redacted-list", "gui.m7-portable-ui-production"]
 
@@ -259,7 +259,7 @@ implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::日志", "AGENTS.md::代码规则", "crates/alcomd-store/src/m7_official.rs", "apps/alcomd-gui/src/CorePages.tsx", "crates/alcomd-testing/tests/m7_official_rpc.rs"]
+evidence = ["docs/baselines/alcomd3-v3-audit.md::日志", "AGENTS.md::代码规则", "crates/alcomd-store/src/config.rs", "apps/alcomd-gui/src/CorePages.tsx", "crates/alcomd-testing/tests/m7_official_rpc.rs"]
 coverage = ["GUI", "CLI stderr", "MCP errors", "migration"]
 tests = ["activity.log-redaction", "diagnostics.redacted-list", "operations.lifecycle"]
 
@@ -496,7 +496,7 @@ behavior = "同一系统账号下的官方与外部原生 GUI 通过相同 RPC �
 implementation = "alcomd-client and @alcomd/sdk"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "in_progress"
+implementation_status = "implemented"
 evidence = ["docs/decisions/accepted.md::A-042", "docs/exec-plans/M10-native-sdk-and-rpc.md", "specs/rpc/native-sdk-v1.methods.json"]
 coverage = ["official GUI method parity", "same-user local IPC", "cold start", "cursor recovery", "external SDK packaging"]
 tests = ["sdk.native-desktop-consumers", "rpc.hello-contract", "rpc.per-user-ipc"]

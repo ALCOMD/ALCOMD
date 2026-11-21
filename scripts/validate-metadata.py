@@ -5,14 +5,13 @@ import json
 import re
 import sys
 import tomllib
-from copy import deepcopy
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_LICENSE = "AGPL-3.0-only"
 PROJECT_REPOSITORY = "https://github.com/ALCOMD/ALCOMD"
 RUST_VERSION = "1.97.1"
-CURRENT_CONFIG_SCHEMA = 13
+CURRENT_CONFIG_SCHEMA = 1
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SHA256_FINGERPRINT_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -34,210 +33,85 @@ def require(condition: bool, message: str) -> None:
 
 
 def validate_current_settings_contract() -> None:
-    # Keep Config10's frozen migration evidence separate from the active RPC version.
-    current = load_json("specs/config/settings-v10.schema.json")
-    definitions = current["$defs"]
-    fields = {"mode", "scheme", "sourceColor", "motion"}
-    require(current["properties"]["schema"]["const"] == 10, "Historical Config10 Schema version changed")
-    require("density" not in definitions, "Config10 must not define density")
-    require(set(definitions["appearance"]["properties"]) == fields, "Unexpected Config10 appearance fields")
-    require(set(definitions["appearance"]["required"]) == fields, "Config10 appearance must be complete")
-    partial = definitions["partialUpdate"]["properties"]["appearance"]
-    require(set(partial["properties"]) == fields, "Config10 updates must not accept density")
-    require(definitions["appearance"]["additionalProperties"] is False and partial["additionalProperties"] is False,
-            "Config10 appearance must reject unknown fields")
-    migration = current["x-alcomd-migration"]
-    require(migration["from"] == [1, 2, 3, 4, 5, 6, 7, 8, 9] and migration["to"] == 10, "Unexpected Config10 migration inputs")
-    require(migration["removedFields"] == ["appearance.density"] and migration["preserveRevision"] is True,
-            "Config10 migration preserves revision and discards only legacy density")
-    for version in (1, 2, 3, 4):
-        legacy = load_json(f"specs/config/settings-v{version}.schema.json")
-        require(legacy["properties"]["schema"]["const"] == version, "Historical settings version changed")
-        require(legacy["deprecated"] is True and legacy["x-alcomd-currentSchema"] == 5,
-                "Old settings Schemas must be migration inputs only")
-        if version < 4:
-            require(legacy["$defs"]["density"]["enum"] == ["default", "compact"], "Historical density contract changed")
-        else:
-            require("density" not in legacy["$defs"], "Config4 migration input must not regain density")
+    schema = load_json("specs/config/settings-v1.schema.json")
+    definitions = schema["$defs"]
     rpc = load_json("specs/rpc/m7-official-gui.schema.json")["$defs"]
-    require(rpc["settingsGetResult"]["properties"]["configSchema"]["const"] == CURRENT_CONFIG_SCHEMA,
-            f"Settings RPC must report Config{CURRENT_CONFIG_SCHEMA}")
+    result = rpc["settingsGetResult"]["properties"]
+    base = schema["$id"] + "#/$defs/"
+    require(schema["properties"]["schema"]["const"] == result["configSchema"]["const"] == CURRENT_CONFIG_SCHEMA,
+            "Stored and reported settings must use the release contract")
+    require(schema["additionalProperties"] is False, "Settings file root must be closed")
+    require(result["settings"]["$ref"] == base + "settings" and
+            result["directories"]["$ref"] == base + "storageDirectories" and
+            rpc["settingsUpdateParams"]["properties"]["update"]["$ref"] == base + "partialUpdate",
+            "RPC must reference the released settings types")
     protocol = (ROOT / "crates/alcomd-protocol/src/lib.rs").read_text(encoding="utf-8")
     require(re.search(rf"pub const CONFIG_SCHEMA_VERSION: u32 = {CURRENT_CONFIG_SCHEMA};", protocol) is not None,
-            "Protocol constant must match the approved current Config Schema")
-    base = f"https://alcomd.vrclearn.com/schema/config/settings-v{CURRENT_CONFIG_SCHEMA}.json#/$defs/"
-    require(rpc["settingsGetResult"]["properties"]["settings"]["$ref"] == base + "settings",
-            "Settings RPC must use the current settings model")
-    require(rpc["settingsUpdateParams"]["properties"]["update"]["$ref"] == base + "partialUpdate",
-            "Settings RPC updates must use the current model")
-    hello = load_json("specs/rpc/system-hello.response.schema.json")
-    hello_result = hello["properties"]["result"]
-    for field in ("dataSchema", "configSchema"):
-        require(field not in hello_result["required"] and hello_result["properties"][field] == {
-            "type": "integer", "minimum": 1, "maximum": (1 << 32) - 1
-        }, f"Hello {field} must be an optional positive u32")
-    for version in (11, 12, CURRENT_CONFIG_SCHEMA):
-        schema = load_json(f"specs/config/settings-v{version}.schema.json")
-        active_definitions = schema["$defs"]
-        require(schema["properties"]["schema"]["const"] == version and schema["additionalProperties"] is False,
-                f"Config{version} must keep its exact version and closed root")
-        additions = {"integrations"} | ({"network"} if version >= 12 else set())
-        for name, definition in definitions.items():
-            if name not in {"settings", "partialUpdate"}:
-                expected = deepcopy(definition)
-                if version == 13 and name in {"packages", "partialPackagesUpdate"}:
-                    expected["properties"]["hiddenRepositoryPackages"] = {"$ref": "#/$defs/hiddenRepositoryPackages"}
-                    if name == "packages":
-                        expected["required"].append("hiddenRepositoryPackages")
-                if version == 13 and name in {"backupSettings", "partialBackupsUpdate"}:
-                    expected["properties"]["compressionMode"]["default"] = "level5"
-                require(active_definitions[name] == expected,
-                        f"Config{version} changed the retained {name} contract")
-        if version == 13:
-            require(active_definitions["hiddenRepositoryPackages"] == {
-                "type": "array", "maxItems": 256, "default": [],
-                "x-alcomd-maxTotalPackageIds": 4096,
-                "x-alcomd-uniqueRepositoryIds": True,
-                "x-alcomd-canonicalOrder": "repositoryId and packageIds sorted by ASCII bytes; persisted input must be canonical",
-                "items": {
-                    "type": "object", "additionalProperties": False,
-                    "required": ["repositoryId", "packageIds"],
-                    "properties": {
-                        "repositoryId": {"$ref": "#/$defs/uuid"},
-                        "packageIds": {"type": "array", "minItems": 1, "maxItems": 4096, "uniqueItems": True,
-                                       "items": {"type": "string", "minLength": 1, "maxLength": 128,
-                                                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"}}
-                    }
-                }
-            }, "Config13 must keep the approved scoped package preference limits and canonicalization")
-        for name in ("settings", "partialUpdate"):
-            active = active_definitions[name]
-            require(set(active["properties"]) == set(definitions[name]["properties"]) | additions and
-                    active["additionalProperties"] is False,
-                    f"Config{version} must expose only approved settings additions")
-        require(set(active_definitions["settings"]["required"]) == set(definitions["settings"]["required"]) | additions,
-                f"Config{version} settings must require all approved fields")
-        require(active_definitions["partialUpdate"]["minProperties"] == 1,
-                f"Config{version} must reject empty updates")
-        active_vectors = load_json(f"specs/config/settings-v{version}.contract-vectors.json")
-        result = active_vectors["current"]["getResult"]
-        source = tomllib.loads(active_vectors["current"]["toml"])
-        require(active_vectors["currentConfigSchema"] == result["configSchema"] == source["schema"] == version,
-                f"Config{version} vectors must match their Schema and wire version")
-        require(source["revision"] == result["revision"] and
-                set(result["settings"]) == set(active_definitions["settings"]["required"]),
-                f"Config{version} vectors must retain revision and complete settings")
-        require(result["settings"]["integrations"] == {"handleVccLinks": True},
-                f"Config{version} must preserve the approved VCC link default")
-        if version >= 12:
-            require(result["settings"]["network"] == {"proxy": {"mode": "system"}},
-                    f"Config{version} must use the approved system proxy default")
-        if version == 13:
-            require(result["settings"]["packages"]["hiddenRepositoryPackages"] == [] and
-                    source["packages"]["hidden_repository_packages"] == [],
-                    "Config13 vectors must preserve the empty scoped package preference default")
-    theme = load_json("specs/config/theme-controls.proposal.contract.json")
-    require(theme["configMigration"]["to"] == 5 and "appearance.density" not in theme["ordinarySettings"]["fields"],
-            "Historical theme migration remains Config5 without a density preference")
-    hub = load_json("specs/config/unity-hub-location.proposal.contract.json")
-    require(hub["interfaces"]["configSchema"] == 10, "Historical Hub proposal Config10 evidence changed")
-    vectors = load_json("specs/config/settings-v10.contract-vectors.json")
-    require(vectors["currentConfigSchema"] == 10 and vectors["current"]["getResult"]["configSchema"] == 10,
-            "Settings vectors must describe Config10")
-    require("density" not in vectors["current"]["getResult"]["settings"]["appearance"],
-            "Current settings fixture must omit density")
-    require(tomllib.loads(vectors["current"]["toml"])["schema"] == 10, "Current TOML fixture must be Config10")
-    require([case["schema"] for case in vectors["legacyInputs"]] == [1, 2, 3, 4, 5, 6, 7, 8, 9], "Missing legacy settings vectors")
-    for case in vectors["legacyInputs"]:
-        source = tomllib.loads(case["toml"])
-        require(source["schema"] == case["schema"] and (source["appearance"].get("density") in {"default", "compact"} if source["schema"] < 4 else "density" not in source["appearance"]),
-                "Invalid historical settings fixture")
-        require(source["revision"] == case["expectedRevision"] and "density" not in case["expectedSettings"]["appearance"],
-                "Settings migration vectors must preserve revision and omit density")
-    for case in vectors["rejectedCurrentFiles"]:
-        source = tomllib.loads(case["toml"])
-        require(source["schema"] == 10 and "density" in source["appearance"], "Missing Config10 unknown-field counterexample")
-
-    directory_fields = {"projectDirectory", "backupDirectory"}
-    require(set(definitions["pathSettings"]["properties"]) == directory_fields and
-            set(definitions["pathSettings"]["required"]) == directory_fields,
-            "Config10 directory preferences must be complete and closed")
-    require(definitions["pathSettings"]["additionalProperties"] is False and
-            definitions["partialPathUpdate"]["additionalProperties"] is False and
-            definitions["partialPathUpdate"]["minProperties"] == 1,
-            "Config10 path updates must reject empty/unknown containers")
-    require(rpc["settingsGetResult"]["properties"]["directories"]["$ref"] == base + "storageDirectories",
-            "Settings RPC must publish effective directories")
-    require(migration["pathsDefaults"] == {"projectDirectory": None, "backupDirectory": None},
-            "Legacy migration must use system directory defaults")
-    require(vectors["current"]["getResult"]["settings"]["paths"] == migration["pathsDefaults"],
-            "Current settings fixture must include nullable directory preferences")
-
-    legacy5 = load_json("specs/config/settings-v5.schema.json")
-    require(legacy5["properties"]["schema"]["const"] == 5 and
-            set(legacy5["$defs"]["unitySettings"]["properties"]) == {"hubPath"},
-            "Historical Config5 shape must remain unchanged")
-    unity_fields = {"hubPath", "defaultLaunchArguments"}
-    require(set(definitions["unitySettings"]["properties"]) == unity_fields and
-            set(definitions["unitySettings"]["required"]) == unity_fields and
-            definitions["unitySettings"]["additionalProperties"] is False,
-            "Config10 Unity settings must be complete and closed")
-    require(definitions["partialUnityUpdate"]["minProperties"] == 1 and
-            definitions["partialUnityUpdate"]["additionalProperties"] is False and
-            definitions["partialUnityUpdate"]["x-alcomd-field-permissions"]["defaultLaunchArguments"] == ["settings.manage", "unity.manage"],
-            "Global launch arguments must retain field-level permission checks")
-    require(migration["unityDefaults"] == {"defaultLaunchArguments": None} and
-            vectors["current"]["getResult"]["settings"]["unity"]["defaultLaunchArguments"] is None,
-            "Config10 migration must default to inherited built-in arguments")
-
-    legacy6 = load_json("specs/config/settings-v6.schema.json")
-    require(legacy6["properties"]["schema"]["const"] == 6 and "window" not in legacy6["$defs"]["settings"]["properties"],
-            "Historical Config6 shape must remain unchanged")
-    window_fields = {"rememberState", "fullscreen"}
-    require(set(definitions["windowSettings"]["properties"]) == window_fields and
-            set(definitions["windowSettings"]["required"]) == window_fields and
-            all(definitions["windowSettings"]["properties"][field] == {"type": "boolean", "default": False} for field in window_fields),
-            "Window settings must contain exactly the approved default-false bools")
-    require(definitions["windowSettings"]["additionalProperties"] is False and
-            definitions["partialWindowUpdate"]["additionalProperties"] is False and
-            definitions["partialWindowUpdate"]["minProperties"] == 1 and
-            "required" not in definitions["partialWindowUpdate"] and
-            set(definitions["partialWindowUpdate"]["properties"]) == window_fields and
-            all(definitions["partialWindowUpdate"]["properties"][field] == {"type": "boolean"} for field in window_fields),
-            "Window updates must be closed nonempty bool objects")
-    require(migration["windowDefaults"] == {"rememberState": False, "fullscreen": False} and
-            vectors["current"]["getResult"]["settings"]["window"] == migration["windowDefaults"] and
-            all(case["expectedSettings"]["window"] == (
-                migration["windowDefaults"] if case["schema"] < 7 else
-                {"rememberState": tomllib.loads(case["toml"])["window"]["remember_state"], "fullscreen": False}
-            ) for case in vectors["legacyInputs"]),
-            "Config1-6 migration supplies false and Config7 preserves its saved window preference")
-    require(tomllib.loads(vectors["current"]["toml"])["window"] == {"remember_state": False, "fullscreen": False},
-            "Canonical Config10 TOML must explicitly store the default-false preference")
-    project_defaults = {"autoDiscover": True}
-    backup_defaults = {"compressionMode": "fast", "includeVpmPackages": True, "includeLibrary": False}
-    require(vectors["current"]["getResult"]["settings"]["projects"] == project_defaults and
-            vectors["current"]["getResult"]["settings"]["backups"] == backup_defaults,
-            "Config10 project and backup defaults must match the approved values")
-    for case in vectors["legacyInputs"]:
-        source = tomllib.loads(case["toml"])
-        expected_projects = project_defaults if case["schema"] < 8 else {"autoDiscover": source["projects"]["auto_discover"]}
-        expected_backups = backup_defaults if case["schema"] < 8 else {
-            "compressionMode": source["backups"]["compression_mode"],
-            "includeVpmPackages": source["backups"]["include_vpm_packages"],
-            "includeLibrary": source["backups"]["include_library"]
-        }
-        require(case["expectedSettings"]["projects"] == expected_projects and
-                case["expectedSettings"]["backups"] == expected_backups,
-                "Config1-7 migration supplies defaults and Config8 preserves saved preferences")
-    compression_values = ["store", "fast", "level3", "level5", "level7", "maximum"]
-    for definition in definitions.values():
-        if "compressionMode" in definition.get("properties", {}):
-            require(definition["properties"]["compressionMode"]["enum"] == compression_values,
-                    "Config10 must expose exactly the approved six compression levels")
-    require(rpc.get("settingsGetResult") is not None and
-            current["x-alcomd-field-permissions"]["settings.update.projects.autoDiscover"] == ["settings.manage", "projects.manage"],
-            "Auto discovery settings must require project management permission")
+            "Protocol must advertise the released settings contract")
+    fields = {
+        "appearance": {"mode", "scheme", "sourceColor", "motion"},
+        "packages": {"showPrerelease", "preferPrerelease", "hiddenRepositoryIds",
+                     "hideLocalUserPackages", "hiddenRepositoryPackages"},
+        "unitySettings": {"hubPath", "defaultLaunchArguments"},
+        "pathSettings": {"projectDirectory", "backupDirectory"},
+        "windowSettings": {"rememberState", "fullscreen"},
+        "backupSettings": {"compressionMode", "includeVpmPackages", "includeLibrary"},
+        "settings": {"appearance", "packages", "unity", "locale", "paths", "window",
+                     "backups", "projects", "integrations", "network"},
+    }
+    for name, required in fields.items():
+        definition = definitions[name]
+        require(set(definition["properties"]) == set(definition["required"]) == required and
+                definition["additionalProperties"] is False, f"Incomplete or open settings snapshot {name}")
+    for name, whole in (("partialUpdate", "settings"), ("partialPackagesUpdate", "packages"),
+                        ("partialPathUpdate", "pathSettings"), ("partialUnityUpdate", "unitySettings"),
+                        ("partialWindowUpdate", "windowSettings"), ("partialBackupsUpdate", "backupSettings")):
+        partial = definitions[name]
+        require(partial["additionalProperties"] is False and partial["minProperties"] == 1 and
+                set(partial["properties"]) == fields[whole] and "required" not in partial,
+                f"Unexpected partial settings update shape {name}")
+    packages = definitions["packages"]["properties"]
+    require(packages["showPrerelease"]["default"] is True and packages["preferPrerelease"]["default"] is False,
+            "Package versions must default to visible prereleases with stable preference")
+    scoped = definitions["hiddenRepositoryPackages"]
+    require(scoped["maxItems"] == 256 and scoped["x-alcomd-maxTotalPackageIds"] == 4096 and
+            scoped["x-alcomd-uniqueRepositoryIds"] is True and scoped["items"]["additionalProperties"] is False,
+            "Repository package preferences must retain per-repository and aggregate bounds")
+    require(all(field == {"type": "boolean", "default": False}
+                for field in definitions["windowSettings"]["properties"].values()) and
+            all(field == {"type": "boolean"} for field in definitions["partialWindowUpdate"]["properties"].values()),
+            "Window settings must have two default-false boolean fields and accept explicit false updates")
+    require(schema["x-alcomd-field-permissions"]["settings.update.projects.autoDiscover"] ==
+            ["settings.manage", "projects.manage"] and
+            definitions["partialUnityUpdate"]["x-alcomd-field-permissions"]["defaultLaunchArguments"] ==
+            ["settings.manage", "unity.manage"], "Settings must preserve field-level permission checks")
+    for name in ("backupSettings", "partialBackupsUpdate"):
+        mode = definitions[name]["properties"]["compressionMode"]
+        require(mode["enum"] == ["store", "fast", "level3", "level5", "level7", "maximum"] and
+                mode["default"] == "level5", "Backups must retain the six compression levels and default")
+    vectors = load_json("specs/config/settings-v1.contract-vectors.json")
+    wire = vectors["current"]["getResult"]
+    stored = tomllib.loads(vectors["current"]["toml"])
+    require(stored["schema"] == vectors["currentConfigSchema"] == wire["configSchema"] == CURRENT_CONFIG_SCHEMA,
+            "Settings vectors must match the release schema")
+    require(stored["revision"] == wire["revision"] and set(wire["settings"]) == fields["settings"],
+            "Settings fixture must preserve revision and contain the complete snapshot")
+    require(set(stored) == set(schema["required"]), "Complete TOML vector must exercise every required section")
+    for section in ("appearance", "packages", "window", "projects", "backups", "integrations"):
+        definition = definitions[schema["properties"][section]["$ref"].rsplit("/", 1)[1]]
+        keys = set(stored[section])
+        require(set(definition["required"]) <= keys <= set(definition["properties"]) and
+                definition["additionalProperties"] is False, f"Invalid persisted field names in {section}")
+    settings = wire["settings"]
+    for file_name, wire_name in (("hidden_repository_packages", "hiddenRepositoryPackages"),
+                                 ("show_prerelease", "showPrerelease"), ("prefer_prerelease", "preferPrerelease")):
+        require(stored["packages"][file_name] == settings["packages"][wire_name],
+                f"Settings vector disagrees on {wire_name}")
+    require(settings["network"] == {"proxy": {"mode": "system"}} and
+            settings["integrations"] == {"handleVccLinks": True}, "Unexpected network or VCC fixture")
+    require(settings["paths"] == {"projectDirectory": None, "backupDirectory": None} and
+            settings["unity"] == {"hubPath": None, "defaultLaunchArguments": None},
+            "Unspecified path and Unity preferences must retain their documented values")
 
 
 def main() -> int:
@@ -332,7 +206,7 @@ def main() -> int:
             "Tauri homepage does not match the product")
 
     parity = load_toml("feature-parity.toml")
-    require(parity["schema"] == 2, "Unsupported feature parity schema")
+    require(parity["schema"] == 1, "Unsupported feature parity schema")
     parity_metadata = parity["metadata"]
     require(parity_metadata["baseline_frozen"] is True, "Baselines are not frozen")
     require(
@@ -442,7 +316,7 @@ def main() -> int:
     require(len(feature_ids) == len(set(feature_ids)), "Duplicate feature IDs")
 
     migration_artifacts = load_toml("migrations/v3/artifacts.toml")
-    require(migration_artifacts["schema"] == 2, "Unsupported migration artifact schema")
+    require(migration_artifacts["schema"] == 1, "Unsupported migration artifact schema")
     require(
         isinstance(migration_artifacts["instance_snapshot_available"], bool),
         "Invalid migration instance snapshot state",
@@ -477,7 +351,7 @@ def main() -> int:
     require(len(artifact_ids) == len(set(artifact_ids)), "Duplicate migration artifact IDs")
 
     source_lock = load_toml("docs/baselines/source-lock.toml")
-    require(source_lock["schema"] == 5, "Unsupported source lock schema")
+    require(source_lock["schema"] == 1, "Unsupported source lock schema")
     require(source_lock["frozen"] is True, "Source/spec inputs are not frozen")
 
     for section_name in [
@@ -888,6 +762,7 @@ def main() -> int:
             "Win32_Security_Cryptography_Sip",
             "Win32_Security_WinTrust",
             "Win32_Storage_FileSystem",
+            "Win32_Storage_Packaging_Appx",
             "Win32_System_Com",
             "Win32_System_Pipes",
             "Win32_System_Registry",
@@ -911,7 +786,7 @@ def main() -> int:
     vpm_manifest = load_toml("crates/alcomd-vpm/Cargo.toml")
     require(
         vpm_manifest["dependencies"]["reqwest"] == {"workspace": True, "features": ["system-proxy"]},
-        "alcomd-vpm must use the approved workspace reqwest with Config12 system proxy support",
+        "alcomd-vpm must use the approved workspace reqwest with system proxy support",
     )
     reqwest = cargo_workspace["workspace"]["dependencies"]["reqwest"]
     require(reqwest["version"] == "=0.13.4", "Unexpected reqwest version")

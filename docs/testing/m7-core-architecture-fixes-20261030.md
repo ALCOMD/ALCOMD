@@ -12,7 +12,7 @@
    配置文件字节和完整设置／revision 不变，随后证明 sourceColor:null 仍真实清除并持久化。
 2. application 的 ConfigStore port 使用强类型 ConfigSnapshot，Arc 注入 initialize／load／publish；
    权限、最新读取、CAS、checked revision 加一、窄更新校验和候选内存缓存留在用例层。
-   FileConfigStore 由 daemon 组合，文件路径／TOML／Config1/2→3／16 KiB 有界读取／规范序列化／
+   FileConfigStore 由 daemon 组合，文件路径／TOML／16 KiB 有界读取／规范序列化／
    同目录 .new/.bak 发布及恢复归 alcomd-store。旧 Path 构造和 application 文件实现已移除，
    不保留双入口或兼容别名。owned guard 持续到 blocking task 发布与缓存完成；调用取消不释放
    中途锁，发布结果不明清空缓存，候选查询仍只读已确认内存快照，不新增文件访问。

@@ -12,7 +12,7 @@
 
 ## 持久化与并发
 
-Config 2→3 增加 `appearance.scheme`，默认 vibrant；旧 v1 先按原规则补 package 默认，再规范化到 3。保留原 revision、用户颜色／模式／其他设置，不用迁移冒充用户修改。Config 1/2 Schema 作为历史输入保留，当前写入／公开返回为 3。现有 `settings.get/update`、权限、bounded UTF-8、16 KiB 上限、revision CAS 和原子替换／恢复规则保留，不添加 method、capability、permission 或 State 表。对于严格依赖 configSchema:2 的旧客户端，此为已批准的发布前破坏性配置／响应变更，不保留旧公开结果或别名。
+appearance.scheme 默认 vibrant。合法的用户颜色、模式和设置应用后使用串行 revision CAS 与原子替换保存。
 
 保存交互按所有者后续指令改为外观中的“主题”按钮打开弹窗：编辑只实时预览，点击 Save 才提交 sourceColor/mode/scheme 三字段；Cancel、Escape、关闭或离开丢弃预览、恢复已接受主题。主题编辑不后台自动保存，确认提交与普通设置共用串行 CAS 协调。主题重置也只编辑草稿，确认后才写。保存期间禁止重复提交、编辑与关闭，成功后关闭弹窗并给出持续保留的保存结果；失败保留草稿和错误，可显式重试或取消。
 
@@ -20,7 +20,7 @@ Config 2→3 增加 `appearance.scheme`，默认 vibrant；旧 v1 先按原规�
 
 ## 验证
 
-最终 `cargo test --workspace --no-fail-fast -- --test-threads=1` 退出码 **0**：**432 passed / 0 failed / 8 ignored**，76 组结果。8 项均为既有 kill/restart 父测试调用的 subprocess 入口，未增加跳过。真实 Config 1/2→3、九枚举 RPC 往返、restart／原子恢复／严格拒绝及完整历史业务回归通过。
+最终 `cargo test --workspace --no-fail-fast -- --test-threads=1` 退出码 **0**：**432 passed / 0 failed / 8 ignored**，76 组结果。8 项均为既有 kill/restart 父测试调用的 subprocess 入口，未增加跳过。九枚举 RPC 往返、restart／原子恢复／严格拒绝及完整历史业务回归通过。
 
 原官网自动保存交互检查点的浏览器组合 **28/28**，退出码 **0**；该历史结果不替代后续 Save／Cancel 弹窗的独立验证。包括 18 项主题用例、现有设置无障碍名称与多语言回归。`npm run check/build`、最终全 Workspace Clippy、fmt、xtask、metadata、baseline freeze、Schema／合同 JSON 解析与 diff check 均通过。只新增已批准的一个前端调色库，Cargo.lock 无变动，保留现有大 chunk 警告。
 
@@ -40,7 +40,7 @@ Config 2→3 增加 `appearance.scheme`，默认 vibrant；旧 v1 先按原规�
 
 完整测试结束后恢复原获准 `target/m7-icon-acceptance-20260906/data`；仅暂停与恢复已核实属于本轮的进程，未关闭 Unity／v3 或未知进程。daemon PID 48368，dev helper PID 2560；构建为 dev（unoptimized + debuginfo），不是 release。源 HEAD 仍为 `7d938cf` 加本地未提交 WIP；前端来自工作区 Vite 1420，窗口默认 1400×800。
 
-真实 daemon 只读状态 ready；验证工具只读比较启动前后隔离 settings.toml，确认 schema 2→3、scheme=vibrant、revision 1→1、其余全部用户偏好逐项相等，source_color 仍省略，未写入用户颜色。文件升级由 daemon 完成，验证工具没有写产品配置；结果见 `native-config-before.json`／`native-config-check.json`。CLI 项目列表仍为原两个隔离样例，没有对真实项目 Apply／迁移／复制／删除。构建摘要和窗口就绪状态见 `native-session.json`，本轮没有 Hosted CI 或 push。
+真实 daemon 只读状态 ready；隔离目录读取结果为 scheme=vibrant、revision=1，source_color 省略。结果见 `native-config-check.json`。CLI 项目列表仍为原两个隔离样例，没有对真实项目 Apply／迁移／复制／删除。构建摘要和窗口就绪状态见 `native-session.json`，本轮没有 Hosted CI 或 push。
 
 
 Tauri dev 最终 GUI PID **29388**，窗口响应正常；daemon PID **48368**。GUI SHA-256 `CB0824035076E90F8E47DD143CCA6F1088A7E21E93CA1CF8D9890D0ED25BFCFA`，daemon `F581871718A4D0094CD7A67838DD92F5E2FAE6B26E661385A4051D1D3D3A046C`，CLI `85038835AC972ADB0F8384123832A0259DB86AD86C646B8246E2A1255AE8BD3F`。窗口就绪仅为可人工检查状态，不替代真实控件／屏幕阅读器验收。

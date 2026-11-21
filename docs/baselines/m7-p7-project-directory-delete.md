@@ -1,6 +1,6 @@
 # M7 P7 Project Directory Delete：approved production contract
 
-状态：`owner-approved`、`implemented-local-remote-pending`。本文件冻结审计结论与 active production contract；State v13、
+状态：`owner-approved`、`implemented-local-remote-pending`。本文件冻结审计结论与 active production contract；持久化、
 RPC/Permission、Operation worker、CLI/GUI handler及fault tests已实现，等待同一候选的三平台Hosted CI与CodeQL。
 
 ## v3 exact behavior
@@ -40,8 +40,8 @@ RPC/Permission、Operation worker、CLI/GUI handler及fault tests已实现，等
 | Project revision | 复用 exact `Revision` CAS；Plan/Apply 都要重新验证。 | 同上；`crates/alcomd-store/src/m3.rs:543-547` |
 | Unity writer | 已有 confirmed/suspected/not_observed/unknown 四态及不含 PID/argv/path 的 safe evidence。 | `crates/alcomd-application/src/m5.rs:106-132,683-744` |
 | Resource locks | `Project(ProjectId)` 能串行 registry/project mutation；`ProjectCreate(parent identity hash, leaf)` 能串行同 child path 的 absent/present 变化。两者按 canonical bytes 排序，足够表达 P7。 | `crates/alcomd-domain/src/lib.rs:634-699` |
-| Project Copy | 复用 immutable 15-minute Plan、永久 idempotency、两把锁、append-only workflow journal、intent 后 forward recovery 和 private locator 模式；不复用 Copy inventory/profile。 | `specs/storage/state-v10.md`；`crates/alcomd-vpm/src/project_copy.rs` |
-| Backup / Restore | 复用 sibling staging、atomic publish、phase journal、kill/restart 与 identity revalidation的设计模式；不建立第二套通用 workflow engine。 | `specs/storage/state-v6.md`、`state-v7.md`；`crates/alcomd-vpm/src/backup.rs` |
+| Project Copy | 复用 immutable 15-minute Plan、永久 idempotency、两把锁、append-only workflow journal、intent 后 forward recovery 和 private locator 模式；不复用 Copy inventory/profile。 | `specs/storage/state-v1.md`；`crates/alcomd-vpm/src/project_copy.rs` |
+| Backup / Restore | 复用 sibling staging、atomic publish、phase journal、kill/restart 与 identity revalidation的设计模式；不建立第二套通用 workflow engine。 | `specs/storage/state-v1.md`；`crates/alcomd-vpm/src/backup.rs` |
 | directory identity | Windows 为 volume serial + 128-bit file ID；Unix 为 device + inode；`resolve_directory_identity` 返回 canonical directory + opaque identity。 | `crates/alcomd-platform/src/windows_file_identity.rs:19-75`；`unix.rs:17-23`；`lib.rs:40-63` |
 | link count | Windows 现有 `file_link_count` 可读 hard-link count，但 P7 删除单个 pathname不需要据此拒绝 hardlink；不得把该 helper扩成删除 API。 | `windows_file_identity.rs:77-100` |
 | path / link validation | 现有 VPM/Copy/Backup 有 bounded normalization 与 link/reparse检测，可复用规则和测试思路；private profile-specific实现不能被误称为现成 generic deleter。 | `crates/alcomd-vpm/src/plan.rs`、`project_copy.rs`、`backup.rs` |
@@ -214,30 +214,19 @@ Pre-quarantine错误/取消会删除仅在identity匹配时可证明owned且为�
 Post-intent永不回滚到original path；暂时cleanup失败使Operation保持非成功的`interrupted/recovering`语义并暴露
 `project_delete_recovery_required`，Apply永久重放必须返回并恢复同一OperationId。未完成cleanup不得返回succeeded。
 
-## Registry、State v13、Event 与 idempotency
+## Registry、持久化、Event 与 idempotency
 
 安全顺序固定：fresh validate -> durable quarantine intent -> atomic sibling rename -> quarantine identity verify -> durable registry
 commit intent -> one short SQLite transaction删除exact registry row并提交Event/Operation/idempotency/journal -> cleanup quarantine -> success。
 
-State v13 proposal只新增业务表：
+State1 中的删除事务使用以下表。
 
 - `project_delete_plans`；
 - `project_delete_filesystem_journal`；
 
 并把Operation kind扩为`projects.delete-directory`。不创建generic deletion/job/tombstone/inventory table。
 
-现有多个永久Plan/journal把ProjectId以FK指向可删除的`projects` registry row。物理删除row时既不能CASCADE擦掉历史authority，也不能
-被RESTRICT永久阻止。因此v13 migration还必须**约束性重建**当前Schema 12中以下exact durable tables/columns：
-
-- `package_plans.project_id`；
-- `package_filesystem_journal.project_id`；
-- `project_copy_plans.source_project_id`；
-- `project_copy_filesystem_journal.source_project_id`。
-
-这些字段保留为canonical UUID scalar；插入时仍由application/trigger证明current registry存在，但history不再以current registry row
-作为lifetime owner。migration必须逐列保留所有row、trigger、index、Operation/idempotency关系并通过`foreign_key_check`。
-`project_editor_preferences`是明确随registry消失的current preference，保留`ON DELETE CASCADE`。这是P7物理删除所必需的FK修正，
-不增加第三张业务表。production migration开始前仍须重新扫描Schema，若届时出现新的Project FK必须停下更新合同，不能静默纳入。
+删除项目登记后，软件包及项目复制 Plan 和日志仍保存项目标识、原始目标和 Operation 归属。完整表、约束和触发器见 [State1](../../specs/storage/state-v1.md)。
 
 新Delete Plan/Journal从一开始就把ProjectId保存为checked scalar，不引用`projects(project_id)`：
 
@@ -290,6 +279,6 @@ Synthetic engineering evidence不能冒充M11 v3 differential parity。P7只恢�
 
 ## Approved implementation boundary
 
-项目所有者已批准本文件的RPC/Permission/Plan/Quarantine/State v13/Event/GUI/CLI合同、durable Project FK correction及Unix
+项目所有者已批准本文件的RPC/Permission/Plan/Quarantine/持久化/Event/GUI/CLI合同、durable Project FK correction及Unix
 Project-Delete-private mount-safe cleanup方案。production没有新增crate、unsafe或Windows API；任何超出已批准rustix safe surface的
 平台机制仍是新的人工停止点。

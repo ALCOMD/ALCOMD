@@ -1,186 +1,220 @@
-use serde_json::{Value, json};
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
-const PLAN_SCHEMA: &str = include_str!("../../../specs/backups/backup-restore-plan-v1.schema.json");
-const RPC_SCHEMA: &str = include_str!("../../../specs/rpc/m5-backup-restore.schema.json");
-const CLI_CATALOG: &str = include_str!("../../../specs/cli/m5-backup-commands-v1.json");
-const ERROR_SCHEMA: &str = include_str!("../../../specs/rpc/rpc-error.schema.json");
-const PROFILE: &str = include_str!("../../../specs/backups/backup-profile-v1.json");
-const PERMISSIONS: &str = include_str!("../../../specs/extensions/permissions-v1.md");
-const STATE_V7: &str = include_str!("../../../specs/storage/state-v7.md");
-const VECTORS: &str = include_str!("../fixtures/m5/backup-restore-contract-vectors.json");
-const MIGRATION_V7: &str = include_str!("../../alcomd-store/migrations/0007_backup_restore.sql");
+use alcomd_application::{BackupCancellation, M5BackupAdapter, M5BackupErrorCode, OperationId};
+use alcomd_protocol::{BackupRestoreParams, CAPABILITY_BACKUPS_RESTORE_V1, METHOD_BACKUPS_RESTORE};
+use alcomd_vpm::BackupEngine;
+use serde_json::json;
+use zip::write::SimpleFileOptions;
 
-#[test]
-fn restore_plan_schema_freezes_exact_authority_without_archive_paths() {
-    let schema: Value = serde_json::from_str(PLAN_SCHEMA).expect("Restore Plan Schema");
-    let required = schema["required"].as_array().expect("required fields");
-    for field in [
-        "planId",
-        "backupId",
-        "preallocatedProjectId",
-        "backupArchiveSha256",
-        "backupFileIdentity",
-        "backupByteSize",
-        "backupFormatVersion",
-        "backupManifestFingerprint",
-        "excludeVpmPackages",
-        "excludedPackages",
-        "targetParentPath",
-        "targetParentIdentity",
-        "targetLeaf",
-        "targetMustBeAbsent",
-        "expectedUnityProject",
-        "packagesRequireResolve",
-        "planFingerprint",
-    ] {
-        assert!(
-            required.iter().any(|candidate| candidate == field),
-            "{field}"
-        );
-    }
-    assert_eq!(schema["properties"]["version"]["const"], 1);
-    assert_eq!(schema["properties"]["backupFormatVersion"]["const"], 1);
-    assert_eq!(schema["properties"]["targetMustBeAbsent"]["const"], true);
-    for forbidden in [
-        "archivePath",
-        "archiveLocator",
-        "stagingPath",
-        "databaseLocator",
-        "journal",
-    ] {
-        assert!(schema["properties"].get(forbidden).is_none(), "{forbidden}");
+struct Fixture(PathBuf);
+
+impl Fixture {
+    fn new() -> Self {
+        let root =
+            std::env::temp_dir().join(format!("alcomd-ordinary-zip-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(root.join("data")).expect("valid isolated fixture or result");
+        Self(fs::canonicalize(root).expect("valid isolated fixture or result"))
     }
 }
 
-#[test]
-fn restore_rpc_permissions_errors_and_published_cli_are_narrow() {
-    let rpc: Value = serde_json::from_str(RPC_SCHEMA).expect("Restore RPC Schema");
-    let cli: Value = serde_json::from_str(CLI_CATALOG).expect("Backup CLI catalog");
-    let errors: Value = serde_json::from_str(ERROR_SCHEMA).expect("RPC error Schema");
-
-    assert_eq!(rpc["x-alcomd-publication"], "implemented-published");
-    assert_eq!(
-        rpc["$defs"]["methodName"]["enum"],
-        json!(["backups.planRestore", "backups.applyRestore"])
-    );
-    assert_eq!(rpc["$defs"]["capability"]["const"], "backups.restore.v1");
-    assert_eq!(
-        rpc["x-alcomd-method-permissions"]["backups.planRestore"],
-        json!(["backups.read", "projects.create"])
-    );
-    assert_eq!(
-        rpc["x-alcomd-method-permissions"]["backups.applyRestore"],
-        json!(["backups.read", "backups.manage", "projects.create"])
-    );
-    assert!(PERMISSIONS.contains("`backups.planRestore` 需要 `backups.read + projects.create`"));
-    assert!(PERMISSIONS.contains("`backups.applyRestore`"));
-
-    let commands = cli["commands"].as_array().expect("published commands");
-    let published = commands
-        .iter()
-        .find(|command| command["path"] == json!(["backup", "restore"]))
-        .expect("published Restore command");
-    assert_eq!(published["published"], true);
-    assert_eq!(published["nonTtyWithoutYes"], "confirmation_required");
-    assert_eq!(
-        published["dryRun"],
-        "persist-plan-only-no-operation-no-filesystem-write"
-    );
-    assert_eq!(cli["plannedCommands"], json!([]));
-
-    let codes = errors["properties"]["code"]["enum"]
-        .as_array()
-        .expect("error codes");
-    for code in [
-        "backup_restore_plan_not_found",
-        "backup_restore_plan_stale",
-        "backup_target_exists",
-        "backup_target_invalid",
-        "backup_archive_invalid",
-        "backup_integrity_mismatch",
-        "backup_unavailable",
-        "backup_restore_recovery_required",
-        "permission_denied",
-        "idempotency_conflict",
-        "operation_cancelled",
-        "internal_error",
-    ] {
-        assert!(codes.iter().any(|candidate| candidate == code), "{code}");
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        if let Err(error) = fs::remove_dir_all(&self.0) {
+            eprintln!("test fixture cleanup: {error}");
+        }
     }
-    assert!(!codes.iter().any(|candidate| candidate == "restore_failed"));
+}
+
+fn zip_project(path: &Path, prefix: &str, contents: &[u8]) {
+    let mut zip =
+        zip::ZipWriter::new(File::create(path).expect("valid isolated fixture or result"));
+    for (name, bytes) in [
+        (
+            "ProjectSettings/ProjectVersion.txt",
+            b"m_EditorVersion: 2022.3.22f1\n".as_slice(),
+        ),
+        ("Packages/manifest.json", b"{}".as_slice()),
+        ("Assets/文 件.txt", contents),
+    ] {
+        zip.start_file(
+            format!("{prefix}{name}"),
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+        )
+        .expect("valid isolated fixture or result");
+        zip.write_all(bytes)
+            .expect("valid isolated fixture or result");
+    }
+    zip.finish().expect("valid isolated fixture or result");
 }
 
 #[test]
-fn restore_profile_hostile_vectors_and_forward_recovery_are_frozen() {
-    let rpc: Value = serde_json::from_str(RPC_SCHEMA).expect("Restore RPC Schema");
-    let profile: Value = serde_json::from_str(PROFILE).expect("Backup profile");
-    let vectors: Value = serde_json::from_str(VECTORS).expect("Restore vectors");
-
-    assert_eq!(vectors["archiveRoots"], json!(["backup.json", "project/"]));
-    assert_eq!(profile["archiveRoots"], vectors["archiveRoots"]);
-    assert_eq!(profile["compressionMethods"], json!(["stored", "deflate"]));
-    assert_eq!(profile["limits"]["archiveBytes"], 68_719_476_736_u64);
-    assert_eq!(profile["limits"]["entries"], 500_000);
+fn restore_wire_contract_uses_the_selected_archive_and_project_destination() {
+    assert_eq!(METHOD_BACKUPS_RESTORE, "backups.restore");
+    assert_eq!(CAPABILITY_BACKUPS_RESTORE_V1, "backups.restore.v1");
+    let request = json!({
+        "archivePath": "/other drive/项目.zip",
+        "destinationPath": "/work/还 原",
+        "idempotencyKey": "restore-once",
+    });
+    let value: BackupRestoreParams = serde_json::from_value(request.clone()).expect("file request");
+    assert_eq!(value.project_name, None);
     assert_eq!(
-        profile["limits"]["singleRegularFileBytes"],
-        34_359_738_368_u64
-    );
-    assert_eq!(
-        profile["limits"]["totalUncompressedBytes"],
-        137_438_953_472_u64
-    );
-    assert_eq!(profile["limits"]["pathDepth"], 128);
-    assert_eq!(profile["limits"]["normalizedPathUtf8Bytes"], 1_024);
-    assert_eq!(profile["limits"]["expansionRatio"], 10_000);
-    assert_eq!(
-        rpc["$defs"]["progressPhase"]["enum"],
-        vectors["progressPhases"]
-    );
-    assert_eq!(
-        vectors["killRestartPoints"]
-            .as_array()
-            .expect("kill points")
-            .len(),
-        6
-    );
-    assert!(
-        vectors["hostileEntries"]
-            .as_array()
-            .expect("hostile entries")
-            .len()
-            >= 9
-    );
-    assert!(
-        vectors["targetRaces"]
-            .as_array()
-            .expect("target races")
-            .len()
-            >= 6
-    );
-    assert!(
-        vectors["artifactRaces"]
-            .as_array()
-            .expect("artifact races")
-            .len()
-            >= 4
-    );
-    assert_eq!(
-        vectors["terminalOutcomes"][2],
-        "recovery-required-with-user-visible-target-preserved"
+        serde_json::to_value(value).expect("valid isolated fixture or result"),
+        request
     );
 }
 
-#[test]
-fn schema_v7_is_restore_specific_and_keeps_dispatchers_isolated() {
-    assert!(MIGRATION_V7.starts_with("BEGIN IMMEDIATE;"));
-    assert!(MIGRATION_V7.ends_with("COMMIT;\n"));
-    assert!(MIGRATION_V7.contains("'backups.create', 'backups.restore'"));
-    assert!(MIGRATION_V7.contains("CREATE TABLE backup_restore_plans"));
-    assert!(MIGRATION_V7.contains("CREATE TABLE backup_restore_filesystem_journal"));
-    assert!(!MIGRATION_V7.contains("CREATE TABLE generic"));
-    assert!(!MIGRATION_V7.contains("workflow"));
-    assert!(!MIGRATION_V7.contains("ALTER TABLE backups"));
-    assert!(STATE_V7.contains("`operation_journal.kind='templates.create-project'`"));
-    assert!(STATE_V7.contains("`target_published` 后只能"));
-    assert!(STATE_V7.contains("v7 Schema 不实现或发布 Restore handler"));
+#[tokio::test]
+async fn restore_accepts_an_independent_zip_and_rejects_a_wrapped_or_changed_source() {
+    let fixture = Fixture::new();
+    let engine = BackupEngine::new(fixture.0.join("data/backups"))
+        .expect("valid isolated fixture or result");
+    let source = fixture.0.join("外部 文件.ZIP");
+    let wrapped = fixture.0.join("Wrapped.zip");
+    let target = fixture.0.join("还 原");
+    zip_project(&source, "", b"data");
+    zip_project(&wrapped, "Folder/", b"data");
+    assert_eq!(
+        engine
+            .prepare_restore(
+                wrapped
+                    .to_str()
+                    .expect("valid isolated fixture or result")
+                    .to_owned(),
+                target.clone()
+            )
+            .await
+            .expect_err("operation must reject invalid input")
+            .code(),
+        M5BackupErrorCode::BackupInvalidArchive,
+    );
+    let input = source
+        .to_str()
+        .expect("valid isolated fixture or result")
+        .to_owned();
+    let request = engine
+        .prepare_restore(input.clone(), target.clone())
+        .await
+        .expect("valid isolated fixture or result");
+
+    // Changing bytes on the same path and at the same length also invalidates the accepted task.
+    zip_project(&source, "", b"edit");
+    let operation = OperationId::new();
+    assert_eq!(
+        engine
+            .stage_restore(operation, request, BackupCancellation::default())
+            .await
+            .expect_err("operation must reject invalid input")
+            .code(),
+        M5BackupErrorCode::BackupSourceChanged,
+    );
+    assert!(!target.exists());
+
+    let request = engine
+        .prepare_restore(input, target.clone())
+        .await
+        .expect("valid isolated fixture or result");
+    let operation = OperationId::new();
+    let staged = engine
+        .stage_restore(operation, request.clone(), BackupCancellation::default())
+        .await
+        .expect("valid isolated fixture or result");
+    fs::create_dir(&target).expect("valid isolated fixture or result");
+    fs::write(target.join("retain me"), b"existing").expect("valid isolated fixture or result");
+    assert_eq!(
+        engine
+            .publish_restore(staged)
+            .await
+            .expect_err("operation must reject invalid input")
+            .code(),
+        M5BackupErrorCode::BackupRestoreTargetExists
+    );
+    assert_eq!(
+        fs::read(target.join("retain me")).expect("valid isolated fixture or result"),
+        b"existing"
+    );
+    engine
+        .discard_staged_restore(operation, request)
+        .await
+        .expect("valid isolated fixture or result");
+    assert!(
+        !fixture
+            .0
+            .join(format!(".alcomd-restore-{operation}"))
+            .exists()
+    );
+}
+
+#[tokio::test]
+async fn restore_reads_payload_after_acceptance_and_never_publishes_corrupt_contents() {
+    let fixture = Fixture::new();
+    let engine = BackupEngine::new(fixture.0.join("data/backups")).expect("isolated engine");
+    let source = fixture.0.join("Malformed.zip");
+    let target = fixture.0.join("Not published");
+    let payload = b"entry payload unique within this archive";
+    zip_project(&source, "", payload);
+    let mut bytes = fs::read(&source).expect("fixture ZIP");
+    let offset = bytes
+        .windows(payload.len())
+        .position(|window| window == payload)
+        .expect("fixture ZIP stores uncompressed bytes");
+    bytes[offset] ^= 1;
+    fs::write(&source, bytes).expect("corrupt fixture payload with intact directory");
+    let request = engine
+        .prepare_restore(
+            source.to_str().expect("source path").to_owned(),
+            target.clone(),
+        )
+        .await
+        .expect("bounded admission only reads authority and ZIP structure");
+    let operation = OperationId::new();
+    let failure = engine
+        .stage_restore(operation, request, BackupCancellation::default())
+        .await
+        .expect_err("task must reject damaged file bytes");
+    assert_eq!(failure.code(), M5BackupErrorCode::BackupIntegrityMismatch);
+    assert!(!target.exists());
+    assert!(
+        !fixture
+            .0
+            .join(format!(".alcomd-restore-{operation}"))
+            .exists()
+    );
+}
+
+#[tokio::test]
+async fn stale_restore_stage_cannot_remove_an_unowned_directory() {
+    let fixture = Fixture::new();
+    let engine = BackupEngine::new(fixture.0.join("data/backups")).expect("isolated engine");
+    let source = fixture.0.join("Approved.zip");
+    let target = fixture.0.join("Absent");
+    zip_project(&source, "", b"intact");
+    let request = engine
+        .prepare_restore(source.to_str().expect("source path").to_owned(), target)
+        .await
+        .expect("valid project archive");
+    let operation = OperationId::new();
+    let staged = engine
+        .stage_restore(operation, request.clone(), BackupCancellation::default())
+        .await
+        .expect("owned stage ready");
+    fs::rename(&staged.staging_root, fixture.0.join("Previous stage"))
+        .expect("replace test staging directory");
+    fs::create_dir(&staged.staging_root).expect("unowned replacement");
+    let unrelated = staged.staging_root.join("Unrelated data");
+    fs::write(&unrelated, b"retain user data").expect("unrelated fixture file");
+    assert_eq!(
+        engine
+            .discard_staged_restore(operation, request)
+            .await
+            .expect_err("reject replaced staging object")
+            .code(),
+        M5BackupErrorCode::BackupRestoreRecoveryRequired,
+    );
+    assert_eq!(
+        fs::read(unrelated).expect("unowned data preserved"),
+        b"retain user data"
+    );
 }

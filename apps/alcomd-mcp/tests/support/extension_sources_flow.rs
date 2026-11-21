@@ -256,11 +256,11 @@ async fn remote_extension_source_real_https_install_and_refusals() {
     );
     let created = owner
         .mcp_client_create(McpClientsCreateParams {
-            display_name: "source-denied-client".into(),
+            display_name: "source-client".into(),
             idempotency_key: "source-client-create".into(),
         })
         .await
-        .expect("zero-grant MCP identity");
+        .expect("registered MCP identity");
     let issued = owner
         .mcp_client_issue_credential(McpClientMutationParams {
             client_id: created.client_id,
@@ -273,6 +273,21 @@ async fn remote_extension_source_real_https_install_and_refusals() {
         AlcomdClient::connect(core.client.clone().with_mcp_credential(issued.credential))
             .await
             .expect("real external Principal");
+    let observed = external
+        .extension_inspect_source(ExtensionInspectSourceParams {
+            url: format!("{}/index", source.base),
+        })
+        .await
+        .expect("authenticated client may inspect the same extension source");
+    assert_eq!(observed.extension_id, ID);
+    owner
+        .mcp_client_revoke(McpClientMutationParams {
+            client_id: issued.client_id,
+            expected_revision: issued.revision,
+            idempotency_key: "revoke-source-client".into(),
+        })
+        .await
+        .expect("revoke client");
     let request_count = source.requests.lock().await.len();
     rejected(
         external
@@ -286,7 +301,7 @@ async fn remote_extension_source_real_https_install_and_refusals() {
     assert_eq!(
         source.requests.lock().await.len(),
         request_count,
-        "unprivileged RPC rejected before network"
+        "revoked client rejected before network"
     );
     drop(external);
     let url = format!("{}/redirect", source.base);
@@ -480,7 +495,18 @@ async fn remote_extension_source_real_https_install_and_refusals() {
     );
     let requests = source.requests.lock().await.clone();
     assert!(requests.iter().any(|p| p == "/index?b=2&a=1&a=3"));
-    std::fs::write(root.join("result.json"),serde_json::to_vec_pretty(&json!({"result":"passed","origin":plan.installation_source,"operationId":accepted.operation_id,"dataSchema":42,"requests":requests})).expect("evidence")).expect("persist owned evidence");
+    let evidence = json!({
+        "result": "passed",
+        "origin": plan.installation_source,
+        "operationId": accepted.operation_id,
+        "dataSchema": owner.hello_result().data_schema,
+        "requests": requests,
+    });
+    std::fs::write(
+        root.join("result.json"),
+        serde_json::to_vec_pretty(&evidence).expect("evidence"),
+    )
+    .expect("persist owned evidence");
     drop(owner);
     stop.send(()).expect("stop owned Core");
     daemon.await.expect("join Core").expect("graceful Core");

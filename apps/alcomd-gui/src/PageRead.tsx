@@ -3,7 +3,7 @@ import { createContext, use, useContext } from "react";
 export type PageReadResult<T> = { kind: "ready"; value: T } | { kind: "error"; error: unknown };
 
 let nextVisit = 0;
-export type PageReadKey = "primary" | "settings.unity" | "settings.repositories" | "about.status" | "repository.packages" | "backups.list";
+export type PageReadKey = "primary" | "settings.unity" | "settings.repositories" | "about.status" | "repository.packages";
 
 /** At most three initial read slots per visit, shared across render retries, never across visits. */
 export function createPageRead() {

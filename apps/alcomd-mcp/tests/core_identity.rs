@@ -194,7 +194,17 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
     )
     .await
     .expect("B bound");
-    denied(ca.mcp_clients_list(McpClientsListParams::default()).await);
+    let delegated = ca
+        .mcp_clients_list(McpClientsListParams::default())
+        .await
+        .expect("authenticated client reads the same client registry");
+    assert_eq!(
+        delegated,
+        owner
+            .mcp_clients_list(McpClientsListParams::default())
+            .await
+            .expect("owner reads registry")
+    );
     let page = owner
         .mcp_clients_list(McpClientsListParams {
             cursor: None,

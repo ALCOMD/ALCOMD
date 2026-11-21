@@ -686,6 +686,7 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine, R: CandidateProjectReader>
             owner.as_str().to_owned(),
             config.revision.to_string(),
             config.settings.packages.show_prerelease.to_string(),
+            config.settings.packages.prefer_prerelease.to_string(),
             config
                 .settings
                 .packages
@@ -1225,6 +1226,7 @@ mod presentation_filter_tests {
             installed: CandidateInstalled::Absent,
             latest: empty.clone(),
             latest_stable: empty.clone(),
+            recommended: empty.clone(),
             project_latest: empty.clone(),
             project_latest_stable: empty,
             update: CandidateUpdate::NoUpdate {

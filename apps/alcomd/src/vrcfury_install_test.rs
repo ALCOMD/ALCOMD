@@ -2,7 +2,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use alcomd_application::{
-    M3RegistryStore, M4Store, OperationRecord, PackagePlanRequest, PackagePlanVersion, PlanAction,
+    M3RegistryStore, M4Store, OperationRecord, PackagePlanRequest, PlanAction,
     ResolverCatalogSource,
 };
 use serde_json::{Value, json};
@@ -80,7 +80,6 @@ async fn live_vrcfury_installs_with_a_locally_pinned_digest() {
         version_range: None,
         repository_id: Some(repo.repository_id.to_string()),
         include_prerelease: false,
-        plan_version: PackagePlanVersion::V2,
         source_selector: None,
         reinstall_selection: None,
         reinstall_sources: Vec::new(),

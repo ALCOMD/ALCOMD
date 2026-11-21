@@ -159,6 +159,7 @@ pub struct CandidateSummary {
     pub installed: CandidateInstalled,
     pub latest: CandidateChoice,
     pub latest_stable: CandidateChoice,
+    pub recommended: CandidateChoice,
     pub project_latest: CandidateChoice,
     pub project_latest_stable: CandidateChoice,
     pub update: CandidateUpdate,
@@ -322,15 +323,17 @@ pub enum CandidatePageItems {
 pub enum CandidateBulkIntent {
     Install {
         package_id: String,
-        version_range: String,
-        source: CandidateSource,
-        include_prerelease: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source: Option<CandidateSource>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        include_prerelease: Option<bool>,
     },
     Upgrade {
         package_id: String,
-        version_range: String,
-        source: CandidateSource,
-        include_prerelease: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source: Option<CandidateSource>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        include_prerelease: Option<bool>,
     },
     Remove {
         package_id: String,

@@ -34,8 +34,9 @@ to four in-flight best-effort tasks; unbound sampled rows remain explicitly unkn
 `mcp.transport.snapshot({clientId?,limit?})`, capability `mcp.transport.read.v1`,
 returns independent permission-filtered groups and Core instance/time. Existing
 connections/requests read permissions plus `mcp.subscription-streams.read`, all
-Global/*, govern each group; all denied is permission_denied. MCP business grants
-never grant these administrative reads. All rows are `source=adapterReported`.
+Global/*, govern each group. No available group returns permission_denied. The same
+permissions apply to authenticated GUI, CLI and MCP clients. An extension must
+also have the corresponding grants. All rows are `source=adapterReported`.
 A clientId is Core-authenticated only after binding. An HTTP socket has no client
 owner: filters match bound current requests/streams and their related socket.
 

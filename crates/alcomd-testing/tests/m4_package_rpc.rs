@@ -41,7 +41,6 @@ async fn confirmed_manual_unity_override_round_trips_through_rpc_and_apply() {
         .expect("manifest");
     zip.finish().expect("ZIP");
     let digest: [u8; 32] = Sha256::digest(fs::read(&archive).expect("archive bytes")).into();
-    publish_cache_object(&data, &archive, &digest);
     let mut index: serde_json::Value =
         serde_json::from_str(&repository_document(&hex(&digest))).expect("index");
     index["packages"]["com.example.fixture"]["versions"]["1.0.0"]["unity"] =
@@ -52,11 +51,12 @@ async fn confirmed_manual_unity_override_round_trips_through_rpc_and_apply() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc,
-        DataConfig::isolated(data),
+        DataConfig::isolated(data.clone()),
         wait_for_shutdown(Arc::clone(&shutdown)),
     )
     .await
     .expect("owned daemon");
+    publish_cache_object(&data, &archive, &digest);
     let mut client = connect_with_retry(config).await;
     let registered_project = client
         .project_register(
@@ -92,7 +92,7 @@ async fn confirmed_manual_unity_override_round_trips_through_rpc_and_apply() {
         version_range: Some("=1.0.0".into()),
         repository_id: None,
         source: None,
-        include_prerelease: false,
+        include_prerelease: Some(false),
     };
     assert!(
         client.package_plan_install(request.clone()).await.is_err(),
@@ -103,6 +103,18 @@ async fn confirmed_manual_unity_override_round_trips_through_rpc_and_apply() {
         .package_plan_install(request)
         .await
         .expect("manual exact plan");
+    assert_eq!(
+        client
+            .get_plan(alcomd_protocol::PlansGetParams {
+                kind: alcomd_protocol::PlanKind::Package,
+                plan_id: plan.plan_id.clone(),
+            })
+            .await
+            .expect("read the persisted plan"),
+        alcomd_protocol::PlansGetResult::Package {
+            plan: Box::new(plan.clone()),
+        }
+    );
     assert_eq!(
         plan.change_set.unity_compatibility_overrides,
         vec![alcomd_protocol::PackageUnityCompatibilityOverride {
@@ -144,7 +156,6 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
     let archive = fixture.path().join("package.zip");
     create_package_archive(&archive);
     let digest: [u8; 32] = Sha256::digest(fs::read(&archive).expect("read archive")).into();
-    publish_cache_object(&data, &archive, &digest);
     let repository = fixture.path().join("repository.json");
     let mut document: serde_json::Value =
         serde_json::from_str(&repository_document(&hex(&digest))).expect("fixture repository");
@@ -165,11 +176,12 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
     let server_shutdown = Arc::clone(&shutdown);
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc,
-        DataConfig::isolated(data),
+        DataConfig::isolated(data.clone()),
         wait_for_shutdown(server_shutdown),
     )
     .await
     .expect("start owned test daemon");
+    publish_cache_object(&data, &archive, &digest);
     let mut client = connect_with_retry(config).await;
 
     let registered_project = client
@@ -213,7 +225,7 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
             version_range: Some("1.0.0".to_owned()),
             repository_id: None,
             source: None,
-            include_prerelease: false,
+            include_prerelease: Some(false),
         })
         .await
         .expect("plan install");
@@ -297,7 +309,7 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
         })
         .await
         .expect("plan exact reinstall");
-    assert_eq!(reinstall.change_set.format_version, 4);
+    assert_eq!(reinstall.change_set.format_version, 1);
     assert_eq!(reinstall.change_set.mutations.len(), 1);
     assert_eq!(
         reinstall.change_set.mutations[0].kind,
@@ -431,11 +443,11 @@ async fn user_package_plan_uses_owned_cache_after_source_mutation_and_registry_r
             source: Some(alcomd_protocol::PackageSourceSelector::UserPackage {
                 user_package_id: user_package_id.clone(),
             }),
-            include_prerelease: false,
+            include_prerelease: Some(false),
         })
         .await
         .expect("plan User Package install");
-    assert_eq!(plan.change_set.format_version, 4);
+    assert_eq!(plan.change_set.format_version, 1);
     assert!(matches!(
         plan.change_set.mutations[0].source.as_ref(),
         Some(alcomd_protocol::PackageSourcePin::UserPackage(_))
@@ -547,7 +559,7 @@ async fn user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_mi
             source: Some(alcomd_protocol::PackageSourceSelector::UserPackage {
                 user_package_id: enrolled.user_package_id,
             }),
-            include_prerelease: false,
+            include_prerelease: Some(false),
         })
         .await
         .expect("plan User Package install");
@@ -635,7 +647,6 @@ fn subprocess_runs_package_apply_until_killed() {
         let archive = root.join("package.zip");
         create_large_package_archive(&archive);
         let digest: [u8; 32] = Sha256::digest(fs::read(&archive).expect("read archive")).into();
-        publish_cache_object(&data, &archive, &digest);
         let repository = root.join("repository.json");
         fs::write(&repository, repository_document(&hex(&digest))).expect("write repository");
 
@@ -644,11 +655,12 @@ fn subprocess_runs_package_apply_until_killed() {
         let daemon_shutdown = Arc::clone(&shutdown);
         let _daemon = alcomd_daemon::test_support::start_with_data_until(
             ipc,
-            DataConfig::isolated(data),
+            DataConfig::isolated(data.clone()),
             wait_for_shutdown(daemon_shutdown),
         )
         .await
         .expect("start owned test daemon");
+        publish_cache_object(&data, &archive, &digest);
         let mut client = connect_with_retry(config).await;
         let project_result = client
             .project_register(
@@ -687,7 +699,7 @@ fn subprocess_runs_package_apply_until_killed() {
             version_range: Some("1.0.0".to_owned()),
             repository_id: None,
             source: None,
-            include_prerelease: false,
+            include_prerelease: Some(false),
         };
         let plan = if checkpoint.is_destructive() {
             client

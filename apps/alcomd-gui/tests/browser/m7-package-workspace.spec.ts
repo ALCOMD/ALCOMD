@@ -148,8 +148,27 @@ test("Failed filter persistence keeps the last confirmed visibility and exposes 
     }
 });
 
-test("Showing prereleases requires confirmation and only updates package visibility", async ({ page }) => {
+test("Hiding prereleases clears the preference and enabling visibility leaves it off", async ({ page }) => {
     await openHarness(page, "ready");
+    await page.getByRole("button", { name: "Filter packages" }).click();
+    const panel = page.getByRole("dialog", { name: "Package filters", exact: true });
+    const show = panel.getByRole("checkbox", { name: "Show prerelease versions" });
+    const prefer = panel.getByRole("checkbox", { name: "Prefer prerelease versions" });
+    await expect(show).toBeChecked();
+    await expect(prefer).not.toBeChecked();
+    await prefer.click();
+    await expect(prefer).toBeChecked();
+    await show.click();
+    await expect(prefer).toBeDisabled();
+    await expect(prefer).not.toBeChecked();
+    await show.click();
+    await page.locator("md-dialog").filter({ hasText: "Show prerelease versions?" }).getByRole("button", { name: "Show prerelease versions", exact: true }).click();
+    await expect(prefer).toBeEnabled();
+    await expect(prefer).not.toBeChecked();
+});
+
+test("Showing prereleases requires confirmation and only updates package visibility", async ({ page }) => {
+    await openHarness(page, "ready&hidePrerelease");
     await page.getByRole("button", { name: "Filter packages" }).click();
     const panel = page.getByRole("dialog", { name: "Package filters", exact: true });
     await panel.getByRole("checkbox", { name: "Show prerelease versions" }).click();
@@ -165,7 +184,7 @@ test("Showing prereleases requires confirmation and only updates package visibil
 });
 
 test("Package filter selects disable during saving and recover after prerelease confirmation", async ({ page }) => {
-    await openHarness(page, "package-multiple&theme-save=hold");
+    await openHarness(page, "package-multiple&theme-save=hold&hidePrerelease");
     await page.getByRole("button", { name: "Filter packages", exact: true }).click();
     const panel = page.getByRole("dialog", { name: "Package filters", exact: true });
     const prerelease = panel.getByRole("checkbox", { name: "Show prerelease versions", exact: true });
@@ -476,7 +495,7 @@ test("a changed visibility revision cannot reuse source metadata while the new C
 });
 
 test("Inline version selection pins the chosen source and preserves installed state until Apply", async ({ page }) => {
-    await openHarness(page, "package-multiple&versions=1");
+    await openHarness(page, "package-multiple&versions=1&hidePrerelease");
     const trigger = page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" });
     const versionControl = page.locator(".package-version-picker").filter({ has: trigger });
     const source = page.getByRole("combobox", { name: "Source for Avatar tools", exact: true });
@@ -528,7 +547,7 @@ test("Inline version selection pins the chosen source and preserves installed st
 });
 
 test("Inline prerelease selection uses daemon classification and shows planning failures in a dialog", async ({ page }) => {
-    await openHarness(page, "ready&versions=1&planError=1");
+    await openHarness(page, "ready&versions=1&planError=1&hidePrerelease");
     await page.getByRole("button", { name: "Filter packages" }).click();
     await page.getByRole("checkbox", { name: "Show prerelease versions" }).click();
     const confirmed = await page.locator("md-dialog").filter({ hasText: "Show prerelease versions?" }).evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true })) }));
@@ -539,7 +558,7 @@ test("Inline prerelease selection uses daemon classification and shows planning 
     await expect(page.getByRole("dialog", { name: "Package filters", exact: true })).toBeHidden();
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
     await page.getByRole("option", { name: "2.0.0-beta.1", exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { versionRange: "=2.0.0-beta.1", includePrerelease: true } }]);
+    await expect.poll(() => page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { versionRange: "=2.0.0-beta.1" } }]);
     const failure = page.locator("md-dialog[open]").filter({ hasText: "Could not prepare package changes" });
     await expect(failure.getByRole("alert")).toContainText("package_source_ambiguous");
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);

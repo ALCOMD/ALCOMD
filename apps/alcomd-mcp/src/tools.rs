@@ -668,19 +668,24 @@ pub async fn execute(
         result.structured_content = Some(output);
         return Ok(result);
     }
-    if repositories::recognized(params.name.as_ref()) {
-        if !client.supports_capability(rpc::CAPABILITY_MCP_REPOSITORIES_V1) {
+    if let Some(capability) = rpc::mcp_repositories_tool_capability(params.name.as_ref()) {
+        if !client.supports_capability(capability) {
             return Err(super::unsupported_method());
         }
         return repositories::execute(client, params).await;
     }
-    if workflows::recognized(params.name.as_ref()) {
-        if !client.supports_capability(rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1) {
+    if let Some(capability) = rpc::mcp_workflows_tool_capability(params.name.as_ref()) {
+        if !client.supports_capability(capability) {
             return Err(super::unsupported_method());
         }
         return workflows::execute(client, params).await;
     }
     if environment::recognized(params.name.as_ref()) {
+        if rpc::mcp_environment_tool_capability(params.name.as_ref())
+            .is_some_and(|capability| !client.supports_capability(capability))
+        {
+            return Err(super::unsupported_method());
+        }
         return environment::execute(client, params).await;
     }
     if packages::recognized(params.name.as_ref()) {

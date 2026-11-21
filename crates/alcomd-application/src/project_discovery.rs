@@ -323,6 +323,9 @@ where
                 Err(error) if error.code() == M3ErrorCode::ProjectAlreadyRegistered => {
                     report.already_registered += 1;
                 }
+                Err(error) if error.code() == M3ErrorCode::ProjectInaccessible => {
+                    report.rejected += 1;
+                }
                 Err(error) => return Err(registration_error(error)),
             }
         }

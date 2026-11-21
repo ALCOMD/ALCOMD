@@ -64,8 +64,8 @@ id = "sdk.native-desktop-consumers"
 stage = "M10"
 kind = "end-to-end"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
-status = "planned"
-description = "用仓库外 Rust 和 TypeScript 消费者验证安装暂存的真实 Core 冷启动、并发直连、空闲重启、RPC 合同和官方 GUI 方法覆盖。"
+status = "implemented"
+description = "在同一候选的三个 Hosted 平台上，仓库外 Rust 和 TypeScript 消费者通过真实 IPC 验证安装暂存、并发冷启动、运行中直连、空闲重启、RPC 业务与官方 GUI 方法覆盖。"
 
 [[test]]
 id = "access.principal-revocation"
@@ -84,12 +84,13 @@ status = "implemented"
 description = "覆盖冻结状态转换表、取消与完成竞态、断线后查询、daemon 强制终止/重启、恢复和幂等重试；planning/waiting_for_input 仅验证为 M2 不可达保留状态。"
 
 [[test]]
-id = "state.sqlite-migrations"
-stage = "M2"
+id = "state.sqlite-initialization"
+stage = "M11"
 kind = "persistence"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "implemented"
-description = "覆盖 state.db Schema v1、0->1 原子 migration、重复启动、较新版本拒绝、权限与迁移失败回滚。"
+description = "验证 State1 和 Config1 原子初始化、重复启动与现行结构校验，格式无效时保全源文件。"
+evidence = ["crates/alcomd-store/src/schema.sql", "crates/alcomd-store/tests/schema_contract.rs", "crates/alcomd-testing/tests/m7_official_rpc.rs"]
 
 [[test]]
 id = "state.transaction-boundaries"
@@ -145,7 +146,7 @@ stage = "M3"
 kind = "integration"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "implemented"
-description = "以 synthetic Unity Fixture 验证 exact/parent discovery、bounded VPM/UPM/ProjectVersion 读取、平台对象身份、真实 RPC、Schema v2 registry、revision/Event/幂等以及读取前后外部文件字节不变。"
+description = "以 synthetic Unity Fixture 验证 exact/parent discovery、bounded VPM/UPM/ProjectVersion 读取、平台对象身份、真实 RPC、项目和仓库注册表、revision/Event/幂等以及读取前后外部文件字节不变。"
 
 [[test]]
 id = "repositories.vpm-parity"
@@ -161,7 +162,7 @@ stage = "M3"
 kind = "integration"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "implemented"
-description = "验证 local/anonymous HTTP(S) 共用 bounded parser、确定性 raw package identity、200/304 validator、last-known-good、Schema v2 registry、no-op revision 与真实 RPC；不包含 import/deep-link/credential/package download。"
+description = "验证 local/anonymous HTTP(S) 共用 bounded parser、确定性 raw package identity、200/304 validator、last-known-good、项目和仓库注册表、no-op revision 与真实 RPC；不包含 import/deep-link/credential/package download。"
 
 [[test]]
 id = "packages.m4-contract"
@@ -169,7 +170,7 @@ stage = "M4"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结 M4 RPC/permission、State Schema v3/migration、immutable Plan、source pin、filesystem phase、quota 与 public/synthetic Fixture，并以生产垂直切片验证合同；不代表完整 GUI/CLI/MCP 或 v3 parity 已完成。"
+description = "冻结 M4 RPC/permission、State1 SQLite 结构、immutable Plan、source pin、filesystem phase、quota 与 public/synthetic Fixture，并以生产垂直切片验证合同；不代表完整 GUI/CLI/MCP 或 v3 parity 已完成。"
 evidence = ["crates/alcomd-testing/tests/m4_contract.rs", "crates/alcomd-store/tests/schema_contract.rs"]
 
 [[test]]
@@ -231,8 +232,8 @@ stage = "M5"
 kind = "contract-persistence"
 platforms = ["all"]
 status = "implemented"
-description = "冻结并验证 builtin/user source、native inventory/许可证、opaque locator、TemplateId conflict、Schema v4 registry、Schema v5 immutable Template Plan migration 与真实 registry production use case。"
-evidence = ["specs/templates/builtin-inventory-v1.toml", "specs/storage/state-v4.md", "specs/storage/state-v5.md", "crates/alcomd-store/migrations/0005_template_plans.sql", "crates/alcomd-store/tests/schema_contract.rs", "crates/alcomd-testing/tests/m5_contract.rs"]
+description = "验证内置及用户模板、清单和许可证、模板 ID 冲突，以及 State1 模板登记与持久化。"
+evidence = ["specs/templates/builtin-inventory-v1.toml", "crates/alcomd-store/src/schema.sql", "crates/alcomd-store/tests/schema_contract.rs", "crates/alcomd-testing/tests/m5_contract.rs"]
 
 [[test]]
 id = "templates.m5-import-export"
@@ -279,31 +280,22 @@ status = "blocked"
 description = "对照 v3 备份创建、排除、压缩、取消、失败恢复与恢复目标行为。"
 
 [[test]]
-id = "backups.m5-create-contract"
-stage = "M5"
-kind = "contract"
-platforms = ["all"]
-status = "implemented"
-description = "冻结原生 Backup Archive v1、严格 manifest/profile、精确排除表、locked VPM 排除、Schema v6 operation kind、RPC/权限/错误与恢复阶段；production capability/CLI 发布由 backups.m5-create 的真实实现证据承接。"
-evidence = ["docs/adr/0021-native-backup-archive.md", "specs/backups/backup-archive-v1.md", "specs/backups/backup-v1.schema.json", "specs/backups/backup-profile-v1.json", "specs/rpc/m5-backup-create.schema.json", "specs/storage/state-v6.md", "crates/alcomd-testing/tests/m5_backup_contract.rs", "crates/alcomd-store/tests/schema_contract.rs"]
-
-[[test]]
-id = "backups.m5-create"
-stage = "M5"
+id = "backups.project-zip"
+stage = "M11"
 kind = "integration"
 platforms = ["all"]
 status = "implemented"
-description = "覆盖真实 daemon/RPC/CLI client 的 Project Resource Lock、稳定 inventory 与逐文件 evidence、精确 profile/VPM 排除、三种压缩、注入小配额、progress/cancel cleanup、幂等 replay，以及 inventory_ready、archiving、archive_ready、publish_intent、archive_published、state_committed 六点真实子进程 kill/restart recovery。"
-evidence = ["crates/alcomd-vpm/src/backup.rs", "crates/alcomd-store/src/m5_backup.rs", "crates/alcomd-testing/tests/m5_backup_rpc.rs"]
+description = "Verify the project-root ZIP, content options, selected absolute input and output, task receipts, idempotency, target conflicts, and kill and restart checkpoints."
+evidence = ["specs/backups/project-zip.md", "specs/rpc/zip-backup.schema.json", "crates/alcomd-testing/tests/m5_backup_contract.rs", "crates/alcomd-testing/tests/m5_backup_restore_contract.rs", "crates/alcomd-testing/tests/m5_backup_rpc.rs"]
 
 [[test]]
-id = "backups.m5-restore"
-stage = "M5"
-kind = "fault-injection"
+id = "m11.absolute-paths"
+stage = "M11"
+kind = "integration"
 platforms = ["all"]
 status = "implemented"
-description = "覆盖只恢复到不存在的新 Project、durable immutable Plan、预分配 ProjectId、Schema v7、ProjectCreate lock、hostile archive validation、同卷 staging/atomic publish、artifact/target race、同目标并发、publish 后外部修改 fail-closed，以及 archive_verified/extracting/staging_complete/publish_intent/target_published/project_registry_commit_intent/state_committed 真实 daemon kill/restart recovery。"
-evidence = ["docs/adr/0022-backup-restore-new-project.md", "specs/backups/backup-restore-plan-v1.schema.json", "specs/rpc/m5-backup-restore.schema.json", "specs/storage/state-v7.md", "crates/alcomd-testing/tests/m5_backup_restore_contract.rs", "crates/alcomd-testing/tests/m5_backup_rpc.rs", "crates/alcomd-store/tests/schema_contract.rs"]
+description = "Verify Core-host absolute paths and existing business authorization for desktop, CLI, and MCP."
+evidence = ["docs/testing/M11-absolute-paths.md", "crates/alcomd-testing/tests/m11_project_paths_rpc.rs"]
 
 [[test]]
 id = "unity.v3-vrc-parity"
@@ -319,7 +311,7 @@ stage = "M5"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结 CLI v1 machine contract/command catalog、Unity RPC/capability/error/permission 与已接线 State Schema v4 migration；不代表完整 CLI/Unity 或真实 Editor parity。"
+description = "冻结 CLI v1 machine contract/command catalog、Unity RPC/capability/error/permission 与已接线 State1 持久化；不代表完整 CLI/Unity 或真实 Editor parity。"
 evidence = ["crates/alcomd-testing/tests/m5_contract.rs", "crates/alcomd-protocol/tests/schema_contract.rs", "crates/alcomd-store/tests/schema_contract.rs"]
 
 [[test]]
@@ -390,8 +382,8 @@ stage = "M7"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结并验证 active Portable UI v1 Manifest/package/WIT/ABI、State v9、Permission/RPC DTO foundation，以及17 node、2 action、单一隐式页面、exact tree/form/draft/quota/replay/failure 与 renderer consumer contract；不表示 official/headless consumer 或 M7 已完成。"
-evidence = ["specs/extensions/manifest-v1.schema.json", "specs/extensions/package-profile-v1.json", "specs/extensions/abi-compatibility-v1.json", "specs/extensions/wit/extension-v1", "specs/extensions/portable-ui-v1.md", "specs/extensions/portable-ui-v1.schema.json", "specs/extensions/portable-ui-limits-v1.json", "specs/extensions/host-protocol-invocation-context-v1.md", "specs/rpc/m7-portable-ui.schema.json", "specs/storage/state-v9-migration.contract.json", "specs/security/extension-portable-ui-threat-model.md", "specs/gui/portable-ui-renderer-v1.md", "crates/alcomd-testing/fixtures/m7", "crates/alcomd-testing/tests/m7_contract.rs"]
+description = "验证 Portable UI v1 Manifest/package/WIT/ABI、State1、权限和 RPC DTO，以及节点、动作、单页、表单、配额、重放、错误和渲染合同。"
+evidence = ["specs/extensions/manifest-v1.schema.json", "specs/extensions/package-profile-v1.json", "specs/extensions/abi-compatibility-v1.json", "specs/extensions/wit/extension-v1", "specs/extensions/portable-ui-v1.md", "specs/extensions/portable-ui-v1.schema.json", "specs/extensions/portable-ui-limits-v1.json", "specs/extensions/host-protocol-invocation-context-v1.md", "specs/rpc/m7-portable-ui.schema.json", "crates/alcomd-store/src/schema.sql", "specs/security/extension-portable-ui-threat-model.md", "specs/gui/portable-ui-renderer-v1.md", "crates/alcomd-testing/fixtures/m7", "crates/alcomd-testing/tests/m7_contract.rs"]
 
 [[test]]
 id = "gui.m7-portable-ui-core"
@@ -408,7 +400,7 @@ stage = "M7"
 kind = "integration"
 platforms = ["all"]
 status = "implemented"
-description = "B0-D 已完成 active Manifest/package/WIT/Host/Core/RPC/State v9、interactive-ui lease、InvocationContext、session lifecycle、official renderer、headless与security/fault production tests及完整本地 gate；最终三平台/a11y证据与人工验收仍未完成。"
+description = "B0-D 已完成 active Manifest/package/WIT/Host/Core/RPC/持久化、interactive-ui lease、InvocationContext、session lifecycle、official renderer、headless与security/fault production tests及完整本地 gate；最终三平台/a11y证据与人工验收仍未完成。"
 evidence = ["crates/alcomd-testing/tests/m7_contract.rs", "apps/alcomd-extension-host/tests/m6_lifecycle.rs", "crates/alcomd-testing/tests/m7_official_renderer.rs", "crates/alcomd-testing/tests/m7_headless_conformance.rs", "crates/alcomd-testing/tests/m7_security_conformance.rs"]
 
 [[test]]
@@ -516,8 +508,8 @@ stage = "M7"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "验证 active Project Copy 的 bounded Plan/Operation/recovery，以及 P5-B State v11、Favorite exact CAS/no-op/Event/完整集合排序、Unity automatic/explicit/clear、legacy compatibility 与 launch idempotency合同。"
-evidence = ["docs/exec-plans/M7-project-package-functional-closure.md", "docs/baselines/m7-project-package-functional-closure.md", "docs/baselines/m7-p5-favorite-unity-clear.md", "specs/rpc/alcomd-rpc-v1.md", "specs/rpc/m7-project-copy.proposal.schema.json", "specs/rpc/m7-project-preferences.proposal.schema.json", "specs/storage/state-v10.md", "specs/storage/state-v10-migration.proposal.contract.json", "specs/storage/state-v11.md", "specs/storage/state-v11-migration.proposal.contract.json", "crates/alcomd-store/migrations/0010_project_copy.sql", "crates/alcomd-store/migrations/0011_project_preferences.sql", "crates/alcomd-testing/fixtures/m7/project-copy-contract-vectors.json", "crates/alcomd-testing/fixtures/m7/project-preferences-contract-vectors.json", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "crates/alcomd-testing/tests/m3_read_rpc.rs", "crates/alcomd-testing/tests/m5_unity_rpc.rs", "apps/alcomd-gui/tests/browser/m7-project-preferences.spec.ts"]
+description = "验证项目复制计划、任务与恢复，收藏的 CAS、重复值、事件和排序，以及 Unity 启动参数继承、覆盖、清空和幂等。"
+evidence = ["specs/rpc/alcomd-rpc-v1.md", "specs/rpc/m7-project-copy.proposal.schema.json", "specs/rpc/m7-project-preferences.proposal.schema.json", "crates/alcomd-store/src/schema.sql", "crates/alcomd-testing/fixtures/m7/project-copy-contract-vectors.json", "crates/alcomd-testing/fixtures/m7/project-preferences-contract-vectors.json", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "crates/alcomd-testing/tests/m3_read_rpc.rs", "crates/alcomd-testing/tests/m5_unity_rpc.rs", "apps/alcomd-gui/tests/browser/m7-project-preferences.spec.ts"]
 
 [[test]]
 id = "projects.m7-copy-transaction"
@@ -553,7 +545,7 @@ kind = "contract-fault-security"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "implemented"
 description = "验证 ProjectId-only Plan/Apply、独立 permission、writer/protected-root/path identity、sibling quarantine永久删除、原路径重建存活、registry/state exact commit、取消/幂等以及 accepted 到 cleanup_complete 每个 durable phase 的真实 subprocess kill/restart recovery；Linux/macOS mount boundary 与 Windows reparse no-follow 使用真实平台 fixture。"
-evidence = ["docs/baselines/m7-p7-project-directory-delete.md", "specs/rpc/m7-project-delete.proposal.schema.json", "specs/storage/state-v13-project-delete.proposal.contract.json", "specs/security/m7-project-delete-path-vectors.json", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "crates/alcomd-testing/tests/m7_project_delete_rpc.rs", "crates/alcomd-platform/src/project_delete.rs", "crates/alcomd-store/tests/schema_contract.rs", "apps/alcomd-gui/tests/browser/m7-material-foundation.spec.ts"]
+evidence = ["docs/baselines/m7-p7-project-directory-delete.md", "specs/rpc/m7-project-delete.proposal.schema.json", "crates/alcomd-store/src/schema.sql", "specs/security/m7-project-delete-path-vectors.json", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "crates/alcomd-testing/tests/m7_project_delete_rpc.rs", "crates/alcomd-platform/src/project_delete.rs", "crates/alcomd-store/tests/schema_contract.rs", "apps/alcomd-gui/tests/browser/m7-material-foundation.spec.ts"]
 
 [[test]]
 id = "gui.m7-package-workspace"
@@ -561,7 +553,7 @@ stage = "M7"
 kind = "integration-ui"
 platforms = ["all"]
 status = "implemented"
-description = "验证 Package workspace 使用完整分页 repository refresh、source-kind presentation filter、Config v2 prerelease/hidden/local presentation、closed documentation/changelog opener、source choice、Reinstall/Bulk单一Plan review与User Package enrollment管理；不代表P7 Delete Directory、P8 completeness或完整VPM聚合功能已完成。"
+description = "验证 Package workspace 使用完整分页 repository refresh、source-kind presentation filter、Config1 prerelease/hidden/local presentation、closed documentation/changelog opener、source choice、Reinstall/Bulk单一Plan review与User Package enrollment管理；不代表P7 Delete Directory、P8 completeness或完整VPM聚合功能已完成。"
 evidence = ["apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/src-tauri/src/lib.rs", "apps/alcomd-gui/tests/browser/m7-package-workspace.spec.ts", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts::settings_are_labeled_revisioned_dirty_aware_and_applied_through_the_typed_client", "docs/baselines/m7-project-package-functional-closure.md"]
 
 [[test]]
@@ -570,8 +562,8 @@ stage = "M7"
 kind = "contract-integration"
 platforms = ["all"]
 status = "implemented"
-description = "验证Config Schema 2、State Schema 12、兼容plan.v2 source pin、exact-version Reinstall、四类atomic Bulk intent、256/257边界、deterministic ordering、单Plan/Apply/Operation及既有filesystem recovery不变。"
-evidence = ["specs/rpc/m7-p6-package-closure.proposal.schema.json", "specs/rpc/m7-p6-package-closure.contract-vectors.json", "specs/storage/state-v12-migration.proposal.contract.json", "crates/alcomd-vpm/src/engine.rs::tests", "crates/alcomd-testing/tests/m7_p6_package_closure.rs", "crates/alcomd-testing/tests/m4_package_rpc.rs::install_and_remove_round_trip_through_rpc_without_network", "crates/alcomd-store/tests/schema_contract.rs"]
+description = "验证Config1、State1、Plan 来源证据、exact-version Reinstall、四类atomic Bulk intent、256/257边界、deterministic ordering、单Plan/Apply/Operation及既有filesystem recovery不变。"
+evidence = ["specs/rpc/m7-p6-package-closure.proposal.schema.json", "specs/rpc/m7-p6-package-closure.contract-vectors.json", "crates/alcomd-store/src/schema.sql", "crates/alcomd-vpm/src/engine.rs::tests", "crates/alcomd-testing/tests/m7_p6_package_closure.rs", "crates/alcomd-testing/tests/m4_package_rpc.rs::install_and_remove_round_trip_through_rpc_without_network", "crates/alcomd-store/tests/schema_contract.rs"]
 
 [[test]]
 id = "packages.m7-user-packages"
@@ -579,7 +571,7 @@ stage = "M7"
 kind = "security-integration"
 platforms = ["all"]
 status = "implemented"
-description = "验证loose-directory enrollment、strict manifest、filesystem identity、link/reparse/hardlink/special/non-UTF8/collision/quota边界、deterministic owned cache、revision/idempotency/Event、v1排除/v2纳入、源变化后Plan不可变及cache miss禁止回读mutable source。"
+description = "验证loose-directory enrollment、strict manifest、filesystem identity、link/reparse/hardlink/special/non-UTF8/collision/quota边界、deterministic owned cache、revision/idempotency/Event、首发 Plan 可选择本地用户包、源变化后Plan不可变及cache miss禁止回读mutable source。"
 evidence = ["crates/alcomd-vpm/src/user_package.rs", "crates/alcomd-store/tests/user_packages.rs", "crates/alcomd-testing/tests/m4_package_rpc.rs::user_package_plan_uses_owned_cache_after_source_mutation_and_registry_removal", "crates/alcomd-testing/tests/m4_package_rpc.rs::user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_missing", "crates/alcomd-vpm/src/resolver.rs::tests::repository_and_user_package_require_explicit_source_without_hidden_priority"]
 
 [[test]]
@@ -623,7 +615,7 @@ stage = "M6"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结并验证 .alcomdextension/Manifest/signature/WIT compatibility、permission/scope/lease/revocation、desired/runtime state、Schema v8/RPC contract、keyset cursor、KV/runtime quota 与 hostile vectors；M6 backend evidence 保持有效，未发布 UI-specific contract 已由 M7 Portable UI 方向 supersede。"
+description = "冻结并验证 .alcomdextension/Manifest/signature/WIT compatibility、permission/scope/lease/revocation、desired/runtime state、State1/RPC contract、keyset cursor、KV/runtime quota 与 hostile vectors；M6 backend evidence 保持有效，未发布 UI-specific contract 已由 M7 Portable UI 方向 supersede。"
 evidence = ["crates/alcomd-testing/tests/m6_contract.rs", "crates/alcomd-testing/fixtures/m6", "crates/alcomd-protocol/tests/schema_contract.rs", "crates/alcomd-store/tests/m6_runtime.rs"]
 
 [[test]]
@@ -691,6 +683,15 @@ kind = "contract"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "planned"
 description = "验证 3.4.0 更新 API 发现、验签并启动完整 v4 bridge installer 的 JSON、频道、版本推进、资产摘要、签名和失败保持 v3 可恢复；3.4.0 不执行完整替换迁移。"
+
+[[test]]
+id = "migration.native-staging"
+stage = "M11"
+kind = "integration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "以隔离资料验证 3.4.0 数据解析、签名载荷、原生暂存、重开对账及缺少平台健康证据时的回滚。"
+evidence = ["migrations/v3/app/alcomd-migrate-v3/tests", "apps/alcomd/src/native_state_import_tests.rs", "apps/alcomd-bootstrap/src/tests.rs", "apps/alcomd-updater/src/tests.rs"]
 
 [[test]]
 id = "migration.fixture-chain"
@@ -1016,3 +1017,11 @@ kind = "fault-injection"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
 description = "v3.4.0 启动完整 v4 bridge installer 后，在各平台 bridge/bootstrap 的每个故障点证明 v3 数据不丢且 3.4.0 可重启；不得把 v3.4.0 当作迁移执行器。"
+
+[[test]]
+id = "contracts.first-release"
+stage = "M11"
+kind = "contract"
+platforms = ["all"]
+status = "implemented"
+description = "在 cargo xtask check 核对自有首发版本号、实际 RPC 与 capability 唯一性、SDK 目录、操作矩阵、WIT 引用以及有效文档链接。"

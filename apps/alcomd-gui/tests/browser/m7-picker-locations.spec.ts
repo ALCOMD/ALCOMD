@@ -28,22 +28,27 @@ test("an unavailable configured directory does not prevent adding a project by m
     expect(await requests(page)).toEqual([{ kind: "directory" }]);
 });
 
-for (const mode of ["create", "restore"] as const) {
-    test(`${mode} sends the edited target directory and cancellation preserves it`, async ({ page }) => {
-        await page.goto("/browser-harness.html?route=/projects&cancel-directory=1");
-        if (mode === "create") await page.getByRole("button", { name: "Create project", exact: true }).click();
-        else {
-            await selectActionMenuItem(page.getByRole("button", { name: "More project creation options" }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
-        }
-        const dialog = page.locator("md-dialog[open]");
-        const field = dialog.getByLabel(mode === "create" ? "Create target parent" : "Restore target parent", { exact: true });
-        await expect(field).toHaveValue("C:\\Fixture");
-        await field.fill("D:\\Not Created\\Nested Target");
-        await dialog.getByRole("button", { name: "Choose directory", exact: true }).click();
-        await expect(field).toHaveValue("D:\\Not Created\\Nested Target");
-        expect(await requests(page)).toEqual([{ kind: "directory", currentPath: "D:\\Not Created\\Nested Target" }]);
-    });
-}
+test("create sends the edited target directory and cancellation preserves it", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/projects&cancel-directory=1");
+    await page.getByRole("button", { name: "Create project", exact: true }).click();
+    const dialog = page.locator("md-dialog[open]");
+    const field = dialog.getByLabel("Create target parent", { exact: true });
+    await expect(field).toHaveValue("C:\\Fixture");
+    await field.fill("D:\\Not Created\\Nested Target");
+    await dialog.getByRole("button", { name: "Choose directory", exact: true }).click();
+    await expect(field).toHaveValue("D:\\Not Created\\Nested Target");
+    expect(await requests(page)).toEqual([{ kind: "directory", currentPath: "D:\\Not Created\\Nested Target" }]);
+});
+
+test("restore opens the ZIP picker in the configured backup directory", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/projects");
+    await selectActionMenuItem(page.getByRole("button", { name: "More project creation options", exact: true }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
+    await expect(page.getByRole("dialog", { name: "Restore project", exact: true })).toBeVisible();
+    const dialog = page.locator("md-dialog[open]");
+    await dialog.getByRole("button", { name: "Select", exact: true }).click();
+    await expect(dialog.getByLabel("Backup", { exact: true })).toHaveValue("C:/Outside/Unity Project.zip");
+    expect(await requests(page)).toEqual([{ kind: "backupZip", currentPath: "C:\\Fixture\\Backups" }]);
+});
 
 test("User Package directory selection uses its current path and cancellation does not enroll it", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/user-packages&resource-lifecycle=1&cancel-directory=1");

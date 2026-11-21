@@ -56,7 +56,10 @@ test("latest shows the Core project-compatible version used by the update review
     await installed.getByRole("button", { name: "Update", exact: true }).click();
     const review = page.locator("md-dialog[open]");
     await expect(review).toContainText("1.2.3 → 1.10.0");
-    expect(await page.evaluate(() => window.packageRequests[0])).toMatchObject({ method: "upgrade", params: { versionRange: "=1.10.0" } });
+    const request = await page.evaluate(() => window.packageRequests[0]);
+    expect(request).toMatchObject({ method: "upgrade", params: { packageId: "com.example.avatar" } });
+    expect(request?.params).not.toHaveProperty("versionRange");
+    expect(request?.params).not.toHaveProperty("source");
     await review.getByRole("button", { name: "Cancel", exact: true }).click();
     expect(await page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual(["upgrade"]);
 });

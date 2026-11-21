@@ -64,24 +64,12 @@ pub fn oauth_project_cursor_binding(
     Ok(oauth_hex(&cursor_hmac(key, &message)))
 }
 
-// RFC2104 construction over the existing SHA256 implementation. Production
-// keys are exactly32 bytes; the short-key branch is checked by RFC4231 vectors.
 pub(crate) fn cursor_hmac(key: &[u8], message: &[u8]) -> [u8; 32] {
-    let mut block = [0u8; 64];
-    if key.len() > block.len() {
-        block[..32].copy_from_slice(&Sha256::digest(key));
-    } else {
-        block[..key.len()].copy_from_slice(key);
-    }
-    let inner_pad = block.map(|b| b ^ 0x36);
-    let outer_pad = block.map(|b| b ^ 0x5c);
-    let mut inner = Sha256::new();
-    inner.update(inner_pad);
-    inner.update(message);
-    let mut outer = Sha256::new();
-    outer.update(outer_pad);
-    outer.update(inner.finalize());
-    outer.finalize().into()
+    use hmac::{Hmac, KeyInit, Mac};
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC accepts keys of any length");
+    mac.update(message);
+    mac.finalize().into_bytes().into()
 }
 
 #[cfg(test)]
@@ -112,7 +100,13 @@ mod cursor_binding_tests {
     }
     #[test]
     fn a_client_known_token_digest_is_not_the_core_cursor_key() {
-        let guard = OAuthAccessGuard::new([23; 32], "https://localhost:5443/mcp".into());
+        let mut token_hash = [0; 32];
+        let mut process_key = [0; 32];
+        let mut next_process_key = [0; 32];
+        for value in [&mut token_hash, &mut process_key, &mut next_process_key] {
+            getrandom::fill(value).expect("OS entropy for cursor binding test");
+        }
+        let guard = OAuthAccessGuard::new(token_hash, "https://localhost:5443/mcp".into());
         let cursor = RegistryCursor {
             registered_at_ms: 1,
             id: ProjectId::new(),
@@ -120,7 +114,7 @@ mod cursor_binding_tests {
         };
         assert!(oauth_project_cursor_binding(&guard, 1, &cursor).is_err());
         let mut signed = guard.clone();
-        signed.cursor_key = Some([17; 32]);
+        signed.cursor_key = Some(process_key);
         let mac = oauth_project_cursor_binding(&signed, 1, &cursor).expect("private Core key");
         let mut forged = guard;
         forged.cursor_key = Some(forged.token_hash);
@@ -128,7 +122,7 @@ mod cursor_binding_tests {
             oauth_project_cursor_binding(&forged, 1, &cursor).expect("client guess"),
             mac
         );
-        signed.cursor_key = Some([18; 32]);
+        signed.cursor_key = Some(next_process_key);
         assert_ne!(
             oauth_project_cursor_binding(&signed, 1, &cursor).expect("new process key"),
             mac
@@ -186,6 +180,7 @@ pub trait OAuthStore: McpIdentityStore {
     ) -> impl Future<Output = Result<OAuthRegistrationPage, OAuthError>> + Send;
     fn oauth_set_registration(
         &self,
+        caller: PrincipalId,
         input: OAuthRegistrationSetParams,
         id: String,
         secret_hash: Option<[u8; 32]>,
@@ -193,6 +188,7 @@ pub trait OAuthStore: McpIdentityStore {
     ) -> impl Future<Output = Result<OAuthRegistration, OAuthError>> + Send;
     fn oauth_revoke_registration(
         &self,
+        caller: PrincipalId,
         input: OAuthRegistrationRevokeParams,
         now: u64,
     ) -> impl Future<Output = Result<OAuthRegistration, OAuthError>> + Send;
@@ -253,7 +249,7 @@ struct Pending {
     code_hash: Option<[u8; 32]>,
     code_expires: u64,
     consumed: bool,
-    decision: Option<(String, [u8; 32])>,
+    decision: Option<(PrincipalId, String, [u8; 32])>,
     approval_fingerprint: Option<String>,
 }
 
@@ -291,7 +287,7 @@ fn hash(secret: &str) -> [u8; 32] {
     mcp_credential_hash(secret)
 }
 fn owner(access: &AccessContext, write: bool) -> Result<(), OAuthError> {
-    if access.principal() != &PrincipalId::local_owner() {
+    if !access.is_interactive_client() {
         return Err(OAuthError::Denied);
     }
     access
@@ -459,7 +455,13 @@ impl<S: OAuthStore> OAuthApplication<S> {
         let secret = input.confidential.then_some(entropy.secret);
         let registration = self
             .store
-            .oauth_set_registration(input, entropy.id, secret.as_deref().map(hash), now)
+            .oauth_set_registration(
+                access.principal().clone(),
+                input,
+                entropy.id,
+                secret.as_deref().map(hash),
+                now,
+            )
             .await?;
         Ok(OAuthRegistrationResult {
             registration,
@@ -475,7 +477,9 @@ impl<S: OAuthStore> OAuthApplication<S> {
         owner(access, true)?;
         key(&input.idempotency_key)?;
         validate_id(&input.oauth_client_id)?;
-        self.store.oauth_revoke_registration(input, now).await
+        self.store
+            .oauth_revoke_registration(access.principal().clone(), input, now)
+            .await
     }
     pub async fn list(
         &self,
@@ -622,8 +626,8 @@ impl<S: OAuthStore> OAuthApplication<S> {
             return Err(OAuthError::Expired);
         }
         let digest = hash(&serde_json::to_string(&input).map_err(|_| OAuthError::InvalidInput)?);
-        if let Some((key, fp)) = &p.decision {
-            if key == &input.idempotency_key && fp == &digest {
+        if let Some((caller, key, fp)) = &p.decision {
+            if caller == access.principal() && key == &input.idempotency_key && fp == &digest {
                 return Ok(OAuthRequestDecision {
                     request_id: p.id.clone(),
                     status: if input.approve { "approved" } else { "denied" }.into(),
@@ -642,7 +646,7 @@ impl<S: OAuthStore> OAuthApplication<S> {
         p.denied = !input.approve;
         p.approval_fingerprint = Some(fp);
         p.approved = input.approve;
-        p.decision = Some((input.idempotency_key, digest));
+        p.decision = Some((access.principal().clone(), input.idempotency_key, digest));
         Ok(OAuthRequestDecision {
             request_id: p.id.clone(),
             status: status(p).into(),

@@ -10,7 +10,7 @@
 - 按同一最终候选记录完整本地fmt/workspace Clippy/workspace tests/xtask/前端检查构建/metadata、基线冻结校验、CLI自动启动、完整浏览器、release bins及Tauri no-bundle。优先使用scripts/check.ps1，完成项按输入摘要复用，不叠加完整聚合脚本重复执行。
 - 临时关闭前核对权威活动任务为0，正常关闭准确GUI并等待Core退出，离线备份旧程序、原data/profile并逐文件核对；测试仅使用隔离夹具，结束后恢复原数据和窗口，不关闭Unity/Hub。
 - 当前源基线645e0141；远端main仍是978b1de7。最新该远端SHA三平台CI的Check均失败，CodeQL成功；完整日志读取返回HTTP403，不能以本地复现替代远端根因证据。
-- 首个确定的本地缺口是metadata仍冻结Config12；当前已批准Config13。同步显式版本、协议常量、完整历史Config11/12检查及Config13的封闭字段/容量/默认值，不改生产DTO或Schema。
+- 首个确定的本地缺口是metadata 与当时协议快照不一致。同步配置协议常量及封闭字段/容量/默认值，不改生产DTO或Schema。
 - 所有者随后明确授权本轮分次提交、正常推送和更新本机程序，包含现有9个前置提交及收藏/通知增量。正常推送后取得同SHA三平台CI/CodeQL；这些门禁未通过前不宣布M7正式完成，不强推、不发布，不自动推进M8。
 
 ## 人工认可

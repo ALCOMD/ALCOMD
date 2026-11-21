@@ -610,6 +610,26 @@ mod tests {
 
     #[test]
     fn background_process_does_not_keep_an_inheritable_pipe_open() {
+        // Keep the inheritable fixture handle in a dedicated process so other
+        // tests spawning children cannot inherit it in parallel.
+        let probe = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .args([
+                "--exact",
+                "windows::security::tests::inheritable_pipe_probe",
+                "--ignored",
+            ])
+            .output()
+            .expect("run isolated inheritance probe");
+        assert!(
+            probe.status.success(),
+            "{}",
+            String::from_utf8_lossy(&probe.stdout)
+        );
+    }
+
+    #[test]
+    #[ignore = "isolates the inheritable handle from unrelated test processes"]
+    fn inheritable_pipe_probe() {
         let attributes = SECURITY_ATTRIBUTES {
             nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
             lpSecurityDescriptor: null_mut(),

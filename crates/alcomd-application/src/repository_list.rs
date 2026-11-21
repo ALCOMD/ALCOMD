@@ -46,7 +46,6 @@ pub enum RepositoryListFormat {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryConfiguration {
     pub display_name: Option<String>,
-    pub priority: u64,
     pub enabled: bool,
     pub disabled_package_ids: Vec<String>,
 }
@@ -64,6 +63,7 @@ pub struct RepositoryListMetadata {
 pub struct RepositoryListRecord {
     pub repository_id: String,
     pub revision: u64,
+    pub order_key: u64,
     pub source: RepositorySource,
     pub credential_reference: Option<String>,
     pub configuration: RepositoryConfiguration,
@@ -138,6 +138,7 @@ pub trait RepositoryListStore: Clone + Send + Sync + 'static {
     fn apply_repository_list_metadata(
         &self,
         owner: PrincipalId,
+        expected_order: String,
         changes: Vec<RepositoryListMetadata>,
         now_ms: u64,
     ) -> impl Future<Output = Result<(), M3Error>> + Send;
@@ -357,7 +358,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
 }
 
 fn require_import_manage(access: &AccessContext) -> Result<(), RepositoryListError> {
-    if access.principal() != &PrincipalId::local_owner() {
+    if !access.is_interactive_client() {
         return Err(RepositoryListError("permission_denied"));
     }
     access
@@ -441,11 +442,14 @@ impl Drop for ImportGuard<'_> {
     }
 }
 
-fn require(access: &AccessContext, owner_only: bool) -> Result<(), RepositoryListError> {
+fn require(
+    access: &AccessContext,
+    requires_interactive_client: bool,
+) -> Result<(), RepositoryListError> {
     access
         .require(Permission::RepositoriesRead)
         .map_err(|_| RepositoryListError("permission_denied"))?;
-    if owner_only && access.principal().as_str() != PrincipalId::LOCAL_OWNER {
+    if requires_interactive_client && !access.is_interactive_client() {
         return Err(RepositoryListError("permission_denied"));
     }
     Ok(())

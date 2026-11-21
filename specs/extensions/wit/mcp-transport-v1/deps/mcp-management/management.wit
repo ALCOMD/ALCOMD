@@ -1,4 +1,4 @@
-package alcomd:mcp-management@2.0.0;
+package alcomd:mcp-management@1.0.0;
 
 interface clients {
     enum error-code {
@@ -24,7 +24,7 @@ interface clients {
     revoke: func(client-id: string, expected-revision: u64, idempotency-key: string) -> result<client-summary, management-error>;
 }
 
-world management-v2 {
+world management-v1 {
     include alcomd:extension/extension-v1@1.0.0;
     import clients;
 }

@@ -12,6 +12,7 @@ pub use host_protocol::*;
 pub use package::{
     ExtensionManifest, ManifestUi, PackageError, PackageErrorCode, VerifiedExtensionPackage,
     extract_extension_package, inspect_extension_directory, inspect_extension_package,
+    inspect_extension_package_with_archive_digest,
 };
 
 /// Stable crate identifier used by scaffold checks.

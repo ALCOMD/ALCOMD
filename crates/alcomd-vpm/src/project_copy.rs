@@ -83,7 +83,7 @@ impl M7CopyAdapter for ProjectCopyEngine {
         let target_parent_identity = alcomd_platform::file_identity_key(&target_parent)
             .map_err(|cause| target_error().with_source(cause))?;
         let target = target_parent.join(&target_leaf);
-        if target.exists() {
+        if target_occupied(&target)? {
             return Err(error(M7CopyErrorCode::ProjectCopyTargetExists));
         }
         reject_containment(&source_root, &target)?;
@@ -148,19 +148,15 @@ impl M7CopyAdapter for ProjectCopyEngine {
             Path::new(&plan.draft.source_project.observation.root_path),
             source_error(),
         )?;
-        let parent =
-            canonical_directory(Path::new(&plan.draft.target_parent_path), target_error())?;
+        let parent = verify_target_parent(plan)?;
         if alcomd_platform::file_identity_key(&source)
             .map_err(|cause| source_error().with_source(cause))?
             != plan.draft.source_root_identity
-            || alcomd_platform::file_identity_key(&parent)
-                .map_err(|cause| target_error().with_source(cause))?
-                != plan.draft.target_parent_identity
         {
             return Err(error(M7CopyErrorCode::ProjectCopyPlanStale));
         }
         let target = parent.join(&plan.draft.target_leaf);
-        if target.exists() {
+        if target_occupied(&target)? {
             return Err(error(M7CopyErrorCode::ProjectCopyTargetExists));
         }
         reject_containment(&source, &target)
@@ -172,7 +168,7 @@ impl M7CopyAdapter for ProjectCopyEngine {
         plan: ProjectCopyPlanRecord,
     ) -> Result<ProjectCopyInventoryEvidence, M7CopyError> {
         let source = PathBuf::from(&plan.draft.source_project.observation.root_path);
-        let (shell, payload, owner, inventory_path) = workspace(operation_id, &plan);
+        let (shell, payload, owner, inventory_path) = workspace(operation_id, &plan)?;
         if shell.exists() {
             verify_owner(&owner, operation_id, plan.draft.plan_id)?;
         } else {
@@ -206,7 +202,7 @@ impl M7CopyAdapter for ProjectCopyEngine {
         inventory: ProjectCopyInventoryEvidence,
     ) -> Result<ProjectCopyInventoryEvidence, M7CopyError> {
         let source = PathBuf::from(&plan.draft.source_project.observation.root_path);
-        let (_, payload, owner, inventory_path) = workspace(operation_id, &plan);
+        let (_, payload, owner, inventory_path) = workspace(operation_id, &plan)?;
         verify_owner(&owner, operation_id, plan.draft.plan_id)?;
         if payload.exists() {
             fs::remove_dir_all(&payload).map_err(|cause| recovery_error().with_source(cause))?;
@@ -264,13 +260,10 @@ impl M7CopyAdapter for ProjectCopyEngine {
         plan: ProjectCopyPlanRecord,
         _inventory: ProjectCopyInventoryEvidence,
     ) -> Result<PublishedProjectCopy, M7CopyError> {
-        let (_, payload, owner, _) = workspace(operation_id, &plan);
+        let (_, payload, owner, _) = workspace(operation_id, &plan)?;
         verify_owner(&owner, operation_id, plan.draft.plan_id)?;
         let target = PathBuf::from(&plan.draft.target_parent_path).join(&plan.draft.target_leaf);
-        if target.exists() {
-            return Err(error(M7CopyErrorCode::ProjectCopyTargetExists));
-        }
-        fs::rename(&payload, &target).map_err(|cause| recovery_error().with_source(cause))?;
+        publish_copy(&payload, &target)?;
         alcomd_platform::sync_directory(Path::new(&plan.draft.target_parent_path))
             .map_err(|cause| recovery_error().with_source(cause))?;
         published(&plan, &target)
@@ -283,12 +276,12 @@ impl M7CopyAdapter for ProjectCopyEngine {
         inventory: ProjectCopyInventoryEvidence,
         expected: Option<PublishedProjectCopy>,
     ) -> Result<PublishedProjectCopy, M7CopyError> {
-        let (_, payload, owner, _) = workspace(operation_id, &plan);
+        let (_, payload, owner, _) = workspace(operation_id, &plan)?;
         verify_owner(&owner, operation_id, plan.draft.plan_id)?;
         let target = PathBuf::from(&plan.draft.target_parent_path).join(&plan.draft.target_leaf);
-        let was_unpublished = payload.is_dir() && !target.exists();
+        let was_unpublished = payload.is_dir() && !target_occupied(&target)?;
         if was_unpublished {
-            fs::rename(&payload, &target).map_err(|cause| recovery_error().with_source(cause))?;
+            publish_copy(&payload, &target)?;
             alcomd_platform::sync_directory(Path::new(&plan.draft.target_parent_path))
                 .map_err(|cause| recovery_error().with_source(cause))?;
         } else if payload.exists() || !target.is_dir() {
@@ -314,7 +307,7 @@ impl M7CopyAdapter for ProjectCopyEngine {
         operation_id: OperationId,
         plan: ProjectCopyPlanRecord,
     ) -> Result<(), M7CopyError> {
-        let (shell, payload, owner, _) = workspace(operation_id, &plan);
+        let (shell, payload, owner, _) = workspace(operation_id, &plan)?;
         verify_owner(&owner, operation_id, plan.draft.plan_id)?;
         if payload.exists() {
             return Err(recovery_error());
@@ -329,10 +322,10 @@ impl M7CopyAdapter for ProjectCopyEngine {
         operation_id: OperationId,
         plan: ProjectCopyPlanRecord,
     ) -> Result<(), M7CopyError> {
-        let (shell, _, owner, _) = workspace(operation_id, &plan);
+        let (shell, _, owner, _) = workspace(operation_id, &plan)?;
         verify_owner(&owner, operation_id, plan.draft.plan_id)?;
         let target = PathBuf::from(&plan.draft.target_parent_path).join(&plan.draft.target_leaf);
-        if target.exists() {
+        if target_occupied(&target)? {
             return Err(recovery_error());
         }
         fs::remove_dir_all(&shell).map_err(|cause| recovery_error().with_source(cause))?;
@@ -554,15 +547,43 @@ fn evidence(
 fn workspace(
     operation: OperationId,
     plan: &ProjectCopyPlanRecord,
-) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
-    let shell = PathBuf::from(&plan.draft.target_parent_path)
-        .join(format!(".alcomd-copy-{operation}.staging"));
-    (
+) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf), M7CopyError> {
+    let shell = verify_target_parent(plan)?.join(format!(".alcomd-copy-{operation}.staging"));
+    Ok((
         shell.clone(),
         shell.join("payload"),
         shell.join("owner.json"),
         shell.join("inventory.jsonl"),
-    )
+    ))
+}
+
+fn verify_target_parent(plan: &ProjectCopyPlanRecord) -> Result<PathBuf, M7CopyError> {
+    let expected = Path::new(&plan.draft.target_parent_path);
+    let (parent, identity) = alcomd_platform::resolve_plain_storage_directory(expected)
+        .map_err(|cause| target_error().with_source(cause))?;
+    if parent != expected || identity != plan.draft.target_parent_identity {
+        return Err(error(M7CopyErrorCode::ProjectCopyPlanStale));
+    }
+    Ok(parent)
+}
+
+fn target_occupied(path: &Path) -> Result<bool, M7CopyError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(cause) if cause.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(cause) => Err(target_error().with_source(cause)),
+    }
+}
+
+fn publish_copy(payload: &Path, target: &Path) -> Result<(), M7CopyError> {
+    alcomd_platform::publish_path_no_replace(payload, target).map_err(|cause| {
+        let error = if cause.kind() == std::io::ErrorKind::AlreadyExists {
+            error(M7CopyErrorCode::ProjectCopyTargetExists)
+        } else {
+            recovery_error()
+        };
+        error.with_source(cause)
+    })
 }
 
 fn write_owner(path: &Path, operation: OperationId, plan: PlanId) -> Result<(), M7CopyError> {

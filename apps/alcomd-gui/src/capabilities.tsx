@@ -4,7 +4,6 @@ import type { Translate } from "./i18n";
 
 export const capabilities = {
     backupsCreate: "backups.create.v1",
-    backupsRead: "backups.read.v1",
     backupsRestore: "backups.restore.v1",
     extensionsRemoteInstall: RPC_CAPABILITIES.extensionsRemoteInstall,
     extensionsLifecycle: RPC_CAPABILITIES.extensionsLifecycle,
@@ -15,8 +14,7 @@ export const capabilities = {
     logsRead: RPC_CAPABILITIES.logsRead,
     packagesApply: "packages.apply.v1",
     packagesCandidates: RPC_CAPABILITIES.packagesCandidates,
-    packagesPlanV1: "packages.plan.v1",
-    packagesPlanV2: "packages.plan.v2",
+    packagesPlan: "packages.plan.v1",
     projectInventory: "packages.project-inventory.v1",
     templateEdit: "project-templates.edit.v1",
     packagesUserPackages: "packages.user-packages.v1",
@@ -31,7 +29,7 @@ export const capabilities = {
     repositoriesRegistry: "repositories.registry.v1",
     stateCheck: "state.check.v1",
     projectsCreate: "projects.create.v1",
-    projectTemplates: "projectTemplates.v2",
+    projectTemplates: "projectTemplates.v1",
     unityLaunch: "unity.launch.v1",
     unityHubOpen: "unity.hub.open.v1",
     unityManage: "unity.manage.v1",

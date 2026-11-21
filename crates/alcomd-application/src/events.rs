@@ -60,6 +60,7 @@ pub struct EventSubscription<S: StateStore> {
     pub resync_required: bool,
     store: S,
     owner: PrincipalId,
+    authentication: Option<crate::ToolAuthentication>,
     commits: watch::Receiver<EventCommitWatermark>,
     sequence: u64,
     offered_through: u64,
@@ -82,9 +83,14 @@ impl<S: StateStore> Application<S> {
         if include_logs {
             access.require(Permission::OperationsRead)?;
         }
-        if access.principal() != &PrincipalId::local_owner() {
+        if !access.is_interactive_client() {
             return Err(ApplicationError::PermissionDenied);
         }
+        let authentication = if access.is_mcp_client() {
+            Some(crate::workflow_authentication().ok_or(ApplicationError::PermissionDenied)?)
+        } else {
+            None
+        };
         if !(1..=1_000).contains(&limit)
             || cursor.as_ref().is_some_and(|value| {
                 OperationId::parse(&value.instance_id).is_err()
@@ -130,6 +136,7 @@ impl<S: StateStore> Application<S> {
             resync_required,
             store: self.store.clone(),
             owner: access.principal().clone(),
+            authentication,
             commits,
             sequence,
             offered_through: sequence,
@@ -144,7 +151,10 @@ impl<S: StateStore> Application<S> {
 impl<S: StateStore> EventSubscription<S> {
     /// Reads committed data, then waits without retaining a database transaction.
     /// A commit racing with the read is retained by `watch::changed`.
-    pub async fn next_page(&mut self) -> Result<LiveEventPage, ApplicationError> {
+    pub async fn next_page(&mut self) -> Result<LiveEventPage, ApplicationError>
+    where
+        S: crate::OAuthStore,
+    {
         let store = &self.store;
         let owner = &self.owner;
         let sequence = self.sequence;
@@ -157,6 +167,24 @@ impl<S: StateStore> EventSubscription<S> {
             || store.list_events(owner.clone(), sequence, limit),
         )
         .await?;
+        if let Some(credential) = &self.authentication {
+            let client = match credential {
+                crate::ToolAuthentication::Credential(hash) => store
+                    .mcp_authenticate(*hash)
+                    .await
+                    .map_err(|_| ApplicationError::PermissionDenied)?,
+                crate::ToolAuthentication::OAuth(guard) => {
+                    let now = crate::m3_time_ms().map_err(|_| unavailable())?;
+                    store
+                        .oauth_authenticate(guard.clone(), now)
+                        .await
+                        .map_err(|_| ApplicationError::PermissionDenied)?
+                }
+            };
+            if client.principal_id != self.owner || client.revoked_at_ms.is_some() {
+                return Err(ApplicationError::PermissionDenied);
+            }
+        }
         self.offered_through = page.next_sequence;
         self.offered_resources_revision = page.resources_revision;
         Ok(page)

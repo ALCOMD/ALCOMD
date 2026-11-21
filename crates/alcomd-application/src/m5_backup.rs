@@ -1,4 +1,4 @@
-//! M5 managed native Backup Create use cases.
+//! File-based Unity project backup and restore tasks.
 
 use std::future::Future;
 use std::path::PathBuf;
@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AccessContext, BackupId, IdempotencyKey, M3RegistryStore, OperationId, Permission, PlanId,
-    PrincipalId, ProjectId, ProjectObservation, ProjectRecord, ProjectRecoveryGuard, ResourceKey,
+    AccessContext, IdempotencyKey, M3RegistryStore, OperationId, Permission, PrincipalId,
+    ProjectId, ProjectObservation, ProjectRecord, ProjectRecoveryGuard, ResourceKey,
     ResourceLockCoordinator, Revision, StateStore, UnityWriterState, UnityWriterStateKind,
 };
 
@@ -41,51 +41,14 @@ impl BackupCompression {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BackupRecord {
-    pub backup_id: BackupId,
-    pub source_project_id: ProjectId,
-    pub archive_sha256: [u8; 32],
-    pub archive_bytes: u64,
-    pub format_version: u32,
-    pub created_at_ms: u64,
-    pub compression_mode: BackupCompression,
-    pub exclude_vpm_packages: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StoredBackupRecord {
-    pub record: BackupRecord,
-    pub archive_locator: String,
-    pub file_identity_key: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct BackupCursor {
-    pub created_at_ms: u64,
-    pub backup_id: BackupId,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BackupPage {
-    pub backups: Vec<BackupRecord>,
-    pub next_cursor: Option<BackupCursor>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct BackupCreateRequest {
-    pub backup_id: BackupId,
     pub project_id: ProjectId,
     pub expected_revision: Revision,
     pub compression_mode: BackupCompression,
     pub exclude_vpm_packages: bool,
-    /// Retained accepted requests omitted this field and always excluded caches.
-    #[serde(default)]
     pub include_library: bool,
     pub created_at_ms: u64,
-    /// Frozen when accepted. Missing only on retained pre-Config5 operations.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub destination: Option<BackupDestination>,
+    pub destination: BackupDestination,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -93,28 +56,22 @@ pub struct BackupCreateRequest {
 pub struct BackupDestination {
     pub directory: String,
     pub identity: Vec<u8>,
+    pub file_name: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct BackupCreateOptions {
     pub compression_mode: Option<BackupCompression>,
     pub exclude_vpm_packages: Option<bool>,
     pub include_library: Option<bool>,
-}
-
-impl From<&BackupCreateRequest> for BackupCreateOptions {
-    fn from(value: &BackupCreateRequest) -> Self {
-        Self {
-            compression_mode: Some(value.compression_mode),
-            exclude_vpm_packages: Some(value.exclude_vpm_packages),
-            include_library: Some(value.include_library),
-        }
-    }
+    pub destination_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BackupDefaults {
     pub directory: Option<String>,
+    pub project_directory: Option<String>,
+    pub create_default_backup_directory: bool,
     pub compression_mode: BackupCompression,
     pub include_vpm_packages: bool,
     pub include_library: bool,
@@ -124,6 +81,8 @@ impl Default for BackupDefaults {
     fn default() -> Self {
         Self {
             directory: None,
+            project_directory: None,
+            create_default_backup_directory: true,
             compression_mode: BackupCompression::Level5,
             include_vpm_packages: true,
             include_library: false,
@@ -142,7 +101,6 @@ pub trait BackupDirectoryProvider: Send + Sync + 'static {
 #[serde(rename_all = "camelCase")]
 pub struct BackupCreateOutcome {
     pub operation_id: OperationId,
-    pub backup_id: BackupId,
     pub replayed: bool,
     #[serde(skip)]
     pub schedule: bool,
@@ -180,9 +138,8 @@ pub struct BackupArchiveEvidence {
     pub archive_sha256: [u8; 32],
     pub archive_bytes: u64,
     pub source_project_fingerprint: [u8; 32],
-    /// Frozen user-facing name; retained checkpoints without it use the original UUID name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub archive_file_name: Option<String>,
+    pub archive_file_name: String,
+    pub archive_file_identity: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -193,76 +150,27 @@ pub struct BackupOperationRecord {
     pub evidence: Option<BackupArchiveEvidence>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PublishedBackup {
-    pub archive_locator: String,
-    pub file_identity_key: Vec<u8>,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRestoreInput {
+    pub archive_path: String,
+    pub project_name: Option<String>,
+    pub destination_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RestoreExcludedPackage {
-    pub package_id: String,
-    pub version: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRestoreTarget {
-    pub parent: String,
-    pub leaf: String,
-    pub must_be_absent: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRestorePlanDraft {
-    pub plan_id: PlanId,
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackupRestoreRequest {
     pub project_id: ProjectId,
-    pub backup_id: BackupId,
-    pub archive_sha256: [u8; 32],
+    pub archive_path: PathBuf,
+    pub archive_parent_identity: Vec<u8>,
+    pub archive_directory_fingerprint: [u8; 32],
     pub archive_file_identity: Vec<u8>,
     pub archive_bytes: u64,
-    pub manifest_fingerprint: [u8; 32],
-    pub exclude_vpm_packages: bool,
-    pub excluded_packages: Vec<RestoreExcludedPackage>,
-    pub target: BackupRestoreTarget,
+    pub archive_modified_at: std::time::SystemTime,
+    pub target_parent: PathBuf,
     pub target_parent_identity: Vec<u8>,
-    pub expected_unity_project_json: String,
-    pub plan_fingerprint: [u8; 32],
-    pub plan_json: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRestorePlanRecord {
-    #[serde(flatten)]
-    pub draft: BackupRestorePlanDraft,
-    pub owner: PrincipalId,
-    pub created_at_ms: u64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRestorePlanOutcome {
-    pub plan_id: PlanId,
-    pub project_id: ProjectId,
-    pub backup_id: BackupId,
-    pub target: BackupRestoreTarget,
-    pub archive_sha256: [u8; 32],
-    pub packages_require_resolve: bool,
-    pub excluded_packages: Vec<RestoreExcludedPackage>,
-    pub plan_fingerprint: [u8; 32],
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRestoreApplyOutcome {
-    pub operation_id: OperationId,
-    pub project_id: ProjectId,
-    pub replayed: bool,
-    #[serde(skip)]
-    pub schedule: bool,
+    pub target_name: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -296,31 +204,25 @@ impl BackupRestorePhase {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BackupRestoreOperationRecord {
-    pub plan: BackupRestorePlanRecord,
+    pub request: BackupRestoreRequest,
     pub phase: BackupRestorePhase,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PreparedBackupRestore {
-    pub plan: BackupRestorePlanRecord,
-    pub archive_path: PathBuf,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StagedBackupRestore {
-    pub plan: BackupRestorePlanRecord,
+    pub request: BackupRestoreRequest,
     pub staging_root: PathBuf,
     pub project_root: PathBuf,
     pub target_root: PathBuf,
     pub owner_sidecar: PathBuf,
     pub already_published: bool,
+    pub project_fingerprint: [u8; 32],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RestoredProject {
     pub project_id: ProjectId,
     pub observation: ProjectObservation,
-    pub target_identity: Vec<u8>,
     pub project_fingerprint: [u8; 32],
 }
 
@@ -337,8 +239,8 @@ pub enum M5BackupErrorCode {
     BackupLimitExceeded,
     ProjectChangedDuringBackup,
     BackupIntegrityMismatch,
-    BackupRestorePlanNotFound,
-    BackupRestorePlanStale,
+    BackupInvalidArchive,
+    BackupSourceChanged,
     BackupRestoreTargetExists,
     BackupRestoreTargetUnsafe,
     BackupRestoreRecoveryRequired,
@@ -429,18 +331,6 @@ pub trait M5BackupStore: Clone + Send + Sync + 'static {
         options: BackupCreateOptions,
         key: IdempotencyKey,
     ) -> impl Future<Output = Result<Option<BackupCreateOutcome>, M5BackupError>> + Send;
-    fn list_backups(
-        &self,
-        owner: PrincipalId,
-        project_id: Option<ProjectId>,
-        cursor: Option<BackupCursor>,
-        limit: u32,
-    ) -> impl Future<Output = Result<Vec<StoredBackupRecord>, M5BackupError>> + Send;
-    fn get_backup(
-        &self,
-        owner: PrincipalId,
-        backup_id: BackupId,
-    ) -> impl Future<Output = Result<StoredBackupRecord, M5BackupError>> + Send;
     fn accept_backup_create(
         &self,
         owner: PrincipalId,
@@ -463,7 +353,7 @@ pub trait M5BackupStore: Clone + Send + Sync + 'static {
     fn complete_backup_create(
         &self,
         operation_id: OperationId,
-        backup: StoredBackupRecord,
+        archive_name: String,
         completed_at_ms: u64,
     ) -> impl Future<Output = Result<(), M5BackupError>> + Send;
     fn fail_backup_create(
@@ -483,19 +373,20 @@ pub trait M5BackupStore: Clone + Send + Sync + 'static {
         &self,
         recovered_at_ms: u64,
     ) -> impl Future<Output = Result<Vec<OperationId>, M5BackupError>> + Send;
-    fn create_backup_restore_plan(
+    fn replay_backup_restore(
         &self,
         owner: PrincipalId,
-        draft: BackupRestorePlanDraft,
-        created_at_ms: u64,
-    ) -> impl Future<Output = Result<BackupRestorePlanRecord, M5BackupError>> + Send;
+        input: BackupRestoreInput,
+        key: IdempotencyKey,
+    ) -> impl Future<Output = Result<Option<BackupCreateOutcome>, M5BackupError>> + Send;
     fn accept_backup_restore(
         &self,
         owner: PrincipalId,
-        plan_id: PlanId,
+        input: BackupRestoreInput,
+        request: BackupRestoreRequest,
         key: IdempotencyKey,
         created_at_ms: u64,
-    ) -> impl Future<Output = Result<BackupRestoreApplyOutcome, M5BackupError>> + Send;
+    ) -> impl Future<Output = Result<BackupCreateOutcome, M5BackupError>> + Send;
     fn begin_backup_restore(
         &self,
         operation_id: OperationId,
@@ -530,9 +421,6 @@ pub trait M5BackupStore: Clone + Send + Sync + 'static {
         &self,
         recovered_at_ms: u64,
     ) -> impl Future<Output = Result<Vec<OperationId>, M5BackupError>> + Send;
-    fn completed_backup_restores(
-        &self,
-    ) -> impl Future<Output = Result<Vec<(OperationId, BackupRestorePlanRecord)>, M5BackupError>> + Send;
 }
 
 #[derive(Clone, Default)]
@@ -562,8 +450,11 @@ pub trait M5BackupAdapter: Clone + Send + Sync + 'static {
 
     fn prepare_destination(
         &self,
-        directory: String,
+        directory: Option<String>,
+        destination_path: Option<String>,
+        create_default_directory: bool,
     ) -> impl Future<Output = Result<BackupDestination, M5BackupError>> + Send;
+    fn backup_resource(&self, destination: &BackupDestination) -> Option<ResourceKey>;
 
     fn inventory(
         &self,
@@ -582,34 +473,28 @@ pub trait M5BackupAdapter: Clone + Send + Sync + 'static {
         operation_id: OperationId,
         request: BackupCreateRequest,
         evidence: BackupArchiveEvidence,
-    ) -> impl Future<Output = Result<PublishedBackup, M5BackupError>> + Send;
+    ) -> impl Future<Output = Result<String, M5BackupError>> + Send;
     fn discard_partial(
         &self,
         operation_id: OperationId,
         request: BackupCreateRequest,
     ) -> impl Future<Output = Result<(), M5BackupError>> + Send;
-    fn plan_restore(
-        &self,
-        backup: StoredBackupRecord,
-        target_parent: PathBuf,
-        target_leaf: String,
-    ) -> impl Future<Output = Result<BackupRestorePlanDraft, M5BackupError>> + Send;
-    fn restore_resource(
-        &self,
-        plan: &BackupRestorePlanRecord,
-    ) -> Result<ResourceKey, M5BackupError>;
     fn prepare_restore(
         &self,
-        plan: BackupRestorePlanRecord,
-    ) -> impl Future<Output = Result<PreparedBackupRestore, M5BackupError>> + Send;
+        archive_path: String,
+        target: PathBuf,
+    ) -> impl Future<Output = Result<BackupRestoreRequest, M5BackupError>> + Send;
+    fn restore_resource(&self, request: &BackupRestoreRequest) -> ResourceKey;
     fn stage_restore(
         &self,
         operation_id: OperationId,
-        prepared: PreparedBackupRestore,
+        request: BackupRestoreRequest,
+        cancellation: BackupCancellation,
     ) -> impl Future<Output = Result<StagedBackupRestore, M5BackupError>> + Send;
     fn discard_staged_restore(
         &self,
-        staged: StagedBackupRestore,
+        operation_id: OperationId,
+        request: BackupRestoreRequest,
     ) -> impl Future<Output = Result<(), M5BackupError>> + Send;
     fn publish_restore(
         &self,
@@ -618,12 +503,12 @@ pub trait M5BackupAdapter: Clone + Send + Sync + 'static {
     fn validate_published_restore(
         &self,
         operation_id: OperationId,
-        plan: BackupRestorePlanRecord,
+        request: BackupRestoreRequest,
     ) -> impl Future<Output = Result<RestoredProject, M5BackupError>> + Send;
     fn finalize_restore(
         &self,
         operation_id: OperationId,
-        plan: BackupRestorePlanRecord,
+        request: BackupRestoreRequest,
     ) -> impl Future<Output = Result<(), M5BackupError>> + Send;
 }
 
@@ -702,67 +587,7 @@ where
         {
             self.schedule_restore(operation_id, Some(self.locks.project_recovery_guard()));
         }
-        for (operation_id, plan) in self.store.completed_backup_restores().await? {
-            self.adapter.finalize_restore(operation_id, plan).await?;
-        }
         Ok(())
-    }
-
-    pub async fn list(
-        &self,
-        access: &AccessContext,
-        project_id: Option<ProjectId>,
-        cursor: Option<BackupCursor>,
-        limit: u32,
-    ) -> Result<BackupPage, M5BackupError> {
-        require(access, Permission::BackupsRead)?;
-        if !(1..=1_000).contains(&limit) {
-            return Err(error(M5BackupErrorCode::InvalidInput));
-        }
-        let mut records = self
-            .store
-            .list_backups(
-                crate::workflow_resource_owner(access.principal()),
-                project_id,
-                cursor,
-                limit + 1,
-            )
-            .await?;
-        let has_more = records.len() > limit as usize;
-        if has_more {
-            records.pop();
-        }
-        let backups = records
-            .into_iter()
-            .map(|value| value.record)
-            .collect::<Vec<_>>();
-        let next_cursor = has_more.then(|| {
-            let last = backups.last().expect("non-empty over-limit Backup page");
-            BackupCursor {
-                created_at_ms: last.created_at_ms,
-                backup_id: last.backup_id,
-            }
-        });
-        Ok(BackupPage {
-            backups,
-            next_cursor,
-        })
-    }
-
-    pub async fn get(
-        &self,
-        access: &AccessContext,
-        backup_id: BackupId,
-    ) -> Result<BackupRecord, M5BackupError> {
-        require(access, Permission::BackupsRead)?;
-        Ok(self
-            .store
-            .get_backup(
-                crate::workflow_resource_owner(access.principal()),
-                backup_id,
-            )
-            .await?
-            .record)
     }
 
     pub async fn create(
@@ -781,7 +606,7 @@ where
                 access.principal().clone(),
                 project_id,
                 expected_revision,
-                options,
+                options.clone(),
                 key.clone(),
             )
             .await?
@@ -792,8 +617,38 @@ where
             Some(provider) => provider.defaults().await?,
             None => BackupDefaults::default(),
         };
-        let mut request = BackupCreateRequest {
-            backup_id: BackupId::new(),
+        let prepared = crate::log_execution_step(
+            "backups.create",
+            "prepare_destination",
+            None,
+            self.adapter.prepare_destination(
+                defaults.directory,
+                options.destination_path.clone(),
+                defaults.create_default_backup_directory,
+            ),
+            |error| error.path().map(str::to_owned),
+        )
+        .await;
+        let destination = match prepared {
+            Ok(destination) => destination,
+            Err(source) => {
+                if let Some(outcome) = self
+                    .store
+                    .replay_backup_create(
+                        access.principal().clone(),
+                        project_id,
+                        expected_revision,
+                        options,
+                        key,
+                    )
+                    .await?
+                {
+                    return Ok(outcome);
+                }
+                return Err(source);
+            }
+        };
+        let request = BackupCreateRequest {
             project_id,
             expected_revision,
             compression_mode: options
@@ -804,21 +659,8 @@ where
                 .unwrap_or(!defaults.include_vpm_packages),
             include_library: options.include_library.unwrap_or(defaults.include_library),
             created_at_ms: now_ms()?,
-            destination: None,
+            destination,
         };
-        if let Some(directory) = defaults.directory {
-            let target = crate::log_path("directory", directory.clone());
-            request.destination = Some(
-                crate::log_execution_step(
-                    "backups.create",
-                    "prepare_destination",
-                    Some(target),
-                    self.adapter.prepare_destination(directory),
-                    |error| error.path().map(str::to_owned),
-                )
-                .await?,
-            );
-        }
         let outcome = self
             .store
             .accept_backup_create(access.principal().clone(), request, options, key)
@@ -830,76 +672,87 @@ where
         Ok(outcome)
     }
 
-    pub async fn plan_restore(
+    pub async fn restore(
         &self,
         access: &AccessContext,
-        backup_id: BackupId,
-        target_parent: PathBuf,
-        target_leaf: String,
-    ) -> Result<BackupRestorePlanOutcome, M5BackupError> {
-        require(access, Permission::BackupsRead)?;
-        require(access, Permission::ProjectsCreate)?;
-        if !access.is_mcp_client() && access.principal() != &PrincipalId::local_owner() {
-            return Err(error(M5BackupErrorCode::PermissionDenied));
-        }
-        let backup = self
-            .store
-            .get_backup(
-                crate::workflow_resource_owner(access.principal()),
-                backup_id,
-            )
-            .await?;
-        let target = crate::log_path(
-            "project",
-            target_parent
-                .join(&target_leaf)
-                .to_string_lossy()
-                .into_owned(),
-        );
-        let draft = crate::log_execution_step(
-            "backups.restore",
-            "check_backup",
-            Some(target),
-            self.adapter
-                .plan_restore(backup, target_parent, target_leaf),
-            |error| error.path().map(str::to_owned),
-        )
-        .await?;
-        if access.is_mcp_client() && !crate::workflow_parent_matches(&draft.target_parent_identity)
-        {
-            return Err(error(M5BackupErrorCode::BackupRestorePlanStale));
-        }
-        let plan = self
-            .store
-            .create_backup_restore_plan(access.principal().clone(), draft, now_ms()?)
-            .await?;
-        Ok(BackupRestorePlanOutcome {
-            plan_id: plan.draft.plan_id,
-            project_id: plan.draft.project_id,
-            backup_id: plan.draft.backup_id,
-            target: plan.draft.target,
-            archive_sha256: plan.draft.archive_sha256,
-            packages_require_resolve: plan.draft.exclude_vpm_packages,
-            excluded_packages: plan.draft.excluded_packages,
-            plan_fingerprint: plan.draft.plan_fingerprint,
-        })
-    }
-
-    pub async fn apply_restore(
-        &self,
-        access: &AccessContext,
-        plan_id: PlanId,
+        archive_path: String,
+        project_name: Option<String>,
+        destination_path: Option<String>,
         key: IdempotencyKey,
-    ) -> Result<BackupRestoreApplyOutcome, M5BackupError> {
+    ) -> Result<BackupCreateOutcome, M5BackupError> {
         require(access, Permission::BackupsRead)?;
         require(access, Permission::BackupsManage)?;
         require(access, Permission::ProjectsCreate)?;
         if !access.is_mcp_client() && access.principal() != &PrincipalId::local_owner() {
             return Err(error(M5BackupErrorCode::PermissionDenied));
         }
+        if project_name.is_some() && destination_path.is_some() {
+            return Err(error(M5BackupErrorCode::InvalidInput));
+        }
+        let owner = access.principal();
+        let input = BackupRestoreInput {
+            archive_path,
+            project_name,
+            destination_path,
+        };
+        if let Some(outcome) = self
+            .store
+            .replay_backup_restore(owner.clone(), input.clone(), key.clone())
+            .await?
+        {
+            return Ok(outcome);
+        }
+        let target = if let Some(path) = &input.destination_path {
+            PathBuf::from(path)
+        } else {
+            let directory = self
+                .directories
+                .as_ref()
+                .ok_or_else(|| error(M5BackupErrorCode::BackupRestoreTargetUnsafe))?
+                .defaults()
+                .await?
+                .project_directory
+                .ok_or_else(|| error(M5BackupErrorCode::BackupRestoreTargetUnsafe))?;
+            let name = input
+                .project_name
+                .as_deref()
+                .or_else(|| {
+                    std::path::Path::new(&input.archive_path)
+                        .file_stem()?
+                        .to_str()
+                })
+                .ok_or_else(|| error(M5BackupErrorCode::BackupRestoreTargetUnsafe))?;
+            if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\', ':']) {
+                return Err(error(M5BackupErrorCode::BackupRestoreTargetUnsafe));
+            }
+            PathBuf::from(directory).join(name)
+        };
+        let prepared = crate::log_execution_step(
+            "backups.restore",
+            "check_backup",
+            None,
+            self.adapter
+                .prepare_restore(input.archive_path.clone(), target),
+            |error| error.path().map(str::to_owned),
+        )
+        .await;
+        let request = match prepared {
+            Ok(request) => request,
+            Err(source) => {
+                // Another call with the same key may have accepted and published the target.
+                if let Some(outcome) = self
+                    .store
+                    .replay_backup_restore(owner.clone(), input, key)
+                    .await?
+                {
+                    return Ok(outcome);
+                }
+                return Err(source);
+            }
+        };
         let outcome = self
             .store
-            .accept_backup_restore(access.principal().clone(), plan_id, key, now_ms()?)
+            .accept_backup_restore(owner.clone(), input, request, key, now_ms()?)
             .await?;
         if outcome.schedule {
             self.schedule_restore(outcome.operation_id, None);
@@ -949,18 +802,15 @@ where
             .await?;
         if operation.phase == BackupRestorePhase::StateCommitted {
             self.adapter
-                .validate_published_restore(operation_id, operation.plan.clone())
-                .await?;
-            self.adapter
-                .finalize_restore(operation_id, operation.plan)
+                .finalize_restore(operation_id, operation.request)
                 .await?;
             self.store
                 .finish_backup_restore_success(operation_id, now_ms()?)
                 .await?;
             return Ok(());
         }
-        let resource = self.adapter.restore_resource(&operation.plan)?;
-        let prepared = self.adapter.prepare_restore(operation.plan.clone()).await?;
+        let resource = self.adapter.restore_resource(&operation.request);
+        let _guard = self.locks.acquire(vec![resource]).await;
         if operation.phase == BackupRestorePhase::Accepted {
             self.store
                 .record_backup_restore_checkpoint(
@@ -972,7 +822,6 @@ where
                 .await?;
             restore_kill_gate("archive_verified");
         }
-        let _guard = self.locks.acquire(vec![resource]).await;
         let restored = if matches!(
             operation.phase,
             BackupRestorePhase::Accepted
@@ -990,8 +839,9 @@ where
                         | BackupRestorePhase::StagingComplete
                 )
             {
-                let staged = self.adapter.stage_restore(operation_id, prepared).await?;
-                self.adapter.discard_staged_restore(staged).await?;
+                self.adapter
+                    .discard_staged_restore(operation_id, operation.request.clone())
+                    .await?;
                 finish_cancelled(&self.store, operation_id).await?;
                 return Ok(());
             }
@@ -1005,7 +855,36 @@ where
                 .await?;
             restore_kill_gate("extracting");
             restore_pause_gate("extracting");
-            let staged = self.adapter.stage_restore(operation_id, prepared).await?;
+            let cancellation = BackupCancellation::default();
+            let polling = (operation.phase != BackupRestorePhase::PublishIntent)
+                .then(|| monitor_cancellation(&self.store, operation_id, cancellation.clone()));
+            let staged = self
+                .adapter
+                .stage_restore(
+                    operation_id,
+                    operation.request.clone(),
+                    cancellation.clone(),
+                )
+                .await;
+            cancellation.stop();
+            if let Some(polling) = polling {
+                let _ = polling.await;
+            }
+            let staged = match staged {
+                Ok(staged) => staged,
+                Err(source) => {
+                    if operation.phase != BackupRestorePhase::PublishIntent
+                        && cancelled(&self.store, operation_id).await?
+                    {
+                        self.adapter
+                            .discard_staged_restore(operation_id, operation.request.clone())
+                            .await?;
+                        finish_cancelled(&self.store, operation_id).await?;
+                        return Ok(());
+                    }
+                    return Err(source);
+                }
+            };
             self.store
                 .record_backup_restore_checkpoint(
                     operation_id,
@@ -1015,8 +894,12 @@ where
                 )
                 .await?;
             restore_kill_gate("staging_complete");
-            if cancelled(&self.store, operation_id).await? {
-                self.adapter.discard_staged_restore(staged).await?;
+            if operation.phase != BackupRestorePhase::PublishIntent
+                && cancelled(&self.store, operation_id).await?
+            {
+                self.adapter
+                    .discard_staged_restore(operation_id, operation.request.clone())
+                    .await?;
                 finish_cancelled(&self.store, operation_id).await?;
                 return Ok(());
             }
@@ -1043,7 +926,7 @@ where
             restored
         } else {
             self.adapter
-                .validate_published_restore(operation_id, operation.plan.clone())
+                .validate_published_restore(operation_id, operation.request.clone())
                 .await?
         };
         self.store
@@ -1060,7 +943,7 @@ where
             .await?;
         restore_kill_gate("state_committed");
         self.adapter
-            .finalize_restore(operation_id, operation.plan)
+            .finalize_restore(operation_id, operation.request)
             .await?;
         self.store
             .finish_backup_restore_success(operation_id, now_ms()?)
@@ -1121,30 +1004,32 @@ where
         }
         let resource_owner = crate::workflow_resource_owner(&operation.owner);
         let access = AccessContext::new(resource_owner.clone(), []);
-        let _guard = self
-            .locks
-            .acquire(vec![ResourceKey::Project(operation.request.project_id)])
-            .await;
-        let project = self
-            .store
-            .get_project(resource_owner, operation.request.project_id)
-            .await
-            .map_err(|cause| error(M5BackupErrorCode::ProjectNotRegistered).with_source(cause))?;
-        if project.revision != operation.request.expected_revision {
-            return Err(error(M5BackupErrorCode::RevisionConflict));
-        }
-        let writer = self
-            .writer
-            .observe_backup_source(&access, project.project_id)
-            .await?;
-        if writer.state == UnityWriterStateKind::RunningConfirmed {
-            return Err(error(M5BackupErrorCode::UnityProjectRunning));
-        }
+        let keys = std::iter::once(ResourceKey::Project(operation.request.project_id))
+            .chain(self.adapter.backup_resource(&operation.request.destination))
+            .collect();
+        let _guard = self.locks.acquire(keys).await;
 
         if matches!(
             operation.phase,
             BackupPhase::Accepted | BackupPhase::InventoryReady | BackupPhase::Archiving
         ) {
+            let project = self
+                .store
+                .get_project(resource_owner, operation.request.project_id)
+                .await
+                .map_err(|cause| {
+                    error(M5BackupErrorCode::ProjectNotRegistered).with_source(cause)
+                })?;
+            if project.revision != operation.request.expected_revision {
+                return Err(error(M5BackupErrorCode::RevisionConflict));
+            }
+            let writer = self
+                .writer
+                .observe_backup_source(&access, project.project_id)
+                .await?;
+            if writer.state == UnityWriterStateKind::RunningConfirmed {
+                return Err(error(M5BackupErrorCode::UnityProjectRunning));
+            }
             let inventory = self
                 .adapter
                 .inventory(project, operation.request.clone())
@@ -1166,21 +1051,7 @@ where
                 .record_backup_checkpoint(operation_id, BackupPhase::Archiving, None, now_ms()?)
                 .await?;
             let cancellation = BackupCancellation::default();
-            let monitor = cancellation.clone();
-            let store = self.store.clone();
-            let polling = tokio::spawn(async move {
-                while !monitor.stopped() {
-                    if store
-                        .cancellation_requested(operation_id)
-                        .await
-                        .unwrap_or(false)
-                    {
-                        monitor.cancel();
-                        break;
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-                }
-            });
+            let polling = monitor_cancellation(&self.store, operation_id, cancellation.clone());
             let archived = self
                 .adapter
                 .archive(
@@ -1247,26 +1118,33 @@ where
             )
             .await?;
         kill_gate("archive_published");
-        let backup = StoredBackupRecord {
-            record: BackupRecord {
-                backup_id: operation.request.backup_id,
-                source_project_id: operation.request.project_id,
-                archive_sha256: evidence.archive_sha256,
-                archive_bytes: evidence.archive_bytes,
-                format_version: 1,
-                created_at_ms: operation.request.created_at_ms,
-                compression_mode: operation.request.compression_mode,
-                exclude_vpm_packages: operation.request.exclude_vpm_packages,
-            },
-            archive_locator: published.archive_locator,
-            file_identity_key: published.file_identity_key,
-        };
         self.store
-            .complete_backup_create(operation_id, backup, now_ms()?)
+            .complete_backup_create(operation_id, published, now_ms()?)
             .await?;
         kill_gate("state_committed");
         Ok(())
     }
+}
+
+fn monitor_cancellation<S: StateStore + Clone + Send + Sync + 'static>(
+    store: &S,
+    operation_id: OperationId,
+    monitor: BackupCancellation,
+) -> tokio::task::JoinHandle<()> {
+    let store = store.clone();
+    tokio::spawn(async move {
+        while !monitor.stopped() {
+            if store
+                .cancellation_requested(operation_id)
+                .await
+                .unwrap_or(false)
+            {
+                monitor.cancel();
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
 }
 
 async fn cancelled<S: StateStore>(
@@ -1360,8 +1238,8 @@ fn operation_signal(outcome: &BackupCreateOutcome) {
         std::fs::write(
             path,
             format!(
-                "{{\"operationId\":\"{}\",\"backupId\":\"{}\",\"replayed\":{}}}",
-                outcome.operation_id, outcome.backup_id, outcome.replayed
+                "{{\"operationId\":\"{}\",\"replayed\":{}}}",
+                outcome.operation_id, outcome.replayed
             ),
         )
         .expect("write Backup operation signal");
@@ -1385,8 +1263,8 @@ pub const fn error_name(code: M5BackupErrorCode) -> &'static str {
         M5BackupErrorCode::BackupLimitExceeded => "backup_archive_limit_exceeded",
         M5BackupErrorCode::ProjectChangedDuringBackup => "project_changed_during_backup",
         M5BackupErrorCode::BackupIntegrityMismatch => "backup_integrity_mismatch",
-        M5BackupErrorCode::BackupRestorePlanNotFound => "backup_restore_plan_not_found",
-        M5BackupErrorCode::BackupRestorePlanStale => "backup_restore_plan_stale",
+        M5BackupErrorCode::BackupInvalidArchive => "backup_invalid_archive",
+        M5BackupErrorCode::BackupSourceChanged => "backup_source_changed",
         M5BackupErrorCode::BackupRestoreTargetExists => "backup_target_exists",
         M5BackupErrorCode::BackupRestoreTargetUnsafe => "backup_target_invalid",
         M5BackupErrorCode::BackupRestoreRecoveryRequired => "backup_restore_recovery_required",

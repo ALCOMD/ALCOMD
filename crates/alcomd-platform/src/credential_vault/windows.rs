@@ -38,7 +38,11 @@ pub(super) fn read(reference: &str) -> io::Result<Vec<u8>> {
     let mut entry = ptr::null_mut();
     // SAFETY: The target is NUL-terminated and the out pointer is valid for one pointer.
     if unsafe { CredReadW(target.as_ptr(), CRED_TYPE_GENERIC, 0, &mut entry) } == 0 {
-        return Err(io::Error::last_os_error());
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() == Some(ERROR_NOT_FOUND as i32) {
+            return Err(io::ErrorKind::NotFound.into());
+        }
+        return Err(error);
     }
     if entry.is_null() {
         return Err(io::ErrorKind::InvalidData.into());

@@ -1,7 +1,9 @@
+#[path = "support/state.rs"]
+mod state;
+
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-const WEBVIEW_EVIDENCE: &str = include_str!("../../../specs/gui/m7-stop-a.md");
 const ACTIVE_MANIFEST: &str = include_str!("../../../specs/extensions/manifest-v1.schema.json");
 const ACTIVE_MANIFEST_TEXT: &str = include_str!("../../../specs/extensions/manifest-v1.md");
 const ACTIVE_PACKAGE: &str = include_str!("../../../specs/extensions/package-profile-v1.json");
@@ -11,7 +13,6 @@ const PORTABLE_CONTRACT: &str = include_str!("../../../specs/extensions/portable
 const LIMITS: &str = include_str!("../../../specs/extensions/portable-ui-limits-v1.json");
 const ACTIVE_RPC: &str = include_str!("../../../specs/rpc/m7-portable-ui.schema.json");
 const RPC_ERROR: &str = include_str!("../../../specs/rpc/rpc-error.schema.json");
-const ACTIVE_STATE: &str = include_str!("../../../specs/storage/state-v9-migration.contract.json");
 const ACTIVE_PERMISSIONS: &str = include_str!("../../../specs/extensions/permissions-v1.md");
 const HOST_PROTOCOL_CONTEXT: &str =
     include_str!("../../../specs/extensions/host-protocol-invocation-context-v1.md");
@@ -27,18 +28,6 @@ const MCP_FIXTURE: &str = include_str!("../fixtures/m7/mcp-management-snapshot.j
 const DISCORD_FIXTURE: &str = include_str!("../fixtures/m7/discord-presence-snapshot.json");
 const HEADLESS_FIXTURE: &str = include_str!("../fixtures/m7/headless-renderer-conformance.json");
 const ADVERSARIAL: &str = include_str!("../fixtures/m7/portable-ui-adversarial-vectors.json");
-
-#[test]
-fn superseded_webview_evidence_remains_rejected_and_non_production() {
-    assert!(WEBVIEW_EVIDENCE.contains("superseded by Portable Extension UI direction reset"));
-    assert!(WEBVIEW_EVIDENCE.contains("sandboxed_cross_origin_iframe = rejected_for_m7_v1"));
-    assert!(WEBVIEW_EVIDENCE.contains("child_webview_navigation_unavailable"));
-    assert!(WEBVIEW_EVIDENCE.contains("isolated_managed_child_webview = rejected_for_m7_v1"));
-    assert!(WEBVIEW_EVIDENCE.contains("没有 production evidence"));
-    assert!(WEBVIEW_EVIDENCE.contains(
-        "不能标记为 product security、compatibility 或 production implementation success"
-    ));
-}
 
 #[test]
 fn active_manifest_and_package_are_direct_rewrites_without_web_assets() {
@@ -180,7 +169,6 @@ fn rpc_state_permissions_and_limits_are_exact_and_closed() {
     let limits: Value = serde_json::from_str(LIMITS).expect("limits");
     let rpc: Value = serde_json::from_str(ACTIVE_RPC).expect("active RPC contract");
     let rpc_error: Value = serde_json::from_str(RPC_ERROR).expect("RPC errors");
-    let state: Value = serde_json::from_str(ACTIVE_STATE).expect("active State contract");
 
     assert_eq!(rpc["x-alcomd-publication"], "active-production-contract");
 
@@ -329,20 +317,16 @@ fn rpc_state_permissions_and_limits_are_exact_and_closed() {
             .contains(&json!("extension_ui_surface_not_found"))
     );
 
-    assert_eq!(state["from"], 8);
-    assert_eq!(state["to"], 9);
-    assert_eq!(
-        state["productionMigration"],
-        "crates/alcomd-store/migrations/0009_portable_extension_ui.sql"
-    );
-    assert_eq!(state["tablesAdded"], json!([]));
-    assert_eq!(state["planFieldsImmutable"], json!(["ui_protocol"]));
-    assert_eq!(state["columnsAdded"]["extensions"], json!(["ui_protocol"]));
-    assert_eq!(
-        state["columnsAdded"]["extension_plans"],
-        json!(["ui_protocol"])
-    );
-    assert!(!state.to_string().contains("ui_surfaces_json"));
+    let db = state::current();
+    for table in ["extensions", "extension_plans"] {
+        let definition = state::definition(&db, "table", table);
+        assert!(definition.contains(
+            "ui_protocol TEXT CHECK (ui_protocol IS NULL OR ui_protocol = 'portable-v1')"
+        ));
+        assert!(!definition.contains("ui_surfaces_json"));
+    }
+    let authority = state::definition(&db, "trigger", "extension_plans_immutable");
+    assert!(authority.contains("OLD.ui_protocol IS NEW.ui_protocol"));
     assert!(ACTIVE_PERMISSIONS.contains("`extensions.ui.use`"));
     assert!(ACTIVE_PERMISSIONS.contains("不存在 `ui.contribute`"));
     assert!(ACTIVE_PERMISSIONS.contains("Client Principal 与 Extension Principal"));

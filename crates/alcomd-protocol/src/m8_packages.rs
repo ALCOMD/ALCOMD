@@ -62,15 +62,33 @@ pub enum McpPackageVersionSelector {
 )]
 pub enum McpPackageIntent {
     Install {
-        version_selector: McpPackageVersionSelector,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "crate::optional_package_field",
+            skip_serializing_if = "Option::is_none"
+        )]
+        version_selector: Option<McpPackageVersionSelector>,
+        #[serde(
+            default,
+            deserialize_with = "crate::optional_package_field",
+            skip_serializing_if = "Option::is_none"
+        )]
         include_prerelease: Option<bool>,
         #[serde(default, skip_serializing_if = "is_false")]
         allow_unity_incompatible: bool,
     },
     Upgrade {
-        version_selector: McpPackageVersionSelector,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "crate::optional_package_field",
+            skip_serializing_if = "Option::is_none"
+        )]
+        version_selector: Option<McpPackageVersionSelector>,
+        #[serde(
+            default,
+            deserialize_with = "crate::optional_package_field",
+            skip_serializing_if = "Option::is_none"
+        )]
         include_prerelease: Option<bool>,
         #[serde(default, skip_serializing_if = "is_false")]
         allow_unity_incompatible: bool,
@@ -82,11 +100,19 @@ pub enum McpPackageIntent {
     },
     Remove,
     Resolve {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "crate::optional_package_field",
+            skip_serializing_if = "Option::is_none"
+        )]
         include_prerelease: Option<bool>,
     },
     Reinstall {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "crate::optional_package_field",
+            skip_serializing_if = "Option::is_none"
+        )]
         selection: Option<PackageReinstallSelection>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         sources: Vec<PackageReinstallSource>,
@@ -104,7 +130,11 @@ fn is_false(value: &bool) -> bool {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct McpPackagePlanRequest {
     pub project: McpPackageProject,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::optional_package_field",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub package_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<PackageSourceSelector>,

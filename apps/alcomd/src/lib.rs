@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::future::Future;
 use std::io;
+use std::path::Path;
 use std::sync::Arc;
 
 use alcomd_application::{
@@ -16,7 +17,7 @@ use alcomd_application::{
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
-    CAPABILITY_EVENTS_REPLAY_V1, CAPABILITY_MCP_CLIENTS_V2, CAPABILITY_OPERATIONS_V1,
+    CAPABILITY_EVENTS_REPLAY_V1, CAPABILITY_MCP_CLIENTS_V1, CAPABILITY_OPERATIONS_V1,
     CAPABILITY_STATE_CHECK_V1, ErrorResponse, Event, EventsListParams, EventsListResult,
     HelloParams, HelloResult, METHOD_EVENTS_LIST, METHOD_OPERATIONS_CANCEL, METHOD_OPERATIONS_GET,
     METHOD_OPERATIONS_LIST, METHOD_STATE_CHECK, METHOD_SYSTEM_HELLO, METHOD_SYSTEM_STATUS,
@@ -29,12 +30,61 @@ use alcomd_store::StateStoreHandle;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+fn preflight_data_layout(database: &Path) -> io::Result<()> {
+    let directory = database
+        .parent()
+        .ok_or_else(|| io::Error::other("state path has no parent"))?;
+    let config = directory.join("config");
+    for path in [directory, config.as_path()] {
+        match std::fs::symlink_metadata(path) {
+            Ok(_) => {
+                alcomd_platform::resolve_plain_storage_directory(path)?;
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    alcomd_store::preflight_state_database(database).map_err(io::Error::other)?;
+    alcomd_store::preflight_config(&config.join("settings.toml")).map_err(io::Error::other)?;
+    if !database.try_exists()? && directory.try_exists()? {
+        let data = DataConfig::isolated(directory.to_owned());
+        let registration = alcomd_platform::core_installation_registration(&data)?;
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
+            if entry.file_name() == "config" {
+                continue;
+            }
+            if entry.path() == registration
+                && alcomd_platform::registered_core_executable(&data)?.is_some()
+            {
+                continue;
+            }
+            return Err(io::Error::other("unrecognized state directory contents"));
+        }
+        if config.try_exists()? {
+            for entry in std::fs::read_dir(&config)? {
+                let name = entry?.file_name();
+                if name != "settings.toml"
+                    && name != "settings.toml.new"
+                    && name != "settings.toml.bak"
+                {
+                    return Err(io::Error::other("unrecognized config directory contents"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 mod builtin_repositories;
 mod events_rpc;
 mod hub_platform;
 mod idle_shutdown;
-mod legacy_template_cleanup;
 mod logs_rpc;
+mod native_discord_import;
+mod native_state_import;
+pub use native_discord_import::DiscordImportOptions;
+pub use native_state_import::{check_native_state, import_native_state};
 mod m3_rpc;
 mod m4_rpc;
 mod m5_backup_rpc;
@@ -59,6 +109,7 @@ mod m8_tools_rpc;
 mod m8_transport_rpc;
 mod m8_workflows_rpc;
 mod m9_runtime;
+mod plans_rpc;
 mod project_create_rpc;
 mod project_discovery_platform;
 mod repository_list_rpc;
@@ -124,7 +175,6 @@ struct Applications {
     locks: Arc<ResourceLockCoordinator>,
     tools_cursor_key: [u8; 32],
     mcp_runtime: alcomd_application::McpRuntimeObservations,
-    workflow_paths: m8_workflows_rpc::PathApprovals,
     mcp_transport: alcomd_application::McpTransportObservations,
     #[cfg(feature = "test-kill-gates")]
     runtime_call_gate: tokio::sync::Mutex<Option<Arc<test_support::RuntimeCallGate>>>,
@@ -230,30 +280,26 @@ async fn initialize_daemon_with_adapters(
     #[cfg(feature = "test-kill-gates")] vpm_reader: Option<alcomd_vpm::VpmReader>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
+    let candidate = alcomd_platform::state_database_location(&data)?;
+    preflight_data_layout(&candidate)?;
     let database = alcomd_platform::state_database_path(&data)?;
     let data_root = database
         .parent()
         .ok_or_else(|| BindError::Io(io::Error::other("state path has no parent")))?
         .to_path_buf();
     let cache_root = data_root.join("package-cache");
+    let settings_path = data_root.join("config").join("settings.toml");
     let store = StateStoreHandle::open(database).map_err(|error| {
         BindError::Io(io::Error::other(format!(
             "state store failed closed: {error}"
         )))
     })?;
-    if store.retired_legacy_template_state()
-        && let Err(error) = legacy_template_cleanup::retire(&data_root)
-    {
-        eprintln!("Legacy template file cleanup incomplete: {error}");
-    }
     let m2 = M2Application::new(store.clone());
     m2.recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Operation recovery failed")))?;
     let official_gui = M7OfficialApplication::new(
-        Arc::new(alcomd_store::FileConfigStore::new(
-            data_root.join("config").join("settings.toml"),
-        )),
+        Arc::new(alcomd_store::FileConfigStore::new(settings_path)),
         Arc::new(hub_platform::PlatformUnityHubAdapter),
         Arc::new(hub_platform::PlatformUnityHubLauncher::default()),
         directory_platform,
@@ -430,7 +476,6 @@ async fn initialize_daemon_with_adapters(
         locks: Arc::clone(&locks),
         tools_cursor_key: oauth_cursor_key,
         mcp_runtime: alcomd_application::McpRuntimeObservations::new(),
-        workflow_paths: Default::default(),
         mcp_transport: alcomd_application::McpTransportObservations::new(),
         #[cfg(feature = "test-kill-gates")]
         runtime_call_gate: tokio::sync::Mutex::new(None),
@@ -856,9 +901,29 @@ async fn dispatch_payload(
         } else {
             AccessContext::local_owner().with_actor(state.actor.clone())
         };
-    if access.is_mcp_client() && !m8_mcp_rpc::allowed_client_method(&request.method) {
-        return error_action(Some(request.id), RpcError::permission_denied(), false);
+    let authentication = if access.is_mcp_client() {
+        match m8_tools_rpc::auth(state, &access) {
+            Ok(authentication) => Some(authentication),
+            Err(_) => return error_action(Some(request.id), RpcError::permission_denied(), false),
+        }
+    } else {
+        None
+    };
+    let dispatch = dispatch_authenticated(request, state, applications, &access, payload);
+    if let Some(authentication) = authentication {
+        alcomd_application::with_workflow_authentication(authentication, dispatch).await
+    } else {
+        dispatch.await
     }
+}
+
+async fn dispatch_authenticated(
+    request: RequestEnvelope,
+    state: &ConnectionState,
+    applications: &Applications,
+    access: &AccessContext,
+    payload: &[u8],
+) -> DispatchAction {
     let _observed_call = if access.is_mcp_client() {
         alcomd_application::ObservedCoreMethod::parse_static(&request.method).map(|method| {
             applications.mcp_runtime.begin_call(
@@ -878,70 +943,51 @@ async fn dispatch_payload(
         }
     }
     if request.method.starts_with("mcp.transport.") {
-        return m8_transport_rpc::dispatch(request, state, applications, &access);
+        return m8_transport_rpc::dispatch(request, state, applications, access);
     }
     if request.method == alcomd_protocol::METHOD_MCP_RUNTIME_SNAPSHOT {
-        return m8_runtime_rpc::dispatch(request, state, applications, &access);
+        return m8_runtime_rpc::dispatch(request, state, applications, access);
     }
     if matches!(
         request.method.as_str(),
         alcomd_protocol::METHOD_MCP_PACKAGES_QUERY | alcomd_protocol::METHOD_MCP_PACKAGES_PLAN
     ) {
-        return m8_packages_rpc::dispatch(request, state, applications, &access, payload.len())
+        return m8_packages_rpc::dispatch(request, state, applications, access, payload.len())
             .await;
     }
     if request.method.starts_with("mcp.repositories.") {
-        return m8_repositories_rpc::dispatch(request, state, applications, &access).await;
+        return m8_repositories_rpc::dispatch(request, state, applications, access).await;
     }
     if request.method == alcomd_protocol::METHOD_PROJECT_INVENTORY {
-        return m8_project_assets_rpc::inventory(request, state, applications, &access).await;
+        return m8_project_assets_rpc::inventory(request, state, applications, access).await;
     }
     if matches!(
         request.method.as_str(),
         alcomd_protocol::METHOD_TEMPLATE_GET | alcomd_protocol::METHOD_TEMPLATE_EDIT
     ) {
-        return m8_project_assets_rpc::templates(request, state, applications, &access).await;
+        return m8_project_assets_rpc::templates(request, state, applications, access).await;
     }
     if matches!(
         request.method.as_str(),
-        alcomd_protocol::METHOD_MCP_PROJECT_PATH_APPROVE
-            | alcomd_protocol::METHOD_MCP_PROJECTS_CREATE
+        alcomd_protocol::METHOD_MCP_PROJECTS_CREATE
             | alcomd_protocol::METHOD_MCP_PROJECTS_REGISTER
             | alcomd_protocol::METHOD_MCP_PROJECTS_PLAN_COPY
-            | alcomd_protocol::METHOD_MCP_PROJECTS_APPLY_COPY
-            | alcomd_protocol::METHOD_MCP_BACKUPS_PLAN_RESTORE
-            | alcomd_protocol::METHOD_MCP_BACKUPS_APPLY_RESTORE
     ) {
-        return m8_workflows_rpc::dispatch(request, state, applications, &access).await;
+        return m8_workflows_rpc::dispatch(request, state, applications, access).await;
     }
     if matches!(
         request.method.as_str(),
         alcomd_protocol::METHOD_MCP_TOOLS_CATALOG
             | alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL
     ) {
-        return m8_tools_rpc::dispatch(request, state, applications, &access).await;
+        return m8_tools_rpc::dispatch(request, state, applications, access).await;
     }
     if request.method.starts_with("mcp.clients.") {
-        return m8_mcp_rpc::dispatch(request, state, &applications.store, &access).await;
+        return m8_mcp_rpc::dispatch(request, state, &applications.store, access).await;
     }
     if request.method.starts_with("mcp.oauth.") {
-        return m8_oauth_rpc::dispatch(request, state, &applications.oauth, &access).await;
+        return m8_oauth_rpc::dispatch(request, state, &applications.oauth, access).await;
     }
-    if access.is_mcp_client() && request.method == alcomd_protocol::METHOD_BACKUPS_CREATE {
-        let Ok(authentication) = m8_tools_rpc::auth(state, &access) else {
-            return error_action(Some(request.id), RpcError::permission_denied(), false);
-        };
-        return alcomd_application::with_workflow_authentication(
-            authentication,
-            alcomd_application::with_log_caller(
-                applications.store.clone(),
-                &access,
-                m5_backup_rpc::dispatch(request, state, &applications.backups, &access),
-            ),
-        )
-        .await;
-    }
-
     let repository_read = matches!(
         request.method.as_str(),
         alcomd_protocol::METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES
@@ -959,8 +1005,8 @@ async fn dispatch_payload(
     } else {
         alcomd_application::with_log_caller(
             applications.store.clone(),
-            &access,
-            dispatch_m2(request, state, applications, &access),
+            access,
+            dispatch_m2(request, state, applications, access),
         )
         .await
     };
@@ -1067,8 +1113,8 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1,
-        alcomd_protocol::CAPABILITY_MCP_OAUTH_V2,
-        CAPABILITY_MCP_CLIENTS_V2,
+        alcomd_protocol::CAPABILITY_MCP_OAUTH_V1,
+        CAPABILITY_MCP_CLIENTS_V1,
         CAPABILITY_STATE_CHECK_V1,
         CAPABILITY_OPERATIONS_V1,
         CAPABILITY_EVENTS_REPLAY_V1,
@@ -1084,8 +1130,7 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_REPOSITORIES_LIST_FILES_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_LIST_IMPORT_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1,
-        alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V2,
-        alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V2,
+        alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_APPLY_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_USER_PACKAGES_V1,
         alcomd_protocol::CAPABILITY_UNITY_READ_V1,
@@ -1093,9 +1138,8 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1,
         alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_CREATE_V1,
-        alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V2,
+        alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V1,
         alcomd_protocol::CAPABILITY_TEMPLATE_EDIT_V1,
-        alcomd_protocol::CAPABILITY_BACKUPS_READ_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_LIFECYCLE_V1,
@@ -1129,7 +1173,7 @@ async fn dispatch_hello(
     result_capabilities.sort();
     let mut action = success_action(
         request.id,
-        HelloResult::m7_official_gui(result_capabilities, alcomd_store::CURRENT_DATA_SCHEMA),
+        HelloResult::ready(result_capabilities, alcomd_store::CURRENT_DATA_SCHEMA),
         Some(capabilities),
     );
     action.client_instance_id = Some(client_instance_id);
@@ -1353,6 +1397,9 @@ async fn dispatch_m2(
         ) =>
         {
             m7_official_rpc::dispatch(request, state, &applications.official_gui, access).await
+        }
+        alcomd_protocol::METHOD_PLANS_GET => {
+            plans_rpc::get(request, state, applications, access).await
         }
         alcomd_protocol::METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES => {
             m7_candidates_rpc::dispatch(request, state, &applications.candidates, access).await
@@ -1734,7 +1781,7 @@ mod tests {
         };
         let requested = [
             CAPABILITY_STATE_CHECK_V1,
-            CAPABILITY_MCP_CLIENTS_V2,
+            CAPABILITY_MCP_CLIENTS_V1,
             alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
             "unsupported.test-capability",
         ];
@@ -1764,16 +1811,16 @@ mod tests {
         assert_eq!(response.id, "schema-handshake");
         assert_eq!(
             response.result.data_schema,
-            Some(alcomd_store::CURRENT_DATA_SCHEMA)
+            alcomd_store::CURRENT_DATA_SCHEMA
         );
         assert_eq!(
             response.result.config_schema,
-            Some(alcomd_protocol::CONFIG_SCHEMA_VERSION)
+            alcomd_protocol::CONFIG_SCHEMA_VERSION
         );
         assert_eq!(
             response.result.capabilities,
             [
-                CAPABILITY_MCP_CLIENTS_V2,
+                CAPABILITY_MCP_CLIENTS_V1,
                 alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
                 CAPABILITY_STATE_CHECK_V1,
             ]
@@ -1782,7 +1829,7 @@ mod tests {
             action.complete_handshake,
             Some(HashSet::from([
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
-                CAPABILITY_MCP_CLIENTS_V2.to_owned(),
+                CAPABILITY_MCP_CLIENTS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1.to_owned(),
             ]))
         );

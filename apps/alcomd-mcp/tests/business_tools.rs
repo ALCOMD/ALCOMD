@@ -745,6 +745,7 @@ fn error(result: CallToolResult, code: &str) {
 fn project(root: &Path, risk: bool) {
     std::fs::create_dir_all(root.join("ProjectSettings")).expect("isolated project");
     std::fs::create_dir(root.join("Packages")).expect("isolated packages");
+    std::fs::create_dir(root.join("Assets")).expect("isolated assets");
     std::fs::write(
         root.join("ProjectSettings/ProjectVersion.txt"),
         "m_EditorVersion: 2022.3.22f1\n",

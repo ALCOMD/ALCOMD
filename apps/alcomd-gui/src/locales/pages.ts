@@ -189,10 +189,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "模型",
         "ja-JP": "アバター"
     },
-    "Backup detail": {
-        "zh-CN": "备份详情",
-        "ja-JP": "バックアップの詳細"
-    },
     "Backups": {
         "zh-CN": "备份",
         "ja-JP": "バックアップ"
@@ -213,9 +209,9 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "候选版本信息已过期。",
         "ja-JP": "候補バージョンの情報が古くなっています。"
     },
-    "Candidate evidence unavailable: packages.candidates.v2 was not negotiated.": {
-        "zh-CN": "候选版本信息不可用：未协商 packages.candidates.v2。",
-        "ja-JP": "候補バージョンの情報を利用できません。packages.candidates.v2 が確認できませんでした。"
+    "Candidate evidence unavailable: packages.candidates.v1 was not negotiated.": {
+        "zh-CN": "候选版本信息不可用：未协商 packages.candidates.v1。",
+        "ja-JP": "候補バージョンの情報を利用できません。packages.candidates.v1 が確認できませんでした。"
     },
     "Change the search or package filter.": {
         "zh-CN": "请更改搜索内容或软件包筛选条件。",
@@ -565,10 +561,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "不会自动创建备份。此操作与仅从列表中移除项目不同。",
         "ja-JP": "バックアップは自動作成されません。一覧からのみ削除する操作とは異なります。"
     },
-    "No backups for this project": {
-        "zh-CN": "此项目暂无备份",
-        "ja-JP": "このプロジェクトのバックアップはありません"
-    },
     "No extensions installed": {
         "zh-CN": "尚未安装扩展",
         "ja-JP": "拡張機能はインストールされていません"
@@ -601,6 +593,11 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "尚未添加项目",
         "ja-JP": "プロジェクトが登録されていません"
     },
+    "Reorder {name}": { "zh-CN": "调整 {name} 的顺序", "ja-JP": "{name} の順序を変更" },
+    "Move up": { "zh-CN": "上移", "ja-JP": "上に移動" },
+    "Move down": { "zh-CN": "下移", "ja-JP": "下に移動" },
+    "{name} moved to position {position}": { "zh-CN": "已将 {name} 移到第 {position} 位", "ja-JP": "{name} を {position} 番目に移動しました" },
+    "The repository list changed. Try moving the repository again.": { "zh-CN": "仓库列表已更改，请重新调整仓库顺序。", "ja-JP": "リポジトリ一覧が変更されました。もう一度移動してください。" },
     "No repositories registered": {
         "zh-CN": "尚未添加仓库",
         "ja-JP": "リポジトリが登録されていません"
@@ -728,10 +725,6 @@ export const pageMessages: TranslationTable = {
     "Project added to favorites.": {
         "zh-CN": "已收藏项目。",
         "ja-JP": "プロジェクトをお気に入りに追加しました。"
-    },
-    "Project backups": {
-        "zh-CN": "项目备份",
-        "ja-JP": "プロジェクトのバックアップ"
     },
     "Project copy completed.": {
         "zh-CN": "项目复制完成。",
@@ -1005,6 +998,10 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "显示详情",
         "ja-JP": "詳細を表示"
     },
+    "Prefer prerelease versions": {
+        "zh-CN": "优先选择预发布版本",
+        "ja-JP": "プレリリースバージョンを優先"
+    },
     "Show prerelease versions": {
         "zh-CN": "显示预发布版本",
         "ja-JP": "プレリリースバージョンを表示"
@@ -1260,10 +1257,6 @@ export const pageMessages: TranslationTable = {
     "Versions unavailable: {value0}": {
         "zh-CN": "版本不可用：{value0}",
         "ja-JP": "バージョンを利用できません：{value0}"
-    },
-    "View backup": {
-        "zh-CN": "查看备份",
-        "ja-JP": "バックアップを表示"
     },
     "View operation": {
         "zh-CN": "查看任务",

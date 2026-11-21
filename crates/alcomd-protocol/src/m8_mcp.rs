@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const CAPABILITY_MCP_CLIENTS_V2: &str = "mcp.clients.v2";
+pub const CAPABILITY_MCP_CLIENTS_V1: &str = "mcp.clients.v1";
 pub const METHOD_MCP_CLIENTS_LIST: &str = "mcp.clients.list";
 pub const METHOD_MCP_CLIENTS_CREATE: &str = "mcp.clients.create";
 pub const METHOD_MCP_CLIENTS_ISSUE_CREDENTIAL: &str = "mcp.clients.issueCredential";

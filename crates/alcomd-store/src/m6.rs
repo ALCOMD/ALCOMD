@@ -5,9 +5,9 @@ use alcomd_application::{
     ExtensionInstanceLease, ExtensionPackageEvidence, ExtensionPage, ExtensionPermissionGrant,
     ExtensionPermissionsCursor, ExtensionPermissionsPage, ExtensionPlanRecord,
     ExtensionProjectSummary, ExtensionQuarantineState, ExtensionRecord, ExtensionRuntimeState,
-    ExtensionSourceKind, ExtensionStartContext, ExtensionUiProtocol, ExtensionUninstallPlanDraft,
-    IdempotencyKey, M6Error, M6ErrorCode, OperationId, PACKAGED_MCP_EXTENSION_ID, PlanId,
-    PrincipalId, Revision,
+    ExtensionRuntimeTarget, ExtensionSourceKind, ExtensionStartContext, ExtensionUiProtocol,
+    ExtensionUninstallPlanDraft, IdempotencyKey, M6Error, M6ErrorCode, OperationId,
+    PACKAGED_MCP_EXTENSION_ID, PlanId, PrincipalId, Revision,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -345,11 +345,11 @@ pub(super) fn has_scoped_background_work(
         .query_row(
             "SELECT EXISTS(
                 SELECT 1 FROM extensions e JOIN extension_instances i USING (extension_id)
-                WHERE e.principal_id=?1 AND i.daemon_epoch=?2
+                WHERE i.daemon_epoch=?1
                   AND e.desired_state='enabled' AND e.quarantine_state='clear'
                   AND i.lifecycle_generation=e.lifecycle_generation
                   AND i.bound_grant_revision=e.grant_revision
-                  AND i.lease_expires_at_ms>?3
+                  AND i.lease_expires_at_ms>?2
                   AND (i.runtime_state='crashed' OR (i.runtime_state IN ('starting','running')
                        AND i.lease_cancelled=0))
                   AND EXISTS(SELECT 1 FROM extension_grants g WHERE g.extension_id=e.extension_id
@@ -365,7 +365,7 @@ pub(super) fn has_scoped_background_work(
                        AND g.permission_name='projects.read' AND g.resource_kind='Global'
                        AND g.resource_id='*' AND g.state='granted')
             )",
-            params![PrincipalId::LOCAL_OWNER, daemon_epoch, sqlite_integer(now_ms)?],
+            params![daemon_epoch, sqlite_integer(now_ms)?],
             |row| row.get(0),
         )
         .map_err(store_error)
@@ -1117,19 +1117,17 @@ pub(super) fn finish_install(
             )
             .map_err(store_error)?;
         let request: serde_json::Value = serde_json::from_str(&request).map_err(|_| internal())?;
-        // Pre-State41 accepted work retains its original zero-initial-grant result.
-        if let Some(consent) = request.get("consent") {
-            let consent: alcomd_application::ExtensionInstallConsent =
-                serde_json::from_value(consent.clone()).map_err(|_| internal())?;
-            validate_install_consent(&plan, &consent)?;
-            for permission in &p.required_permissions {
-                let (kind, resource) = if permission == "background.run" {
-                    ("Extension", p.extension_id.as_str())
-                } else {
-                    ("Global", "*")
-                };
-                transaction.execute("INSERT INTO extension_grants (extension_id, permission_name, resource_kind, resource_id, state, grant_revision, updated_at_ms) VALUES (?1,?2,?3,?4,'granted',1,?5)", params![p.extension_id, permission, kind, resource, now]).map_err(store_error)?;
-            }
+        let consent: alcomd_application::ExtensionInstallConsent =
+            serde_json::from_value(request.get("consent").ok_or_else(internal)?.clone())
+                .map_err(|_| internal())?;
+        validate_install_consent(&plan, &consent)?;
+        for permission in &p.required_permissions {
+            let (kind, resource) = if permission == "background.run" {
+                ("Extension", p.extension_id.as_str())
+            } else {
+                ("Global", "*")
+            };
+            transaction.execute("INSERT INTO extension_grants (extension_id, permission_name, resource_kind, resource_id, state, grant_revision, updated_at_ms) VALUES (?1,?2,?3,?4,'granted',1,?5)", params![p.extension_id, permission, kind, resource, now]).map_err(store_error)?;
         }
     }
     transaction
@@ -1500,13 +1498,25 @@ pub(super) fn data_get(
     }
     validate_lease(connection, lease, now_ms)?;
     ensure_data_owner(connection, lease)?;
+    namespace_value(
+        connection,
+        (&lease.extension_id, &lease.publisher_fingerprint),
+        key,
+    )
+}
+
+fn namespace_value(
+    connection: &Connection,
+    (extension_id, publisher_fingerprint): (&str, &str),
+    key: &str,
+) -> Result<Option<ExtensionDataValue>, M6Error> {
     connection
         .query_row(
             "SELECT i.value, i.key_revision, n.revision
              FROM extension_data_items i JOIN extension_data_namespaces n
              ON n.extension_id=i.extension_id AND n.publisher_fingerprint=i.publisher_fingerprint
              WHERE i.extension_id=?1 AND i.publisher_fingerprint=?2 AND i.key=?3",
-            params![lease.extension_id, lease.publisher_fingerprint, key],
+            params![extension_id, publisher_fingerprint, key],
             |row| {
                 Ok(ExtensionDataValue {
                     value: row.get(0)?,
@@ -1533,11 +1543,80 @@ pub(super) fn data_set(
     let transaction = transaction(connection)?;
     validate_lease(&transaction, lease, now_ms)?;
     ensure_data_owner(&transaction, lease)?;
+    let result = write_namespace_value(
+        &transaction,
+        (&lease.extension_id, &lease.publisher_fingerprint),
+        key,
+        value,
+        expected,
+        now_ms,
+    )?;
+    transaction.commit().map_err(store_error)?;
+    Ok(result)
+}
+
+/// Imports bytes into the verified package's installed namespace without creating a guest lease.
+pub(super) fn migration_extension_value(
+    connection: &mut Connection,
+    extension_id: &str,
+    package_digest: [u8; 32],
+    key: &str,
+    seed: Option<(&[u8], u64)>,
+) -> Result<Option<Vec<u8>>, M6Error> {
+    if !valid_data_key(key) || seed.is_some_and(|(value, _)| value.len() > 65_536) {
+        return Err(error(M6ErrorCode::InvalidInput));
+    }
+    let transaction = transaction(connection)?;
+    let owner = PrincipalId::local_owner();
+    let record = get_extension(&transaction, &owner, extension_id)?;
+    if record.package_digest != package_digest
+        || record.runtime_state != ExtensionRuntimeState::Stopped
+        || seed.is_some() && record.desired_state != ExtensionDesiredState::InstalledDisabled
+    {
+        return Err(error(M6ErrorCode::PermissionDenied));
+    }
+    let has_run: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM extension_instances WHERE extension_id=?1)",
+            [extension_id],
+            |row| row.get(0),
+        )
+        .map_err(store_error)?;
+    if has_run {
+        return Err(error(M6ErrorCode::PermissionDenied));
+    }
+    let namespace = (extension_id, record.publisher_fingerprint.as_str());
+    let current = namespace_value(&transaction, namespace, key)?.map(|item| item.value);
+    let value = match seed {
+        Some((value, now_ms)) => {
+            if let Some(current) = current {
+                if current != value {
+                    return Err(error(M6ErrorCode::RevisionConflict));
+                }
+            } else {
+                write_namespace_value(&transaction, namespace, key, value, None, now_ms)?;
+            }
+            Some(value.to_vec())
+        }
+        None => current,
+    };
+    transaction.commit().map_err(store_error)?;
+    Ok(value)
+}
+
+fn write_namespace_value(
+    transaction: &Transaction<'_>,
+    (extension_id, publisher_fingerprint): (&str, &str),
+    key: &str,
+    value: &[u8],
+    expected: Option<Revision>,
+    now_ms: u64,
+) -> Result<ExtensionDataWriteResult, M6Error> {
     let existing = transaction
         .query_row(
             "SELECT key_revision, length(value) FROM extension_data_items
              WHERE extension_id=?1 AND publisher_fingerprint=?2 AND key=?3",
-            params![lease.extension_id, lease.publisher_fingerprint, key],
+            params![extension_id, publisher_fingerprint, key],
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
         )
         .optional()
@@ -1556,7 +1635,7 @@ pub(super) fn data_set(
         .query_row(
             "SELECT key_count, total_value_bytes, revision FROM extension_data_namespaces
              WHERE extension_id=?1 AND publisher_fingerprint=?2",
-            params![lease.extension_id, lease.publisher_fingerprint],
+            params![extension_id, publisher_fingerprint],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
@@ -1578,13 +1657,7 @@ pub(super) fn data_set(
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(extension_id, publisher_fingerprint, key)
              DO UPDATE SET value=excluded.value, key_revision=excluded.key_revision",
-            params![
-                lease.extension_id,
-                lease.publisher_fingerprint,
-                key,
-                value,
-                next_key
-            ],
+            params![extension_id, publisher_fingerprint, key, value, next_key],
         )
         .map_err(store_error)?;
     transaction
@@ -1597,12 +1670,11 @@ pub(super) fn data_set(
                 delta,
                 next_namespace,
                 now,
-                lease.extension_id,
-                lease.publisher_fingerprint
+                extension_id,
+                publisher_fingerprint
             ],
         )
         .map_err(store_error)?;
-    transaction.commit().map_err(store_error)?;
     Ok(ExtensionDataWriteResult {
         key_revision: Revision::new(u64::try_from(next_key).map_err(|_| internal())?)
             .ok_or_else(internal)?,
@@ -1945,13 +2017,14 @@ pub(super) fn record_instance_crash(
             u64::try_from(*occurred_at_ms).is_ok_and(|value| value >= window_start)
         })
         .count();
-    let (desired_state, quarantine_state): (String, String) = transaction
+    let (desired_state, quarantine_state, owner): (String, String, String) = transaction
         .query_row(
-            "SELECT desired_state, quarantine_state FROM extensions WHERE extension_id=?1",
+            "SELECT desired_state, quarantine_state, principal_id FROM extensions WHERE extension_id=?1",
             [&lease.extension_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(store_error)?;
+    let owner = PrincipalId::parse(owner).map_err(|_| internal())?;
     let should_quarantine = crash_count >= 3 && quarantine_state == "clear";
     if should_quarantine {
         transaction
@@ -1980,7 +2053,10 @@ pub(super) fn record_instance_crash(
         };
     Ok((
         ExtensionCrashDecision {
-            extension_id: lease.extension_id.clone(),
+            target: ExtensionRuntimeTarget {
+                owner,
+                extension_id: lease.extension_id.clone(),
+            },
             restart_delay_ms,
             quarantined: should_quarantine || quarantine_state == "quarantined",
         },
@@ -1992,7 +2068,7 @@ pub(super) fn recover_instances(
     connection: &mut Connection,
     daemon_epoch: &str,
     now_ms: u64,
-) -> Result<(Vec<String>, bool), M6Error> {
+) -> Result<(Vec<ExtensionRuntimeTarget>, bool), M6Error> {
     let transaction = transaction(connection)?;
     let local_changed = transaction
         .query_row(
@@ -2013,8 +2089,8 @@ pub(super) fn recover_instances(
         .map_err(store_error)?;
     let mut statement = transaction
         .prepare(
-            "SELECT e.extension_id FROM extensions e
-             WHERE e.principal_id=?1 AND e.desired_state='enabled'
+            "SELECT e.extension_id, e.principal_id FROM extensions e
+             WHERE e.desired_state='enabled'
              AND e.quarantine_state='clear'
              AND EXISTS(SELECT 1 FROM extension_grants g WHERE g.extension_id=e.extension_id
                  AND g.permission_name='background.run' AND g.resource_kind='Extension'
@@ -2023,7 +2099,12 @@ pub(super) fn recover_instances(
         )
         .map_err(store_error)?;
     let extensions = statement
-        .query_map([PrincipalId::LOCAL_OWNER], |row| row.get::<_, String>(0))
+        .query_map([], |row| {
+            Ok(ExtensionRuntimeTarget {
+                extension_id: row.get(0)?,
+                owner: PrincipalId::parse(row.get::<_, String>(1)?).map_err(|_| invalid_query())?,
+            })
+        })
         .map_err(store_error)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(store_error)?;

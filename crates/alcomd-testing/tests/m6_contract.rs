@@ -1,3 +1,6 @@
+#[path = "support/state.rs"]
+mod state;
+
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -11,8 +14,6 @@ const RUNTIME_LIMITS: &str = include_str!("../../../specs/extensions/runtime-lim
 const RPC_SCHEMA: &str = include_str!("../../../specs/rpc/m6-extension-runtime.schema.json");
 const HELLO_SCHEMA: &str = include_str!("../../../specs/rpc/system-hello.response.schema.json");
 const ERROR_SCHEMA: &str = include_str!("../../../specs/rpc/rpc-error.schema.json");
-const STATE_CONTRACT: &str =
-    include_str!("../../../specs/storage/state-v8-migration.contract.json");
 const PERMISSIONS: &str = include_str!("../../../specs/extensions/permissions-v1.md");
 const LIFECYCLE: &str = include_str!("../../../specs/extensions/lifecycle-v1.md");
 const HOST_PROTOCOL: &str = include_str!("../../../specs/extensions/host-protocol-v1.md");
@@ -252,55 +253,77 @@ fn lease_revocation_data_and_runtime_limits_are_exact() {
     assert!(HOST_PROTOCOL.contains("dedicated piped stdin/stdout"));
     assert!(HOST_PROTOCOL.contains("1-524,288 bytes"));
     assert!(HOST_PROTOCOL.contains("不得携带或覆盖 PrincipalId、ExtensionId"));
-    assert!(PERMISSIONS.contains("specific ProjectId"));
-    assert!(PERMISSIONS.contains("`mcp.sessions.read` 已由 A-023 拒绝"));
+    assert!(PERMISSIONS.contains("扩展的`projects.read`只接受`Global/*`"));
+    for permission in [
+        "mcp.requests.read",
+        "mcp.connections.read",
+        "mcp.subscription-streams.read",
+    ] {
+        assert!(PERMISSIONS.contains(permission), "{permission}");
+    }
 }
 
 #[test]
 fn state_rpc_errors_and_publication_boundary_are_frozen() {
-    let state: Value = serde_json::from_str(STATE_CONTRACT).expect("state contract");
     let rpc: Value = serde_json::from_str(RPC_SCHEMA).expect("RPC contract");
     let hello: Value = serde_json::from_str(HELLO_SCHEMA).expect("hello Schema");
     let errors: Value = serde_json::from_str(ERROR_SCHEMA).expect("error Schema");
-    assert_eq!(state["from"], 7);
-    assert_eq!(state["to"], 8);
-    assert_eq!(
-        state["productionMigration"],
-        "crates/alcomd-store/migrations/0008_extension_runtime.sql"
+    let db = state::current();
+    let operations = state::definition(&db, "table", "operations");
+    assert!(operations.contains("'extensions.install', 'extensions.uninstall'"));
+    let installed = state::definition(&db, "table", "extensions");
+    assert!(
+        installed.contains("desired_state IN ('installed_disabled', 'enabled', 'uninstalling')")
     );
-    assert_eq!(state["tablesAdded"].as_array().expect("tables").len(), 8);
-    assert_eq!(
-        state["operationKindsAdded"],
-        json!(["extensions.install", "extensions.uninstall"])
+    assert!(installed.contains("quarantine_state IN ('clear', 'quarantined')"));
+    let crashes = state::definition(&db, "table", "extension_crashes");
+    assert!(crashes.contains("sequence BETWEEN 1 AND 16"));
+    assert!(crashes.contains("PRIMARY KEY (extension_id, sequence)"));
+    let instances = state::definition(&db, "table", "extension_instances");
+    assert!(instances.contains("bound_grant_revision INTEGER NOT NULL"));
+    let grants = state::definition(&db, "table", "extension_grants");
+    assert!(grants.contains("PRIMARY KEY(extension_id,permission_name,resource_kind,resource_id)"));
+    let journal = state::definition(&db, "table", "extension_filesystem_journal");
+    assert!(journal.contains("REFERENCES extension_plans(plan_id)"));
+    let namespaces = state::definition(&db, "table", "extension_data_namespaces");
+    assert!(namespaces.contains("PRIMARY KEY (extension_id, publisher_fingerprint)"));
+    let data = state::definition(&db, "table", "extension_data_items");
+    assert!(
+        data.contains("REFERENCES extension_data_namespaces(extension_id, publisher_fingerprint)")
     );
-    assert_eq!(
-        state["desiredStates"],
-        json!(["installed_disabled", "enabled", "uninstalling"])
+    let plans = state::definition(&db, "table", "extension_plans");
+    assert!(plans.contains("api_major = 1"));
+    assert!(plans.contains("profile_version = 1"));
+    assert!(
+        plans.contains("'local_owner_selected', 'first_party_packaged', 'remote_extension_source'")
     );
-    assert_eq!(state["quarantineStates"], json!(["clear", "quarantined"]));
-    assert_eq!(state["crashEvidencePerExtension"], 16);
-    assert_eq!(state["extensionApiMajor"], 1);
-    assert_eq!(state["packageProfileVersion"], 1);
-    assert_eq!(
-        state["planAuthorityFields"],
-        json!([
-            "extension_id",
-            "version",
-            "api_major",
-            "profile_version",
-            "package_digest",
-            "manifest_digest",
-            "component_digest",
-            "publisher_fingerprint",
-            "permissions",
-            "interfaces",
-            "source_evidence"
-        ])
-    );
-    assert_eq!(
-        state["installSourceKinds"],
-        json!(["local_owner_selected", "first_party_packaged"])
-    );
+    let plan_authority = state::definition(&db, "trigger", "extension_plans_immutable");
+    for field in [
+        "extension_id",
+        "version",
+        "api_major",
+        "profile_version",
+        "package_digest",
+        "manifest_digest",
+        "component_digest",
+        "publisher_fingerprint",
+        "requested_permissions_json",
+        "requested_interfaces_json",
+        "source_kind",
+        "source_locator",
+        "source_identity",
+        "remote_source_json",
+        "installation_terms_json",
+    ] {
+        assert!(
+            plan_authority.contains(&format!("OLD.{field}")),
+            "mutable authority field {field}"
+        );
+        assert!(
+            plan_authority.contains(&format!("NEW.{field}")),
+            "mutable authority field {field}"
+        );
+    }
     assert_eq!(
         rpc["$defs"]["capability"]["enum"],
         json!([
@@ -445,7 +468,7 @@ fn assert_production_keeps_m6_authority_inside_the_approved_boundary() {
     let daemon = fs::read_to_string(root.join("apps/alcomd/src/lib.rs")).expect("daemon source");
     let protocol = fs::read_to_string(root.join("crates/alcomd-protocol/src/lib.rs"))
         .expect("protocol source");
-    assert!(daemon.contains("HelloResult::m7"));
+    assert!(daemon.contains("HelloResult::ready"));
     assert!(daemon.contains("CAPABILITY_EXTENSIONS_LIFECYCLE_V1"));
     assert!(daemon.contains("CAPABILITY_EXTENSIONS_UI_PORTABLE_V1"));
     assert!(protocol.contains("extensions.lifecycle.v1"));

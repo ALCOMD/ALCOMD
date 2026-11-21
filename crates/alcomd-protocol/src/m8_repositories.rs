@@ -6,8 +6,18 @@ pub const CAPABILITY_MCP_REPOSITORIES_V1: &str = "mcp.repositories.v1";
 pub const METHOD_MCP_REPOSITORIES_LIST: &str = "mcp.repositories.list";
 pub const METHOD_MCP_REPOSITORIES_INSPECT: &str = "mcp.repositories.inspect";
 pub const METHOD_MCP_REPOSITORIES_REGISTER: &str = "mcp.repositories.register";
-pub const METHOD_MCP_REPOSITORIES_REFRESH: &str = "mcp.repositories.refresh";
 pub const METHOD_MCP_REPOSITORIES_REMOVE: &str = "mcp.repositories.remove";
+
+pub fn mcp_repositories_tool_capability(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "alcomd_list_repositories"
+        | "alcomd_inspect_repository"
+        | "alcomd_register_repository"
+        | "alcomd_remove_repository" => crate::CAPABILITY_MCP_REPOSITORIES_V1,
+        "alcomd_refresh_repository" => crate::CAPABILITY_REPOSITORIES_REGISTRY_V1,
+        _ => return None,
+    })
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

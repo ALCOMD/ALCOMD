@@ -8,8 +8,8 @@
 - Core 合并内置六工具与扩展目录，按客户端能力、OAuth 上限和扩展当前授权过滤。名称含 ExtensionId 摘要，来源绑定发布者/包摘要；分页游标绑定凭据、权限和来源快照。无逐项目/逐工具白名单。
 - 新的独立 provider/core WIT 复用原 Host。自定义计算及既有项目读取、卸载 Plan/Apply、任务读取/取消的类型化桥接，不提供任意 RPC、owner 代理、数据库或文件访问。工具调用不隐含 UI 或后台启动。
 - 持久工具每次至多一个 Core 动作。确认、原 Plan/Operation、revision 和幂等键由 Core 捕获；Apply/cancel 的 guest 导入没有可替换的目标参数。实际 MCP Principal 持有计划/任务/幂等，资源 owner 不改。
-- State38 只增加调用接受记录及扩展授权 CHECK。接受结果与既有业务事务原子提交；不保存参数、guest 正文或凭据。同键只恢复原结果，取消、断线、陷阱、无效输出不撤销已接受任务，也不自动重新执行。
-- GUI 复用现有 Material 开关、错误组件与声明预览，保留身份和派生能力说明；不增加导航或第二套通知体系。旧扩展 WIT、Config13、MCP 八项业务能力和 OAuth 身份模型不改。
+- Core 记录已接受调用并验证扩展授权。接受结果与既有业务事务原子提交；不保存参数、guest 正文或凭据。同键只恢复原结果，取消、断线、陷阱、无效输出不撤销已接受任务，也不自动重新执行。
+- GUI 复用现有 Material 开关、错误组件与声明预览，保留身份和派生能力说明；不增加导航或第二套通知体系。扩展工具使用已认证的 MCP 调用者身份。
 
 ## 实际验证与输入
 
@@ -18,8 +18,7 @@
 | 范围 | 结果与证据 |
 | --- | --- |
 | Application / Protocol / Extensions | 分别 94/0、23/0、15/0，`affected-libs-final.log`；包含声明、原确认参数、权限分离、参数摘要与禁止伪造身份 |
-| Store | `store-lib-second.log` 整轮 136/0；其后仅新增重启恢复用例 1/0（`receipt-restart-final.log`），不称整轮 137/0。State38 保全、回滚、重开、双方授权/撤销、lease 续期、原子结果与重复动作拒绝包含在该模块 |
-| 旧存储合同 | State16 模块 3/0、Schema 模块 42/0，`old-storage-contract-final.log`；新表必须为空，原逐行保全、事件序列和回滚断言保留 |
+| Store | `store-lib-second.log` 整轮 136/0；其后仅新增重启恢复用例 1/0（`receipt-restart-final.log`），不称整轮 137/0。持久化保全、回滚、重开、双方授权/撤销、lease 续期、原子结果与重复动作拒绝包含在该模块 |
 | Core / MCP 单元 | Core 46/0、1 项原有 ignored；MCP 11/0，`core-lib-final.log`、`adapter-lib-final.log`。开放生产 capability 后 hello 具名 1/0（`production-hello-final.log`） |
 | Host | Schema 策略 3/0、真实组件模块 5/0，`host-policy-second.log`、`host-abi-final.log`。外部/动态/循环引用拒绝，普通 JSON 数据不误判；真实 Provider 不经过 lifecycle activate |
 | RPC / ABI / 产物合同 | M6 5/0、M7 当前版本引用 9/0、管理扩展 2/0、新 Provider 2/0，`contracts-final.log`；M7 原签收不重开。LF 规范化后再核对 Provider 2/0（`provider-provenance-final.log`） |
@@ -38,7 +37,7 @@
 
 - 首次真实 Provider 0/1：ABI 预检临时文件名不符合现有 `extension.wasm` 合同；改用独占 staging 子目录，不放松路径检查。随后基础闭环 1/0。
 - 扩展 OAuth 风险首轮 0/1：尝试空 consent 被现有合同正确拒绝；沿用非空能力上限，不新增 OAuth 语义。次轮 0/1：八次真实卸载已完成，但最后断言仍期待隔离后的扩展可调用；改为明确检查 quarantine 与新调用拒绝。最终整轮 7/0 如上。
-- Store 首轮 132/4：四项历史升级快照遗漏 State38 新增空表；只补精确空表断言，保全/序列/回滚不删。最终 136/0；额外扫描并同步 State16 空表和三个当前版本断言。
+- Store 首轮 132/4，修正与数据库结构不符的测试快照后复验 136/0。
 - 最终具名命令曾因缺少 Rust 模块前缀筛选到 0 项（`provider-real-core-risk-final.log`），不算通过；随后整轮实际执行 7 项。Schema 单元命令首试误用无库包的 `--lib`，未执行；修正为实际 bin 测试 3/0。
 - 初期编译/Clippy/前端检查失败和修复日志仍在原目录；没有禁用 lint、放宽断言或修改失败轮结果。
 

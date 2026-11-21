@@ -1,69 +1,10 @@
 use alcomd_application::{
     BackupArchiveEvidence, BackupCompression, BackupCreateOptions, BackupCreateOutcome,
-    BackupCreateRequest, BackupCursor, BackupId, BackupOperationRecord, BackupPhase, BackupRecord,
-    M5BackupError, M5BackupErrorCode, OperationId, PrincipalId, ProjectId, Revision,
-    StoredBackupRecord,
+    BackupCreateRequest, BackupOperationRecord, BackupPhase, M5BackupError, M5BackupErrorCode,
+    OperationId, PrincipalId, ProjectId, Revision,
 };
-use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use uuid::Uuid;
-
-pub(super) fn list_backups(
-    connection: &Connection,
-    owner: &PrincipalId,
-    project_id: Option<ProjectId>,
-    cursor: Option<BackupCursor>,
-    limit: u32,
-) -> Result<Vec<StoredBackupRecord>, M5BackupError> {
-    let (cursor_time, cursor_id) = cursor.map_or((i64::MAX, "~".to_owned()), |value| {
-        (
-            i64::try_from(value.created_at_ms).unwrap_or(i64::MAX),
-            value.backup_id.to_string(),
-        )
-    });
-    let mut statement = connection
-        .prepare(
-            "SELECT backup_id,source_project_id,archive_locator,file_identity_key,
-                archive_sha256,byte_size,format_version,created_at_ms,compression_mode,
-                exclude_vpm_packages
-         FROM backups
-         WHERE owner_principal_id=?1 AND (?2 IS NULL OR source_project_id=?2)
-           AND (created_at_ms < ?3 OR (created_at_ms=?3 AND backup_id < ?4))
-         ORDER BY created_at_ms DESC,backup_id DESC LIMIT ?5",
-        )
-        .map_err(failure)?;
-    let rows = statement
-        .query_map(
-            params![
-                owner.as_str(),
-                project_id.map(|value| value.to_string()),
-                cursor_time,
-                cursor_id,
-                i64::from(limit)
-            ],
-            backup_from_row,
-        )
-        .map_err(failure)?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(failure)
-}
-
-pub(super) fn get_backup(
-    connection: &Connection,
-    owner: &PrincipalId,
-    backup_id: BackupId,
-) -> Result<StoredBackupRecord, M5BackupError> {
-    connection
-        .query_row(
-            "SELECT backup_id,source_project_id,archive_locator,file_identity_key,
-                archive_sha256,byte_size,format_version,created_at_ms,compression_mode,
-                exclude_vpm_packages
-         FROM backups WHERE owner_principal_id=?1 AND backup_id=?2",
-            params![owner.as_str(), backup_id.to_string()],
-            backup_from_row,
-        )
-        .optional()
-        .map_err(failure)?
-        .ok_or_else(|| error(M5BackupErrorCode::BackupNotFound))
-}
 
 pub(super) fn accept_backup_create(
     connection: &mut Connection,
@@ -73,7 +14,7 @@ pub(super) fn accept_backup_create(
     key: &alcomd_application::IdempotencyKey,
 ) -> Result<BackupCreateOutcome, M5BackupError> {
     let transaction = transaction(connection)?;
-    let fingerprint = create_fingerprint(&request);
+    let fingerprint = create_fingerprint(&request, &options);
     if let Some(outcome) = replay_backup_create(
         &transaction,
         owner,
@@ -112,7 +53,6 @@ pub(super) fn accept_backup_create(
     ).map_err(failure)?;
     let outcome = BackupCreateOutcome {
         operation_id,
-        backup_id: request.backup_id,
         replayed: false,
         schedule: true,
     };
@@ -134,19 +74,16 @@ pub(super) fn accept_backup_create(
     Ok(outcome)
 }
 
-fn create_fingerprint(request: &BackupCreateRequest) -> String {
-    let library = if request.include_library {
-        ",\"includeLibrary\":true"
-    } else {
-        ""
-    };
-    format!(
-        "{{\"compressionMode\":\"{}\",\"excludeVpmPackages\":{},\"expectedRevision\":{}{library},\"projectId\":\"{}\"}}",
-        request.compression_mode.as_str(),
-        request.exclude_vpm_packages,
-        request.expected_revision.get(),
-        request.project_id
-    )
+fn create_fingerprint(request: &BackupCreateRequest, options: &BackupCreateOptions) -> String {
+    serde_json::json!({
+        "projectId": request.project_id,
+        "expectedRevision": request.expected_revision,
+        "compressionMode": request.compression_mode,
+        "excludeVpmPackages": request.exclude_vpm_packages,
+        "includeLibrary": request.include_library,
+        "destinationPath": options.destination_path,
+    })
+    .to_string()
 }
 
 pub(super) fn replay_backup_create(
@@ -181,13 +118,14 @@ pub(super) fn replay_backup_create(
             exclude_vpm_packages: bool,
             expected_revision: Revision,
             project_id: ProjectId,
-            #[serde(default)]
             include_library: bool,
+            destination_path: Option<String>,
         }
         let accepted: AcceptedSelection =
             serde_json::from_str(&existing_fingerprint).map_err(|_| internal())?;
         if accepted.project_id != project_id
             || accepted.expected_revision != expected_revision
+            || options.destination_path != accepted.destination_path
             || options
                 .compression_mode
                 .is_some_and(|value| value != accepted.compression_mode)
@@ -321,7 +259,7 @@ pub(super) fn record_backup_checkpoint(
 pub(super) fn complete_backup_create(
     connection: &mut Connection,
     operation_id: OperationId,
-    backup: StoredBackupRecord,
+    archive_name: String,
     now_ms: u64,
 ) -> Result<(), M5BackupError> {
     let transaction = transaction(connection)?;
@@ -329,23 +267,10 @@ pub(super) fn complete_backup_create(
     if !matches!(state.as_str(), "running" | "recovering" | "cancelling") {
         return Err(internal());
     }
-    let resource_owner = alcomd_application::workflow_resource_owner(&owner);
-    transaction.execute(
-        "INSERT INTO backups (backup_id,owner_principal_id,source_project_id,archive_locator,file_identity_key,archive_sha256,byte_size,format_version,created_at_ms,compression_mode,exclude_vpm_packages)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
-         ON CONFLICT(backup_id) DO NOTHING",
-        params![backup.record.backup_id.to_string(), resource_owner.as_str(), backup.record.source_project_id.to_string(), backup.archive_locator, backup.file_identity_key, backup.record.archive_sha256.as_slice(), integer(backup.record.archive_bytes)?, i64::from(backup.record.format_version), integer(backup.record.created_at_ms)?, backup.record.compression_mode.as_str(), i64::from(backup.record.exclude_vpm_packages)],
-    ).map_err(failure)?;
-    let stored = get_backup(&transaction, &resource_owner, backup.record.backup_id)?;
-    if stored != backup {
-        return Err(error(M5BackupErrorCode::BackupIntegrityMismatch));
-    }
     let evidence = latest_checkpoint(&transaction, operation_id)?
         .1
         .ok_or_else(|| error(M5BackupErrorCode::RecoveryRequired))?;
-    if evidence.archive_sha256 != backup.record.archive_sha256
-        || evidence.archive_bytes != backup.record.archive_bytes
-    {
+    if evidence.archive_file_name != archive_name {
         return Err(error(M5BackupErrorCode::BackupIntegrityMismatch));
     }
     transaction.execute(
@@ -359,7 +284,11 @@ pub(super) fn complete_backup_create(
         ],
     ).map_err(failure)?;
     let next = revision.checked_add(1).ok_or_else(internal)?;
-    let result = serde_json::to_string(&backup.record).map_err(|_| internal())?;
+    let result = serde_json::json!({
+        "archiveName": archive_name,
+        "archiveBytes": evidence.archive_bytes,
+    })
+    .to_string();
     transaction.execute(
         "UPDATE operations SET state='succeeded',revision=?1,result_json=?2,error_code=NULL,diagnostic_id=NULL,updated_at_ms=?3,completed_at_ms=?3 WHERE operation_id=?4",
         params![next, result, integer(now_ms)?, operation_id.to_string()],
@@ -538,38 +467,6 @@ fn phase_step(phase: &BackupPhase) -> i64 {
     }
 }
 
-fn backup_from_row(row: &Row<'_>) -> rusqlite::Result<StoredBackupRecord> {
-    let project = row
-        .get::<_, Option<String>>(1)?
-        .ok_or(rusqlite::Error::InvalidQuery)?;
-    let compression = match row.get::<_, String>(8)?.as_str() {
-        "store" => BackupCompression::Store,
-        "fast" => BackupCompression::Fast,
-        "level3" => BackupCompression::Level3,
-        "level5" => BackupCompression::Level5,
-        "level7" => BackupCompression::Level7,
-        "maximum" => BackupCompression::Maximum,
-        _ => return Err(rusqlite::Error::InvalidQuery),
-    };
-    Ok(StoredBackupRecord {
-        record: BackupRecord {
-            backup_id: BackupId::parse(&row.get::<_, String>(0)?)
-                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-            source_project_id: ProjectId::parse(&project)
-                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-            archive_sha256: digest(row.get(4)?)?,
-            archive_bytes: unsigned(row.get(5)?)?,
-            format_version: u32::try_from(row.get::<_, i64>(6)?)
-                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-            created_at_ms: unsigned(row.get(7)?)?,
-            compression_mode: compression,
-            exclude_vpm_packages: row.get::<_, i64>(9)? == 1,
-        },
-        archive_locator: row.get(2)?,
-        file_identity_key: row.get(3)?,
-    })
-}
-
 fn operation_context(
     connection: &Connection,
     operation_id: OperationId,
@@ -604,17 +501,11 @@ fn insert_event(
     Ok(())
 }
 
-fn digest(bytes: Vec<u8>) -> rusqlite::Result<[u8; 32]> {
-    bytes.try_into().map_err(|_| rusqlite::Error::InvalidQuery)
-}
-fn unsigned(value: i64) -> rusqlite::Result<u64> {
-    u64::try_from(value).map_err(|_| rusqlite::Error::InvalidQuery)
-}
 fn integer(value: u64) -> Result<i64, M5BackupError> {
     i64::try_from(value).map_err(|_| error(M5BackupErrorCode::InvalidInput))
 }
 fn revision_value(value: i64) -> Result<Revision, M5BackupError> {
-    Revision::new(unsigned(value).map_err(failure)?).ok_or_else(internal)
+    Revision::new(u64::try_from(value).map_err(|_| internal())?).ok_or_else(internal)
 }
 fn transaction(connection: &mut Connection) -> Result<Transaction<'_>, M5BackupError> {
     connection

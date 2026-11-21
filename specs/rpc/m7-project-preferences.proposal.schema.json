@@ -1,10 +1,11 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.vrclearn.com/schema/proposals/m7-project-preferences.json",
-    "title": "ALCOMD M7 P5-B Project preference proposal",
+    "title": "ALCOMD registered project favorite",
+    "$comment": "Project launch configuration and Unity installation matching are defined in m7-unity-project-version.proposal.schema.json.",
     "x-alcomd-publication": "implemented-active-contract-evidence",
     "x-alcomd-active-rpc-modified": true,
-    "x-alcomd-state-schema": 11,
+    "x-alcomd-state-schema": 1,
     "$defs": {
         "uuid": {
             "type": "string",
@@ -15,22 +16,11 @@
             "minimum": 1,
             "maximum": 9223372036854775807
         },
-        "expectedOptionalRevision": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9223372036854775807,
-            "description": "0 requires absent/default automatic state; positive values require an exact preference revision."
-        },
         "idempotencyKey": {
             "type": "string",
             "minLength": 1,
             "maxLength": 128,
             "pattern": "^[!-~]+$"
-        },
-        "boundedArguments": {
-            "type": "array",
-            "maxItems": 64,
-            "items": {"type": "string", "maxLength": 4096}
         },
         "projectSetFavoriteParams": {
             "type": "object",
@@ -63,62 +53,6 @@
                 "replayed": {"type": "boolean"}
             },
             "description": "Reuses the active ProjectWriteResult response shape."
-        },
-        "projectEditorSelection": {
-            "oneOf": [
-                {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": ["mode"],
-                    "properties": {"mode": {"const": "automatic"}}
-                },
-                {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": ["mode", "installationId"],
-                    "properties": {
-                        "mode": {"const": "explicit"},
-                        "installationId": {"$ref": "#/$defs/uuid"}
-                    }
-                }
-            ]
-        },
-        "projectEditorSelectionState": {
-            "type": "object",
-            "additionalProperties": true,
-            "required": ["projectId", "selection", "arguments", "revision", "updatedAtMs"],
-            "properties": {
-                "projectId": {"$ref": "#/$defs/uuid"},
-                "selection": {"$ref": "#/$defs/projectEditorSelection"},
-                "arguments": {"$ref": "#/$defs/boundedArguments"},
-                "revision": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
-                "updatedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
-            }
-        },
-        "projectEditorClearParams": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["projectId", "expectedRevision", "idempotencyKey"],
-            "properties": {
-                "projectId": {"$ref": "#/$defs/uuid"},
-                "expectedRevision": {"$ref": "#/$defs/expectedOptionalRevision"},
-                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
-            }
-        },
-        "projectEditorSelectionGetParams": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["projectId"],
-            "properties": {"projectId": {"$ref": "#/$defs/uuid"}}
-        },
-        "projectEditorSelectionResult": {
-            "type": "object",
-            "additionalProperties": true,
-            "required": ["preference"],
-            "properties": {
-                "preference": {"$ref": "#/$defs/projectEditorSelectionState"}
-            },
-            "description": "Pure read result; replayed is forbidden because the method has no idempotency key."
         }
     },
     "type": "object",
@@ -126,53 +60,9 @@
     "required": ["contractVersion", "methods", "permissions", "capabilities"],
     "properties": {
         "contractVersion": {"const": 1},
-        "methods": {
-            "const": [
-                "projects.setFavorite",
-                "unity.projectEditor.selection.get",
-                "unity.projectEditor.clear"
-            ]
-        },
-        "permissions": {
-            "const": {
-                "projects.setFavorite": ["projects.manage"],
-                "unity.projectEditor.selection.get": ["unity.read"],
-                "unity.projectEditor.clear": ["unity.manage"]
-            }
-        },
-        "capabilities": {
-            "const": {
-                "projects.setFavorite": "projects.registry.v1",
-                "unity.projectEditor.selection.get": "unity.read.v1",
-                "unity.projectEditor.clear": "unity.manage.v1"
-            }
-        },
-        "legacyProjectEditorCompatibility": {
-            "const": {
-                "legacyGetExplicitOnly": true,
-                "legacyGetAutomaticError": "unity_installation_not_found",
-                "legacySetMissingExpectedRevisionZero": "revision-1",
-                "legacySetStoredAutomaticExpectedRevisionZero": "stored-revision-plus-1",
-                "legacySetStoredAutomaticExactRevision": "stored-revision-plus-1",
-                "legacySetExplicitExpectedRevisionZero": "revision_conflict",
-                "legacyResponseShapesUnchanged": true
-            }
-        },
-        "automaticLaunchAuthority": {
-            "const": {
-                "explicitFingerprintVersion": 1,
-                "automaticFingerprintVersion": 2,
-                "automaticFingerprintFields": [
-                    "mode",
-                    "preferenceRevision",
-                    "projectId",
-                    "projectRevision"
-                ],
-                "candidateInstallationIdInFingerprint": false,
-                "replayBeforeRegistryResolution": true,
-                "multipleCandidatesError": "unity_editor_selection_required"
-            }
-        },
+        "methods": {"const": ["projects.setFavorite"]},
+        "permissions": {"const": {"projects.setFavorite": ["projects.manage"]}},
+        "capabilities": {"const": {"projects.setFavorite": "projects.registry.v1"}},
         "stableErrors": {
             "const": {
                 "projects.setFavorite": [
@@ -181,22 +71,6 @@
                     "idempotency_conflict",
                     "permission_denied",
                     "internal_error"
-                ],
-                "unity.projectEditor.selection.get": [
-                    "project_not_registered",
-                    "permission_denied",
-                    "internal_error"
-                ],
-                "unity.projectEditor.clear": [
-                    "project_not_registered",
-                    "revision_conflict",
-                    "idempotency_conflict",
-                    "permission_denied",
-                    "internal_error"
-                ],
-                "automaticLaunchResolution": [
-                    "unity_installation_not_found",
-                    "unity_editor_selection_required"
                 ]
             }
         }

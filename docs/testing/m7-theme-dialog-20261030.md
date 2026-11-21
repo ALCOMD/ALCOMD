@@ -140,7 +140,7 @@ DOM checked/role helper 读取，使用组件真实状态与键盘行为断言�
 - Cancel／Escape／关闭／确认外部导航丢弃预览，恢复 App 当前已接受权威，不进行新写入。失败保留可编辑草稿与明确错误；可 Cancel 或显式 Retry，Retry 前读取当前权威并做三方合并，保留其他客户端未被本地修改的字段。
 - App 已有连接／revision 门控继续防止迟到 shell 读覆盖预览／新结果，主设置的 locale、packages、density、motion 草稿不被主题保存或取消带走。
 
-没有修改 Rust、RPC、Config/State Schema、权限或依赖。仍是 Config 3 与同一个 settings.get/update，原先 432 passed／8 既有 subprocess ignored 是后端历史验证，本轮不冒充重新运行完整 Workspace。
+没有修改 Rust、RPC、Config/State Schema、权限或依赖。仍使用同一个 settings.get/update，原先 432 passed／8 既有 subprocess ignored 是后端历史验证，本轮不冒充重新运行完整 Workspace。
 
 ## 本轮验证
 

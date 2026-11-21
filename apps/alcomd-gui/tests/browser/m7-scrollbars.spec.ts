@@ -38,7 +38,6 @@ test("all shared lists and page scrollers use the application scrollbar theme", 
         ["/templates", "ready"],
         ["/unity", "ready"],
         ["/settings", "ready"],
-        ["/projects/00000000-0000-4000-8000-000000000101/backups", "ready"],
         ["/operations", "ready"],
     ];
     for (const [route, state] of routes) {

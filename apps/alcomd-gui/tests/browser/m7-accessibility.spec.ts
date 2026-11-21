@@ -196,7 +196,6 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         ["/repositories/00000000-0000-4000-8000-000000000102", "Repository"],
         ["/templates", "Resources"],
         ["/unity", "Settings"],
-        ["/backups/00000000-0000-4000-8000-000000000104", "Backup detail"],
         ["/operations", "Tasks"],
         ["/operations/00000000-0000-4000-8000-000000000105", "Operation detail"],
         ["/extensions", "Extensions"],
@@ -447,11 +446,10 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await backupDialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(backupDialog).toHaveCount(0);
 
-    await openHarness(page, "/backups/00000000-0000-4000-8000-000000000104");
-    await page.getByRole("button", { name: "Restore backup", exact: true }).click();
-    await page.getByLabel("Restore target parent").fill("C:\\Fixture");
-    await page.getByLabel("Restore project name").fill("Restored");
-    await page.getByRole("button", { name: "Review restore" }).click();
+    await openHarness(page, "/projects");
+    await selectActionMenuItem(page.getByRole("button", { name: "More project creation options", exact: true }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
+    await page.locator("md-dialog[open]").getByLabel("Backup", { exact: true }).fill("C:\\External\\Project.zip");
+    await page.getByLabel("Project name", { exact: true }).fill("Restored");
     await clickDialogAction(page, "Restore project", "Restore project");
     await expect(page.locator(".operation-follow")).toContainText("Restore project");
 

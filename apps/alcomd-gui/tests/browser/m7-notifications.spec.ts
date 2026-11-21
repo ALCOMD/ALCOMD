@@ -124,7 +124,7 @@ test("reconnect terminal snapshots and foreign client tasks never produce retros
     await expect(notice(page)).toHaveCount(0);
     // A task accepted outside the GUI's client belongs only in the task view.
     await page.evaluate(async () => {
-        const result = await window.fixtureCore.backupCreate("00000000-0000-4000-8000-000000000101", 2);
+        const result = await window.fixtureCore.backupCreate({ projectId: "00000000-0000-4000-8000-000000000101", expectedRevision: 2, idempotencyKey: crypto.randomUUID() });
         window.completeGuiTask(result.operationId, "succeeded");
     });
     await page.clock.runFor(1000);

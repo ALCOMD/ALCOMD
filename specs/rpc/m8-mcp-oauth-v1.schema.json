@@ -1,7 +1,7 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m8-mcp-oauth-v1.json",
-    "title": "M8 OAuth Core RPC (owner approved 2026-11-15)",
+    "title": "M8 OAuth Core RPC with connection-level consent",
     "$defs": {
         "Registration": {
             "type": "object",
@@ -273,30 +273,9 @@
                     "const": "S256"
                 },
                 "scopes": {
-                    "type": "array",
-                    "maxItems": 8,
-                    "items": {
-                        "type": "string",
-                        "enum": [
-                            "projects.read",
-                            "packages.read",
-                            "repositories.read",
-                            "repositories.manage",
-                            "backups.read",
-                            "backups.manage",
-                            "projects.manage",
-                            "projects.create",
-                            "settings.read",
-                            "unity.read",
-                            "packages.manage",
-                            "operations.read",
-                            "operations.cancel",
-                            "state.check",
-                            "events.read"
-                        ]
-                    },
-                    "minItems": 1,
-                    "uniqueItems": true
+                    "const": [
+                        "mcp"
+                    ]
                 },
                 "state": {
                     "anyOf": [
@@ -474,30 +453,9 @@
                 "scopes": {
                     "anyOf": [
                         {
-                            "type": "array",
-                            "maxItems": 8,
-                            "items": {
-                                "type": "string",
-                                "enum": [
-                                    "projects.read",
-                                    "packages.read",
-                                    "repositories.read",
-                                    "repositories.manage",
-                                    "backups.read",
-                                    "backups.manage",
-                                    "projects.manage",
-                                    "projects.create",
-                                    "settings.read",
-                                    "unity.read",
-                                    "packages.manage",
-                                    "operations.read",
-                                    "operations.cancel",
-                                    "state.check",
-                                    "events.read"
-                                ]
-                            },
-                            "minItems": 1,
-                            "uniqueItems": true
+                            "const": [
+                                "mcp"
+                            ]
                         },
                         {
                             "type": "null"
@@ -548,8 +506,7 @@
                     "maximum": 600
                 },
                 "scope": {
-                    "type": "string",
-                    "maxLength": 2048
+                    "const": "mcp"
                 },
                 "refreshToken": {
                     "anyOf": [
@@ -628,29 +585,6 @@
                     "type": "string",
                     "maxLength": 36,
                     "minLength": 36
-                },
-                "cursor": {
-                    "anyOf": [
-                        {
-                            "type": "string",
-                            "maxLength": 512
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ]
-                },
-                "limit": {
-                    "anyOf": [
-                        {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 128
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ]
                 }
             },
             "required": [
@@ -693,47 +627,8 @@
                     "maxLength": 2048
                 },
                 "scopes": {
-                    "type": "array",
-                    "maxItems": 8,
-                    "items": {
-                        "type": "string",
-                        "enum": [
-                            "projects.read",
-                            "packages.read",
-                            "repositories.read",
-                            "repositories.manage",
-                            "backups.read",
-                            "backups.manage",
-                            "projects.manage",
-                            "projects.create",
-                            "settings.read",
-                            "unity.read",
-                            "packages.manage",
-                            "operations.read",
-                            "operations.cancel",
-                            "state.check",
-                            "events.read"
-                        ]
-                    },
-                    "minItems": 1,
-                    "uniqueItems": true
-                },
-                "grants": {
-                    "type": "array",
-                    "maxItems": 4096,
-                    "items": {
-                        "$ref": "m8-mcp-clients-v1.schema.json#/$defs/grant"
-                    }
-                },
-                "nextCursor": {
-                    "anyOf": [
-                        {
-                            "type": "string",
-                            "maxLength": 2048
-                        },
-                        {
-                            "type": "null"
-                        }
+                    "const": [
+                        "mcp"
                     ]
                 },
                 "approvalFingerprint": {
@@ -768,7 +663,6 @@
                 "resource",
                 "redirectUri",
                 "scopes",
-                "grants",
                 "approvalFingerprint",
                 "status",
                 "expiresAtMs"
@@ -786,13 +680,6 @@
                 "approve": {
                     "type": "boolean"
                 },
-                "grants": {
-                    "type": "array",
-                    "maxItems": 4096,
-                    "items": {
-                        "$ref": "m8-mcp-clients-v1.schema.json#/$defs/grant"
-                    }
-                },
                 "expectedFingerprint": {
                     "type": "string",
                     "maxLength": 64,
@@ -809,7 +696,6 @@
             "required": [
                 "requestId",
                 "approve",
-                "grants",
                 "expectedFingerprint",
                 "idempotencyKey"
             ]

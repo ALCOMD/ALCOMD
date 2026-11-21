@@ -37,11 +37,11 @@ async fn real_daemon_client_and_single_instance_contract() {
     let mut client = connect_with_retry(client_config.clone()).await;
     assert_eq!(
         client.hello_result().data_schema,
-        Some(alcomd_store::CURRENT_DATA_SCHEMA)
+        alcomd_store::CURRENT_DATA_SCHEMA
     );
     assert_eq!(
         client.hello_result().config_schema,
-        Some(alcomd_protocol::CONFIG_SCHEMA_VERSION)
+        alcomd_protocol::CONFIG_SCHEMA_VERSION
     );
     let status = client.system_status().await.expect("query system status");
     assert_eq!(status.state, "ready");

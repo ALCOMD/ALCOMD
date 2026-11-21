@@ -121,7 +121,7 @@ async function packageMenuLifecycle(row: Locator, selector: string) {
 
 for (const entry of ["primary Install", "primary Update", "version menu"]) {
     test(`Package review restores the ${entry} origin after asynchronous planning and Escape`, async ({ page }) => {
-        await open(page, "versions=1&delaySource=1&delayPackagePlan=1");
+        await open(page, "versions=1&delayPackagePlan=1");
         const method = entry === "primary Update" ? "upgrade" : "install";
         const packageName = entry === "primary Update" ? "Avatar tools" : "com.example.remote";
         const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: `Select ${packageName}`, exact: true }) });
@@ -141,12 +141,14 @@ for (const entry of ["primary Install", "primary Update", "version menu"]) {
             await page.keyboard.press("Enter");
         }
         await expect.poll(() => page.evaluate(() => typeof window.resumePackagePlan)).toBe("function");
-        await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateSource)).toBe("function");
-        if (entry === "primary Update") await expect(trigger).toHaveCount(0);
-        else if (entry === "version menu") await expect(menu).toHaveJSProperty("disabled", true);
+        if (entry === "version menu") await expect(menu).toHaveJSProperty("disabled", true);
         else await expect(trigger).toBeDisabled();
         expect(await page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual([method]);
-        await page.evaluate(() => window.resumeCandidateSource?.());
+        if (entry !== "version menu") {
+            expect(await page.evaluate(() => window.packageRequests[0]?.params)).not.toHaveProperty("source");
+            expect(await page.evaluate(() => window.candidateRequests.some((request) =>
+                request.view.kind === "summary" && Boolean(request.view.sources?.length)))).toBe(false);
+        }
         await expect(row).not.toContainText("Evidence unavailable");
         const opened = await page.locator("md-dialog").filter({ hasText: "Packages are up to date" }).evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
         await page.evaluate(() => window.resumePackagePlan?.());
@@ -241,7 +243,7 @@ test("Core candidate order and relation drive update; all locked IDs ignore sear
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).not.toContainText("Remote tools: installed newer");
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).not.toContainText("Not included in this update:");
-    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: { intents: [{ kind: "upgrade", packageId: "com.example.avatar", versionRange: "=1.10.0", source: { kind: "repository" } }] } }]);
+    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: expect.objectContaining({ intents: [{ kind: "upgrade", packageId: "com.example.avatar" }] }) }]);
     expect(await page.evaluate(() => window.candidateRequests.some((request) => request.view.kind === "summary" && request.view.packageIds?.join() === "com.example.avatar,com.example.remote"))).toBe(false);
 });
 
@@ -366,7 +368,7 @@ test("Candidate quota failure is unavailable evidence, never empty/latest or a P
 });
 
 test("Summary pages share the first fingerprint while versions are prepared only for an intended row", async ({ page }) => {
-    await open(page, "paged=1&versions=1");
+    await open(page, "paged=1&versions=1&hidePrerelease");
     const requests = await page.evaluate(() => window.candidateRequests);
     expect(requests.filter((request) => request.view.kind === "versions")).toHaveLength(0);
     expect(requests.filter((request) => request.cursor).every((request) => request.expectedSnapshot === request.cursor?.snapshotFingerprint)).toBe(true);
@@ -384,7 +386,7 @@ test("Summary pages share the first fingerprint while versions are prepared only
 });
 
 test("A slow version menu has a non-option loading status from its first opening frame", async ({ page }) => {
-    await open(page, "delayVersions=1");
+    await open(page, "delayVersions=1&hidePrerelease");
     const select = page.locator(".package-version-picker").first();
     // Check before opening: Material must not need a later React commit to
     // populate the menu it is about to display.
@@ -409,7 +411,7 @@ test("A slow version menu has a non-option loading status from its first opening
 });
 
 test("Fast paged versions are complete at opening without a loading menu", async ({ page }) => {
-    await open(page, "paged=1");
+    await open(page, "paged=1&hidePrerelease");
     const select = page.locator(".package-version-picker").first();
     const first = await select.evaluateHandle((element) => {
         const state = { labels: [] as string[], loading: false };
@@ -428,7 +430,7 @@ test("Fast paged versions are complete at opening without a loading menu", async
 });
 
 test("A pending continuation page keeps the menu loading until the complete version list is ready", async ({ page }) => {
-    await open(page, "paged=1&delayVersionContinuation=1");
+    await open(page, "paged=1&delayVersionContinuation=1&hidePrerelease");
     const select = page.locator(".package-version-picker").first();
     await select.getByRole("combobox").click();
     await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateVersions)).toBe("function");
@@ -442,7 +444,7 @@ test("A pending continuation page keeps the menu loading until the complete vers
 
 for (const cancel of [false, true]) {
     test(`Version opening waits at most 100ms and ${cancel ? "Escape cancels a pending opening" : "shows loading only at the deadline"}`, async ({ page }) => {
-        await open(page, "delayVersions=1");
+        await open(page, "delayVersions=1&hidePrerelease");
         await page.clock.install();
         await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
         const field = page.locator(".package-version-picker").first().getByRole("combobox");
@@ -468,7 +470,7 @@ for (const cancel of [false, true]) {
 }
 
 test("Closing a loading version selector stops paging and reopening resumes without a package change", async ({ page }) => {
-    await open(page, "paged=1&delayVersions=1&versions=1");
+    await open(page, "paged=1&delayVersions=1&versions=1&hidePrerelease");
     const select = page.locator(".package-version-picker").first();
     const opened = await select.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
     await select.getByRole("combobox").click();
@@ -489,8 +491,8 @@ test("Closing a loading version selector stops paging and reopening resumes with
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
-test("Candidate source actions never drop the source when plan.v2 is missing", async ({ page }) => {
-    await open(page, "noPlanV2=1");
+test("Package mutations require the negotiated plan capability", async ({ page }) => {
+    await open(page, "noPackagePlan=1");
     await expect(page.getByRole("button", { name: "Update", exact: true })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Update All (1)", exact: true })).toBeDisabled();
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
@@ -638,11 +640,11 @@ test("No-update and empty selection create no Plan", async ({ page }) => {
 });
 
 test("Stable bulk actions use the distinct Core stable target and one explicit Apply", async ({ page }) => {
-    await open(page, "stableAlternate=1");
+    await open(page, "stableAlternate=1&preferPrerelease");
     await page.getByRole("button", { name: "Update All Stable (1)", exact: true }).click();
     const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
     await expect(review).toBeVisible();
-    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: { intents: [{ kind: "upgrade", packageId: "com.example.avatar", versionRange: "=1.10.0", includePrerelease: false }] } }]);
+    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: expect.objectContaining({ intents: [{ kind: "upgrade", packageId: "com.example.avatar", includePrerelease: false }] }) }]);
     await review.getByRole("button", { name: "Apply changes", exact: true }).click();
     await expect(review).toBeHidden();
     await expect(page.getByRole("main").locator(".operation-follow")).toHaveCount(0);
@@ -676,6 +678,19 @@ test("Candidate reads share a two-request bound across independent menu/traversa
     expect(maximum).toBe(2);
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
+
+for (const [action, name] of [["Install", "Remote tools"], ["Update", "Avatar tools"]] as const) {
+    test(`Default ${action} leaves version and source selection to Core`, async ({ page }) => {
+        await open(page);
+        const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: `Select ${name}`, exact: true }) });
+        await row.getByRole("button", { name: action, exact: true }).click();
+        await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
+        const request = await page.evaluate(() => window.packageRequests[0]);
+        expect(request?.method).toBe(action === "Install" ? "install" : "upgrade");
+        expect(request?.params).not.toHaveProperty("versionRange");
+        expect(request?.params).not.toHaveProperty("source");
+    });
+}
 
 test("Changing source immediately invalidates the old target until the matching source query completes", async ({ page }) => {
     await open(page, "versions=1&delaySource=1");

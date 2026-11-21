@@ -32,7 +32,7 @@ const CHECKPOINT_TIMEOUT: Duration = Duration::from_secs(120);
 #[derive(Clone, Copy, PartialEq)]
 enum MissingTargetCase {
     Fresh,
-    Legacy,
+    Recovering,
     MovedWithoutCheckpoint,
     MovedAndLost,
 }
@@ -43,8 +43,8 @@ async fn project_delete_missing_fresh_target_ends_failed_and_never_retries_a_rec
 }
 
 #[tokio::test]
-async fn project_delete_missing_legacy_target_ends_failed_instead_of_waiting_forever() {
-    missing_target_case(MissingTargetCase::Legacy).await;
+async fn project_delete_missing_recovering_target_ends_failed_instead_of_waiting_forever() {
+    missing_target_case(MissingTargetCase::Recovering).await;
 }
 
 #[tokio::test]
@@ -159,7 +159,7 @@ async fn missing_target_case(case: MissingTargetCase) {
     if case != MissingTargetCase::Fresh {
         alcomd_application::with_operation_log_failure(
             accepted.operation_id,
-            "old recovery error".into(),
+            "prior recovery error".into(),
             store.fail_project_delete(
                 accepted.operation_id,
                 "project_delete_recovery_required".into(),
@@ -173,7 +173,7 @@ async fn missing_target_case(case: MissingTargetCase) {
             ),
         )
         .await
-        .expect("persist old recovery state without overriding an observed move");
+        .expect("persist recovery state without overriding an observed move");
     }
     app.recover().await.expect("recover durable work");
     if case == MissingTargetCase::MovedAndLost {
@@ -410,7 +410,7 @@ async fn project_delete_sharing_violation_fails_without_moving_or_retrying_the_s
 
 #[cfg(windows)]
 #[tokio::test]
-async fn project_delete_old_unmoved_recovery_becomes_failed_without_retrying_after_unlock() {
+async fn project_delete_unmoved_recovery_becomes_failed_without_retrying_after_unlock() {
     sharing_violation_case(true, false).await;
 }
 
@@ -421,7 +421,7 @@ async fn project_delete_unmoved_failure_does_not_wait_for_empty_preparation_clea
 }
 
 #[cfg(windows)]
-async fn sharing_violation_case(legacy_recovery: bool, preparation_locked: bool) {
+async fn sharing_violation_case(recovering: bool, preparation_locked: bool) {
     use std::os::windows::fs::OpenOptionsExt;
     let fixture = TestDirectory::new();
     let root = fixture.path().join("LockedProject");
@@ -461,7 +461,7 @@ async fn sharing_violation_case(legacy_recovery: bool, preparation_locked: bool)
         .await
         .expect("plan");
     let mut held_preparation = None;
-    let accepted = if legacy_recovery {
+    let accepted = if recovering {
         let now = plan.plan.draft.created_at_ms + 1;
         let accepted = alcomd_application::with_log_caller(
             store.clone(),
@@ -470,16 +470,16 @@ async fn sharing_violation_case(legacy_recovery: bool, preparation_locked: bool)
                 access.principal().clone(),
                 plan.plan.draft.plan_id,
                 record.revision,
-                key("legacy-accept"),
+                key("recovering-accept"),
                 now,
             ),
         )
         .await
-        .expect("legacy accepted task");
+        .expect("recovering task accepted");
         store
             .begin_project_delete(accepted.operation_id, now + 1)
             .await
-            .expect("legacy begin");
+            .expect("begin recovering task");
         let evidence = ProjectDeleteEngine
             .preflight(accepted.operation_id, plan.plan.clone())
             .await
@@ -1037,6 +1037,18 @@ fn subprocess_runs_project_delete_until_parent_kills_it() {
             })
             .await
             .expect("plan delete");
+        assert_eq!(
+            client
+                .get_plan(alcomd_protocol::PlansGetParams {
+                    kind: alcomd_protocol::PlanKind::ProjectDeleteDirectory,
+                    plan_id: plan.plan.plan_id.clone(),
+                })
+                .await
+                .expect("read the persisted plan"),
+            alcomd_protocol::PlansGetResult::ProjectDeleteDirectory {
+                plan: Box::new(plan.plan.clone()),
+            }
+        );
         let accepted = client
             .project_apply_delete_directory(alcomd_protocol::ProjectsApplyDeleteDirectoryParams {
                 plan_id: plan.plan.plan_id.clone(),
