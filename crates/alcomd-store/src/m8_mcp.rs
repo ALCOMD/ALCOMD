@@ -210,98 +210,32 @@ impl McpIdentityStore for StateStoreHandle {
     }
 }
 
-use alcomd_application::{
-    M3Error, M3ErrorCode, ProjectId, ProjectPage, ProjectRecord, RegistryCursor,
-};
-pub(super) fn project(
-    db: &Connection,
-    principal: &PrincipalId,
-    id: ProjectId,
-) -> Result<ProjectRecord, M3Error> {
-    // Read the resource using its recorded owner after checking the MCP identity.
-    let owner=db.query_row("SELECT p.owner_principal_id FROM projects p JOIN mcp_clients c ON c.principal_id=?1 WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL AND p.project_id=?2",params![principal.as_str(),id.to_string()],|r|r.get::<_,String>(0)).optional().map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?.ok_or_else(||M3Error::new(M3ErrorCode::PermissionDenied))?;
-    let owner = PrincipalId::parse(owner).map_err(|_| M3Error::new(M3ErrorCode::Internal))?;
-    crate::m3::get_project(db, &owner, id)
-}
-pub(super) fn projects(
-    db: &Connection,
-    principal: &PrincipalId,
-    cursor: Option<RegistryCursor<ProjectId>>,
-    limit: u32,
-) -> Result<ProjectPage, M3Error> {
-    authorized_projects(db, principal, cursor, limit, None)
-}
+use alcomd_application::{M3Error, M3ErrorCode, ProjectId, ProjectPage, RegistryCursor};
 pub(super) fn authorized_projects(
-    db: &Connection,
+    db: &mut Connection,
     principal: &PrincipalId,
     cursor: Option<RegistryCursor<ProjectId>>,
     limit: u32,
     guard: Option<&alcomd_application::OAuthAccessGuard>,
 ) -> Result<ProjectPage, M3Error> {
-    if guard.is_some() {
-        // Scope, snapshot binding and page contents must see the same read transaction.
-        let tx = db
-            .unchecked_transaction()
-            .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
-        let page = authorized_projects_on(&tx, principal, cursor, limit, guard)?;
-        tx.commit()
-            .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
-        Ok(page)
-    } else {
-        authorized_projects_on(db, principal, cursor, limit, None)
-    }
-}
-fn authorized_projects_on(
-    db: &Connection,
-    principal: &PrincipalId,
-    cursor: Option<RegistryCursor<ProjectId>>,
-    limit: u32,
-    guard: Option<&alcomd_application::OAuthAccessGuard>,
-) -> Result<ProjectPage, M3Error> {
-    validate_project_cursor(db, principal, cursor.as_ref(), guard)?;
-    let mut q=db.prepare("SELECT p.project_id FROM projects p WHERE EXISTS (SELECT 1 FROM mcp_clients c WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL) AND (?2 IS NULL OR p.registered_at_ms<?2 OR (p.registered_at_ms=?2 AND p.project_id<?3)) ORDER BY p.registered_at_ms DESC,p.project_id DESC LIMIT ?4").map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?;
-    let cursor_time = cursor
-        .as_ref()
-        .map(|c| i64::try_from(c.registered_at_ms))
-        .transpose()
-        .map_err(|_| M3Error::new(M3ErrorCode::InvalidInput))?;
-    let ids = q
-        .query_map(
-            params![
-                principal.as_str(),
-                cursor_time,
-                cursor.as_ref().map(|c| c.id.to_string()),
-                i64::from(limit) + 1,
-            ],
-            |r| r.get::<_, String>(0),
-        )
-        .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?
-        .collect::<Result<Vec<_>, _>>()
+    let tx = db
+        .transaction()
         .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
-    let more = ids.len() > limit as usize;
-    let mut records = Vec::new();
-    for id in ids.into_iter().take(limit as usize) {
-        records.push(project(
-            db,
-            principal,
-            ProjectId::parse(&id).map_err(|_| M3Error::new(M3ErrorCode::Internal))?,
-        )?);
-    }
-    let mut next_cursor = if more {
-        records.last().map(|r| RegistryCursor {
-            registered_at_ms: r.registered_at_ms,
-            id: r.project_id,
-            authorization_binding: None,
-        })
+    let owner = if guard.is_some() {
+        validate_project_cursor(&tx, principal, cursor.as_ref(), guard)?;
+        alcomd_application::workflow_resource_owner(principal)
     } else {
-        None
+        super::m3::project_resource_owner(
+            &tx,
+            principal,
+            alcomd_application::Permission::ProjectsRead,
+        )?
     };
-    bind_project_cursor(db, guard, next_cursor.as_mut())?;
-    Ok(ProjectPage {
-        projects: records,
-        next_cursor,
-        directory_states: Default::default(),
-    })
+    let mut page = super::m3::list_projects(&tx, &owner, cursor, limit)?;
+    bind_project_cursor(&tx, guard, page.next_cursor.as_mut())?;
+    tx.commit()
+        .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
+    Ok(page)
 }
 
 pub(super) fn validate_project_cursor(
@@ -318,6 +252,10 @@ pub(super) fn validate_project_cursor(
         if &limited.principal_id != principal {
             return Err(M3Error::new(M3ErrorCode::PermissionDenied));
         }
+        alcomd_application::mcp_access(&limited)
+            .map_err(|_| M3Error::new(M3ErrorCode::PermissionDenied))?
+            .require(alcomd_application::Permission::ProjectsRead)
+            .map_err(|_| M3Error::new(M3ErrorCode::PermissionDenied))?;
         if let Some(c) = cursor {
             let expected = super::m8_oauth::project_cursor_binding(db, guard, now, c)
                 .map_err(|_| M3Error::new(M3ErrorCode::RevisionConflict))?;

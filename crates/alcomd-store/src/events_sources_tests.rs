@@ -12,6 +12,309 @@ fn key(value: &str) -> IdempotencyKey {
 }
 
 #[tokio::test]
+async fn authenticated_project_registry_shares_resources_but_keeps_receipts_and_audit_per_caller() {
+    use alcomd_application as app;
+    struct Client {
+        access: AccessContext,
+        credential: app::ToolAuthentication,
+        record: app::McpClient,
+    }
+    impl Client {
+        async fn issue(store: &StateStoreHandle, name: &str) -> Self {
+            let identities = app::McpIdentityApplication::new(store.clone());
+            let owner = AccessContext::local_owner();
+            let client = identities
+                .write(
+                    &owner,
+                    format!("create-{name}"),
+                    app::McpIdentityWrite::Create { name: name.into() },
+                    1,
+                )
+                .await
+                .expect("create identity")
+                .client;
+            let hash = app::mcp_credential_hash(&uuid::Uuid::new_v4().to_string());
+            let record = identities
+                .write(
+                    &owner,
+                    format!("issue-{name}"),
+                    app::McpIdentityWrite::Issue {
+                        id: client.client_id,
+                        expected: client.revision,
+                        hash,
+                    },
+                    2,
+                )
+                .await
+                .expect("issue identity")
+                .client;
+            let access = identities
+                .authenticate(hash)
+                .await
+                .expect("authenticate identity")
+                .with_actor("MCP".into());
+            Self {
+                access,
+                credential: app::ToolAuthentication::Credential(hash),
+                record,
+            }
+        }
+        async fn call<T>(&self, store: &StateStoreHandle, work: impl Future<Output = T>) -> T {
+            app::with_workflow_authentication(
+                self.credential.clone(),
+                app::with_log_caller(store.clone(), &self.access, work),
+            )
+            .await
+        }
+    }
+    let directory = Directory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("isolated registry");
+    let first = Client::issue(&store, "first").await;
+    let second = Client::issue(&store, "second").await;
+    let owner = PrincipalId::local_owner();
+    let mut records = Vec::new();
+    for (index, client) in [&first, &second].into_iter().enumerate() {
+        let mut observation = project_observation();
+        observation.root_path.push_str(&index.to_string());
+        observation.path_identity_key.push(index as u8);
+        let register = || {
+            store.register_project(
+                client.access.principal().clone(),
+                observation.clone(),
+                key("register"),
+                3,
+            )
+        };
+        let record = client.call(&store, register()).await.expect("register");
+        assert!(!record.replayed);
+        assert_eq!(
+            store
+                .get_project(owner.clone(), record.value.project_id)
+                .await
+                .expect("local registry row"),
+            record.value
+        );
+        assert!(
+            client
+                .call(&store, register())
+                .await
+                .expect("same caller replay")
+                .replayed
+        );
+        records.push(record.value);
+    }
+    let mut hidden = project_observation();
+    hidden.root_path.push_str("-private");
+    hidden.path_identity_key.push(5);
+    let hidden = store
+        .register_project(
+            PrincipalId::parse("test:private").expect("private owner"),
+            hidden,
+            key("private"),
+            4,
+        )
+        .await
+        .expect("private project")
+        .value;
+    for client in [&first, &second] {
+        let principal = client.access.principal().clone();
+        assert_eq!(
+            client
+                .call(
+                    &store,
+                    store.get_project(principal.clone(), hidden.project_id)
+                )
+                .await
+                .expect_err("private row hidden")
+                .code(),
+            app::M3ErrorCode::ProjectNotRegistered
+        );
+        let page = client
+            .call(&store, store.list_projects(principal.clone(), None, 10))
+            .await
+            .expect("shared list");
+        assert_eq!(page.projects.len(), 2);
+        assert!(
+            page.projects
+                .iter()
+                .all(|project| records.contains(project))
+        );
+    }
+    for (client, record) in [(&first, &records[1]), (&second, &records[0])] {
+        let principal = client.access.principal().clone();
+        let id = record.project_id;
+        assert_eq!(
+            client
+                .call(&store, store.get_project(principal.clone(), id))
+                .await
+                .expect("other client's resource"),
+            *record
+        );
+        let favorite = client
+            .call(
+                &store,
+                store.set_project_favorite(
+                    principal.clone(),
+                    id,
+                    true,
+                    record.revision,
+                    key("favorite"),
+                    5,
+                ),
+            )
+            .await
+            .expect("favorite");
+        let mut observation = record.observation.clone();
+        observation.unity_revision = Some("changed".into());
+        let refresh = client
+            .call(
+                &store,
+                store.refresh_project(
+                    principal.clone(),
+                    id,
+                    favorite.value.revision,
+                    observation,
+                    key("refresh"),
+                    6,
+                ),
+            )
+            .await
+            .expect("refresh");
+        assert!(refresh.value.favorite);
+        let unregister = || {
+            store.unregister_project(
+                principal.clone(),
+                id,
+                refresh.value.revision,
+                key("unregister"),
+                7,
+            )
+        };
+        assert!(
+            !client
+                .call(&store, unregister())
+                .await
+                .expect("unregister")
+                .replayed
+        );
+        assert!(
+            client
+                .call(&store, unregister())
+                .await
+                .expect("own replay")
+                .replayed
+        );
+    }
+    let db = Connection::open(directory.database()).expect("inspect isolated database");
+    for client in [&first, &second] {
+        let principal = client.access.principal().as_str();
+        let receipts: i64 = db.query_row("SELECT count(*) FROM idempotency_records WHERE principal_id=?1 AND method LIKE 'projects.%'", [principal], |r| r.get(0)).expect("caller receipts");
+        let logs: i64 = db.query_row("SELECT count(*) FROM operation_log_entries WHERE owner=?1 AND actor='MCP' AND action LIKE 'projects.%'", [principal], |r| r.get(0)).expect("caller audit");
+        assert_eq!((receipts, logs), (4, 4));
+    }
+    let events: i64 = db
+        .query_row(
+            "SELECT count(*) FROM events WHERE principal_id=?1 AND aggregate_kind='project'",
+            [owner.as_str()],
+            |r| r.get(0),
+        )
+        .expect("shared registry events");
+    assert_eq!(events, 8);
+    let identities = app::McpIdentityApplication::new(store.clone());
+    identities
+        .write(
+            &AccessContext::local_owner(),
+            "revoke-first".into(),
+            app::McpIdentityWrite::Revoke {
+                id: first.record.client_id,
+                expected: first.record.revision,
+            },
+            8,
+        )
+        .await
+        .expect("revoke first");
+    let principal = first.access.principal().clone();
+    let registered = &records[0];
+    let changed = &records[1];
+    let id = changed.project_id;
+    let revision = changed.revision;
+    let favorite_revision = revision.checked_next().expect("favorite revision");
+    let refreshed_revision = favorite_revision.checked_next().expect("refresh revision");
+    let denied = app::M3ErrorCode::PermissionDenied;
+    assert_eq!(
+        first
+            .call(&store, store.get_project(principal.clone(), id))
+            .await
+            .expect_err("revoked read")
+            .code(),
+        denied
+    );
+    assert_eq!(
+        first
+            .call(
+                &store,
+                store.register_project(
+                    principal.clone(),
+                    registered.observation.clone(),
+                    key("register"),
+                    9
+                )
+            )
+            .await
+            .expect_err("revoked register replay")
+            .code(),
+        denied
+    );
+    assert_eq!(
+        first
+            .call(
+                &store,
+                store.set_project_favorite(
+                    principal.clone(),
+                    id,
+                    true,
+                    revision,
+                    key("favorite"),
+                    9
+                )
+            )
+            .await
+            .expect_err("revoked favorite replay")
+            .code(),
+        denied
+    );
+    assert_eq!(
+        first
+            .call(
+                &store,
+                store.refresh_project(
+                    principal.clone(),
+                    id,
+                    favorite_revision,
+                    changed.observation.clone(),
+                    key("refresh"),
+                    9
+                )
+            )
+            .await
+            .expect_err("revoked refresh replay")
+            .code(),
+        denied
+    );
+    assert_eq!(
+        first
+            .call(
+                &store,
+                store.unregister_project(principal, id, refreshed_revision, key("unregister"), 9)
+            )
+            .await
+            .expect_err("revoked unregister replay")
+            .code(),
+        denied
+    );
+}
+
+#[tokio::test]
 async fn beginning_a_real_uninstall_publishes_extensions_invalidation_only_for_its_owner() {
     for owner in [
         PrincipalId::local_owner(),

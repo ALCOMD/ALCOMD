@@ -535,16 +535,17 @@ fn load_project(
 
 pub(super) fn register_project(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     observation: ProjectObservation,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
     let fingerprint = project_fingerprint(&observation)?;
     let transaction = begin(connection)?;
+    let owner = project_resource_owner(&transaction, caller, app::Permission::ProjectsManage)?;
     if let Some(mut response) = existing_response::<SyncWrite<ProjectRecord>>(
         &transaction,
-        owner,
+        caller,
         PROJECT_REGISTER,
         key,
         &fingerprint,
@@ -556,8 +557,8 @@ pub(super) fn register_project(
     let response = SyncWrite {
         value: insert_project(
             &transaction,
-            owner,
-            owner,
+            &owner,
+            caller,
             observation,
             now_ms,
             Some(now_ms),
@@ -566,7 +567,7 @@ pub(super) fn register_project(
     };
     save_response(
         &transaction,
-        owner,
+        caller,
         PROJECT_REGISTER,
         key,
         &fingerprint,
@@ -751,6 +752,28 @@ fn insert_project(
     )
     .map_err(sql_failure)?;
     Ok(record)
+}
+
+pub(super) fn project_resource_owner(
+    db: &Connection,
+    caller: &PrincipalId,
+    permission: app::Permission,
+) -> Result<PrincipalId, M3Error> {
+    super::m8_workflows::require(db, caller, &[permission])
+        .map_err(|cause| M3Error::new(M3ErrorCode::PermissionDenied).with_source(cause))?;
+    Ok(app::workflow_resource_owner(caller))
+}
+
+pub(super) fn get_project_for_caller(
+    db: &mut Connection,
+    caller: &PrincipalId,
+    id: ProjectId,
+) -> Result<ProjectRecord, M3Error> {
+    let transaction = db.transaction().map_err(sql_failure)?;
+    let owner = project_resource_owner(&transaction, caller, app::Permission::ProjectsRead)?;
+    let project = load_project(&transaction, &owner, id)?;
+    transaction.commit().map_err(sql_failure)?;
+    Ok(project)
 }
 
 pub(super) fn get_project(
@@ -974,7 +997,7 @@ pub(super) fn list_project_view(
 
 pub(super) fn refresh_project(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     id: ProjectId,
     expected: Revision,
     observation: ProjectObservation,
@@ -983,9 +1006,10 @@ pub(super) fn refresh_project(
 ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
     let fingerprint = aggregate_fingerprint(id, expected)?;
     let transaction = begin(connection)?;
+    let owner = project_resource_owner(&transaction, caller, app::Permission::ProjectsManage)?;
     if let Some(mut response) = existing_response::<SyncWrite<ProjectRecord>>(
         &transaction,
-        owner,
+        caller,
         PROJECT_REFRESH,
         key,
         &fingerprint,
@@ -994,7 +1018,7 @@ pub(super) fn refresh_project(
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
-    let current = load_project(&transaction, owner, id)?;
+    let current = load_project(&transaction, &owner, id)?;
     if current.revision != expected {
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
@@ -1029,7 +1053,7 @@ pub(super) fn refresh_project(
     if changed {
         insert_event(
             &transaction,
-            owner,
+            &owner,
             "project",
             &id.to_string(),
             next_revision,
@@ -1039,7 +1063,7 @@ pub(super) fn refresh_project(
     }
     committed(
         &transaction,
-        owner,
+        caller,
         now_ms,
         CommittedStep::succeeded(
             PROJECT_REFRESH,
@@ -1062,7 +1086,7 @@ pub(super) fn refresh_project(
     };
     save_response(
         &transaction,
-        owner,
+        caller,
         PROJECT_REFRESH,
         key,
         &fingerprint,
@@ -1076,7 +1100,7 @@ pub(super) fn refresh_project(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn set_project_favorite(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     id: ProjectId,
     favorite: bool,
     expected: Revision,
@@ -1090,9 +1114,10 @@ pub(super) fn set_project_favorite(
         id
     );
     let transaction = begin(connection)?;
+    let owner = project_resource_owner(&transaction, caller, app::Permission::ProjectsManage)?;
     if let Some(mut response) = existing_response::<SyncWrite<ProjectRecord>>(
         &transaction,
-        owner,
+        caller,
         PROJECT_SET_FAVORITE,
         key,
         &fingerprint,
@@ -1101,7 +1126,7 @@ pub(super) fn set_project_favorite(
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
-    let current = load_project(&transaction, owner, id)?;
+    let current = load_project(&transaction, &owner, id)?;
     if current.revision != expected {
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
@@ -1125,7 +1150,7 @@ pub(super) fn set_project_favorite(
 
         insert_event(
             &transaction,
-            owner,
+            &owner,
             "project",
             &id.to_string(),
             revision,
@@ -1134,7 +1159,7 @@ pub(super) fn set_project_favorite(
         )?;
         committed(
             &transaction,
-            owner,
+            caller,
             now_ms,
             CommittedStep::succeeded(
                 PROJECT_SET_FAVORITE,
@@ -1155,7 +1180,7 @@ pub(super) fn set_project_favorite(
     };
     save_response(
         &transaction,
-        owner,
+        caller,
         PROJECT_SET_FAVORITE,
         key,
         &fingerprint,
@@ -1168,7 +1193,7 @@ pub(super) fn set_project_favorite(
 
 pub(super) fn unregister_project(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     id: ProjectId,
     expected: Revision,
     key: &IdempotencyKey,
@@ -1176,9 +1201,10 @@ pub(super) fn unregister_project(
 ) -> Result<UnregisterResult<ProjectId>, M3Error> {
     let fingerprint = aggregate_fingerprint(id, expected)?;
     let transaction = begin(connection)?;
+    let owner = project_resource_owner(&transaction, caller, app::Permission::ProjectsManage)?;
     if let Some(mut response) = existing_response::<UnregisterResult<ProjectId>>(
         &transaction,
-        owner,
+        caller,
         PROJECT_UNREGISTER,
         key,
         &fingerprint,
@@ -1187,7 +1213,7 @@ pub(super) fn unregister_project(
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
-    let current = load_project(&transaction, owner, id)?;
+    let current = load_project(&transaction, &owner, id)?;
     if current.revision != expected {
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
@@ -1200,7 +1226,7 @@ pub(super) fn unregister_project(
         .map_err(sql_failure)?;
     insert_event(
         &transaction,
-        owner,
+        &owner,
         "project",
         &id.to_string(),
         next,
@@ -1209,7 +1235,7 @@ pub(super) fn unregister_project(
     )?;
     committed(
         &transaction,
-        owner,
+        caller,
         now_ms,
         CommittedStep::succeeded(
             PROJECT_UNREGISTER,
@@ -1225,7 +1251,7 @@ pub(super) fn unregister_project(
     };
     save_response(
         &transaction,
-        owner,
+        caller,
         PROJECT_UNREGISTER,
         key,
         &fingerprint,

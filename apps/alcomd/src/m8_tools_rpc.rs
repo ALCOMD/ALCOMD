@@ -580,7 +580,7 @@ pub(super) async fn business(
             input["operationId"] = control["operation_id"].clone();
         }
     }
-    let response = app::with_tool_invocation(
+    let dispatch = app::with_tool_invocation(
         authority.clone(),
         app::with_log_caller(
             apps.store.clone(),
@@ -596,9 +596,10 @@ pub(super) async fn business(
                 &access,
             ),
         ),
-    )
-    .await
-    .response;
+    );
+    let response = app::with_workflow_authentication(authority.authentication.clone(), dispatch)
+        .await
+        .response;
     if !op.effect().writes()
         && let Err(e) = apps.store.tool_check(authority, Some(op)).await
     {

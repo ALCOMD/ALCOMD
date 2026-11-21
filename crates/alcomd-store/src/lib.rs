@@ -389,33 +389,15 @@ impl M3RegistryStore for StateStoreHandle {
         })
         .await
     }
-    async fn get_mcp_project(
-        &self,
-        principal: PrincipalId,
-        id: ProjectId,
-    ) -> Result<ProjectRecord, M3Error> {
-        self.request_m3(move |db| m8_mcp::project(db, &principal, id))
-            .await
-    }
-    async fn list_mcp_projects(
-        &self,
-        principal: PrincipalId,
-        cursor: Option<RegistryCursor<ProjectId>>,
-        limit: u32,
-    ) -> Result<ProjectPage, M3Error> {
-        self.request_m3(move |db| m8_mcp::projects(db, &principal, cursor, limit))
-            .await
-    }
-
     async fn register_project(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         observation: ProjectObservation,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         self.request_m3(move |connection| {
-            m3::register_project(connection, &owner, observation, &key, now_ms)
+            m3::register_project(connection, &caller, observation, &key, now_ms)
         })
         .await
     }
@@ -446,10 +428,10 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn get_project(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: ProjectId,
     ) -> Result<ProjectRecord, M3Error> {
-        self.request_m3(move |connection| m3::get_project(connection, &owner, id))
+        self.request_m3(move |connection| m3::get_project_for_caller(connection, &caller, id))
             .await
     }
 
@@ -459,8 +441,10 @@ impl M3RegistryStore for StateStoreHandle {
         cursor: Option<RegistryCursor<ProjectId>>,
         limit: u32,
     ) -> Result<ProjectPage, M3Error> {
-        self.request_m3(move |connection| m3::list_projects(connection, &owner, cursor, limit))
-            .await
+        self.request_m3(move |connection| {
+            m8_mcp::authorized_projects(connection, &owner, cursor, limit, None)
+        })
+        .await
     }
 
     async fn list_project_view(
@@ -488,7 +472,7 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn refresh_project(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: ProjectId,
         expected: Revision,
         observation: ProjectObservation,
@@ -496,14 +480,14 @@ impl M3RegistryStore for StateStoreHandle {
         now_ms: u64,
     ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         self.request_m3(move |connection| {
-            m3::refresh_project(connection, &owner, id, expected, observation, &key, now_ms)
+            m3::refresh_project(connection, &caller, id, expected, observation, &key, now_ms)
         })
         .await
     }
 
     async fn set_project_favorite(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: ProjectId,
         favorite: bool,
         expected: Revision,
@@ -511,21 +495,21 @@ impl M3RegistryStore for StateStoreHandle {
         now_ms: u64,
     ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         self.request_m3(move |connection| {
-            m3::set_project_favorite(connection, &owner, id, favorite, expected, &key, now_ms)
+            m3::set_project_favorite(connection, &caller, id, favorite, expected, &key, now_ms)
         })
         .await
     }
 
     async fn unregister_project(
         &self,
-        owner: PrincipalId,
+        caller: PrincipalId,
         id: ProjectId,
         expected: Revision,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<UnregisterResult<ProjectId>, M3Error> {
         self.request_m3(move |connection| {
-            m3::unregister_project(connection, &owner, id, expected, &key, now_ms)
+            m3::unregister_project(connection, &caller, id, expected, &key, now_ms)
         })
         .await
     }

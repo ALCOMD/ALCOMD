@@ -729,21 +729,6 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<SyncWrite<McpRegisteredProject>, M3Error>> + Send;
-    fn get_mcp_project(
-        &self,
-        _principal: PrincipalId,
-        _id: ProjectId,
-    ) -> impl Future<Output = Result<ProjectRecord, M3Error>> + Send {
-        std::future::ready(Err(M3Error::new(M3ErrorCode::PermissionDenied)))
-    }
-    fn list_mcp_projects(
-        &self,
-        _principal: PrincipalId,
-        _cursor: Option<RegistryCursor<ProjectId>>,
-        _limit: u32,
-    ) -> impl Future<Output = Result<ProjectPage, M3Error>> + Send {
-        std::future::ready(Err(M3Error::new(M3ErrorCode::PermissionDenied)))
-    }
     fn list_oauth_projects(
         &self,
         _principal: PrincipalId,
@@ -1730,10 +1715,6 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             self.store
                 .list_oauth_projects(access.principal().clone(), cursor, limit, guard.clone())
                 .await?
-        } else if access.is_mcp_client() {
-            self.store
-                .list_mcp_projects(access.principal().clone(), cursor, limit)
-                .await?
         } else {
             self.store
                 .list_projects(access.principal().clone(), cursor, limit)
@@ -1792,15 +1773,10 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         id: ProjectId,
     ) -> Result<ProjectDirectoryView, M3Error> {
         require_m3(access, Permission::ProjectsRead)?;
-        let project = if access.is_mcp_client() {
-            self.store
-                .get_mcp_project(access.principal().clone(), id)
-                .await?
-        } else {
-            self.store
-                .get_project(access.principal().clone(), id)
-                .await?
-        };
+        let project = self
+            .store
+            .get_project(access.principal().clone(), id)
+            .await?;
         Ok(self.project_directory_view(project).await)
     }
 

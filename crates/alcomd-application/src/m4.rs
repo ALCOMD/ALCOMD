@@ -1093,6 +1093,25 @@ where
         self.plan_authenticated(access, request, None).await
     }
 
+    async fn package_project(
+        &self,
+        access: &AccessContext,
+        project: ProjectId,
+        authentication: Option<&crate::ToolAuthentication>,
+    ) -> Result<ProjectRecord, M4Error> {
+        let read = self.store.get_project(access.principal().clone(), project);
+        let result = if access.is_mcp_client() {
+            let authentication = authentication
+                .cloned()
+                .or_else(|| crate::tool_invocation().map(|invocation| invocation.authentication))
+                .ok_or_else(|| M4Error::new(M4ErrorCode::PermissionDenied))?;
+            crate::with_workflow_authentication(authentication, read).await
+        } else {
+            read.await
+        };
+        result.map_err(map_m3_error)
+    }
+
     pub async fn package_source_settings(&self) -> Result<crate::ConfigPackageSettings, M4Error> {
         self.adapter.source_settings().await
     }
@@ -1122,17 +1141,9 @@ where
         {
             return Err(M4Error::new(M4ErrorCode::InvalidInput));
         }
-        let project = if access.is_mcp_client() {
-            self.store
-                .get_mcp_project(access.principal().clone(), request.project_id)
-                .await
-                .map_err(map_m3_error)?
-        } else {
-            self.store
-                .get_project(access.principal().clone(), request.project_id)
-                .await
-                .map_err(map_m3_error)?
-        };
+        let project = self
+            .package_project(access, request.project_id, authentication.as_ref())
+            .await?;
         if project.revision != request.expected_revision {
             return Err(M4Error::new(M4ErrorCode::RevisionConflict));
         }
@@ -1278,17 +1289,9 @@ where
             .locks
             .acquire(vec![ResourceKey::Project(plan.project_id)])
             .await;
-        let project = if access.is_mcp_client() {
-            self.store
-                .get_mcp_project(access.principal().clone(), plan.project_id)
-                .await
-                .map_err(map_m3_error)?
-        } else {
-            self.store
-                .get_project(access.principal().clone(), plan.project_id)
-                .await
-                .map_err(map_m3_error)?
-        };
+        let project = self
+            .package_project(access, plan.project_id, authentication.as_ref())
+            .await?;
         let catalog = if plan.source_set.is_empty() {
             ResolverCatalog {
                 prefer_prerelease: false,
