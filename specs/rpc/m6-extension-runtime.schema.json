@@ -345,11 +345,12 @@
             "required": [
                 "planId", "action", "state", "sourceKind", "extensionId", "packageDigest",
                 "version", "apiMajor", "profileVersion", "publisherFingerprint",
-                "dataDisposition", "planFingerprint", "requiredPermissions", "optionalPermissions", "mcpTools"
+                "dataDisposition", "planFingerprint", "requiredPermissions", "optionalPermissions", "mcpTools", "cliCommands"
             ],
             "properties": {
                 "installationTerms": {"$ref": "#/$defs/installationTerms"},
                 "installationSource": {"$ref": "#/$defs/installationSource"},
+                "cliCommands": {"type":"array","maxItems":32,"items":{"$ref":"#/$defs/toolPreview"}},
                 "mcpTools": {"type":"array","maxItems":32,"items":{"$ref":"#/$defs/toolPreview"}},
                 "planId": {"$ref": "#/$defs/uuid"},
                 "action": {"enum": ["install", "uninstall"]},
@@ -419,6 +420,7 @@
             "properties": {
                 "extension": {"$ref": "#/$defs/extensionRecord"},
                 "installationSource": {"$ref": "#/$defs/installationSource"},
+                "cliCommands": {"type":"array","maxItems":32,"items":{"$ref":"#/$defs/toolPreview"}},
                 "mcpTools": {"type":"array","maxItems":32,"items":{"$ref":"#/$defs/toolPreview"}},
                 "activationConsent": {
                     "type": "object", "additionalProperties": false, "required": ["packageDigest", "targets"],
@@ -437,7 +439,7 @@
         "permissionScope": {
             "oneOf": [
                 {"properties": {"permission": {"const": "background.run"}, "resourceKind": {"const": "Extension"}, "resourceId": {"$ref": "#/$defs/extensionId"}}},
-                {"properties": {"permission": {"enum": ["projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.subscription-streams.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel", "unity.sessions.read"]}, "resourceKind": {"const": "Global"}, "resourceId": {"const": "*"}}},
+                {"properties": {"permission": {"enum": ["projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.subscription-streams.read", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel", "unity.sessions.read"]}, "resourceKind": {"const": "Global"}, "resourceId": {"const": "*"}}},
                 {"properties": {"permission": {"const": "local-ipc.connect"}, "resourceKind": {"const": "LocalIpcTarget"}, "resourceId": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]+$"}}}
             ]
         },
@@ -450,7 +452,7 @@
             ],
             "properties": {
                 "extensionId": {"$ref": "#/$defs/extensionId"},
-                "permission": {"enum": ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.subscription-streams.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel", "unity.sessions.read", "local-ipc.connect"]},
+                "permission": {"enum": ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.subscription-streams.read", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel", "unity.sessions.read", "local-ipc.connect"]},
                 "resourceKind": {"enum": ["Extension", "Global", "LocalIpcTarget"]},
                 "resourceId": {"type": "string", "minLength": 1, "maxLength": 255},
                 "expectedGrantRevision": {"$ref": "#/$defs/revision"},
@@ -472,7 +474,7 @@
             "allOf": [{"$ref": "#/$defs/permissionScope"}],
             "required": ["permission", "resourceKind", "resourceId"],
             "properties": {
-                "permission": {"enum": ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.subscription-streams.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel", "unity.sessions.read", "local-ipc.connect"]},
+                "permission": {"enum": ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.subscription-streams.read", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel", "unity.sessions.read", "local-ipc.connect"]},
                 "resourceKind": {"enum": ["Extension", "Global", "LocalIpcTarget"]},
                 "resourceId": {"type": "string", "minLength": 1, "maxLength": 255}
             }

@@ -17,6 +17,9 @@ pub(super) async fn get(
         return invalid(id);
     };
     let capability = match params.kind {
+        PlanKind::ExtensionInstall | PlanKind::ExtensionUninstall => {
+            rpc::CAPABILITY_EXTENSIONS_LIFECYCLE_V1
+        }
         PlanKind::Package => rpc::CAPABILITY_PACKAGES_PLAN_V1,
         PlanKind::ProjectCopy => rpc::CAPABILITY_PROJECTS_COPY_V1,
         PlanKind::ProjectDeleteDirectory => rpc::CAPABILITY_PROJECTS_DELETE_V1,
@@ -29,6 +32,19 @@ pub(super) async fn get(
         return invalid(id);
     };
     let result = match params.kind {
+        PlanKind::ExtensionInstall | PlanKind::ExtensionUninstall => {
+            let install = params.kind == PlanKind::ExtensionInstall;
+            let action = if install { "install" } else { "uninstall" };
+            let plan = match applications.m6.get_plan(access, plan_id, action).await {
+                Ok(plan) => Box::new(super::m6_rpc::plan(plan)),
+                Err(error) => return super::m6_rpc::extension_error(id, error),
+            };
+            if install {
+                PlansGetResult::ExtensionInstall { plan }
+            } else {
+                PlansGetResult::ExtensionUninstall { plan }
+            }
+        }
         PlanKind::Package => match applications.m4.get_plan(access, plan_id).await {
             Ok(plan) => PlansGetResult::Package {
                 plan: Box::new(m4_rpc::plan_to_rpc(plan)),

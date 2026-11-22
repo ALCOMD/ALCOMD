@@ -197,7 +197,7 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
 
 ### MCP tool providers
 
-Optional `mcp.tools.provide` publishes signed tool declarations. Additional extension grants `repositories.read`, `packages.read`, `packages.manage`, `operations.read`, `operations.cancel` all use Global/*. Tool execution checks its declared operations, current extension grants and lease, and the actual MCP client identity. `projects.read` retains safe project projections. See `../mcp/extension-tools-v1.md`, [State1](../storage/state-v1.md) and the [MCP client contract](../rpc/m8-mcp-clients-v1.md).
+Enabled extensions publish their signed CLI and MCP declarations. Additional extension grants `repositories.read`, `packages.read`, `packages.manage`, `operations.read`, `operations.cancel` all use Global/*. Tool execution checks its declared operations, current extension grants and lease, and the actual MCP client identity. `projects.read` retains safe project projections. See `../mcp/extension-tools-v1.md`, [State1](../storage/state-v1.md) and the [MCP client contract](../rpc/m8-mcp-clients-v1.md).
 
 
 ## M8 Core observation reads
@@ -211,7 +211,7 @@ grants or OAuth scopes. They grant no connection termination or Operation contro
 
 ## 完整扩展授权目录与安装同意
 
-当前可授予扩展的完整目录为background.run、projects.read、mcp.clients.read、mcp.clients.manage、mcp.connections.read、mcp.requests.read、mcp.subscription-streams.read、mcp.tools.provide、repositories.read、packages.read、packages.manage、operations.read、operations.cancel。所有项目均可声明required或optional；required仅决定安装集中确认与后续运行前置，不自动扩大交互Client权限。
+当前可授予扩展的完整目录为background.run、projects.read、mcp.clients.read、mcp.clients.manage、mcp.connections.read、mcp.requests.read、mcp.subscription-streams.read、repositories.read、packages.read、packages.manage、operations.read、operations.cancel。所有项目均可声明required或optional；required仅决定安装集中确认与后续运行前置，不自动扩大交互Client权限。
 
 permissions.list返回Core的availablePermissions及当前包声明/实际grants。管理页按必需权限、可选权限、其他权限三类显示；其他权限指当前可授权但未声明的项，三类均允许显式授权；仅限上述目录，扩展只可使用已实现且属于其权限目录的宿主能力。background.run保持Extension/<ExtensionId>，其余保持Global/*，无逐项目授权。安装需extensions.manage；涉及初始required授权另需extensions.permissions.manage。撤销仍使旧lease/UI失效，不因幂等重放或恢复补回授权。
 

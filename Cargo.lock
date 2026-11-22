@@ -109,9 +109,12 @@ dependencies = [
  "alcomd-protocol",
  "anyhow",
  "clap",
+ "ed25519-dalek",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tokio",
+ "zip",
 ]
 
 [[package]]

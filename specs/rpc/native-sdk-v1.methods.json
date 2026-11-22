@@ -502,6 +502,34 @@
                 "extension"
             ]
         },
+        "extensions.cliCommands.invoke": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.cli-commands.v1"
+            ],
+            "rustMethod": "extension_cli_commands_invoke",
+            "requestType": "ExtensionCliCommandsInvokeParams",
+            "resultType": "ExtensionMcpToolsCallResult",
+            "requestSchema": "extension-cli-commands-v1.schema.json#/$defs/invokeParams",
+            "resultSchema": "extension-cli-commands-v1.schema.json#/$defs/invokeResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.cliCommands.list": {
+            "kind": "read",
+            "capabilities": [
+                "extensions.cli-commands.v1"
+            ],
+            "rustMethod": "extension_cli_commands_list",
+            "requestType": "ExtensionCliCommandsListParams",
+            "resultType": "ExtensionCliCommandsListResult",
+            "requestSchema": "extension-cli-commands-v1.schema.json#/$defs/listParams",
+            "resultSchema": "extension-cli-commands-v1.schema.json#/$defs/listResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
         "extensions.disable": {
             "kind": "write",
             "capabilities": [
@@ -1193,7 +1221,9 @@
                 "package": "packages.plan.v1",
                 "project_copy": "projects.copy.v1",
                 "project_delete_directory": "projects.delete.v1",
-                "project_unity_migration": "projects.unity-migration.v1"
+                "project_unity_migration": "projects.unity-migration.v1",
+                "extension_install": "extensions.lifecycle.v1",
+                "extension_uninstall": "extensions.lifecycle.v1"
             },
             "rustMethod": "get_plan",
             "requestType": "PlansGetParams",
@@ -1201,6 +1231,7 @@
             "requestSchema": "plans-get.schema.json#/$defs/params",
             "resultSchema": "plans-get.schema.json#/$defs/result",
             "errorProfiles": [
+                "extension",
                 "packageTransaction",
                 "projectCopy",
                 "projectDelete",

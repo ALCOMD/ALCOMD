@@ -12,6 +12,9 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+headless = []
+
 [workspace]
 
 [profile.release]

@@ -3,12 +3,18 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
+mod extension_commands;
 mod m8_oauth;
 
 #[derive(Debug)]
 enum CliError {
     Client(alcomd_client::ClientError),
     ConfirmationRequired,
+    ExtensionCommandFailed {
+        code: String,
+        core_effect: Option<serde_json::Value>,
+        replayed: bool,
+    },
     OperationFailed(Box<alcomd_protocol::Operation>),
     OperationDetached(String),
     LocalIo(std::io::Error),
@@ -28,6 +34,7 @@ impl std::fmt::Display for CliError {
         match self {
             Self::Client(error) => error.fmt(formatter),
             Self::ConfirmationRequired => formatter.write_str("confirmation is required"),
+            Self::ExtensionCommandFailed { code, .. } => write!(formatter, "extension command failed: {code}"),
             Self::OperationFailed(_) => formatter.write_str("operation did not succeed"),
             Self::OperationDetached(_) => formatter.write_str("operation follow was interrupted"),
             Self::LocalIo(_) => formatter.write_str("local CLI I/O failed"),
@@ -44,6 +51,7 @@ impl std::error::Error for CliError {
             Self::Client(error) => Some(error),
             Self::LocalIo(error) => Some(error),
             Self::ConfirmationRequired
+            | Self::ExtensionCommandFailed { .. }
             | Self::OperationFailed(_)
             | Self::OperationDetached(_)
             | Self::Usage(_)
@@ -135,6 +143,11 @@ enum Command {
     Client {
         #[command(subcommand)]
         command: NativeClientCommand,
+    },
+    /// Discover and run commands declared by installed extensions.
+    Extension {
+        #[command(subcommand)]
+        command: extension_commands::Command,
     },
     /// Manage authenticated MCP connections.
     Mcp {
@@ -906,6 +919,9 @@ fn parse_cursor<T: serde::de::DeserializeOwned>(value: &str) -> Result<T, String
 }
 
 fn supports_preview(command: &Command) -> bool {
+    if let Command::Extension { command } = command {
+        return command.supports_preview();
+    }
     matches!(
         command,
         Command::Project {
@@ -960,6 +976,7 @@ async fn execute(
         },
         Command::Mcp {command:McpCommand::Runtime {client_id,limit}} => serde_json::to_value(client.mcp_runtime_snapshot(alcomd_protocol::McpRuntimeSnapshotParams {client_id,limit}).await?),
         Command::Mcp {command:McpCommand::Transport {client_id,limit}} => serde_json::to_value(client.mcp_transport_snapshot(alcomd_protocol::McpTransportQuery {client_id,limit}).await?),
+        Command::Extension {command} => return extension_commands::execute(&mut client, command, options).await,
         Command::Mcp{command:McpCommand::Oauth{command}}=>return m8_oauth::execute(&mut client,command,options).await,
         Command::Mcp { command: McpCommand::Client { command } } => match command {
             McpClientCommand::Request { command } => return client_requests::execute(&mut client,command,options).await,
@@ -1772,6 +1789,7 @@ impl Command {
                 McpClientCommand::List { .. } => "mcp client list",
                 McpClientCommand::IssueCredential { .. } => "mcp client issue-credential",
             },
+            Self::Extension { command } => command.name(),
             Self::System { .. } => "system status",
             Self::Operation { command } => match command {
                 OperationCommand::List { .. } => "operation list",
@@ -2064,6 +2082,26 @@ async fn confirm_frozen_plan(
             }
             None
         }
+        PlansGetResult::ExtensionInstall { plan } if kind == PlanKind::ExtensionInstall => {
+            if !options.yes {
+                eprintln!(
+                    "{}",
+                    serde_json::to_string_pretty(&plan)
+                        .map_err(|_| alcomd_client::ClientError::InvalidResponse)?
+                );
+            }
+            None
+        }
+        PlansGetResult::ExtensionUninstall { plan } if kind == PlanKind::ExtensionUninstall => {
+            if !options.yes {
+                eprintln!(
+                    "{}",
+                    serde_json::to_string_pretty(&plan)
+                        .map_err(|_| alcomd_client::ClientError::InvalidResponse)?
+                );
+            }
+            None
+        }
         _ => return Err(alcomd_client::ClientError::InvalidResponse.into()),
     };
     confirm_high_impact(options)?;
@@ -2196,6 +2234,14 @@ fn repository_credentials_from_stdin(
 }
 
 fn print_error(output_mode: OutputMode, error: &CliError) -> io::Result<()> {
+    if output_mode == OutputMode::Human
+        && let CliError::ExtensionCommandFailed {
+            core_effect: Some(effect),
+            ..
+        } = error
+    {
+        writeln!(io::stderr().lock(), "Accepted Core effect: {effect}")?;
+    }
     if output_mode == OutputMode::Ndjson
         && let CliError::OperationFailed(operation) = error
     {
@@ -2231,6 +2277,16 @@ fn print_error(output_mode: OutputMode, error: &CliError) -> io::Result<()> {
                 "OAuth registration update may have succeeded; list registrations and check its revision before explicit rotation; the one-time client secret cannot be recovered; no retry was made",
             ),
             CliError::ConfirmationRequired => ("confirmation_required", "confirmation is required"),
+            CliError::ExtensionCommandFailed {
+                code,
+                core_effect,
+                replayed,
+            } => {
+                let document = serde_json::json!({ "type": "error", "error": {
+                    "code": code, "coreEffect": core_effect, "replayed": replayed,
+                }});
+                return writeln!(output, "{document}");
+            }
             CliError::OperationFailed(operation) => (
                 operation
                     .error_code

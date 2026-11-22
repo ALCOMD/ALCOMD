@@ -126,7 +126,7 @@ function Get-LockFileSnapshot {
     $lockFiles = @(
         "Cargo.lock",
         "package-lock.json",
-        "extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock"
+        "crates/alcomd-testing/fixtures/m8/management-guest-source/Cargo.lock"
     )
     foreach ($relative in $lockFiles) {
         if (-not (Test-Path -LiteralPath $relative -PathType Leaf)) {

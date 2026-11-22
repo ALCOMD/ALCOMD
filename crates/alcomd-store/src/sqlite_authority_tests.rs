@@ -46,12 +46,12 @@ fn extension_fixture() -> Connection {
 
 fn extension_plan_fixture() -> Connection {
     let db = extension_fixture();
-    db.execute_batch("INSERT INTO extension_plans(plan_id,owner_principal_id,action,state,extension_id,version,api_major,profile_version,source_kind,source_locator,source_identity,package_digest,manifest_digest,component_digest,publisher_fingerprint,requested_permissions_json,requested_interfaces_json,data_disposition,plan_fingerprint,created_at_ms,ui_protocol) SELECT '11111111-2222-4333-8444-555555555555',principal_id,'install','unapplied','dev.example.frozen-plan',version,api_major,1,'local_owner_selected','isolated-package',X'01',package_digest,manifest_digest,component_digest,publisher_fingerprint,'{\"required\":[],\"optional\":[]}','{\"required\":[],\"optional\":[]}','not_applicable',zeroblob(32),20,ui_protocol FROM extensions;").expect("nonempty frozen plan");
+    db.execute_batch("INSERT INTO extension_plans(plan_id,owner_principal_id,action,state,extension_id,version,api_major,profile_version,source_kind,source_locator,source_identity,package_digest,manifest_digest,component_digest,publisher_fingerprint,requested_permissions_json,requested_interfaces_json,data_disposition,plan_fingerprint,created_at_ms,ui_protocol) SELECT '11111111-2222-4333-8444-555555555555',principal_id,'install','unapplied','dev.example.frozen-plan',version,api_major,1,'local_owner_selected','isolated-package',X'01',package_digest,manifest_digest,component_digest,publisher_fingerprint,'{\"required\":[],\"optional\":[]}','{\"required\":[],\"optional\":[],\"mcp_tools\":[],\"cli_commands\":[]}','not_applicable',zeroblob(32),20,ui_protocol FROM extensions;").expect("nonempty frozen plan");
     db
 }
 
 fn rows(db: &Connection) -> Vec<(String, Vec<Vec<Value>>)> {
-    let mut names=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name<>'extension_mcp_calls' ORDER BY name").expect("valid isolated authority fixture");
+    let mut names=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name<>'extension_entry_calls' ORDER BY name").expect("valid isolated authority fixture");
     let names = names
         .query_map([], |r| r.get::<_, String>(0))
         .expect("valid isolated authority fixture")
@@ -155,7 +155,6 @@ fn extension_grants_require_explicit_permissions_and_exact_scopes() {
         "projects.read",
         "mcp.clients.read",
         "mcp.clients.manage",
-        "mcp.tools.provide",
         "mcp.connections.read",
         "mcp.requests.read",
         "mcp.subscription-streams.read",
@@ -247,7 +246,6 @@ fn authority_fixture() -> (Connection, alcomd_application::ToolInvocation) {
     ] {
         db.execute("INSERT INTO extension_grants VALUES ('dev.alcomd.authority-test',?1,'Global','*','granted',4,30)",[permission]).expect("valid isolated authority fixture");
     }
-    db.execute("INSERT INTO extension_grants VALUES ('dev.alcomd.authority-test','mcp.tools.provide','Global','*','granted',4,30)",[]).expect("valid isolated authority fixture");
     db.execute("UPDATE extension_instances SET bound_grant_revision=(SELECT grant_revision FROM extensions WHERE extension_id='dev.alcomd.authority-test'),lease_expires_at_ms=?1,lease_cancelled=0,runtime_state='running'",[i64::try_from(now+60000).expect("valid isolated authority fixture")]).expect("valid isolated authority fixture");
     let (instance,principal,revision,generation,epoch,publisher):(String,String,u32,u32,String,String)=db.query_row("SELECT i.instance_id,i.principal_id,i.bound_grant_revision,i.lifecycle_generation,i.daemon_epoch,e.publisher_fingerprint FROM extension_instances i JOIN extensions e USING(extension_id)",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))).expect("valid isolated authority fixture");
     let origin = app::ToolOrigin {
@@ -269,6 +267,7 @@ fn authority_fixture() -> (Connection, alcomd_application::ToolInvocation) {
         &mut db,
         &auth,
         &alcomd_application::ToolWriteAdmission {
+            kind: alcomd_application::ExtensionEntryKind::Mcp,
             origin: origin.clone(),
             name: ("fixture_apply").into(),
             key: ("same-key").into(),
@@ -279,6 +278,7 @@ fn authority_fixture() -> (Connection, alcomd_application::ToolInvocation) {
     )
     .expect("valid isolated authority fixture");
     let authority = app::ToolInvocation {
+        kind: alcomd_application::ExtensionEntryKind::Mcp,
         call_id: admission.call_id,
         principal: app::PrincipalId::parse(format!("mcp:{id}"))
             .expect("valid isolated authority fixture"),
@@ -421,7 +421,7 @@ fn tool_receipt_is_atomic_with_business_transaction_and_rejects_second_effect() 
     assert_eq!(rows(&db), before);
     assert!(
         db.query_row(
-            "SELECT core_effect_json IS NULL FROM extension_mcp_calls",
+            "SELECT core_effect_json IS NULL FROM extension_entry_calls",
             [],
             |r| r.get::<_, bool>(0)
         )
@@ -453,7 +453,7 @@ fn tool_receipt_is_atomic_with_business_transaction_and_rejects_second_effect() 
     );
     let receipt: String = db
         .query_row(
-            "SELECT core_effect_json FROM extension_mcp_calls",
+            "SELECT core_effect_json FROM extension_entry_calls",
             [],
             |r| r.get(0),
         )
@@ -472,6 +472,7 @@ fn tool_same_key_is_principal_isolated_and_argument_conflicts_are_not_retried() 
         &mut db,
         &auth,
         &alcomd_application::ToolWriteAdmission {
+            kind: alcomd_application::ExtensionEntryKind::Mcp,
             origin: authority.origin.clone(),
             name: ("fixture_apply").into(),
             key: ("same-key").into(),
@@ -488,6 +489,7 @@ fn tool_same_key_is_principal_isolated_and_argument_conflicts_are_not_retried() 
             &mut db,
             &auth,
             &alcomd_application::ToolWriteAdmission {
+                kind: alcomd_application::ExtensionEntryKind::Mcp,
                 origin: authority.origin.clone(),
                 name: ("fixture_apply").into(),
                 key: ("same-key").into(),
@@ -506,6 +508,7 @@ fn tool_same_key_is_principal_isolated_and_argument_conflicts_are_not_retried() 
             &mut db,
             &auth,
             &alcomd_application::ToolWriteAdmission {
+                kind: alcomd_application::ExtensionEntryKind::Mcp,
                 origin: authority.origin.clone(),
                 name: ("fixture_apply").into(),
                 key: ("same-key").into(),
@@ -518,7 +521,7 @@ fn tool_same_key_is_principal_isolated_and_argument_conflicts_are_not_retried() 
         Some(E::PermissionDenied)
     );
     assert_eq!(
-        db.query_row("SELECT count(*) FROM extension_mcp_calls", [], |r| r
+        db.query_row("SELECT count(*) FROM extension_entry_calls", [], |r| r
             .get::<_, u32>(0))
             .expect("valid isolated authority fixture"),
         1
@@ -527,7 +530,7 @@ fn tool_same_key_is_principal_isolated_and_argument_conflicts_are_not_retried() 
 
 #[tokio::test]
 async fn tool_restart_recovers_accepted_evidence_and_never_restarts_an_unaccepted_call() {
-    use alcomd_application::{ToolError, ToolOperation};
+    use alcomd_application::ToolOperation;
     for accepted in [false, true] {
         let (mut db, authority) = authority_fixture();
         let operation_id = Uuid::new_v4().to_string();
@@ -554,33 +557,32 @@ async fn tool_restart_recovers_accepted_evidence_and_never_restarts_an_unaccepte
             .tool_recover_startup()
             .await
             .expect("startup recovery");
-        let replay = store
-            .tool_replay(
+        let (_, replay, state) = store
+            .tool_begin(
                 authority.authentication,
-                "fixture_apply".into(),
-                "same-key".into(),
-                "a".repeat(64),
+                alcomd_application::ToolWriteAdmission {
+                    kind: alcomd_application::ExtensionEntryKind::Mcp,
+                    origin: authority.origin,
+                    name: "fixture_apply".into(),
+                    key: "same-key".into(),
+                    fingerprint: "a".repeat(64),
+                    permissions: authority.declaration.permissions(),
+                    effect: alcomd_application::ToolEffect::Apply,
+                },
             )
             .await
-            .expect("explicit same-key recovery")
-            .expect("receipt survives restart");
-        assert!(replay.replayed);
-        assert!(replay.data.is_null());
+            .expect("recover original receipt");
+        assert_eq!(state, "interrupted");
         if accepted {
-            assert_eq!(replay.error, None);
-            assert_eq!(
-                replay.core_effect.expect("effect")["operationId"],
-                operation_id
-            );
+            assert_eq!(replay.expect("effect")["operationId"], operation_id);
         } else {
-            assert_eq!(replay.error, Some(ToolError::Interrupted));
-            assert!(replay.core_effect.is_none());
+            assert!(replay.is_none());
         }
         let db = Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .expect("inspect isolated recovery");
         assert_eq!(rows(&db), before, "recovery did not execute business work");
         assert_eq!(
-            db.query_row("SELECT count(*) FROM extension_mcp_calls", [], |r| r
+            db.query_row("SELECT count(*) FROM extension_entry_calls", [], |r| r
                 .get::<_, u32>(0))
                 .expect("one original receipt"),
             1
@@ -589,123 +591,4 @@ async fn tool_restart_recovers_accepted_evidence_and_never_restarts_an_unaccepte
         drop(store);
         std::fs::remove_file(path).expect("cleanup");
     }
-}
-
-#[test]
-fn applied_packaged_install_evidence_survives_uninstall_with_delete_data() {
-    use crate::m6;
-    use alcomd_application::{
-        ExtensionDataDisposition, ExtensionDesiredState, ExtensionSourceKind, ExtensionUiProtocol,
-        ExtensionUninstallPlanDraft, PACKAGED_MCP_EXTENSION_ID, PlanId,
-    };
-
-    let mut db = extension_plan_fixture();
-    let owner = PrincipalId::local_owner();
-    let mut evidence = m6::get_plan(
-        &db,
-        PlanId::parse("11111111-2222-4333-8444-555555555555").expect("fixture plan id"),
-    )
-    .expect("disposable evidence")
-    .evidence;
-    let extension_id = PACKAGED_MCP_EXTENSION_ID;
-    evidence.extension_id = extension_id.into();
-    evidence.source_kind = ExtensionSourceKind::FirstPartyPackaged;
-    evidence.ui_protocol = Some(ExtensionUiProtocol::PortableV1);
-    evidence
-        .required_permissions
-        .push("mcp.clients.read".into());
-    assert!(m6::accept_packaged_mcp_install(&mut db, evidence.clone(), 30).is_err());
-    assert!(m6::needs_packaged_mcp_install(&db).expect("no accepted install"));
-    evidence.required_permissions.clear();
-    let installed = m6::accept_packaged_mcp_install(&mut db, evidence.clone(), 31)
-        .expect("accept packaged install")
-        .expect("fresh profile");
-    assert!(
-        m6::accept_packaged_mcp_install(&mut db, evidence.clone(), 31)
-            .expect("repeat startup")
-            .is_none()
-    );
-    assert!(
-        m6::recover_operations(&mut db, 32)
-            .expect("recover accepted work")
-            .contains(&installed)
-    );
-    let (install, _) = m6::begin_apply(&mut db, installed, 33).expect("begin install");
-    m6::finish_install(&mut db, installed, "<FIXTURE>/installed", 34).expect("commit install");
-    let extension = m6::get_extension(&db, &owner, extension_id).expect("installed extension");
-    assert_eq!(extension.desired_state, ExtensionDesiredState::Enabled);
-    assert!(
-        !m6::has_background_authority(&db, &owner, extension_id).expect("zero initial authority")
-    );
-    let (extension, _) = m6::set_desired(
-        &mut db,
-        &owner,
-        extension_id,
-        extension.revision,
-        &IdempotencyKey::parse("packaged-default-disable").expect("fixture key"),
-        false,
-        35,
-        None,
-    )
-    .expect("user disables installed extension");
-    m6::finish_install(&mut db, installed, "<FIXTURE>/installed", 36)
-        .expect("recover after commit without setting enabled again");
-    assert_eq!(
-        m6::get_extension(&db, &owner, extension_id)
-            .expect("still installed")
-            .desired_state,
-        ExtensionDesiredState::InstalledDisabled
-    );
-    m6::complete_operation(&mut db, installed, 37).expect("finish install");
-    let uninstall = m6::create_uninstall_plan(
-        &mut db,
-        &owner,
-        ExtensionUninstallPlanDraft {
-            extension,
-            data_disposition: ExtensionDataDisposition::DeleteData,
-            plan_fingerprint: [4; 32],
-        },
-        38,
-    )
-    .expect("uninstall plan");
-    let removed = m6::accept_plan(
-        &mut db,
-        &owner,
-        uninstall.plan_id,
-        None,
-        &IdempotencyKey::parse("packaged-default-uninstall").expect("fixture key"),
-        39,
-    )
-    .expect("accept uninstall")
-    .operation_id;
-    m6::begin_apply(&mut db, removed, 40).expect("begin uninstall");
-    m6::finish_uninstall(&mut db, removed, 41).expect("commit uninstall");
-    m6::complete_operation(&mut db, removed, 42).expect("finish uninstall");
-    assert!(m6::get_extension(&db, &owner, extension_id).is_err());
-    assert!(
-        m6::accept_packaged_mcp_install(&mut db, evidence, 43)
-            .expect("startup after removal")
-            .is_none()
-    );
-    assert_eq!(
-        db.query_row(
-            "SELECT DISTINCT o.state FROM extension_plans p JOIN operations o
-               ON o.operation_id=p.apply_operation_id
-             JOIN extension_filesystem_journal j ON j.plan_id=p.plan_id
-              AND j.operation_id=o.operation_id AND j.phase='state_committed' AND j.state='completed'
-             WHERE p.owner_principal_id=?1 AND p.extension_id=?2
-              AND p.action='install' AND p.source_kind='first_party_packaged'",
-            params![owner.as_str(), extension_id],
-            |row| row.get::<_, String>(0),
-        )
-        .expect("packaged install receipt"),
-        "succeeded"
-    );
-    assert!(
-        db.execute(
-            "DELETE FROM extension_plans WHERE plan_id=?1",
-            [install.plan_id.to_string()]
-        )
-        .is_err()
-    );
 }

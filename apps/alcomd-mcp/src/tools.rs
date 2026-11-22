@@ -19,6 +19,7 @@ const INVENTORY_CONTRACT: &str =
     include_str!("../../../specs/mcp/project-inventory-v1.schema.json");
 const TEMPLATE_CONTRACT: &str = include_str!("../../../specs/mcp/template-edit-v1.schema.json");
 mod environment;
+mod extensions;
 mod packages;
 mod repositories;
 mod workflows;
@@ -27,7 +28,9 @@ static DIAGNOSTICS: AtomicU64 = AtomicU64::new(1);
 
 /// Static HTTP admission metadata. Discovery still uses Core's authorized directory.
 pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> {
-    let source = if packages::recognized(name) {
+    let source = if rpc::mcp_extension_management_capability(name).is_some() {
+        include_str!("../../../specs/mcp/extensions-v1.schema.json")
+    } else if packages::recognized(name) {
         PACKAGE_CONTRACT
     } else if rpc::mcp_environment_tool_capability(name) == Some(rpc::CAPABILITY_DESKTOP_ACTIONS_V1)
     {
@@ -533,6 +536,9 @@ fn error(
     result
 }
 fn failure(cause: Failure) -> CallToolResult {
+    failure_with_profile(cause, None)
+}
+fn failure_with_profile(cause: Failure, profile: Option<&str>) -> CallToolResult {
     match cause {
         Failure::Remote(ClientError::Remote(e), _)
             if matches!(
@@ -571,10 +577,23 @@ fn failure(cause: Failure) -> CallToolResult {
                 Ok(v) => v,
                 Err(_) => return failure(Failure::InvalidCore),
             };
+            let profile_allows = profile.is_some_and(|profile| {
+                static NATIVE: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+                let manifest = NATIVE.get_or_init(|| {
+                    serde_json::from_str(include_str!(
+                        "../../../specs/rpc/native-sdk-v1.methods.json"
+                    ))
+                    .unwrap_or(Value::Null)
+                });
+                manifest["errorProfiles"][profile]
+                    .as_array()
+                    .is_some_and(|codes| codes.iter().any(|code| code == &e.code))
+            });
             if !contract["$defs"]["toolError"]["properties"]["code"]["enum"]
                 .as_array()
                 .is_some_and(|codes| {
-                    codes.iter().any(|code| code == &e.code)
+                    profile_allows
+                        || codes.iter().any(|code| code == &e.code)
                         || matches!(
                             e.code.as_str(),
                             "package_candidate_evidence_stale"
@@ -657,19 +676,12 @@ pub async fn execute(
         Ok(value) => value,
         Err(error) => return Ok(failure(Failure::Remote(error, false))),
     };
-    let recovery = descriptor.is_none()
-        && params.name.starts_with("alcomd_ext_")
-        && params
-            .arguments
-            .as_ref()
-            .is_some_and(|a| a.contains_key("idempotency_key"));
-    if descriptor.as_ref().is_some_and(|d| d.origin.is_some()) || recovery {
+    if let Some(descriptor) = descriptor.as_ref().filter(|entry| entry.origin.is_some()) {
         if params.input_responses.is_some() || params.request_state.is_some() {
             return Err(invalid());
         }
         let arguments = Value::Object(params.arguments.unwrap_or_default());
-        let writing = descriptor.as_ref().is_none_or(descriptor_writes)
-            || arguments.get("idempotency_key").is_some();
+        let writing = descriptor_writes(descriptor) || arguments.get("idempotency_key").is_some();
         let value = match client
             .extension_mcp_tools_call(rpc::ExtensionMcpToolsCallParams {
                 name: params.name.into_owned(),
@@ -712,6 +724,12 @@ pub async fn execute(
             return Err(super::unsupported_method());
         }
         return workflows::execute(client, params).await;
+    }
+    if let Some(capability) = rpc::mcp_extension_management_capability(params.name.as_ref()) {
+        if !client.supports_capability(capability) {
+            return Err(super::unsupported_method());
+        }
+        return extensions::execute(client, params).await;
     }
     if environment::recognized(params.name.as_ref()) {
         if rpc::mcp_environment_tool_capability(params.name.as_ref())

@@ -30,7 +30,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
     const hash = "a".repeat(64);
     const localTarget = "b".repeat(64);
     const runtimePermissions: ManagementGrant["permission"][] = ["mcp.connections.read", "mcp.requests.read"];
-    const providerPermissions: ManagementGrant["permission"][] = ["mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel", "projects.read"];
+    const providerPermissions: ManagementGrant["permission"][] = ["repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel", "projects.read"];
     const toolPreviews: import("@alcomd/sdk").McpToolPreview[] = query.has("m8-tool-provider") ? [
         { name: "alcomd_ext_aaaaaaaaaaaaaaaaaaaa_echo", title: "Echo text", description: "Compute a result without Core business access.", requiredPermissions: [], effect: "pure" },
         { name: "alcomd_ext_aaaaaaaaaaaaaaaaaaaa_apply", title: "Review".repeat(48), description: "LongDescription".repeat(48), requiredPermissions: ["packages.manage"], effect: "apply" }
@@ -119,11 +119,11 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
         return extension;
     }
     function plan(action: "install" | "uninstall", extensionId: string, dataDisposition: string): ExtensionPlan {
-        const result: ExtensionPlan = { mcpTools: action === "install" ? structuredClone(toolPreviews) : [], planId: `00000000-0000-4000-8000-${String(800 + ++nextPlan).padStart(12, "0")}`, action,
+        const result: ExtensionPlan = { cliCommands: [], mcpTools: action === "install" ? structuredClone(toolPreviews) : [], planId: `00000000-0000-4000-8000-${String(800 + ++nextPlan).padStart(12, "0")}`, action,
             state: "unapplied", sourceKind: action === "install" ? "local_owner_selected" : "not_applicable", extensionId,
             version: "1.0.0", apiMajor: 1, profileVersion: 1, packageDigest: hash, publisherFingerprint: `ed25519-sha256:${hash}`,
             dataDisposition, planFingerprint: hash, uiProtocol: "portable-v1",
-            requiredPermissions: query.has("h4-no-required") ? [] : query.has("m8-tool-provider") ? ["mcp.tools.provide"] : ["projects.read"], optionalPermissions: query.has("m8-tool-provider") ? providerPermissions.filter((p) => p !== "mcp.tools.provide") : ["background.run"],
+            requiredPermissions: query.has("h4-no-required") ? [] : query.has("m8-tool-provider") ? ["repositories.read"] : ["projects.read"], optionalPermissions: query.has("m8-tool-provider") ? providerPermissions.filter((p) => p !== "repositories.read") : ["background.run"],
             ...(query.has("h4-terms") ? { installationTerms: { title: "Fixture usage terms", text: "Use this extension only with disposable test data.\n".repeat(query.has("h4-long-terms") ? 400 : 1) } } : {}) };
         plans.set(result.planId, result);
         return structuredClone(result);
@@ -180,7 +180,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             const consent = scopedActivation && extensionId === H4_ALPHA
                 ? { activationConsent: { packageDigest: hash, targets: ["Discord desktop (discord · discord.exe · Discord Inc.)"] } }
                 : {};
-            return response("extensions.get", { extension: structuredClone(installed(extensionId)), mcpTools: structuredClone(toolPreviews), ...consent });
+            return response("extensions.get", { extension: structuredClone(installed(extensionId)), mcpTools: structuredClone(toolPreviews), cliCommands: [], ...consent });
         },
         async extensionPermissionsList(extensionId, cursor) {
             log("extensions.permissions.list", { extensionId, ...(cursor === undefined ? {} : { cursor }) });
@@ -190,7 +190,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             const offset = parts === undefined ? 0 : Number(parts[2]);
             const all = grants.get(extensionId) ?? [];
             const page = all.slice(offset, offset + 1);
-            const availablePermissions: ManagementGrant["permission"][] = ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.subscription-streams.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel"];
+            const availablePermissions: ManagementGrant["permission"][] = ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.subscription-streams.read", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel"];
             if (scopedActivation) availablePermissions.push("unity.sessions.read", "local-ipc.connect");
             return response("extensions.permissions.list", { availablePermissions, extensionId, grantRevision: extension.grantRevision,
                 requiredPermissions: query.has("m8-tool-provider") || query.has("m8-mcp-permissions") ? [] : ["projects.read"], optionalPermissions: scopedActivation && extensionId === H4_ALPHA ? ["background.run", "unity.sessions.read", "local-ipc.connect"] : query.has("m8-runtime-permissions") ? runtimePermissions : query.has("m8-tool-provider") ? providerPermissions : query.has("m8-mcp-permissions") ? ["mcp.clients.read", "mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),

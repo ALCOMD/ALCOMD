@@ -1750,6 +1750,8 @@ pub struct PackageUnityCompatibilityOverride {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanKind {
+    ExtensionInstall,
+    ExtensionUninstall,
     Package,
     ProjectCopy,
     ProjectDeleteDirectory,
@@ -1766,6 +1768,12 @@ pub struct PlansGetParams {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PlansGetResult {
+    ExtensionInstall {
+        plan: Box<ExtensionPlan>,
+    },
+    ExtensionUninstall {
+        plan: Box<ExtensionPlan>,
+    },
     Package {
         plan: Box<PackagePlan>,
     },
@@ -3582,6 +3590,7 @@ pub struct ExtensionPlan {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installation_terms: Option<ExtensionInstallationTerms>,
     pub mcp_tools: Vec<McpToolPreview>,
+    pub cli_commands: Vec<McpToolPreview>,
     pub plan_id: String,
     pub action: String,
     pub state: String,
@@ -3615,6 +3624,8 @@ pub struct ExtensionResult {
     pub installation_source: Option<ExtensionInstallationSource>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_tools: Option<Vec<McpToolPreview>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cli_commands: Option<Vec<McpToolPreview>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub activation_consent: Option<ExtensionActivationConsent>,
     pub extension: ExtensionRecord,

@@ -38,6 +38,8 @@ fn evidence() -> ExtensionPackageEvidence {
         remote_source: None,
         required_permissions: vec!["background.run".to_owned()],
         optional_permissions: vec!["projects.read".to_owned()],
+        mcp_tools: Vec::new(),
+        cli_commands: Vec::new(),
         required_interfaces: vec!["alcomd:extension/host-data@1.0.0".to_owned()],
         optional_interfaces: vec!["alcomd:extension/host-projects@1.0.0".to_owned()],
         ui_protocol: Some(ExtensionUiProtocol::PortableV1),
@@ -781,17 +783,44 @@ async fn permissions_keyset_pages_reject_revocation_and_package_snapshot_changes
 }
 
 #[tokio::test]
-async fn permissions_read_is_owner_bound_and_rejects_foreign_or_invalid_pages() {
-    let (store, path, package) = permissions_fixture("permissions-owner").await;
-    let foreign = PrincipalId::parse("fixture:other-owner").expect("other principal");
+async fn shared_extension_permissions_are_visible_to_another_caller_and_require_valid_pages() {
+    let (store, path, package) = permissions_fixture("permissions-shared").await;
+    let unrelated = PrincipalId::parse("fixture:other-operator").expect("unrelated principal");
     assert_eq!(
         store
-            .list_permissions(foreign, package.extension_id.clone(), None, 100)
+            .list_permissions(unrelated, package.extension_id.clone(), None, 100)
             .await
-            .expect_err("other owner cannot inspect")
+            .expect_err("unrelated installation is not visible")
             .code(),
         M6ErrorCode::NotInstalled
     );
+    let other = alcomd_application::McpIdentityApplication::new(store.clone())
+        .write(
+            &alcomd_application::AccessContext::local_owner(),
+            "register-reader".into(),
+            alcomd_application::McpIdentityWrite::Create {
+                name: "Registered reader".into(),
+            },
+            1,
+        )
+        .await
+        .expect("real client registration")
+        .client
+        .principal_id;
+    let shared = store
+        .list_permissions(other, package.extension_id.clone(), None, 100)
+        .await
+        .expect("shared installation");
+    let original = store
+        .list_permissions(
+            PrincipalId::local_owner(),
+            package.extension_id.clone(),
+            None,
+            100,
+        )
+        .await
+        .expect("installer");
+    assert_eq!(shared, original);
     for limit in [0, 1_001] {
         assert_eq!(
             store
@@ -1851,7 +1880,7 @@ async fn install_consent_rejects_missing_or_changed_evidence_before_acceptance_a
         .list_permissions(owner.clone(), package.extension_id.clone(), None, 100)
         .await
         .expect("isolated extension consent fixture");
-    assert_eq!(permissions.grants.len(), 14);
+    assert_eq!(permissions.grants.len(), package.required_permissions.len());
     for permission in &package.required_permissions {
         assert!(
             permissions

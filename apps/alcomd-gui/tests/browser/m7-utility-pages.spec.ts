@@ -182,7 +182,7 @@ test("card surfaces share one 28px shape across workspaces", async ({ page }) =>
         ["/about", ".notice-card"],
         ["/logs", ".operation-log-filters"],
         ["/extensions/com.vrclearn.discord/ui", ".extension-identity > div, .portable-section, .portable-group"],
-        ["/extensions/com.vrclearn.mcp-management/ui", ".portable-list-item"],
+        ["/extensions/org.example.mcp-inspector/ui", ".portable-list-item"],
         ["/projects/00000000-0000-4000-8000-000000000101/packages", ".package-workspace-toolbar"]
     ] as const;
     for (const mode of ["light", "dark"]) {

@@ -25,6 +25,6 @@ interface clients {
 }
 
 world management-v1 {
-    include alcomd:extension/extension-v1@1.0.0;
+    include alcomd:extension/portable-ui-v1@1.0.0;
     import clients;
 }

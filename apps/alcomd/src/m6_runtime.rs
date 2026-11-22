@@ -54,7 +54,7 @@ struct HostProcess {
     daemon_sequence: u64,
     host_sequence: u64,
     background_active: bool,
-    mcp_only: bool,
+    entry_only: bool,
     integration: Option<BackgroundIntegration>,
     cleared_before_disable: bool,
 }
@@ -456,12 +456,12 @@ fn start_host(
         daemon_sequence: 1,
         host_sequence: 1,
         background_active: context.activation_kind == ExtensionActivationKind::Background,
-        mcp_only: context.activation_kind == ExtensionActivationKind::McpTool,
+        entry_only: context.activation_kind == ExtensionActivationKind::BusinessEntry,
         integration,
         cleared_before_disable: false,
     };
     let activation_kind = match context.activation_kind {
-        ExtensionActivationKind::McpTool => "mcp_tool",
+        ExtensionActivationKind::BusinessEntry => "business_entry",
         ExtensionActivationKind::Background => "background",
         ExtensionActivationKind::InteractiveUi => "interactive_ui",
     };
@@ -472,7 +472,7 @@ fn start_host(
         "lifecycleGeneration": process.lease.lifecycle_generation.get(),
         "kind": activation_kind
     });
-    if context.activation_kind != ExtensionActivationKind::McpTool
+    if context.activation_kind != ExtensionActivationKind::BusinessEntry
         && let Err(error) = invoke(
             inner,
             &mut process,
@@ -483,7 +483,9 @@ fn start_host(
                 mcp_authority: None,
                 mcp_connection: None,
                 kind: match context.activation_kind {
-                    ExtensionActivationKind::McpTool => ExtensionInvocationKind::McpTool,
+                    ExtensionActivationKind::BusinessEntry => {
+                        ExtensionInvocationKind::BusinessEntry
+                    }
                     ExtensionActivationKind::Background => ExtensionInvocationKind::Background,
                     ExtensionActivationKind::InteractiveUi => {
                         ExtensionInvocationKind::InteractiveUiRender
@@ -573,7 +575,7 @@ fn stop_host(
             },
         },
     );
-    if !process.mcp_only && !(reason == "disabled" && process.cleared_before_disable) {
+    if !process.entry_only && !(reason == "disabled" && process.cleared_before_disable) {
         let _ = deactivate_guest(inner, &mut process, reason);
     }
     process.daemon_sequence = process
@@ -804,7 +806,7 @@ fn route_capability(
     }
     let runtime = tokio::runtime::Handle::current();
     let authority = &inner.authority;
-    if invocation.kind == ExtensionInvocationKind::McpTool {
+    if invocation.kind == ExtensionInvocationKind::BusinessEntry {
         let context = invocation
             .mcp_authority
             .clone()
@@ -1014,14 +1016,14 @@ fn route_capability(
 
 fn capability_allowed(kind: ExtensionInvocationKind, capability: &str) -> bool {
     match kind {
-        ExtensionInvocationKind::McpTool => matches!(
+        ExtensionInvocationKind::BusinessEntry => matches!(
             capability,
-            "host-mcp-tools.projects.list"
-                | "host-mcp-tools.projects.get"
-                | "host-mcp-tools.packages.planUninstall"
-                | "host-mcp-tools.packages.applyPlan"
-                | "host-mcp-tools.operations.get"
-                | "host-mcp-tools.operations.cancel"
+            "host-operations.projects.list"
+                | "host-operations.projects.get"
+                | "host-operations.packages.planUninstall"
+                | "host-operations.packages.applyPlan"
+                | "host-operations.operations.get"
+                | "host-operations.operations.cancel"
         ),
         ExtensionInvocationKind::Background => matches!(
             capability,
@@ -1296,7 +1298,7 @@ impl PlatformExtensionRuntime {
                 )
                 .await
                 .map_err(|_| E::ProviderUnavailable)?;
-            context.activation_kind = ExtensionActivationKind::McpTool;
+            context.activation_kind = ExtensionActivationKind::BusinessEntry;
             let lease = context.lease.clone();
             let inner = Arc::clone(&self.inner);
             tokio::task::spawn_blocking(move || start_host(&inner, context, None))
@@ -1330,11 +1332,15 @@ impl PlatformExtensionRuntime {
                 let value = invoke(
                     &inner,
                     process,
-                    "mcp.invoke",
+                    if auth.kind == alcomd_application::ExtensionEntryKind::Cli {
+                        "cli.invoke"
+                    } else {
+                        "mcp.invoke"
+                    },
                     json!({"declaration":auth.declaration,"arguments":arguments}),
                     Duration::from_millis(5000),
                     RuntimeInvocation {
-                        kind: ExtensionInvocationKind::McpTool,
+                        kind: ExtensionInvocationKind::BusinessEntry,
                         ui_authority: None,
                         mcp_authority: Some(auth),
                         mcp_connection: Some(Arc::new(connection)),
@@ -1511,7 +1517,7 @@ mod tests {
         for kind in [
             ExtensionInvocationKind::Background,
             ExtensionInvocationKind::InteractiveUiClose,
-            ExtensionInvocationKind::McpTool,
+            ExtensionInvocationKind::BusinessEntry,
         ] {
             assert!(!capability_allowed(kind, "host-mcp-runtime.snapshot"));
         }

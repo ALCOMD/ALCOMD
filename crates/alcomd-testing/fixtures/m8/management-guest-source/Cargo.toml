@@ -1,5 +1,5 @@
 [package]
-name = "alcomd-extension-mcp-backend"
+name = "alcomd-management-test-guest"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.97.1"

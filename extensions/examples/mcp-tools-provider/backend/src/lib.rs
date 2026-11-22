@@ -1,12 +1,14 @@
 //! Disposable real Provider fixture; uses the public sandbox ABI without trust bypasses.
 mod bindings {
-    wit_bindgen::generate!({path:"../../../../specs/extensions/wit/mcp-tools-v1",world:"provider-v1",generate_all});
+    wit_bindgen::generate!({path: ["../../../../specs/extensions/wit/mcp-tools-v1","../../../../specs/extensions/wit/cli-commands-v1/world.wit"],
+        inline: "package fixtures:entry; world fixture { include alcomd:extension/portable-ui-v1@1.0.0; import alcomd:extension/host-operations@1.0.0; export alcomd:mcp-tools/provider@1.0.0; export alcomd:cli-commands/provider@1.0.0; }",
+        world: "fixture", generate_all});
     #[cfg(target_arch="wasm32")]
     use super::Fixture;
     #[cfg(target_arch="wasm32")]
     export!(Fixture with_types_in self);
 }
-use bindings::{alcomd::{extension::types, mcp_tools::core},exports::alcomd::{extension::{guest_lifecycle,guest_ui},mcp_tools::provider}};
+use bindings::{alcomd::extension::{types, host_operations as core},exports::alcomd::{extension::{guest_lifecycle,guest_ui},mcp_tools::provider}};
 use serde_json::{Value,json};
 struct Fixture;
 impl guest_lifecycle::Guest for Fixture {
@@ -19,6 +21,15 @@ impl guest_ui::Guest for Fixture {
     fn refresh(_:String)->guest_ui::UiDocument{document()}
     fn dispatch(_:String,_:guest_ui::UiAction)->guest_ui::UiDocument{document()}
     fn close(_:String){}
+}
+impl bindings::exports::alcomd::cli_commands::provider::Guest for Fixture {
+    fn invoke(name: String, arguments: Vec<u8>) -> Result<Vec<u8>, String> {
+        if name == "echo" {
+            let input: Value = serde_json::from_slice(&arguments).map_err(|_| "invalid command input")?;
+            return serde_json::to_vec(&json!({"cli":input["text"]})).map_err(|_| "invalid command output".into());
+        }
+        <Self as provider::Guest>::invoke(name, arguments)
+    }
 }
 impl provider::Guest for Fixture {
     fn invoke(name:String,arguments:Vec<u8>)->Result<Vec<u8>,String>{

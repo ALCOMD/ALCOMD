@@ -1,0 +1,226 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/extension-cli-commands-v1.json",
+    "title": "Installed extension CLI commands",
+    "x-capability": "extensions.cli-commands.v1",
+    "x-methods": {
+        "extensions.cliCommands.list": {
+            "params": "listParams",
+            "result": "listResult"
+        },
+        "extensions.cliCommands.invoke": {
+            "params": "invokeParams",
+            "result": "invokeResult"
+        }
+    },
+    "x-authority": "Actual caller and signed extension declarations, business grants and lease",
+    "x-max-call-json-bytes": 65536,
+    "$defs": {
+        "listParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+                "cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 32
+                },
+                "extensionId": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 255,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                }
+            }
+        },
+        "listResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "commands",
+                "nextCursor",
+                "catalogFingerprint"
+            ],
+            "properties": {
+                "nextCursor": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "catalogFingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "commands": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "title",
+                            "description",
+                            "inputSchema",
+                            "outputSchema",
+                            "requiredPermissions",
+                            "effect",
+                            "origin"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                            },
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 514
+                            },
+                            "description": {
+                                "type": "string",
+                                "maxLength": 2048
+                            },
+                            "inputSchema": {
+                                "type": "object"
+                            },
+                            "outputSchema": {
+                                "type": "object"
+                            },
+                            "requiredPermissions": {
+                                "type": "array",
+                                "maxItems": 8,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                }
+                            },
+                            "effect": {
+                                "enum": [
+                                    "pure",
+                                    "read",
+                                    "plan",
+                                    "apply",
+                                    "cancel"
+                                ]
+                            },
+                            "origin": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "extensionId",
+                                    "publisherFingerprint",
+                                    "packageDigest",
+                                    "version"
+                                ],
+                                "properties": {
+                                    "extensionId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 255
+                                    },
+                                    "publisherFingerprint": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 128
+                                    },
+                                    "packageDigest": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{64}$"
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 128
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "invokeParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "name",
+                "arguments",
+                "extensionId"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                },
+                "arguments": {
+                    "type": "object"
+                },
+                "extensionId": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 255,
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                }
+            }
+        },
+        "invokeResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "data",
+                "coreEffect",
+                "replayed",
+                "error"
+            ],
+            "properties": {
+                "data": {},
+                "coreEffect": {
+                    "type": [
+                        "object",
+                        "null"
+                    ]
+                },
+                "replayed": {
+                    "type": "boolean"
+                },
+                "error": {
+                    "anyOf": [
+                        {
+                            "enum": [
+                                "invalid_input",
+                                "permission_denied",
+                                "revision_conflict",
+                                "idempotency_conflict",
+                                "resource_limit",
+                                "unavailable",
+                                "provider_unavailable",
+                                "output_invalid",
+                                "in_progress",
+                                "interrupted",
+                                "write_outcome_unknown"
+                            ]
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}

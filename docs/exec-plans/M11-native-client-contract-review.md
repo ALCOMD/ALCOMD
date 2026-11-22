@@ -51,7 +51,7 @@ M11 的隔离测试用相同格式完成安装、更新、卸载和从未连接�
 
 **存储差异。** A/B 安装记录归安装器，实时连接仅存于内存。C3 提议在 State1 原位新增管理申请表，记录申请 ID、发起 principal、动作及其规范化业务参数、指纹、目标修订、时效、状态、决定者和脱敏回执，不存明文秘密；索引覆盖请求 ID 和失效回收。以既有 caller + key 的幂等合同绑定指纹，批准/拒绝、原业务变更、审计和回执在同事务内完成。C2 登录继续使用当前 OAuth 应用层的有界内存 pending 队列，注册记录和 token 保存在现有 SQLite 表中。正式 DDL、索引、受影响的现行 State1 验证须随实施差异单核定。
 
-依据：[应用层身份](../../crates/alcomd-application/src/lib.rs)、[AI 客户端](../../crates/alcomd-application/src/m8_mcp.rs)、[OAuth](../../crates/alcomd-application/src/m8_oauth.rs)、[管理扩展清单](../../extensions/first-party/alcomd-extension-mcp/alcomd-extension.toml)、[WIT](../../specs/extensions/wit/mcp-management-v1/management.wit)。
+依据：[应用层身份](../../crates/alcomd-application/src/lib.rs)、[AI 客户端](../../crates/alcomd-application/src/m8_mcp.rs)、[OAuth](../../crates/alcomd-application/src/m8_oauth.rs)、[扩展入口及随附文件清理清单](M11-extension-entry-contract-review.md)、[WIT](../../specs/extensions/wit/mcp-management-v1/management.wit)。
 
 ## D．Core 本机桌面动作
 

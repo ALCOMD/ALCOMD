@@ -512,10 +512,7 @@ node/action。没有 hostId、official GUI identity、framework/renderer name、
 
 ### Active WIT/ABI v1
 
-active WIT 位于 `specs/extensions/wit/extension-v1/`，production bindgen 与真实 Extension Host 使用
-`alcomd:extension/extension-v1@1.0.0`，import host-projects/host-data，required export guest-lifecycle/guest-ui。所有 ABI v1
-Component 都必须实现 guest-ui；Manifest 无 `[ui]` 时 daemon 不调用，reference fixture 提供 empty stub，Host instantiate
-仍验证完整 world。guest-ui exact sync functions：
+活动 WIT 位于 `specs/extensions/wit/extension-v1/`。基础 world 要求生命周期，提供 host-projects 和 host-data。带 `[ui]` 的签名包还须实现 `alcomd:extension/portable-ui-v1@1.0.0` 的 guest-ui 导出。无界面后端可独立装载。GUI 的四项同步函数如下。
 
 ```text
 open(guest-session-id, locale) -> UiDocument

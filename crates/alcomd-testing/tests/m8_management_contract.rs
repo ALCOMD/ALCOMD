@@ -162,7 +162,7 @@ fn management_v1_schema_preserves_bounded_secret_free_shapes() {
         );
     }
     let wit = std::fs::read_to_string(new.join("management.wit")).expect("new WIT");
-    assert!(wit.contains("include alcomd:extension/extension-v1@1.0.0"));
+    assert!(wit.contains("include alcomd:extension/portable-ui-v1@1.0.0"));
     assert_eq!(wit.matches(": func(").count(), 3);
     assert!(!wit.contains("issue-credential"));
     assert!(!wit.contains("wasi:"));
@@ -208,7 +208,6 @@ fn management_v1_schema_preserves_bounded_secret_free_shapes() {
             "mcp.connections.read",
             "mcp.requests.read",
             "mcp.subscription-streams.read",
-            "mcp.tools.provide",
             "repositories.read",
             "packages.read",
             "packages.manage",
@@ -229,7 +228,7 @@ fn management_v1_schema_preserves_bounded_secret_free_shapes() {
 }
 
 #[test]
-fn actual_component_fixture_matches_its_build_inputs() {
+fn third_party_component_fixtures_match_their_build_inputs() {
     use sha2::{Digest, Sha256};
     fn digest(bytes: impl AsRef<[u8]>) -> String {
         Sha256::digest(bytes)
@@ -239,7 +238,7 @@ fn actual_component_fixture_matches_its_build_inputs() {
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     for source in [
-        include_str!("../fixtures/m8/mcp-runtime-v1.provenance.json"),
+        include_str!("../fixtures/m8/third-party-management-v1.provenance.json"),
         include_str!("../fixtures/m8/mcp-transport-v1.provenance.json"),
     ] {
         let record: Value = serde_json::from_str(source).expect("provenance");

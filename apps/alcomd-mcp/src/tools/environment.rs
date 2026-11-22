@@ -13,23 +13,25 @@ pub(super) fn recognized(name: &str) -> bool {
     name == "alcomd_get_settings" || rpc::mcp_environment_tool_capability(name).is_some()
 }
 
-fn params<T: DeserializeOwned>(value: Value) -> Result<T, ErrorData> {
+pub(super) fn params<T: DeserializeOwned>(value: Value) -> Result<T, ErrorData> {
     serde_json::from_value(value).map_err(|_| invalid())
 }
 
-fn result<T: Serialize>(response: Result<T, ClientError>) -> Result<Value, Failure> {
+pub(super) fn result<T: Serialize>(response: Result<T, ClientError>) -> Result<Value, Failure> {
     serde_json::to_value(response.map_err(read)?)
         .map(snake)
         .map_err(|_| Failure::InvalidCore)
 }
 
-fn write_result<T: Serialize>(response: Result<T, ClientError>) -> Result<Value, Failure> {
+pub(super) fn write_result<T: Serialize>(
+    response: Result<T, ClientError>,
+) -> Result<Value, Failure> {
     serde_json::to_value(response.map_err(|error| Failure::Remote(error, true))?)
         .map(snake)
         .map_err(|_| Failure::InvalidCore)
 }
 
-fn confirmed<T: DeserializeOwned>(mut fields: Value) -> Result<T, ErrorData> {
+pub(super) fn confirmed<T: DeserializeOwned>(mut fields: Value) -> Result<T, ErrorData> {
     if fields
         .as_object_mut()
         .and_then(|fields| fields.remove("confirm"))

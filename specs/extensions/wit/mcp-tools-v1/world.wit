@@ -1,21 +1,10 @@
 package alcomd:mcp-tools@1.0.0;
 
-/// Typed capabilities only; each result is bounded UTF-8 JSON from Core.
-interface core {
-    enum error { invalid-input, permission-denied, revision-conflict, idempotency-conflict, resource-limit, unavailable, interrupted, write-outcome-unknown }
-    list-projects: func(cursor: option<list<u8>>, limit: option<u32>) -> result<list<u8>, error>;
-    get-project: func(project-id: string) -> result<list<u8>, error>;
-    plan-uninstall: func(project-id: string, expected-revision: u64, package-id: string) -> result<list<u8>, error>;
-    /// Target, revision, confirmation and key are captured by Core, never guest-supplied.
-    apply-plan: func() -> result<list<u8>, error>;
-    get-operation: func(operation-id: string) -> result<list<u8>, error>;
-    cancel-operation: func() -> result<list<u8>, error>;
-}
 interface provider {
     invoke: func(name: string, arguments: list<u8>) -> result<list<u8>, string>;
 }
 world provider-v1 {
     include alcomd:extension/extension-v1@1.0.0;
-    import core;
+    import alcomd:extension/host-operations@1.0.0;
     export provider;
 }

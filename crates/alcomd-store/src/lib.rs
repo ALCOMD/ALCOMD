@@ -1268,26 +1268,6 @@ impl M6Store for StateStoreHandle {
         .await
     }
 
-    async fn needs_packaged_mcp_install(&self) -> Result<bool, M6Error> {
-        self.request_worker(
-            |connection| m6::needs_packaged_mcp_install(connection),
-            m6::unavailable,
-        )
-        .await
-    }
-
-    async fn accept_packaged_mcp_install(
-        &self,
-        evidence: alcomd_application::ExtensionPackageEvidence,
-        now_ms: u64,
-    ) -> Result<Option<OperationId>, M6Error> {
-        self.request_worker(
-            move |connection| m6::accept_packaged_mcp_install(connection, evidence, now_ms),
-            m6::unavailable,
-        )
-        .await
-    }
-
     async fn create_uninstall_plan(
         &self,
         owner: PrincipalId,

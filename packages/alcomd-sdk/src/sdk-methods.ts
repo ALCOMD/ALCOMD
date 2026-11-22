@@ -30,6 +30,8 @@ export const SDK_METHODS = {
     "events.subscribe": "stream",
     "extensions.applyInstall": "write",
     "extensions.applyUninstall": "write",
+    "extensions.cliCommands.invoke": "write",
+    "extensions.cliCommands.list": "read",
     "extensions.disable": "write",
     "extensions.enable": "write",
     "extensions.get": "read",
@@ -162,6 +164,10 @@ export type ExtensionGrantParams = {
     expectedGrantRevision: number;
     idempotencyKey: string;
 };
+export type ExtensionCliCommandsListParams = { extensionId?: string; cursor?: string; limit?: number };
+export type ExtensionCliCommandsInvokeParams = { extensionId: string; name: string; arguments: Record<string, unknown> };
+export type ExtensionCliCommandsListResult = { commands: { name: string; title: string; description: string; inputSchema: unknown; outputSchema: unknown; effect: string; requiredPermissions: string[]; origin: { extensionId: string; publisherFingerprint: string; packageDigest: string; version: string } }[]; nextCursor: string | null; catalogFingerprint: string };
+export type ExtensionMcpToolsCallResult = { data: unknown; coreEffect: unknown; replayed: boolean; error: string | null };
 export type ExtensionIdParams = { extensionId: string };
 export type ExtensionInspectSourceParams = { url: string };
 export type ExtensionInstallApplyParams = { planId: string; idempotencyKey: string; consent: Types.ExtensionInstallConsent };
@@ -248,6 +254,8 @@ export interface NativeRpcMethods {
     "events.subscribe": { params: Types.EventsSubscribeParams; result: Types.EventsSubscribeResult };
     "extensions.applyInstall": { params: ExtensionInstallApplyParams; result: Types.ExtensionOperationResult };
     "extensions.applyUninstall": { params: ExtensionApplyParams; result: Types.ExtensionOperationResult };
+    "extensions.cliCommands.invoke": { params: ExtensionCliCommandsInvokeParams; result: ExtensionMcpToolsCallResult };
+    "extensions.cliCommands.list": { params: ExtensionCliCommandsListParams; result: ExtensionCliCommandsListResult };
     "extensions.disable": { params: ExtensionLifecycleParams; result: Types.ExtensionResult };
     "extensions.enable": { params: ExtensionEnableParams; result: Types.ExtensionResult };
     "extensions.get": { params: ExtensionIdParams; result: Types.ExtensionResult };

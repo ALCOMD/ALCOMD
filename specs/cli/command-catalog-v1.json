@@ -21,6 +21,26 @@
             ]
         },
         {
+            "name": "extension", "aliases": [],
+            "commands": [
+                {"name": "list", "aliases": []},
+                {"name": "get", "aliases": []},
+                {"name": "inspect-source", "aliases": []},
+                {"name": "plan-install", "aliases": []},
+                {"name": "plan-install-from-source", "aliases": []},
+                {"name": "apply-install", "aliases": []},
+                {"name": "plan-uninstall", "aliases": []},
+                {"name": "apply-uninstall", "aliases": []},
+                {"name": "enable", "aliases": []},
+                {"name": "disable", "aliases": []},
+                {"name": "permissions", "aliases": []},
+                {"name": "grant", "aliases": []},
+                {"name": "revoke", "aliases": []},
+                {"name": "commands", "aliases": []},
+                {"name": "run", "aliases": []}
+            ]
+        },
+        {
             "name": "system",
             "aliases": [],
             "commands": [

@@ -164,12 +164,19 @@ fn hostile_archive_profile_has_each_frozen_negative_class() {
 }
 
 #[test]
-fn exact_wit_world_has_required_portable_ui_and_no_ambient_wasi() {
+fn base_and_optional_ui_worlds_have_no_ambient_wasi() {
     let matrix: Value = serde_json::from_str(ABI_MATRIX).expect("ABI matrix");
     assert_eq!(matrix["abiMajor"], 1);
     assert_eq!(matrix["world"], "alcomd:extension/extension-v1@1.0.0");
     assert_eq!(matrix["ambientWasiImports"], json!([]));
-    assert_eq!(matrix["guestUiRequiredForEveryAbiV1Component"], true);
+    assert_eq!(
+        matrix["exports"],
+        json!(["alcomd:extension/guest-lifecycle@1.0.0"])
+    );
+    assert_eq!(
+        matrix["optionalEntryExports"]["ui"],
+        "alcomd:extension/guest-ui@1.0.0"
+    );
     assert_eq!(
         matrix["preReleaseDirectRewrite"]["oldGuestCompatibilityRetained"],
         false

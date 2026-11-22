@@ -71,6 +71,8 @@ pub(super) async fn installed_extension_for(
                 remote_source: None,
                 required_permissions: vec!["background.run".to_owned()],
                 optional_permissions: vec![],
+                mcp_tools: Vec::new(),
+                cli_commands: Vec::new(),
                 required_interfaces: vec!["alcomd:extension/host-data@1.0.0".to_owned()],
                 optional_interfaces: vec![],
                 ui_protocol: None,
@@ -121,6 +123,59 @@ pub(super) async fn installed_extension_for(
     M6Store::get_extension(store, owner, "dev.example.live".to_owned())
         .await
         .expect("installed")
+}
+
+#[tokio::test]
+async fn delegated_installations_remain_visible_to_owner_after_revocation() {
+    use alcomd_application::{McpIdentityApplication, McpIdentityWrite};
+    let directory = Directory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("isolated store");
+    let management = McpIdentityApplication::new(store.clone());
+    let local = AccessContext::local_owner();
+    let installer = management
+        .write(
+            &local,
+            "create-installer".into(),
+            McpIdentityWrite::Create {
+                name: "Installer".into(),
+            },
+            1,
+        )
+        .await
+        .expect("installer")
+        .client;
+    let reader = management
+        .write(
+            &local,
+            "create-reader".into(),
+            McpIdentityWrite::Create {
+                name: "Reader".into(),
+            },
+            1,
+        )
+        .await
+        .expect("reader")
+        .client;
+    let extension = installed_extension_for(&store, installer.principal_id.clone()).await;
+    let inspect =
+        |principal| M6Store::get_extension(&store, principal, extension.extension_id.clone());
+    assert!(inspect(reader.principal_id.clone()).await.is_ok());
+    for client in [&reader, &installer] {
+        management
+            .write(
+                &local,
+                format!("revoke-{}", client.client_id),
+                McpIdentityWrite::Revoke {
+                    id: client.client_id,
+                    expected: client.revision,
+                },
+                10,
+            )
+            .await
+            .expect("revoke");
+    }
+    assert!(inspect(reader.principal_id).await.is_err());
+    assert!(inspect(PrincipalId::local_owner()).await.is_ok());
 }
 
 #[tokio::test]
