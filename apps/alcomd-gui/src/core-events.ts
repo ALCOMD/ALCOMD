@@ -104,7 +104,7 @@ export class CoreEvents {
                             : key === "projectsCreate" && "projectId" in result ? result.projectId : undefined;
                         this.acceptedTaskListeners.forEach((listener) => listener({ operationId: result.operationId as string, title: taskTitle,
                             ...("replayed" in result && result.replayed === true ? { replayed: true } : {}),
-                            ...(key === "backupRestore" ? { progressShownInForm: true } : {}),
+                            ...((key === "backupRestore" || ((key === "projectApplyCopy" || key === "projectApplyUnityMigration") && args[2] === "inline")) ? { progressShownInForm: true } : {}),
                             ...(uuid(projectId) ? { resultPath: `/projects/${projectId}`, resultLabel: "Open project" } : {}),
                             ...(key === "projectApplyDeleteDirectory" ? { resultPath: "/projects", resultLabel: "Projects" } : {}),
                             ...(key === "extensionApplyUninstall" ? { resultPath: "/extensions", resultLabel: "Extensions" } : {}) }));

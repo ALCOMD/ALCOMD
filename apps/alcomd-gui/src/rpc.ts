@@ -45,7 +45,7 @@ export interface GuiRpcClient {
     projectSetFavorite(projectId: string, favorite: boolean, expectedRevision: number, idempotencyKey: string): Promise<ProjectWriteResult>;
     projectUnregister(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectUnregisterResult>;
     projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string, idempotencyKey: string): Promise<ProjectsPlanCopyResult>;
-    projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult>;
+    projectApplyCopy(planId: string, expectedRevision: number, progress?: "inline"): Promise<ProjectsApplyCopyResult>;
     projectPlanDeleteDirectory(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectsPlanDeleteDirectoryResult>;
     projectApplyDeleteDirectory(planId: string, expectedRevision: number): Promise<ProjectsApplyDeleteDirectoryResult>;
     repositoriesInspect(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryResult>;
@@ -91,7 +91,7 @@ export interface GuiRpcClient {
     unityLaunchOptions(projectId: string, expectedProjectRevision: number, includeMigrationVersionOptions?: boolean): Promise<UnityLaunchOptionsResult>;
     unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number, idempotencyKey: string): Promise<UnityLaunchResult>;
     projectPlanUnityMigration(projectId: string, targetInstallationId: string, expectedProjectRevision: number, idempotencyKey: string): Promise<ProjectsPlanUnityMigrationResult>;
-    projectApplyUnityMigration(planId: string, idempotencyKey: string): Promise<ProjectsApplyUnityMigrationResult>;
+    projectApplyUnityMigration(planId: string, idempotencyKey: string, progress?: "inline"): Promise<ProjectsApplyUnityMigrationResult>;
     projectsCreate(params: ProjectsCreateParams): Promise<ProjectsCreateResult>;
     projectTemplatesList(cursor?: string): Promise<ProjectTemplatesListResult>;
     projectTemplateGet(params: ProjectTemplateGetParams): Promise<ProjectTemplateGetResult>;

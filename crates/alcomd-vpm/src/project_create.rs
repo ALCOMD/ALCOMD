@@ -274,6 +274,23 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
         })
     }
 
+    fn check_template_resolution(
+        &self,
+        declaration: &ProjectTemplateDeclaration,
+        version: &str,
+        catalog: &ResolverCatalog,
+    ) -> Result<(), ProjectCreateError> {
+        let (candidates, requests) = template_requests(declaration, version, catalog)?;
+        crate::resolver::resolve_project_change(
+            &candidates,
+            &requests,
+            None,
+            catalog.prefer_prerelease,
+        )
+        .map(|_| ())
+        .map_err(|cause| dependency_error().with_source(cause))
+    }
+
     async fn resolve(
         &self,
         stage: &Self::Stage,
@@ -281,77 +298,13 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
         catalog: ResolverCatalog,
     ) -> Result<ProjectCreatePackages, ProjectCreateError> {
         let declaration = work.declaration.as_ref().ok_or_else(internal)?;
-        if !catalog.complete
-            || declaration
-                .editor_version
-                .as_deref()
-                .is_some_and(|version| version != work.input.unity_version)
-        {
-            return Err(dependency_error());
-        }
-        let mut candidates = candidates_from_catalog(&catalog)
-            .map_err(|cause| dependency_error().with_source(cause))?;
-        let unity_version = UnityVersion::parse_editor(&work.input.unity_version);
+        let (candidates, requests) =
+            template_requests(declaration, &work.input.unity_version, &catalog)?;
         let direct = declaration
             .dependencies
             .iter()
             .map(|dependency| dependency.package_id.as_str())
             .collect::<BTreeSet<_>>();
-        for (id, version) in &declaration.locked_versions {
-            let version = version.parse::<semver::Version>().map_err(|cause| {
-                dependency_error()
-                    .with_source(cause)
-                    .with_package_id(id.clone())
-            })?;
-            if !candidates.iter().any(|candidate| {
-                &candidate.package_id == id
-                    && candidate.version == version
-                    && crate::unity_version::meets_minimum(unity_version, candidate.unity_minimum)
-            }) {
-                return Err(dependency_error().with_package_id(id.clone()));
-            }
-            candidates
-                .retain(|candidate| &candidate.package_id != id || candidate.version == version);
-        }
-        let mut requests = declaration
-            .dependencies
-            .iter()
-            .map(|dependency| ResolveRequest {
-                allow_unity_incompatible: false,
-                package_id: dependency.package_id.clone(),
-                range: dependency.version_range.clone(),
-                source: None,
-                include_prerelease: true,
-                unity_version,
-            })
-            .collect::<Vec<_>>();
-        for (id, version) in &declaration.locked_versions {
-            if let Some(request) = requests
-                .iter_mut()
-                .find(|request| request.package_id == *id)
-            {
-                let actual = version.parse::<semver::Version>().map_err(|cause| {
-                    dependency_error()
-                        .with_source(cause)
-                        .with_package_id(id.clone())
-                })?;
-                if !VpmRange::parse(&request.range).is_ok_and(|range| range.matches(&actual, true))
-                {
-                    return Err(dependency_error().with_package_id(id.clone()));
-                }
-                request.range = format!("={version}");
-                request.include_prerelease = true;
-            } else {
-                requests.push(ResolveRequest {
-                    allow_unity_incompatible: false,
-                    package_id: id.clone(),
-                    range: format!("={version}"),
-                    source: None,
-                    include_prerelease: true,
-                    unity_version,
-                });
-            }
-        }
         let mut resolution = crate::engine::resolve_project_packages(
             self.materializer.cache(),
             &self.store,
@@ -717,6 +670,78 @@ fn invalid() -> ProjectCreateError {
 
 fn internal() -> ProjectCreateError {
     ProjectCreateError::new(ProjectCreateErrorCode::Internal)
+}
+
+fn template_requests(
+    declaration: &ProjectTemplateDeclaration,
+    version: &str,
+    catalog: &ResolverCatalog,
+) -> Result<(Vec<crate::PackageCandidate>, Vec<ResolveRequest>), ProjectCreateError> {
+    if !catalog.complete
+        || declaration
+            .editor_version
+            .as_deref()
+            .is_some_and(|required| required != version)
+    {
+        return Err(dependency_error());
+    }
+    let mut candidates =
+        candidates_from_catalog(catalog).map_err(|cause| dependency_error().with_source(cause))?;
+    let unity_version = UnityVersion::parse_editor(version);
+    for (id, version) in &declaration.locked_versions {
+        let version = version.parse::<semver::Version>().map_err(|cause| {
+            dependency_error()
+                .with_source(cause)
+                .with_package_id(id.clone())
+        })?;
+        if !candidates.iter().any(|candidate| {
+            &candidate.package_id == id
+                && candidate.version == version
+                && crate::unity_version::meets_minimum(unity_version, candidate.unity_minimum)
+        }) {
+            return Err(dependency_error().with_package_id(id.clone()));
+        }
+        candidates.retain(|candidate| &candidate.package_id != id || candidate.version == version);
+    }
+    let mut requests = declaration
+        .dependencies
+        .iter()
+        .map(|dependency| ResolveRequest {
+            allow_unity_incompatible: false,
+            package_id: dependency.package_id.clone(),
+            range: dependency.version_range.clone(),
+            source: None,
+            include_prerelease: true,
+            unity_version,
+        })
+        .collect::<Vec<_>>();
+    for (id, version) in &declaration.locked_versions {
+        if let Some(request) = requests
+            .iter_mut()
+            .find(|request| request.package_id == *id)
+        {
+            let actual = version.parse::<semver::Version>().map_err(|cause| {
+                dependency_error()
+                    .with_source(cause)
+                    .with_package_id(id.clone())
+            })?;
+            if !VpmRange::parse(&request.range).is_ok_and(|range| range.matches(&actual, true)) {
+                return Err(dependency_error().with_package_id(id.clone()));
+            }
+            request.range = format!("={version}");
+            request.include_prerelease = true;
+        } else {
+            requests.push(ResolveRequest {
+                allow_unity_incompatible: false,
+                package_id: id.clone(),
+                range: format!("={version}"),
+                source: None,
+                include_prerelease: true,
+                unity_version,
+            });
+        }
+    }
+    Ok((candidates, requests))
 }
 
 fn dependency_error() -> ProjectCreateError {
@@ -1414,24 +1439,29 @@ mod tests {
         let engine = &fixture.engine;
         let catalog = sdk_fixture(engine);
         let builtins = engine.builtin_templates().expect("builtins");
-        assert_eq!(builtins.len(), 5);
+        assert_eq!(builtins.len(), 7);
         let mut ids = BTreeSet::new();
-        let mut v3 = zip::ZipArchive::new(std::io::Cursor::new(include_bytes!(
-            "../../../specs/templates/builtin-scaffolds/v3-projects.zip"
-        )))
+        let mut v3 = zip::ZipArchive::new(std::io::Cursor::new(
+            include_bytes!("../../../specs/templates/builtin-scaffolds/v3-projects.zip").as_slice(),
+        ))
         .expect("frozen v3 project data");
         for (index, declaration) in builtins
             .into_iter()
             .filter(|entry| entry.editor_version.is_some())
             .enumerate()
         {
-            let direct = &declaration.dependencies[0].package_id;
-            assert_eq!(declaration.dependencies[0].version_range, "3.x");
+            let direct = &declaration
+                .dependencies
+                .iter()
+                .find(|dep| dep.package_id != "com.vrchat.base")
+                .expect("SDK family")
+                .package_id;
             let version = declaration
                 .editor_version
                 .as_deref()
                 .expect("versioned builtin");
             let (year, expected) = match version {
+                "6000.0.67f1" => ("6000", "3.11.0-beta.1"),
                 "2022.3.22f1" => ("2022", "3.10.0"),
                 "2019.4.31f1" => ("2019", "3.4.2"),
                 other => panic!("unexpected Unity version {other}"),
@@ -1441,7 +1471,18 @@ mod tests {
                 declaration.id,
                 format!("com.vrclearn.alcomd.templates.vrchat.{family}.{year}")
             );
-            assert!(declaration.name.ends_with(&format!(" {year}")));
+            if year == "6000" {
+                assert!(declaration.name.ends_with(&format!(" · {version}")));
+                assert!(declaration.dependencies.iter().all(|dep| {
+                    assert_eq!(dep.version_range, crate::unity_migration::UNITY6_SDK_RANGE);
+                    let range = VpmRange::parse(&dep.version_range).expect("SDK range");
+                    range.matches(&expected.parse().expect("qualified SDK version"), true)
+                        && !range.matches(&"3.10.6".parse().expect("old stable SDK version"), true)
+                }));
+            } else {
+                assert_eq!(declaration.dependencies[0].version_range, "3.x");
+                assert!(declaration.name.ends_with(&format!(" {year}")));
+            }
             assert!(ids.insert(declaration.id.clone()));
             let id = OperationId::new();
             let mut work = fixture.work(
@@ -1465,8 +1506,16 @@ mod tests {
                 .expect("materialize frozen packages");
             let observation = engine.publish(stage, id, &work).await.expect("publish");
             assert_eq!(observation.unity_version, version);
-            assert_eq!(observation.direct_dependencies.len(), 1);
-            assert_eq!(&observation.direct_dependencies[0].package_id, direct);
+            assert_eq!(
+                observation.direct_dependencies.len(),
+                declaration.dependencies.len()
+            );
+            assert!(
+                observation
+                    .direct_dependencies
+                    .iter()
+                    .any(|dep| &dep.package_id == direct)
+            );
             assert_eq!(observation.locked_dependencies.len(), 2);
             assert!(
                 observation
@@ -1477,8 +1526,14 @@ mod tests {
             let project = Path::new(&observation.root_path);
             let prefix = format!("{family}-{version}/");
             let mut compared = 0;
-            for index in 0..v3.len() {
-                let mut entry = v3.by_index(index).expect("v3 file");
+            let mut unity6 = zip::ZipArchive::new(std::io::Cursor::new(
+                include_bytes!("../../../specs/templates/builtin-scaffolds/unity6-projects.zip")
+                    .as_slice(),
+            ))
+            .expect("Unity 6 project data");
+            let data = if year == "6000" { &mut unity6 } else { &mut v3 };
+            for index in 0..data.len() {
+                let mut entry = data.by_index(index).expect("v3 file");
                 let entry_name = entry.name().expect("v3 file name");
                 let Some(relative) = entry_name.strip_prefix(&prefix).map(str::to_owned) else {
                     continue;
@@ -1494,7 +1549,11 @@ mod tests {
                     expected = String::from_utf8(expected)
                         .expect("v3 settings UTF-8")
                         .replace(
-                            &format!("  productName: vrc-get-template-{family}-{year}"),
+                            &if year == "6000" {
+                                "  productName: AlcomdTemplate".to_owned()
+                            } else {
+                                format!("  productName: vrc-get-template-{family}-{year}")
+                            },
                             &format!("  productName: \"{}\"", work.input.name),
                         )
                         .replace(
@@ -1509,7 +1568,14 @@ mod tests {
                 assert_eq!(actual, expected, "{relative}");
                 compared += 1;
             }
-            assert_eq!(compared, if year == "2019" { 22 } else { 26 });
+            assert_eq!(
+                compared,
+                match year {
+                    "2019" => 22,
+                    "6000" => 27,
+                    _ => 26,
+                }
+            );
             assert_eq!(
                 fs::read(project.join("LICENSE")).expect("template license"),
                 include_bytes!("../../../specs/templates/builtin-scaffolds/LICENSE")
@@ -1529,6 +1595,74 @@ mod tests {
         }
     }
 
+    #[test]
+    fn unity6_templates_resolve_visible_beta_or_compatible_stable_sdk() {
+        let fixture = Fixture::new();
+        let engine = &fixture.engine;
+        let all = sdk_fixture(engine);
+        for template in engine
+            .builtin_templates()
+            .expect("builtin archive catalog")
+            .into_iter()
+            .filter(|t| t.editor_version.as_deref() == Some("6000.0.67f1"))
+        {
+            let mut stable_only = all.clone();
+            stable_only.entries.retain(|e| !e.version.contains('-'));
+            assert!(
+                engine
+                    .check_template_resolution(&template, "6000.0.67f1", &stable_only)
+                    .is_err()
+            );
+            for prefer in [false, true] {
+                let mut catalog = all.clone();
+                catalog.prefer_prerelease = prefer;
+                assert!(
+                    engine
+                        .check_template_resolution(&template, "6000.0.67f1", &catalog)
+                        .is_ok()
+                );
+            }
+            let mut available = all.clone();
+            available.entries.extend(
+                all.entries
+                    .iter()
+                    .filter(|e| e.version == "3.11.0-beta.1")
+                    .cloned()
+                    .map(|mut e| {
+                        e.version = "3.11.0".into();
+                        e
+                    }),
+            );
+            // A newly published stable SDK needs release qualification before it is eligible.
+            let select = |declaration| {
+                let (candidates, requests) =
+                    template_requests(declaration, "6000.0.67f1", &available)
+                        .expect("qualified template requirements");
+                crate::resolver::resolve_project_change(&candidates, &requests, None, false)
+                    .expect("fixture dependency graph")
+            };
+            assert!(
+                select(&template)
+                    .resolution
+                    .packages
+                    .iter()
+                    .all(|package| { package.version.to_string() == "3.11.0-beta.1" })
+            );
+            let mut with_qualified_stable = template.clone();
+            for dependency in &mut with_qualified_stable.dependencies {
+                dependency.version_range = "=3.11.0 || =3.11.0-beta.1".into();
+            }
+            let selected = select(&with_qualified_stable);
+            assert!(
+                selected
+                    .resolution
+                    .packages
+                    .iter()
+                    .all(|p| p.version.to_string() == "3.11.0")
+            );
+        }
+    }
+
     fn sdk_fixture(engine: &ProjectCreateEngine<FixturePinStore>) -> ResolverCatalog {
         let mut entries = Vec::new();
         for package_id in ["com.vrchat.base", "com.vrchat.avatars", "com.vrchat.worlds"] {
@@ -1542,6 +1676,7 @@ mod tests {
                 ("3.5.0", None, None),
                 ("3.9.0", Some("2022.3"), Some("6f1")),
                 ("3.10.0", Some("2022.3"), Some("22f1")),
+                ("3.11.0-beta.1", Some("6000.0"), None),
             ] {
                 let mut manifest = serde_json::json!({
                     "name": package_id, "version": version, "vpmDependencies": dependencies,

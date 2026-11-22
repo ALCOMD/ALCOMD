@@ -17,7 +17,7 @@ import { useTranslation } from "./i18n";
 import { navigationLabels } from "./navigation-labels";
 import { normalizeRequestError, requestErrorMessage } from "./request-errors";
 import type { GuiRpcClient } from "./rpc";
-import { CreateUnityVersionField, useCreateUnityVersion } from "./use-create-unity-version";
+import { CreateUnityVersionField, fixedVersionTemplateLabel, useCreateUnityVersion } from "./use-create-unity-version";
 
 type SourceKind = ProjectTemplateSource["kind"];
 type Selection = { kind: "save"; source: SourceKind; template?: ProjectTemplateRecord }
@@ -484,7 +484,7 @@ function TemplateBaseOptions({ disabled, onSelect, onValid, templates, value }: 
             onChange={(id) => { const next = templates.find((template) => template.id === id); if (next) onSelect(next); }}
             options={templates.map((template) => {
                 const name = template.id === BLANK_PROJECT_TEMPLATE_ID ? t("Blank") : template.name;
-                const label = template.editorVersion === undefined ? name : `${name} · ${template.editorVersion}`;
+                const label = fixedVersionTemplateLabel(name, template.editorVersion);
                 return { value: template.id, label: names.get(template.name) === 1 ? label : `${label} (${template.id})` };
             })} /></div>
         {value !== undefined && !valid ? <p role="alert">{t("The selected template changed. Select it again.")}</p> : null}

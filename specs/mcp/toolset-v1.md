@@ -188,3 +188,5 @@ Windows x64 具名版本在隔离配置实测 HTTP、STDIO 均发出 `2025-11-25
 创建可以使用手工定义、已登记项目或已有模板文件。创建和导出返回同一 Core
 任务。移除返回模板 ID 与移除修订，重放原请求返回同一结果，保留后来重建的模板。
 工具字段见[项目包 Schema](project-inventory-v1.schema.json)和[模板 Schema](template-edit-v1.schema.json)。
+
+Unity 迁移使用 `alcomd_plan_unity_migration` 预检当前项目、目标安装和 SDK。默认先确认项目复制，成功后用副本项目 ID 再取得迁移计划。确认 `alcomd_apply_unity_migration` 写入所选项目，用户可明确选择原地升级。复制与迁移有独立的 Operation 和幂等回执。Unity 6 的副本计划以 `copy_operation_id` 证明写入目标是已完成复制所产生的项目。原地操作显式传入 `in_place: true`。Apply 前可从已生成的迁移计划响应读取 `destination_path` 和 `plan.target_sdk_version`。

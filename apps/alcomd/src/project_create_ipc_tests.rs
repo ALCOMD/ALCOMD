@@ -113,7 +113,7 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
             .collect::<std::collections::BTreeSet<_>>()
     };
     let builtins = installed();
-    assert_eq!(builtins.len(), 5);
+    assert_eq!(builtins.len(), 7);
     assert!(!root.join("project-templates").exists());
 
     let pipe = format!(r"\\.\pipe\alcomd-create-test-{}", OperationId::new());

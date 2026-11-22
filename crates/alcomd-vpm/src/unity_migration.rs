@@ -1,5 +1,7 @@
 //! Migration-private VPM and Unity process adapter for the sealed M7 workflow.
 
+mod upgrade_marker;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 
@@ -30,6 +32,11 @@ use crate::resolver::{
 use crate::staging_package::{extract_package_objects, fetch_package_objects};
 use crate::{PackageCache, VpmReader, candidates_from_catalog, materialize_vpm_manifest};
 
+use alcomd_application::{
+    PrincipalId, ProjectType, UNITY6_MIGRATION_PROFILE, workflow_resource_owner,
+};
+
+pub(crate) const UNITY6_SDK_RANGE: &str = "=3.11.0-beta.1";
 const PROJECT_VERSION_LIMIT: u64 = 64 * 1024;
 const RECOVERY_OBSERVATION_LIMIT_MS: u64 = 300_000;
 const PREPARATION_ARTIFACT_LIMIT: u64 = 4 * 1024 * 1024;
@@ -119,6 +126,24 @@ where
         if executable.filesystem_identity() != target.observation.filesystem_identity {
             return Err(error(M7UnityMigrationErrorCode::InstallationNotFound));
         }
+        let target_sdk_version =
+            if authority.preparation_profile.as_deref() == Some(UNITY6_MIGRATION_PROFILE) {
+                let resolution = self
+                    .resolve_unity6(&authority.resource_owner, &project, None)
+                    .await?;
+                Some(
+                    resolution
+                        .resolution
+                        .packages
+                        .iter()
+                        .find(|p| p.package_id == "com.vrchat.base")
+                        .ok_or_else(|| error(M7UnityMigrationErrorCode::Unsupported))?
+                        .version
+                        .to_string(),
+                )
+            } else {
+                None
+            };
         let plan_id = PlanId::new();
         let request_fingerprint = fingerprint(&PlanRequestFingerprint {
             version: 1,
@@ -138,6 +163,7 @@ where
             writer: &writer,
             classification: authority.classification.as_str(),
             preparation_profile: authority.preparation_profile.as_deref(),
+            target_sdk_version: target_sdk_version.as_deref(),
         })?;
         let expires_at_ms = now_ms
             .checked_add(UNITY_MIGRATION_PLAN_EXPIRY_MS)
@@ -146,6 +172,7 @@ where
             plan_id,
             source_unity_version: authority.source_unity_version,
             source_revision_metadata: project.observation.unity_revision.clone(),
+            target_sdk_version,
             project_root_identity: identity,
             project_version_marker_sha256: marker_sha256,
             target_unity_version: authority.target_unity_version,
@@ -200,6 +227,15 @@ where
         if executable.filesystem_identity() != target.observation.filesystem_identity {
             return Err(error(M7UnityMigrationErrorCode::InstallationNotFound));
         }
+        if plan.draft.preparation_profile.as_deref() == Some(UNITY6_MIGRATION_PROFILE) {
+            let sdk = plan
+                .draft
+                .target_sdk_version
+                .as_deref()
+                .ok_or_else(|| error(M7UnityMigrationErrorCode::PlanStale))?;
+            self.resolve_unity6(&workflow_resource_owner(&plan.owner), &project, Some(sdk))
+                .await?;
+        }
         Ok(())
     }
 
@@ -221,7 +257,7 @@ where
         }
         if plan.draft.preparation_profile.is_some() {
             return self
-                .materialize_vrchat_2019_to_2022(operation_id, plan, evidence)
+                .materialize_vrchat_preparation(operation_id, plan, evidence)
                 .await;
         }
         std::fs::create_dir_all(&operation_root)
@@ -257,7 +293,7 @@ where
         }
         if plan.draft.preparation_profile.is_some() {
             return self
-                .apply_vrchat_2019_to_2022(operation_id, plan, evidence)
+                .apply_vrchat_preparation(operation_id, plan, evidence)
                 .await;
         }
         evidence.preparation_complete = true;
@@ -269,6 +305,15 @@ where
         plan: UnityMigrationPlanRecord,
         mut evidence: UnityMigrationEvidence,
     ) -> Result<(Self::Process, UnityMigrationEvidence), M7UnityMigrationError> {
+        let root = PathBuf::from(&plan.draft.project.observation.root_path);
+        let (root, identity) = alcomd_platform::resolve_directory_identity(&root)
+            .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
+        if identity != plan.draft.project_root_identity {
+            return Err(error(M7UnityMigrationErrorCode::SourceChanged));
+        }
+        if project_version_marker_sha256(&root)? != plan.draft.project_version_marker_sha256 {
+            return Err(error(M7UnityMigrationErrorCode::SourceChanged));
+        }
         if plan.draft.preparation_profile.is_some() {
             let operation_id = evidence
                 .preparation_operation_id
@@ -279,15 +324,9 @@ where
             {
                 return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
             }
-        }
-        let root = PathBuf::from(&plan.draft.project.observation.root_path);
-        let (root, identity) = alcomd_platform::resolve_directory_identity(&root)
-            .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
-        if identity != plan.draft.project_root_identity {
-            return Err(error(M7UnityMigrationErrorCode::SourceChanged));
-        }
-        if project_version_marker_sha256(&root)? != plan.draft.project_version_marker_sha256 {
-            return Err(error(M7UnityMigrationErrorCode::SourceChanged));
+            let artifact =
+                read_preparation_artifact(&operation_root, operation_id, &plan, &evidence)?;
+            verify_prepared_project(&root, &artifact)?;
         }
         let executable = validate_unity_executable(Path::new(
             &plan.draft.target_installation.observation.executable_path,
@@ -497,31 +536,93 @@ where
         })
     }
 
-    async fn materialize_vrchat_2019_to_2022(
+    async fn resolve_unity6(
         &self,
-        operation_id: OperationId,
-        plan: UnityMigrationPlanRecord,
-        mut evidence: UnityMigrationEvidence,
-    ) -> Result<UnityMigrationEvidence, M7UnityMigrationError> {
-        if plan.draft.preparation_profile.as_deref() != Some("vrchat-2019-to-2022-v1") {
-            return Err(error(M7UnityMigrationErrorCode::Unsupported));
+        owner: &PrincipalId,
+        project: &ProjectRecord,
+        frozen: Option<&str>,
+    ) -> Result<crate::resolver::UnityMigrationResolution, M7UnityMigrationError> {
+        let family = match project.observation.project_type {
+            ProjectType::Avatars => "com.vrchat.avatars",
+            ProjectType::Worlds => "com.vrchat.worlds",
+            _ => return Err(error(M7UnityMigrationErrorCode::Unsupported)),
+        };
+        let mut requests = migration_requests(project, "6000.0.67f1")?;
+        let sdk_range = frozen.map_or_else(|| UNITY6_SDK_RANGE.to_owned(), |v| format!("={v}"));
+        requests.retain(|r| r.package_id != family && r.package_id != "com.vrchat.base");
+        for id in [family, "com.vrchat.base"] {
+            requests.push(ResolveRequest {
+                package_id: id.to_owned(),
+                range: sdk_range.clone(),
+                source: None,
+                include_prerelease: true,
+                unity_version: crate::UnityVersion::parse_editor("6000.0.67f1"),
+                allow_unity_incompatible: false,
+            });
         }
-        let operation_root = self.operation_root(operation_id);
-        if operation_root.exists() {
-            std::fs::remove_dir_all(&operation_root)
-                .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
-        }
-        let materialized = operation_root.join("materialized");
-        let package_staging = materialized.join("packages");
-        std::fs::create_dir_all(&package_staging)
+        let mut settings = self
+            .reader
+            .package_settings()
+            .await
             .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
+        let get = |settings| self.store.resolver_catalog(owner.clone(), true, settings);
+        let store_error = |cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause);
+        let solve = |catalog: &alcomd_application::ResolverCatalog| {
+            if !catalog.complete {
+                return Err(error(M7UnityMigrationErrorCode::SourceChanged));
+            }
+            let candidates = candidates_from_catalog(catalog).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::Unsupported).with_source(cause)
+            })?;
+            let mut selected = crate::resolver::resolve_project_change(
+                &candidates,
+                &requests,
+                None,
+                catalog.prefer_prerelease,
+            )
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?;
+            for package in &mut selected.resolution.packages {
+                package.direct = package.package_id == family
+                    || project
+                        .observation
+                        .direct_dependencies
+                        .iter()
+                        .any(|dep| dep.package_id == package.package_id);
+            }
+            let direct_ids: BTreeSet<_> = selected
+                .resolution
+                .packages
+                .iter()
+                .filter(|p| p.direct)
+                .map(|p| p.package_id.as_str())
+                .collect();
+            selected
+                .resolution
+                .dependency_edges
+                .retain(|edge| !edge.direct || direct_ids.contains(edge.to_package_id.as_str()));
+            Ok(selected)
+        };
+        let catalog = get(settings.clone()).await.map_err(store_error)?;
+        let result = solve(&catalog);
+        if result.is_err() && catalog.complete && !settings.show_prerelease {
+            settings.show_prerelease = true;
+            if solve(&get(settings).await.map_err(store_error)?).is_ok() {
+                return Err(error(M7UnityMigrationErrorCode::PrereleasePackagesHidden));
+            }
+        }
+        result
+    }
 
-        let snapshot = inspect_migration_package_project(&plan.draft.project)
-            .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
+    async fn resolve_legacy(
+        &self,
+        owner: &PrincipalId,
+        project: &ProjectRecord,
+        target: &str,
+    ) -> Result<crate::resolver::UnityMigrationResolution, M7UnityMigrationError> {
         let catalog = self
             .store
             .resolver_catalog(
-                plan.owner.clone(),
+                owner.clone(),
                 true,
                 self.reader.package_settings().await.map_err(|cause| {
                     error(M7UnityMigrationErrorCode::Internal).with_source(cause)
@@ -534,8 +635,8 @@ where
         }
         let candidates = candidates_from_catalog(&catalog)
             .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?;
-        let requests = migration_requests(&plan.draft.project, &plan.draft.target_unity_version)?;
-        let mut migration_resolution = if requests.is_empty() {
+        let requests = migration_requests(project, target)?;
+        Ok(if requests.is_empty() {
             crate::resolver::UnityMigrationResolution {
                 resolution: crate::Resolution {
                     packages: Vec::new(),
@@ -546,12 +647,55 @@ where
         } else {
             resolve_unity_migration_packages(&candidates, &requests)
                 .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?
+        })
+    }
+
+    async fn materialize_vrchat_preparation(
+        &self,
+        operation_id: OperationId,
+        plan: UnityMigrationPlanRecord,
+        mut evidence: UnityMigrationEvidence,
+    ) -> Result<UnityMigrationEvidence, M7UnityMigrationError> {
+        let profile = plan
+            .draft
+            .preparation_profile
+            .as_deref()
+            .ok_or_else(|| error(M7UnityMigrationErrorCode::Unsupported))?;
+        let removals = upm_removals(profile)?;
+        let operation_root = self.operation_root(operation_id);
+        if operation_root.exists() {
+            std::fs::remove_dir_all(&operation_root)
+                .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
+        }
+        let materialized = operation_root.join("materialized");
+        let package_staging = materialized.join("packages");
+        std::fs::create_dir_all(&package_staging)
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
+
+        let snapshot = inspect_migration_package_project(&plan.draft.project)
+            .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
+        let owner = workflow_resource_owner(&plan.owner);
+        let mut migration_resolution = if profile == UNITY6_MIGRATION_PROFILE {
+            let version = plan
+                .draft
+                .target_sdk_version
+                .as_deref()
+                .ok_or_else(|| error(M7UnityMigrationErrorCode::PlanStale))?;
+            self.resolve_unity6(&owner, &plan.draft.project, Some(version))
+                .await?
+        } else {
+            self.resolve_legacy(
+                &owner,
+                &plan.draft.project,
+                &plan.draft.target_unity_version,
+            )
+            .await?
         };
         validate_obligation_scope(&migration_resolution.legacy_cleanup_obligations)?;
         crate::engine::pin_resolution_archives(
             &self.cache,
             &self.store,
-            &plan.owner,
+            &owner,
             &mut migration_resolution.resolution,
         )
         .await
@@ -572,7 +716,7 @@ where
             return Err(error(M7UnityMigrationErrorCode::Internal));
         }
         let current_upm = read_project_component(&root, &["Packages", "manifest.json"])?;
-        let next_upm = remove_fixed_xr_dependencies(&current_upm)?;
+        let next_upm = prepare_upm(&current_upm, profile)?;
         write_new_synced_file(&materialized.join("vpm-manifest.new"), &next_vpm)?;
         write_new_synced_file(&materialized.join("upm-manifest.new"), &next_upm)?;
 
@@ -652,7 +796,13 @@ where
                     return Err(error(M7UnityMigrationErrorCode::Unsupported));
                 }
             }
-            legacy_paths.extend(sealed_legacy_paths(&root, &metadata)?);
+            if profile == UNITY6_MIGRATION_PROFILE {
+                crate::legacy::verify_absent(&root, &metadata).map_err(|cause| {
+                    error(M7UnityMigrationErrorCode::Unsupported).with_source(cause)
+                })?;
+            } else {
+                legacy_paths.extend(sealed_legacy_paths(&root, &metadata)?);
+            }
             pinned_obligations.push(PinnedLegacyObligation::from_obligation(
                 obligation,
                 source
@@ -663,13 +813,30 @@ where
         let legacy_paths = validate_legacy_paths(&root, legacy_paths)?;
         let unlocked_conflicts =
             find_unlocked_conflicts(&root, &plan.draft.project, &package_plan.change_set)?;
+        if profile == UNITY6_MIGRATION_PROFILE
+            && (!legacy_packages.is_empty()
+                || legacy_paths
+                    .iter()
+                    .any(|path| path.kind != LegacyPathKind::Missing)
+                || !unlocked_conflicts.is_empty())
+        {
+            return Err(error(M7UnityMigrationErrorCode::Unsupported));
+        }
         validate_legacy_package_removals(&package_plan.change_set, &legacy_packages)?;
 
+        let upgrade_marker = if profile == UNITY6_MIGRATION_PROFILE {
+            let marker = upgrade_marker::collect(&root, &plan.draft.source_unity_version)?;
+            upgrade_marker::check_destination(&root, &marker)?;
+            Some(marker)
+        } else {
+            None
+        };
         let artifact = MigrationPreparationArtifact {
+            upgrade_marker,
             version: 1,
             operation_id: operation_id.to_string(),
             plan_fingerprint: plan.draft.plan_fingerprint.clone(),
-            profile: "vrchat-2019-to-2022-v1".to_owned(),
+            profile: profile.to_owned(),
             project_snapshot_fingerprint: package_plan.project_snapshot_fingerprint,
             change_set_fingerprint: package_plan.change_set_fingerprint,
             change_set: package_plan.change_set,
@@ -678,7 +845,7 @@ where
             legacy_packages: legacy_packages.into_iter().collect(),
             legacy_paths,
             unlocked_conflicts,
-            xr_upm_dependencies: XR_UPM_DEPENDENCIES.map(str::to_owned).to_vec(),
+            removed_upm_dependencies: removals.iter().map(|id| (*id).to_owned()).collect(),
             prepared_package_trees,
             vpm_manifest_before_sha256: Sha256::digest(&current_vpm).into(),
             vpm_manifest_sha256: Sha256::digest(&next_vpm).into(),
@@ -704,41 +871,14 @@ where
         Ok(evidence)
     }
 
-    async fn apply_vrchat_2019_to_2022(
+    async fn apply_vrchat_preparation(
         &self,
         operation_id: OperationId,
         plan: UnityMigrationPlanRecord,
         mut evidence: UnityMigrationEvidence,
     ) -> Result<UnityMigrationEvidence, M7UnityMigrationError> {
         let operation_root = self.operation_root(operation_id);
-        let bytes = read_regular_file(
-            &operation_root.join("preparation-plan.json"),
-            PREPARATION_ARTIFACT_LIMIT,
-        )?;
-        if evidence.preparation_artifact_sha256 != Some(Sha256::digest(&bytes).into()) {
-            return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
-        }
-        let artifact: MigrationPreparationArtifact =
-            serde_json::from_slice(&bytes).map_err(|cause| {
-                error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
-            })?;
-        if artifact.version != 1
-            || artifact.operation_id != operation_id.to_string()
-            || artifact.plan_fingerprint != plan.draft.plan_fingerprint
-            || artifact.profile != "vrchat-2019-to-2022-v1"
-            || artifact.xr_upm_dependencies != XR_UPM_DEPENDENCIES.map(str::to_owned).to_vec()
-        {
-            return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
-        }
-        if Sha256::digest(
-            serde_json::to_vec(&artifact.change_set)
-                .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?,
-        )
-        .as_slice()
-            != artifact.change_set_fingerprint
-        {
-            return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
-        }
+        let artifact = read_preparation_artifact(&operation_root, operation_id, &plan, &evidence)?;
         let root = PathBuf::from(&plan.draft.project.observation.root_path);
         let (root, identity) =
             alcomd_platform::resolve_directory_identity(&root).map_err(|cause| {
@@ -766,6 +906,12 @@ where
                 != artifact.upm_manifest_before_sha256
             {
                 return Err(error(M7UnityMigrationErrorCode::SourceChanged));
+            }
+            if let Some(marker) = &artifact.upgrade_marker {
+                if upgrade_marker::collect(&root, &plan.draft.source_unity_version)? != *marker {
+                    return Err(error(M7UnityMigrationErrorCode::SourceChanged));
+                }
+                upgrade_marker::check_destination(&root, marker)?;
             }
             validate_materialized_packages(&operation_root, &artifact)?;
             write_transaction_marker(
@@ -815,6 +961,9 @@ where
             phase = Some(PreparationTransactionPhase::UpmManifestReplaced);
         }
         if phase == Some(PreparationTransactionPhase::UpmManifestReplaced) {
+            if let Some(marker) = &artifact.upgrade_marker {
+                upgrade_marker::publish(&root, marker, operation_id)?;
+            }
             quarantine_legacy_paths(&root, &operation_root, &artifact.legacy_paths)?;
             verify_prepared_project(&root, &artifact)?;
             write_transaction_marker(
@@ -862,6 +1011,8 @@ struct PlanAuthorityFingerprint<'a> {
     writer: &'a UnityWriterState,
     classification: &'a str,
     preparation_profile: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_sdk_version: Option<&'a str>,
 }
 
 #[derive(Serialize)]
@@ -888,7 +1039,8 @@ struct MigrationPreparationArtifact {
     legacy_packages: Vec<String>,
     legacy_paths: Vec<LegacyPathPlan>,
     unlocked_conflicts: Vec<String>,
-    xr_upm_dependencies: Vec<String>,
+    upgrade_marker: Option<upgrade_marker::UpgradeMarker>,
+    removed_upm_dependencies: Vec<String>,
     prepared_package_trees: BTreeMap<String, [u8; 32]>,
     vpm_manifest_before_sha256: [u8; 32],
     vpm_manifest_sha256: [u8; 32],
@@ -1295,10 +1447,51 @@ fn quarantine_legacy_paths(
     Ok(())
 }
 
+fn read_preparation_artifact(
+    operation_root: &Path,
+    operation_id: OperationId,
+    plan: &UnityMigrationPlanRecord,
+    evidence: &UnityMigrationEvidence,
+) -> Result<MigrationPreparationArtifact, M7UnityMigrationError> {
+    let bytes = read_regular_file(
+        &operation_root.join("preparation-plan.json"),
+        PREPARATION_ARTIFACT_LIMIT,
+    )?;
+    if evidence.preparation_artifact_sha256 != Some(Sha256::digest(&bytes).into()) {
+        return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+    }
+    let artifact: MigrationPreparationArtifact = serde_json::from_slice(&bytes)
+        .map_err(|cause| error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause))?;
+    if artifact.version != 1
+        || artifact.operation_id != operation_id.to_string()
+        || artifact.plan_fingerprint != plan.draft.plan_fingerprint
+        || Some(artifact.profile.as_str()) != plan.draft.preparation_profile.as_deref()
+        || artifact.removed_upm_dependencies != upm_removals(&artifact.profile)?
+        || artifact.upgrade_marker.is_some() != (artifact.profile == UNITY6_MIGRATION_PROFILE)
+    {
+        return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+    }
+    if Sha256::digest(
+        serde_json::to_vec(&artifact.change_set)
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?,
+    )
+    .as_slice()
+        != artifact.change_set_fingerprint
+    {
+        return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+    }
+    Ok(artifact)
+}
+
 fn verify_prepared_project(
     root: &Path,
     artifact: &MigrationPreparationArtifact,
 ) -> Result<(), M7UnityMigrationError> {
+    if let Some(marker) = &artifact.upgrade_marker
+        && !upgrade_marker::check_destination(root, marker)?
+    {
+        return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+    }
     if hash_optional_regular_file(&root.join("Packages").join("vpm-manifest.json"))?
         != Some(artifact.vpm_manifest_sha256)
         || hash_optional_regular_file(&root.join("Packages").join("manifest.json"))?
@@ -1654,7 +1847,15 @@ fn validate_legacy_package_removals(
     Ok(())
 }
 
-fn remove_fixed_xr_dependencies(bytes: &[u8]) -> Result<Vec<u8>, M7UnityMigrationError> {
+fn upm_removals(profile: &str) -> Result<&'static [&'static str], M7UnityMigrationError> {
+    match profile {
+        "vrchat-2019-to-2022-v1" => Ok(&XR_UPM_DEPENDENCIES),
+        UNITY6_MIGRATION_PROFILE => Ok(&["com.unity.ide.vscode"]),
+        _ => Err(error(M7UnityMigrationErrorCode::Unsupported)),
+    }
+}
+
+fn prepare_upm(bytes: &[u8], profile: &str) -> Result<Vec<u8>, M7UnityMigrationError> {
     let mut value = crate::parse_bounded_json(bytes, M3ErrorCode::ProjectManifestInvalid)
         .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?;
     let dependencies = value
@@ -1662,8 +1863,19 @@ fn remove_fixed_xr_dependencies(bytes: &[u8]) -> Result<Vec<u8>, M7UnityMigratio
         .and_then(|object| object.get_mut("dependencies"))
         .and_then(Value::as_object_mut)
         .ok_or_else(|| error(M7UnityMigrationErrorCode::Unsupported))?;
-    for package_id in XR_UPM_DEPENDENCIES {
-        dependencies.remove(package_id);
+    for package_id in upm_removals(profile)? {
+        dependencies.remove(*package_id);
+    }
+    if profile == UNITY6_MIGRATION_PROFILE {
+        for (id, version) in [
+            ("com.unity.ai.navigation", "2.0.8"),
+            ("com.unity.burst", "1.8.24"),
+            ("com.unity.feature.development", "1.0.0"),
+            ("com.unity.timeline", "1.8.8"),
+            ("com.unity.ugui", "2.0.0"),
+        ] {
+            dependencies.insert(id.into(), Value::String(version.into()));
+        }
     }
     let mut result = serde_json::to_vec_pretty(&value)
         .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
@@ -1733,7 +1945,7 @@ fn sync_tree(root: &Path) -> Result<(), M7UnityMigrationError> {
                 directories.push((entry.path(), depth + 1));
             } else if metadata.is_file() {
                 std::fs::OpenOptions::new()
-                    .read(true)
+                    .write(true)
                     .open(entry.path())
                     .and_then(|file| file.sync_all())
                     .map_err(|cause| {
@@ -1900,6 +2112,7 @@ mod tests {
                 writer: &writer,
                 classification: "patch_or_minor_upgrade",
                 preparation_profile: None,
+                target_sdk_version: None,
             };
             assert_eq!(
                 serde_json::to_vec(&authority).expect("production authority bytes"),
@@ -1968,6 +2181,7 @@ mod tests {
                 writer: &writer,
                 classification: "patch_or_minor_upgrade",
                 preparation_profile: None,
+                target_sdk_version: None,
             })
             .expect("hash production migration authority")
         };
@@ -1988,15 +2202,17 @@ mod tests {
 
     #[test]
     fn sealed_profile_removes_only_the_two_fixed_xr_dependencies() {
-        let result = remove_fixed_xr_dependencies(
+        let result = prepare_upm(
             br#"{
                 "dependencies": {
                     "com.unity.xr.oculus.standalone": "1.0.0",
                     "com.unity.xr.openvr.standalone": "2.0.0",
+                    "com.unity.ide.vscode": "1.2.5",
                     "com.example.keep": "3.0.0"
                 },
                 "scopedRegistries": [{"name":"keep"}]
             }"#,
+            "vrchat-2019-to-2022-v1",
         )
         .expect("rewrite UPM manifest");
         let value: Value = serde_json::from_slice(&result).expect("parse rewritten manifest");
@@ -2005,8 +2221,59 @@ mod tests {
             .expect("dependency object");
         assert!(!dependencies.contains_key("com.unity.xr.oculus.standalone"));
         assert!(!dependencies.contains_key("com.unity.xr.openvr.standalone"));
+        assert_eq!(dependencies["com.unity.ide.vscode"], "1.2.5");
         assert_eq!(dependencies["com.example.keep"], "3.0.0");
         assert_eq!(value["scopedRegistries"][0]["name"], "keep");
+    }
+
+    #[test]
+    fn unity6_prepares_only_the_approved_upm_changes_and_publishes_scene_guids()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let initial = br#"{"dependencies":{"com.unity.ide.vscode":"1.2.5","com.example.keep":"1.0.0","com.unity.xr.openvr.standalone":"2.0.0"},"other":true}"#;
+        let upm: Value = serde_json::from_slice(&prepare_upm(initial, UNITY6_MIGRATION_PROFILE)?)?;
+        assert!(upm["dependencies"].get("com.unity.ide.vscode").is_none());
+        assert_eq!(
+            upm["dependencies"]["com.unity.xr.openvr.standalone"],
+            "2.0.0"
+        );
+        assert_eq!(upm["dependencies"]["com.example.keep"], "1.0.0");
+        assert_eq!(upm["dependencies"]["com.unity.ugui"], "2.0.0");
+        assert_eq!(upm["other"], true);
+        for source in ["2022.3.6f1", "2022.3.22f1"] {
+            let fixture = TestDirectory::new("unity6-upgrade-marker");
+            let root = fixture.path();
+            fs::create_dir_all(root.join("Assets/nested"))?;
+            let empty = upgrade_marker::collect(root, source)?;
+            assert_eq!(
+                serde_json::to_value(&empty)?["sceneList"],
+                serde_json::json!([])
+            );
+            fs::write(root.join("Assets/nested/demo.unity"), [])?;
+            assert!(upgrade_marker::collect(root, source).is_err());
+            fs::write(
+                root.join("Assets/nested/demo.unity.meta"),
+                "guid: 0123456789abcdef0123456789abcdef\n",
+            )?;
+            let marker = upgrade_marker::collect(root, source)?;
+            let id = OperationId::new();
+            let library = root.join("Library");
+            fs::create_dir(&library)?;
+            let interrupted = library.join(format!(".alcomd-{id}-upgrade-marker.part"));
+            let serialized = serde_json::to_vec(&marker)?;
+            fs::write(&interrupted, &serialized[..serialized.len() / 2])?;
+            upgrade_marker::publish(root, &marker, id)?;
+            assert!(!interrupted.exists());
+            upgrade_marker::publish(root, &marker, id)?;
+            let value: Value = serde_json::from_slice(&fs::read(
+                root.join("Library/VRCProjectUpgradeMarker.json"),
+            )?)?;
+            assert_eq!(value["upgradedFrom"]["full"], source);
+            assert_eq!(value["sceneList"][0], "0123456789abcdef0123456789abcdef");
+            assert_eq!(value["wizardCompleted"], false);
+            assert!(value["upgradedScenes"].is_null());
+            assert!(upgrade_marker::publish(root, &empty, id).is_err());
+        }
+        Ok(())
     }
 
     #[test]
@@ -2123,6 +2390,7 @@ mod tests {
         let after = b"{\"locked\":{\"com.vrchat.base\":\"3.7.0\"}}\n";
         fs::write(&project_manifest, before).expect("write old manifest");
         fs::write(&materialized, after).expect("write new manifest");
+        sync_tree(&operation_root).expect("flush the staged manifest and its directories");
 
         replace_migration_manifest(
             &project_manifest,

@@ -945,6 +945,7 @@
                         "project_unity_migration_plan_stale",
                         "project_unity_migration_recovery_required",
                         "project_unity_migration_source_changed",
+                        "prerelease_packages_hidden",
                         "project_unity_migration_unsupported",
                         "project_version_invalid",
                         "project_version_missing",

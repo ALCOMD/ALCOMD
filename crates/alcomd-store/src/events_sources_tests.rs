@@ -541,6 +541,7 @@ fn staged_operation(connection: &mut Connection, kind: &str) -> OperationId {
                     target_installation: installation,
                     writer_evidence: writer,
                     classification: UnityMigrationClassificationKind::PatchOrMinorUpgrade,
+                    target_sdk_version: None,
                     preparation_profile: None,
                     plan_fingerprint: "a".repeat(64),
                     request_fingerprint: "{\"version\":1}".to_owned(),

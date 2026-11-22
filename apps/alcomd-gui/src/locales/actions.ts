@@ -2,6 +2,16 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "VRChat SDK": { "zh-CN": "VRChat SDK", "ja-JP": "VRChat SDK" },
+    "Migration target": {"zh-CN": "迁移位置", "ja-JP": "移行先"},
+    "Migrate a copy": {"zh-CN": "迁移副本", "ja-JP": "コピーを移行"},
+    "Upgrade in place": {"zh-CN": "原地升级", "ja-JP": "元のプロジェクトを更新"},
+    "Copy folder name": {"zh-CN": "副本目录名", "ja-JP": "コピー先のフォルダー名"},
+    "Back up this project before upgrading in place.": {"zh-CN": "原地升级前请先备份此工程。", "ja-JP": "元のプロジェクトを更新する前にバックアップしてください。"},
+    "After uploading this avatar or world with Unity 6, you can no longer update it with Unity 2022.": {"zh-CN": "用 Unity 6 上传此 Avatar 或 World 后，就无法再用 Unity 2022 更新该内容。", "ja-JP": "Unity 6 でこのアバターまたはワールドをアップロードすると、Unity 2022 では同じコンテンツを更新できなくなります。"},
+    "Complete the VRChat SDK Upgrade Wizard in Unity.": {"zh-CN": "请在 Unity 中完成 VRChat SDK 升级向导。", "ja-JP": "Unity で VRChat SDK のアップグレードウィザードを完了してください。"},
+    "Enable Show prerelease packages in package settings, then try again.": {"zh-CN": "请在软件包设置中开启「显示预发布包」后重试。", "ja-JP": "パッケージ設定でプレリリース版の表示を有効にしてから、もう一度お試しください。"},
+    "Open project details": {"zh-CN": "打开项目详情", "ja-JP": "プロジェクトの詳細を開く"},
     "Enable extension": { "zh-CN": "启用扩展", "ja-JP": "拡張機能を有効化" },
     "Read active Unity sessions": { "zh-CN": "读取正在运行的 Unity 会话", "ja-JP": "実行中の Unity セッションを読み取る" },
     "Observe which registered projects are open in Unity.": { "zh-CN": "读取已在 Unity 中打开的登记项目。", "ja-JP": "Unity で開いている登録済みプロジェクトを確認します。" },

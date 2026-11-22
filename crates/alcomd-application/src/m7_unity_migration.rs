@@ -53,6 +53,7 @@ pub struct UnityMigrationPlanDraft {
     pub project: ProjectRecord,
     pub source_unity_version: String,
     pub source_revision_metadata: Option<String>,
+    pub target_sdk_version: Option<String>,
     pub project_root_identity: Vec<u8>,
     pub project_version_marker_sha256: [u8; 32],
     pub target_unity_version: String,
@@ -78,6 +79,7 @@ pub struct UnityMigrationPlanRecord {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnityMigrationPlanAuthority {
+    pub resource_owner: PrincipalId,
     pub source_unity_version: String,
     pub target_unity_version: String,
     pub classification: UnityMigrationClassificationKind,
@@ -191,6 +193,7 @@ pub enum M7UnityMigrationErrorCode {
     PlanNotFound,
     PlanStale,
     Unsupported,
+    PrereleasePackagesHidden,
     SourceChanged,
     RecoveryRequired,
     StoreUnavailable,
@@ -511,6 +514,7 @@ where
             &source_unity_version,
             &target_unity_version,
             project.observation.project_type,
+            crate::workflow_resource_owner(access.principal()),
         )?;
         let log_target = crate::log_path("project", project.observation.root_path.clone());
         let Some(draft) = crate::log_execution_step(
@@ -585,6 +589,15 @@ where
             .await
             .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         require_no_target_writer(writer.state)?;
+        let authority = migration_authority(
+            &project.observation.unity_version,
+            &target.observation.unity_version,
+            project.observation.project_type,
+            crate::workflow_resource_owner(access.principal()),
+        )?;
+        if plan.draft.preparation_profile != authority.preparation_profile {
+            return Err(error(M7UnityMigrationErrorCode::PlanStale));
+        }
         self.adapter.revalidate(plan, project, target).await?;
         let outcome = self
             .store
@@ -1137,10 +1150,13 @@ struct ParsedUnityVersion {
     china_increment: Option<u64>,
 }
 
+pub const UNITY6_MIGRATION_PROFILE: &str = "vrchat-2022-to-6000-v1";
+
 fn migration_authority(
     source: &str,
     target: &str,
     project_type: ProjectType,
+    resource_owner: PrincipalId,
 ) -> Result<UnityMigrationPlanAuthority, M7UnityMigrationError> {
     let source_parsed = parse_canonical_unity_version(source)?;
     let target_parsed = parse_canonical_unity_version(target)?;
@@ -1192,7 +1208,7 @@ fn migration_authority(
             UnityMigrationClassificationKind::PatchOrMinorDowngrade
         }
     };
-    let preparation_profile = (source_parsed.major == 2019
+    let mut preparation_profile = (source_parsed.major == 2019
         && target_parsed.major == 2022
         && matches!(
             project_type,
@@ -1203,7 +1219,18 @@ fn migration_authority(
                 | ProjectType::LegacyAvatars
         ))
     .then(|| "vrchat-2019-to-2022-v1".to_owned());
+    if source_parsed.major < 6000 && target_parsed.major == 6000 {
+        if matches!(project_type, ProjectType::Avatars | ProjectType::Worlds)
+            && matches!(source, "2022.3.6f1" | "2022.3.22f1")
+            && target == "6000.0.67f1"
+        {
+            preparation_profile = Some(UNITY6_MIGRATION_PROFILE.to_owned());
+        } else if project_type != ProjectType::Unknown {
+            return Err(error(M7UnityMigrationErrorCode::Unsupported));
+        }
+    }
     Ok(UnityMigrationPlanAuthority {
+        resource_owner,
         source_unity_version: source.to_owned(),
         target_unity_version: target.to_owned(),
         classification,
@@ -1259,6 +1286,7 @@ const fn error_code(code: M7UnityMigrationErrorCode) -> &'static str {
         M7UnityMigrationErrorCode::ProjectRunning => "unity_project_running",
         M7UnityMigrationErrorCode::PlanNotFound => "project_unity_migration_plan_not_found",
         M7UnityMigrationErrorCode::PlanStale => "project_unity_migration_plan_stale",
+        M7UnityMigrationErrorCode::PrereleasePackagesHidden => "prerelease_packages_hidden",
         M7UnityMigrationErrorCode::Unsupported => "project_unity_migration_unsupported",
         M7UnityMigrationErrorCode::SourceChanged => "project_unity_migration_source_changed",
         M7UnityMigrationErrorCode::RecoveryRequired => "project_unity_migration_recovery_required",

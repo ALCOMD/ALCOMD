@@ -42,7 +42,7 @@ test("the catalog exposes each built-in Editor variant and creation uses its fix
     const dialog = page.locator("md-dialog[open]");
     const template = dialog.getByRole("combobox", { name: "Project template", exact: true });
     await expect(template).toContainText("Blank");
-    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(6);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(8);
     await template.click();
     for (const [year, version] of [["2022", "2022.3.22f1"], ["2019", "2019.4.31f1"]]) {
         for (const kind of ["Avatars", "Worlds"]) {
@@ -58,6 +58,31 @@ test("the catalog exposes each built-in Editor variant and creation uses its fix
     expect(await page.evaluate(() => window.templateRequests.find((request) => request.method === "projects.create")?.params))
         .toMatchObject({ unityVersion: "2019.4.31f1", template: { id: "com.vrclearn.alcomd.templates.vrchat.avatars.2019", revision: 3 } });
 });
+
+for (const family of ["Avatars", "Worlds"]) {
+    test(`Unity 6 ${family} creation keeps the draft while enabling prerelease visibility`, async ({ page }) => {
+        await page.goto("/browser-harness.html?route=/projects&hidePrerelease=1");
+        await page.getByRole("button", { name: "Create project", exact: true }).click();
+        const dialog = page.locator("md-dialog[open]").filter({ has: page.locator("#project-create-template") });
+        const template = dialog.getByRole("combobox", { name: "Project template" });
+        await expect(template).toContainText("Blank");
+        await template.click();
+        await dialog.getByRole("option", { name: `VRChat ${family} · 6000.0.67f1`, exact: true }).click();
+        await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("6000.0.67f1");
+        await dialog.getByLabel("Create project name").fill("Unity 6 sample");
+        await dialog.getByRole("button", { name: "Create project", exact: true }).click();
+        await expect(dialog.getByRole("alert")).toContainText("prerelease_packages_hidden");
+        await dialog.getByRole("button", { name: "Show prerelease versions" }).click();
+        await expect(dialog.getByRole("alert")).toHaveCount(0);
+        await expect(dialog.getByLabel("Create project name")).toHaveValue("Unity 6 sample");
+        expect(await page.evaluate(() => window.settingsRequests.map(({ update }) => update))).toEqual([{ packages: { showPrerelease: true } }]);
+        await dialog.getByRole("button", { name: "Create project", exact: true }).click();
+        await expect(dialog).toBeHidden();
+        const requests = await page.evaluate(() => window.templateRequests.filter((r) => r.method === "projects.create"));
+        expect(requests).toHaveLength(2);
+        for (const { params } of requests) expect(params).toMatchObject({ name: "Unity 6 sample", unityVersion: "6000.0.67f1", template: { id: "com.vrclearn.alcomd.templates.vrchat." + family.toLowerCase() + ".6000" } });
+    });
+}
 
 test("creation prefills one compatible Editor but requires a choice for multiple installations", async ({ page }) => {
     await openHarness(page, "/projects");

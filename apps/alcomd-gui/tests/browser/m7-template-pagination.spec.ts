@@ -104,7 +104,8 @@ test("A template read failure stays distinct from an empty catalog and can be ex
     await page.evaluate(() => window.dispatchEvent(new Event("test-templates-ready")));
     await expect.poll(() => dialog.locator("#project-create-template md-select-option").evaluateAll((options) => options.map((option) => option.textContent?.trim()).sort())).toEqual([
         "Blank", "VRChat Avatars 2022 · 2022.3.22f1", "VRChat Worlds 2022 · 2022.3.22f1",
-        "VRChat Avatars 2019 · 2019.4.31f1", "VRChat Worlds 2019 · 2019.4.31f1"
+        "VRChat Avatars 2019 · 2019.4.31f1", "VRChat Worlds 2019 · 2019.4.31f1",
+        "VRChat Avatars · 6000.0.67f1", "VRChat Worlds · 6000.0.67f1"
     ].sort());
     await expect(dialog.getByRole("alert")).toHaveCount(0);
 });

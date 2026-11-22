@@ -193,6 +193,7 @@ pub enum ProjectCreateErrorCode {
     TemplateStale,
     TemplateLocked,
     DependencyUnsatisfied,
+    PrereleasePackagesHidden,
     TargetExists,
     DestinationChanged,
     StoreUnavailable,
@@ -302,6 +303,7 @@ pub const fn project_create_error_name(code: ProjectCreateErrorCode) -> &'static
         ProjectCreateErrorCode::TemplateConflict => "template_conflict",
         ProjectCreateErrorCode::TemplateStale => "revision_conflict",
         ProjectCreateErrorCode::TemplateLocked => "template_builtin_immutable",
+        ProjectCreateErrorCode::PrereleasePackagesHidden => "prerelease_packages_hidden",
         ProjectCreateErrorCode::DependencyUnsatisfied => "template_dependency_unsatisfied",
         ProjectCreateErrorCode::TargetExists => "project_create_target_exists",
         ProjectCreateErrorCode::DestinationChanged => "project_create_destination_changed",
@@ -535,6 +537,13 @@ pub trait ProjectCreateAdapter: Clone + Send + Sync + 'static {
         work: &ProjectCreateWork,
     ) -> Result<Self::Stage, ProjectCreateError>;
 
+    fn check_template_resolution(
+        &self,
+        declaration: &ProjectTemplateDeclaration,
+        version: &str,
+        catalog: &ResolverCatalog,
+    ) -> Result<(), ProjectCreateError>;
+
     fn resolve(
         &self,
         stage: &Self::Stage,
@@ -695,6 +704,26 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
         ]
         .into_iter()
         .all(|permission| access.require(permission).is_ok());
+        if allow_packages
+            && input.unity_version == "6000.0.67f1"
+            && let Some(reference) = &input.template
+        {
+            let record = self
+                .store
+                .project_template_get(crate::workflow_resource_owner(&owner), reference.id.clone())
+                .await?;
+            if record.revision != reference.revision {
+                return Err(ProjectCreateError::new(
+                    ProjectCreateErrorCode::TemplateStale,
+                ));
+            }
+            if !record.declaration.dependencies.is_empty()
+                || !record.declaration.locked_versions.is_empty()
+            {
+                self.check_template_packages(&owner, &record.declaration, &input.unity_version)
+                    .await?;
+            }
+        }
         let accepted = self
             .store
             .project_create_accept(
@@ -718,6 +747,40 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
             });
         }
         Ok(accepted)
+    }
+
+    async fn check_template_packages(
+        &self,
+        owner: &PrincipalId,
+        declaration: &ProjectTemplateDeclaration,
+        version: &str,
+    ) -> Result<(), ProjectCreateError> {
+        let mut settings = self.adapter.source_settings().await?;
+        let catalog = |settings| {
+            self.store
+                .resolver_catalog(crate::workflow_resource_owner(owner), false, settings)
+        };
+        let store_error = |cause| {
+            ProjectCreateError::new(ProjectCreateErrorCode::StoreUnavailable).with_source(cause)
+        };
+        let visible = catalog(settings.clone()).await.map_err(store_error)?;
+        let result = self
+            .adapter
+            .check_template_resolution(declaration, version, &visible);
+        if result.is_err() && visible.complete && !settings.show_prerelease {
+            settings.show_prerelease = true;
+            let all = catalog(settings).await.map_err(store_error)?;
+            if self
+                .adapter
+                .check_template_resolution(declaration, version, &all)
+                .is_ok()
+            {
+                return Err(ProjectCreateError::new(
+                    ProjectCreateErrorCode::PrereleasePackagesHidden,
+                ));
+            }
+        }
+        result
     }
 
     pub async fn list_templates(
@@ -1175,6 +1238,14 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
                     .project_create_finish(id, observation, now_ms()?)
                     .await;
             }
+        }
+        if work.packages.is_none()
+            && work.input.unity_version == "6000.0.67f1"
+            && let Some(declaration) = &work.declaration
+            && (!declaration.dependencies.is_empty() || !declaration.locked_versions.is_empty())
+        {
+            self.check_template_packages(&work.owner, declaration, &work.input.unity_version)
+                .await?;
         }
         let stage = self.adapter.stage(id, &work)?;
         if work.declaration.as_ref().is_some_and(|value| {

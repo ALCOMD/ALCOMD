@@ -13,7 +13,7 @@ import { LoadingState } from "./LoadingState";
 import type { GuiRpcClient } from "./rpc";
 import { useTranslation } from "./i18n";
 import { useProjectDirectory } from "./use-project-directory";
-import { CreateUnityVersionField, useCreateUnityVersion } from "./use-create-unity-version";
+import { CreateUnityVersionField, fixedVersionTemplateLabel, useCreateUnityVersion } from "./use-create-unity-version";
 
 interface ProjectDialogProps {
     client: GuiRpcClient;
@@ -198,6 +198,12 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
             onClose();
         }
     });
+    const showPrereleases = () => run(async (ownsDraft) => {
+        const current = await client.settingsGet();
+        if (ownsDraft() && !current.settings.packages.showPrerelease) {
+            await client.settingsUpdate(current.revision, { packages: { showPrerelease: true } });
+        }
+    });
     const cancelOperation = () => run(async () => {
         if (operation === undefined) return;
         const result = await writeRequest("operationCancel", operation.operationId, operation.revision);
@@ -212,7 +218,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
     const options = [
         ...(catalog?.templates ?? []).map(({ id, name, editorVersion }) => {
             const displayName = id === BLANK_PROJECT_TEMPLATE_ID ? t("Blank") : name;
-            const label = editorVersion === undefined ? displayName : displayName + " · " + editorVersion;
+            const label = fixedVersionTemplateLabel(displayName, editorVersion);
             return { label: nameCounts.get(name) === 1 ? label : label + " (" + id + ")", value: id };
         })
     ];
@@ -255,7 +261,12 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
                     </div>
                 </>}
                 {directoryError === undefined ? null : <div role="alert"><strong>{t("Default project location could not be loaded.")}</strong><p>{t(requestErrorMessage(directoryError.code))}</p><code>{directoryError.code}</code>{directoryError.diagnosticId === undefined ? null : <p><code>{directoryError.diagnosticId}</code></p>}</div>}
-                {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{operationId === undefined && operationRequestOutcomeUnknown(error) ? <p>{t("Retry with the same details to recover the original creation request.")}</p> : null}</div>}
+                {error !== undefined && <div role="alert" data-notification-error={error.code}>
+                    <p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>
+                    {error.diagnosticId && <p><code>{error.diagnosticId}</code></p>}
+                    {error.code === "prerelease_packages_hidden" && <Button type="button" disabled={busy} onClick={() => void showPrereleases()} variant="tonal">{t("Show prerelease versions")}</Button>}
+                    {operationId === undefined && operationRequestOutcomeUnknown(error) && <p>{t("Retry with the same details to recover the original creation request.")}</p>}
+                </div>}
             </div>
         </Dialog>
         {operations.follow()}

@@ -11,6 +11,9 @@ pub fn mcp_workflows_tool_capability(name: &str) -> Option<&'static str> {
         "alcomd_register_project" | "alcomd_create_project" | "alcomd_plan_project_copy" => {
             crate::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1
         }
+        "alcomd_plan_unity_migration" | "alcomd_apply_unity_migration" => {
+            crate::CAPABILITY_PROJECTS_UNITY_MIGRATION_V1
+        }
         "alcomd_apply_project_copy" => crate::CAPABILITY_PROJECTS_COPY_V1,
         "alcomd_create_backup" => crate::CAPABILITY_BACKUPS_CREATE_V1,
         "alcomd_restore_backup" => crate::CAPABILITY_BACKUPS_RESTORE_V1,

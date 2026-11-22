@@ -295,6 +295,92 @@
                 "backups.manage",
                 "projects.create"
             ]
+        },
+        {
+            "name": "alcomd_plan_unity_migration",
+            "title": "Plan a Unity migration",
+            "description": "Preflight the source before copying. By default complete a project copy and use its new project ID to plan the migration.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/planUnityMigrationParams"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/planUnityMigrationResult"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "plan",
+            "requiredPermissions": [
+                "projects.read",
+                "unity.read",
+                "projects.unity-migrate"
+            ]
+        },
+        {
+            "name": "alcomd_apply_unity_migration",
+            "title": "Apply a Unity migration",
+            "description": "Confirm migration of exactly the reviewed project. Use a copy plan by default. For an original, explicitly confirm in-place upgrade after backup. A Unity 6 upload prevents later updates of that content from Unity 2022.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/applyUnityMigrationParams"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/applyUnityMigrationResult"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": [
+                "projects.read",
+                "unity.read",
+                "projects.unity-migrate"
+            ]
         }
     ],
     "$defs": {
@@ -967,6 +1053,251 @@
                     "project_name",
                     "destination_path"
                 ]
+            }
+        },
+        "classification": {
+            "enum": [
+                "patch_or_minor_upgrade",
+                "major_upgrade",
+                "patch_or_minor_downgrade",
+                "major_downgrade",
+                "china_variant_change"
+            ]
+        },
+        "projectUnityMigrationClassification": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "kind",
+                "supported_for_apply"
+            ],
+            "properties": {
+                "kind": {
+                    "$ref": "#/$defs/classification"
+                },
+                "supported_for_apply": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "canonicalUnityVersion": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64,
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)[abfpx][1-9][0-9]*(c[1-9][0-9]*)?$"
+        },
+        "planUnityMigrationParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "project_id",
+                "target_installation_id",
+                "expected_project_revision",
+                "idempotency_key"
+            ],
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "target_installation_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "expected_project_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "idempotency_key": {
+                    "$ref": "#/$defs/key"
+                },
+                "in_place": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "copy_operation_id": {
+                    "$ref": "#/$defs/id"
+                }
+            },
+            "not": {
+                "properties": {
+                    "in_place": {
+                        "const": true
+                    }
+                },
+                "required": [
+                    "in_place",
+                    "copy_operation_id"
+                ]
+            }
+        },
+        "applyUnityMigrationParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "plan_id",
+                "idempotency_key",
+                "confirm"
+            ],
+            "properties": {
+                "plan_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "idempotency_key": {
+                    "$ref": "#/$defs/key"
+                },
+                "confirm": {
+                    "const": true
+                },
+                "in_place": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "copy_operation_id": {
+                    "$ref": "#/$defs/id"
+                }
+            },
+            "not": {
+                "properties": {
+                    "in_place": {
+                        "const": true
+                    }
+                },
+                "required": [
+                    "in_place",
+                    "copy_operation_id"
+                ]
+            }
+        },
+        "planUnityMigrationResult": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "kind",
+                        "current_version"
+                    ],
+                    "properties": {
+                        "kind": {
+                            "const": "no_change"
+                        },
+                        "current_version": {
+                            "$ref": "#/$defs/canonicalUnityVersion"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "kind",
+                        "plan",
+                        "replayed"
+                    ],
+                    "properties": {
+                        "kind": {
+                            "const": "planned"
+                        },
+                        "plan": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "plan_id",
+                                "project_id",
+                                "source_unity_version",
+                                "target_unity_version",
+                                "target_installation_id",
+                                "classification",
+                                "expires_at_ms"
+                            ],
+                            "properties": {
+                                "plan_id": {
+                                    "$ref": "#/$defs/id"
+                                },
+                                "project_id": {
+                                    "$ref": "#/$defs/id"
+                                },
+                                "source_unity_version": {
+                                    "$ref": "#/$defs/canonicalUnityVersion"
+                                },
+                                "target_sdk_version": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "target_unity_version": {
+                                    "$ref": "#/$defs/canonicalUnityVersion"
+                                },
+                                "target_installation_id": {
+                                    "$ref": "#/$defs/id"
+                                },
+                                "classification": {
+                                    "$ref": "#/$defs/projectUnityMigrationClassification"
+                                },
+                                "expires_at_ms": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                }
+                            }
+                        },
+                        "destination_path": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "replayed": {
+                            "type": "boolean"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "copy_required"
+                        },
+                        "copy_plan": {
+                            "$ref": "#/$defs/copyPlan"
+                        },
+                        "source_path": {
+                            "type": "string"
+                        },
+                        "destination_path": {
+                            "type": "string"
+                        },
+                        "target_unity_version": {
+                            "$ref": "#/$defs/canonicalUnityVersion"
+                        },
+                        "target_sdk_version": {
+                            "type": "string"
+                        },
+                        "target_installation_id": {
+                            "$ref": "#/$defs/id"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "copy_plan",
+                        "source_path",
+                        "destination_path",
+                        "target_unity_version",
+                        "target_sdk_version",
+                        "target_installation_id"
+                    ]
+                }
+            ]
+        },
+        "applyUnityMigrationResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "operation_id",
+                "replayed"
+            ],
+            "properties": {
+                "operation_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "replayed": {
+                    "type": "boolean"
+                }
             }
         }
     }

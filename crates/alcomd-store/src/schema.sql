@@ -585,8 +585,9 @@ CREATE TABLE project_unity_migration_plans (
             'patch_or_minor_upgrade', 'major_upgrade',
             'patch_or_minor_downgrade', 'major_downgrade', 'china_variant_change'
         )),
+    target_sdk_version TEXT,
     preparation_profile TEXT
-        CHECK (preparation_profile IS NULL OR preparation_profile = 'vrchat-2019-to-2022-v1'),
+        CHECK (preparation_profile IS NULL OR preparation_profile IN ('vrchat-2019-to-2022-v1', 'vrchat-2022-to-6000-v1')),
     plan_fingerprint TEXT NOT NULL CHECK (length(plan_fingerprint) BETWEEN 1 AND 65536),
     request_fingerprint TEXT NOT NULL CHECK (length(request_fingerprint) BETWEEN 1 AND 65536),
     plan_idempotency_key TEXT NOT NULL CHECK (length(plan_idempotency_key) BETWEEN 1 AND 128),

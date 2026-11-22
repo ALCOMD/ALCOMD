@@ -166,6 +166,7 @@
             "store_unavailable",
             "template_builtin_immutable",
             "template_conflict",
+            "prerelease_packages_hidden",
             "template_dependency_unsatisfied"
         ],
         "projectDelete": [
@@ -283,6 +284,7 @@
             "project_unity_migration_plan_stale",
             "project_unity_migration_recovery_required",
             "project_unity_migration_source_changed",
+            "prerelease_packages_hidden",
             "project_unity_migration_unsupported",
             "revision_conflict",
             "store_unavailable",

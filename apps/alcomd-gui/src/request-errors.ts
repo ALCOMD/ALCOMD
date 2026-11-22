@@ -167,6 +167,8 @@ export function requestErrorMessage(code: string): string {
             return "Built-in templates cannot be edited or removed.";
         case "template_conflict":
             return "A template uses this ID. Choose a different ID or replace the existing user template.";
+        case "prerelease_packages_hidden":
+            return "Enable Show prerelease packages in package settings, then try again.";
         case "template_dependency_unsatisfied":
             return "The template packages could not be resolved. Check the package ranges, repositories and Unity version.";
         case "package_integrity_mismatch":

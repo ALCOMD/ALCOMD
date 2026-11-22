@@ -70,3 +70,9 @@ export function CreateUnityVersionField({ disabled, selection }: { disabled: boo
         </div> : null}
     </>;
 }
+
+export function fixedVersionTemplateLabel(name: string, editorVersion?: string): string {
+    if (editorVersion === undefined) return name;
+    const suffix = " · " + editorVersion;
+    return name.endsWith(suffix) ? name : name + suffix;
+}

@@ -410,6 +410,7 @@ export type ProjectUnityMigrationClassificationKind =
     | "china_variant_change";
 
 export interface ProjectUnityMigrationPlan {
+    targetSdkVersion?: string;
     planId: string;
     projectId: string;
     sourceUnityVersion: string;

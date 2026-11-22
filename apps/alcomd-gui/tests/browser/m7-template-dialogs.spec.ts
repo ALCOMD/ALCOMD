@@ -43,7 +43,7 @@ test("the project template picker displays IDs when names are equal", async ({ p
     await page.goto("/browser-harness.html?route=/projects&template-existing=1&template-same-name=1");
     await page.getByRole("button", { name: "Create project", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
-    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(6);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(8);
     const select = dialog.getByRole("combobox", { name: "Project template", exact: true });
     await select.click();
     await expect(dialog.getByRole("option", { name: "VRChat Avatars 2022 · 2022.3.22f1 (com.vrclearn.alcomd.templates.vrchat.avatars.2022)", exact: true })).toBeVisible();

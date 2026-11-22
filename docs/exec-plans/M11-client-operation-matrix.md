@@ -55,14 +55,14 @@
 | `projectTemplates.save` | 已提供 · 模板工作区创建并保存用户模板 | 已提供 · template save | 已提供 · alcomd_create_project_template |
 | `projects.applyCopy` | 已提供 · 复制对话框确认原计划 | 已提供 · project apply-copy；或 project copy 确认后提交 | 已提供 · alcomd_apply_project_copy；确认原计划 |
 | `projects.applyDeleteDirectory` | 已提供 · 项目目录删除对话框确认原计划 | 已提供 · project apply-delete-directory；或 project delete-directory 确认后提交 | 缺少入口 · 工具目录没有这项项目操作 |
-| `projects.applyUnityMigration` | 已提供 · 确认迁移对话框中已审阅的计划 | 已提供 · project apply-unity-migration；或 project migrate-unity 确认后提交 | 缺少入口 · 工具目录没有这项项目操作 |
+| `projects.applyUnityMigration` | 已提供 · 确认迁移对话框中已审阅的计划 | 已提供 · project apply-unity-migration；或 project migrate-unity 确认后提交 | 已验证 · `alcomd_apply_unity_migration`，见 [Unity 6 实测](unity-6-first-release.md) |
 | `projects.create` | 已提供 · 项目列表打开创建对话框，选择模板、Unity 版本和目录 | 已提供 · project create | 已提供 · alcomd_create_project；经 mcp.projects.create 解析目标并调用创建用例 |
 | `projects.get` | 已提供 · 从项目列表进入项目详情 | 已提供 · project get | 部分可达 · alcomd_get_project；按 ID 查询，返回项目快照选取的字段 |
 | `projects.inspect` | 缺少入口 · 有 projectsInspect 桥接，项目添加对话框直接登记，没有独立检查操作 | 已提供 · project inspect | 缺少入口 · 工具目录没有这项项目操作 |
 | `projects.list` | 已提供 · 项目列表或网格，支持筛选、排序和加载余页 | 部分可达 · project list 可分页；未提供原生列表的搜索和排序视图 | 部分可达 · alcomd_list_projects；支持分页与 OAuth 绑定，缺少搜索/排序视图，列表只返回摘要 |
 | `projects.planCopy` | 已提供 · 项目操作菜单输入副本目录并预演 | 已提供 · project copy --dry-run | 已提供 · alcomd_plan_project_copy；经 mcp.projects.planCopy 解析复制目标 |
 | `projects.planDeleteDirectory` | 已提供 · 项目操作菜单选择删除目录并预演 | 已提供 · project delete-directory --dry-run | 缺少入口 · 工具目录没有这项项目操作 |
-| `projects.planUnityMigration` | 已提供 · 项目选择另一 Unity 安装，预演迁移 | 已提供 · project migrate-unity --dry-run | 缺少入口 · 工具目录没有这项项目操作 |
+| `projects.planUnityMigration` | 已提供 · 项目选择另一 Unity 安装，预演迁移 | 已提供 · project migrate-unity --dry-run | 已验证 · `alcomd_plan_unity_migration`，见 [Unity 6 实测](unity-6-first-release.md) |
 | `projects.refresh` | 缺少入口 · 重新加载列表走 projects.list，项目详情走 projects.get；未发现 projectRefresh 的界面调用 | 已提供 · project refresh | 缺少入口 · 工具目录没有这项项目操作 |
 | `projects.register` | 已提供 · 项目列表选择现有目录登记 | 已提供 · project register | 部分可达 · alcomd_register_project；经 mcp.projects.register 登记目录，只返回已登记项目摘要 |
 | `projects.setFavorite` | 已提供 · 项目行或卡片的收藏按钮 | 缺少入口 · project 命令未提供收藏设置 | 缺少入口 · 工具目录没有这项项目操作 |

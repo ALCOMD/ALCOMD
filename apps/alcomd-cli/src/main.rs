@@ -3,6 +3,7 @@ use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 mod m8_oauth;
+mod unity_migration;
 
 #[derive(Debug)]
 enum CliError {
@@ -331,6 +332,12 @@ enum ProjectCommand {
     /// Apply the previously reviewed Unity migration plan.
     ApplyUnityMigration {
         plan_id: String,
+        /// Explicitly approve a Unity 6 migration at the reviewed project's original path.
+        #[arg(long, conflicts_with = "copy_operation_id")]
+        in_place: bool,
+        /// ID of the completed copy operation that created the reviewed target.
+        #[arg(long)]
+        copy_operation_id: Option<String>,
         #[arg(long)]
         idempotency_key: String,
     },
@@ -366,6 +373,12 @@ enum ProjectCommand {
         idempotency_key: Option<String>,
     },
     MigrateUnity {
+        /// Upgrade the original project. Unity 6 migrations otherwise use a sibling copy.
+        #[arg(long, conflicts_with = "copy_name")]
+        in_place: bool,
+        /// Folder name for the Unity 6 migration copy.
+        #[arg(long)]
+        copy_name: Option<String>,
         project_id: String,
         target_installation_id: String,
         #[arg(long)]
@@ -831,7 +844,7 @@ async fn execute(
         return Err(CliError::Usage("this command does not support --dry-run"));
     }
     validate_mcp_output(&command, options, io::stdout().is_terminal())?;
-    let mut client = alcomd_client::AlcomdClient::connect(config).await?;
+    let mut client = alcomd_client::AlcomdClient::connect(config.clone()).await?;
     let value = match command {
         Command::Mcp{command:McpCommand::Oauth{command}}=>return m8_oauth::execute(&mut client,command,options).await,
         Command::Mcp { command: McpCommand::Client { command } } => match command {
@@ -952,14 +965,9 @@ async fn execute(
                     serde_json::to_value(wait_for_operation(&mut client, accepted.operation_id, options.output_mode).await?)
                 }
             }
-            ProjectCommand::ApplyUnityMigration { plan_id, idempotency_key } => {
-                confirm_frozen_plan(&mut client, alcomd_protocol::PlanKind::ProjectUnityMigration, &plan_id, None, options).await?;
-                let accepted = client.project_apply_unity_migration(alcomd_protocol::ProjectsApplyUnityMigrationParams {
-                    plan_id, idempotency_key,
-                }).await?;
-                if options.no_wait { serde_json::to_value(accepted) } else {
-                    serde_json::to_value(wait_for_operation(&mut client, accepted.operation_id, options.output_mode).await?)
-                }
+            ProjectCommand::ApplyUnityMigration { plan_id, in_place, copy_operation_id, idempotency_key } => {
+                return unity_migration::apply_reviewed(&mut client, &config, plan_id, in_place,
+                    copy_operation_id, idempotency_key, options).await;
             }
             ProjectCommand::Copy {
                 project_id,
@@ -1082,67 +1090,21 @@ async fn execute(
                 }
             }
             ProjectCommand::MigrateUnity {
+                in_place,
+                copy_name,
                 project_id,
                 target_installation_id,
                 expected_revision,
                 plan_idempotency_key,
                 idempotency_key,
-            } => {
-                let planned = client
-                    .project_plan_unity_migration(
-                        alcomd_protocol::ProjectsPlanUnityMigrationParams {
-                            project_id,
-                            target_installation_id,
-                            expected_project_revision: expected_revision,
-                            idempotency_key: plan_idempotency_key,
-                        },
-                    )
-                    .await?;
-                match planned {
-                    alcomd_protocol::ProjectsPlanUnityMigrationResult::NoChange {
-                        current_version,
-                    } => serde_json::to_value(
-                        alcomd_protocol::ProjectsPlanUnityMigrationResult::NoChange {
-                            current_version,
-                        },
-                    ),
-                    alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned {
-                        plan,
-                        replayed,
-                    } if options.dry_run => serde_json::to_value(
-                        alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned {
-                            plan,
-                            replayed,
-                        },
-                    ),
-                    alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned { plan, .. } => {
-                        if !options.yes && options.output_mode == OutputMode::Human {
-                            show_unity_migration_plan(&plan);
-                        }
-                        confirm_high_impact(options)?;
-                        let accepted = client
-                            .project_apply_unity_migration(
-                                alcomd_protocol::ProjectsApplyUnityMigrationParams {
-                                    plan_id: plan.plan_id,
-                                    idempotency_key: idempotency_key.ok_or(CliError::Usage("Apply requires --idempotency-key"))?,
-                                },
-                            )
-                            .await?;
-                        if options.no_wait {
-                            serde_json::to_value(accepted)
-                        } else {
-                            serde_json::to_value(
-                                wait_for_operation(
-                                    &mut client,
-                                    accepted.operation_id,
-                                    options.output_mode,
-                                )
-                                .await?,
-                            )
-                        }
-                    }
-                }
-            }
+            } => return unity_migration::run(
+                &mut client, &config,
+                alcomd_protocol::ProjectsPlanUnityMigrationParams {
+                    project_id, target_installation_id, expected_project_revision: expected_revision,
+                    idempotency_key: plan_idempotency_key,
+                },
+                in_place, copy_name, idempotency_key, options,
+            ).await,
             ProjectCommand::Inspect {
                 path,
                 search_parents,
@@ -1849,6 +1811,11 @@ fn show_copy_plan(plan: &alcomd_protocol::ProjectCopyPlan) {
 }
 
 fn show_unity_migration_plan(plan: &alcomd_protocol::ProjectUnityMigrationPlan) {
+    if let Some(sdk) = &plan.target_sdk_version {
+        eprintln!(
+            "VRChat SDK {sdk}. After uploading this avatar or world with Unity 6, Unity 2022 cannot update that content. Complete the VRChat SDK Upgrade Wizard after migration."
+        );
+    }
     eprintln!(
         "Migrate project {:?} from Unity {:?} to {:?} using installation {:?}",
         plan.project_id,
@@ -1866,7 +1833,7 @@ async fn confirm_frozen_plan(
     options: ExecutionOptions,
 ) -> Result<Option<u64>, CliError> {
     use alcomd_protocol::{PlanKind, PlansGetResult};
-    if options.yes && (expected_revision.is_some() || kind == PlanKind::ProjectUnityMigration) {
+    if options.yes && expected_revision.is_some() {
         return Ok(expected_revision);
     }
     if !options.yes
@@ -1900,14 +1867,6 @@ async fn confirm_frozen_plan(
         {
             show_directory_delete(&plan, options);
             Some(plan.project_revision)
-        }
-        PlansGetResult::ProjectUnityMigration { plan }
-            if kind == PlanKind::ProjectUnityMigration =>
-        {
-            if !options.yes {
-                show_unity_migration_plan(&plan);
-            }
-            None
         }
         _ => return Err(alcomd_client::ClientError::InvalidResponse.into()),
     };
