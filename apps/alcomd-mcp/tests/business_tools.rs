@@ -912,16 +912,17 @@ async fn package_removal_flow(http: bool) {
     let sa = sdk(&token_a.credential, url, &core).await;
     let sb = sdk(&token_b.credential, url, &core).await;
     let mut trace = vec![];
-    let definitions = sa.list_tools(None).await.expect("SDK tools/list");
+    let definitions = sa
+        .list_all_tools()
+        .await
+        .expect("complete SDK tool catalog");
     assert!(
         definitions
-            .tools
             .iter()
             .any(|tool| tool.name == "alcomd_get_project")
     );
     assert!(
         definitions
-            .tools
             .iter()
             .any(|tool| tool.name == "alcomd_apply_package_changes")
     );
