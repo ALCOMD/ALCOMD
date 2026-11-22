@@ -4,8 +4,6 @@ use std::io;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
-#[cfg(test)]
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use alcomd_platform::{DataConfig, IpcConfig, IpcStream};
@@ -35,8 +33,6 @@ pub use m8_oauth::OAuthRejection;
 const START_TIMEOUT: Duration = Duration::from_secs(5);
 const RETRY_INTERVAL: Duration = Duration::from_millis(50);
 const MCP_CREDENTIAL_ENVIRONMENT_KEY: &str = "ALCOMD_MCP_CLIENT_CREDENTIAL";
-#[cfg(test)]
-static INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static REPORTED_PROCESS_INSTANCE: OnceLock<String> = OnceLock::new();
 
 /// Client connection settings.
@@ -1771,7 +1767,9 @@ mod connection_reuse_tests {
 
     #[cfg(windows)]
     async fn pair() -> (IpcStream, IpcStream) {
+        use std::sync::atomic::{AtomicU64, Ordering};
         use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
+        static INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
         let sequence = INSTANCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let pipe = format!(
             r"\\.\pipe\alcomd-client-reuse-test-{}-{sequence}",
