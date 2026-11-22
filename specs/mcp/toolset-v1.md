@@ -57,6 +57,12 @@ OAuth续页必须原样回传；缺失、篡改、换token或授权快照变化�
 重新读取第一页。绑定覆盖认证的令牌、资源和时间 / ProjectId 位置。
 非OAuth继续省略该字段；没有新的工具、State、Config、权限、session或缓存。
 
+## 项目与用户包
+
+项目检查、刷新、收藏、移出列表、目录删除、Unity 迁移、原计划查阅、项目候选查询和用户包登记管理均使用具名工具。每项工具的 `x-alcomd-method` 指向同一原生 Core 用例。项目列表接受排序和搜索视图，续页透传原游标和 `view_sequence`。目录删除与 Unity 迁移先生成计划，确认后以原 `plan_id` 应用。只读的 `alcomd_get_plan` 按种类读取实际调用者持有的计划。写操作的回执未知时，保留首次提交的参数和幂等键。[工具及字段定义](project-catalog-v1.schema.json)
+
+项目候选工具返回 Core 生成的推荐、来源、批量操作与快照。用户包工具管理同一本机目录，保留当前 MCP 连接身份。确认登记或移除时，区分注册记录和磁盘上的包目录。更改原生字段后运行 `python scripts/generate-project-tool-schemas.py`；`--check` 检查已发布的工具定义。
+
 ## 长任务
 
 核心权威状态为 ALCOMD Operation。`alcomd_get_operation` 需要 `operations.read`，`alcomd_cancel_operation` 需要 `operations.cancel`。两项按真实调用者读取或取消自身任务，使用 Core 的生命周期和修订规则。包变更和状态检查有明确结果字段，其余任务提供状态、修订、时间和稳定错误字段。4.0.0 不采用或广告 MCP Tasks。协议请求取消及 STDIO EOF 只结束当前请求，只有显式 `alcomd_cancel_operation` 请求 Core 合作式业务取消。
@@ -79,11 +85,11 @@ MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档�
 
 ## 项目和备份
 
-`mcp.project-workflows.v1` 提供项目操作和备份文件操作。路径使用 Core 所在机器的文件系统。工具、参数及结果见[工具 Schema](project-workflows-v1.schema.json)和 [Core RPC Schema](../rpc/mcp-project-workflows-v1.schema.json)。
+项目登记、创建和复制预演使用各自的原生 Core 方法。路径使用 Core 所在机器的文件系统。参数及结果见[项目工具 Schema](project-catalog-v1.schema.json)和[备份及复制确认工具 Schema](project-workflows-v1.schema.json)。
 
 - `alcomd_register_project` 接收现有项目目录的绝对路径，也可用相对路径在默认项目目录中选择项目。
-- `alcomd_create_project` 接收完整的新项目目录路径，也可给出默认项目目录下的目录名。`alcomd_list_project_templates` 提供可用于创建的模板 ID 和修订。含包的模板沿用现有包与仓库能力。
-- `alcomd_plan_project_copy` 冻结源项目修订和目标父目录身份。目标可填写完整目录路径或默认项目目录下的目录名。确认后用 `alcomd_apply_project_copy` 提交原 Plan。
+- `alcomd_create_project` 接收单独的目录名，父目录可使用默认项目目录，也可通过 `parent_path` 指定绝对路径。`alcomd_list_project_templates` 提供可用于创建的模板 ID 和修订。含包的模板沿用现有包与仓库能力。
+- `alcomd_plan_project_copy` 冻结源项目修订和目标父目录身份。目标提供单独的目录名，父目录可使用默认项目目录或指定绝对路径。确认后用 `alcomd_apply_project_copy` 提交原 Plan。
 - `alcomd_create_backup` 生成 Unity 工程根目录结构的普通 ZIP。可指定完整的 `destination_path`，也可使用默认备份位置。
 - `alcomd_restore_backup` 接收 `archive_path` 和显式确认，可恢复默认备份目录之外的文件。可以用 `destination_path` 指定完整的新项目目录，也可以用 `project_name` 在默认项目目录中命名。两项均省略时使用 ZIP 文件名。
 

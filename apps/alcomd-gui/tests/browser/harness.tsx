@@ -817,7 +817,15 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value(this.settings);
     }
 
-    projectsInspect(): ReturnType<GuiRpcClient["projectsInspect"]> { return this.value({ project: project() }); }
+    projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): ReturnType<GuiRpcClient["projectsInspect"]> {
+        window.resourceRequests.push({ method: "projects.inspect", params: { path, discoveryMode } });
+        return this.value({ project: project() });
+    }
+    async getPlan(params: Parameters<GuiRpcClient["getPlan"]>[0]): ReturnType<GuiRpcClient["getPlan"]> {
+        window.resourceRequests.push({ method: "plans.get", params });
+        if (params.kind !== "package" || params.planId !== PLAN_ID) throw { code: "package_plan_not_found" };
+        return { kind: "package", plan: packagePlan("install") };
+    }
     async projectsList(cursor?: RegistryCursor, view?: ProjectListView, expectedViewSequence?: number): ReturnType<GuiRpcClient["projectsList"]> {
         window.projectListReads += 1;
         if (this.projectReadFailurePending) { this.projectReadFailurePending = false; throw { code: "internal_error" }; }
@@ -923,9 +931,12 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.has("hold-file-selection")) await new Promise<void>((resolve) => window.addEventListener("test-file-selection-ready", () => resolve(), { once: true }));
         return this.value(query.has("cancel-directory") ? undefined : "C:\\Fixture\\Avatar");
     }
-    projectRegister(): ReturnType<GuiRpcClient["projectRegister"]> { return this.value({ project: project(), replayed: false }); }
-    projectRefresh(projectId: string, expectedRevision: number): ReturnType<GuiRpcClient["projectRefresh"]> {
-        window.resourceRequests.push({ method: "projects.refresh", params: { projectId, expectedRevision } });
+    projectRegister(...[source, idempotencyKey]: Parameters<GuiRpcClient["projectRegister"]>): ReturnType<GuiRpcClient["projectRegister"]> {
+        window.resourceRequests.push({ method: "projects.register", params: { source, idempotencyKey } });
+        return this.value({ project: project(), replayed: false });
+    }
+    projectRefresh(projectId: string, expectedRevision: number, idempotencyKey: string): ReturnType<GuiRpcClient["projectRefresh"]> {
+        window.resourceRequests.push({ method: "projects.refresh", params: { projectId, expectedRevision, idempotencyKey } });
         return this.value({ project: project(), replayed: false });
     }
     projectSetFavorite(_projectId: string, favorite: boolean): ReturnType<GuiRpcClient["projectSetFavorite"]> {
@@ -938,9 +949,11 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ project: { ...project(), favorite, revision: 3 }, replayed: false });
     }
     projectUnregister(): ReturnType<GuiRpcClient["projectUnregister"]> { return this.value({ projectId: PROJECT_ID, revision: 3, unregistered: true, replayed: false }); }
-    projectPlanCopy(_sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string): ReturnType<GuiRpcClient["projectPlanCopy"]> {
+    projectPlanCopy(_sourceProjectId: string, expectedRevision: number, target: Parameters<GuiRpcClient["projectPlanCopy"]>[2]): ReturnType<GuiRpcClient["projectPlanCopy"]> {
+        const targetParentPath = target.kind === "default" ? this.settings.directories.projectDirectory : target.parentPath;
+        const targetLeaf = target.name;
         if (query.has("copy-source-missing")) return Promise.reject({ code: "project_copy_source_missing", message: "" });
-        if (query.has("windows-paths")) window.h3Requests.push({ method: "projects.planCopy", params: { sourceProjectId: _sourceProjectId, expectedRevision, targetParentPath, targetLeaf } });
+        if (query.has("windows-paths")) window.h3Requests.push({ method: "projects.planCopy", params: { sourceProjectId: _sourceProjectId, expectedRevision, target } });
         return this.value({
             plan: {
                 planId: "00000000-0000-4000-8000-000000000060",
@@ -1050,7 +1063,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             const avatar = { packageId: "com.example.avatar", displayName: "Avatar tools", yanked: false, unity: ">=2022.3", description: "Avatar package description", links: { documentation: { url: "https://fixture.example/docs" }, changelog: { url: "https://fixture.example/changelog" } } };
             const remote = { packageId: "com.example.remote", displayName: "Remote tools", yanked: false };
             if (!cursor) return this.value({ packages: [{ ...avatar, version: "1.0.0" }, { ...avatar, version: "1.1.0", yanked: true }], nextCursor: { packageId: avatar.packageId, version: "1.1.0" } });
-            if (cursor.packageId === avatar.packageId) return this.value({ packages: [{ ...avatar, version: "2.0.0-beta.1", prerelease: true, description: "Preview package description", links: { documentation: { url: "https://fixture.example/preview-docs" }, changelog: { url: "https://fixture.example/preview-changelog" } } }, { ...remote, version: "1.0.0" }], nextCursor: { packageId: remote.packageId, version: "1.0.0" } });
+            if (cursor.packageId === avatar.packageId) return this.value({ packages: [{ ...avatar, version: "2.0.0-beta.1", prerelease: true, description: this.repositoryRefreshCompleted ? "Refreshed preview package description" : "Preview package description", links: { documentation: { url: "https://fixture.example/preview-docs" }, changelog: { url: "https://fixture.example/preview-changelog" } } }, { ...remote, version: "1.0.0" }], nextCursor: { packageId: remote.packageId, version: "1.0.0" } });
             return this.value({ packages: [{ ...remote, version: "2.0.0" }, { packageId: "com.example.unnamed", version: "1.0.0", yanked: false }] });
         }
         if (query.has("resource-lifecycle")) return this.value({ packages: [{ packageId: cursor === undefined ? "com.example.first" : "com.example.second", version: "1.0.0", displayName: cursor === undefined ? (this.lifecycleRepositories.get(repositoryId)?.revision ?? 0) > 1 ? "Updated catalog package" : "First catalog package" : "Second catalog package", yanked: false, prerelease: false }], ...(cursor === undefined ? { nextCursor: { packageId: "com.example.first", version: "1.0.0" } } : {}) });
@@ -1744,7 +1757,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             if (record.editorVersion !== undefined && record.editorVersion !== input.unityVersion) throw { code: "invalid_request" };
         }
         const projectId = this.creationRequests.size === 0 ? CREATED_PROJECT_ID : crypto.randomUUID();
-        const created = project(projectId, input.name);
+        const created = project(projectId, input.target.name);
         created.unityVersion = input.unityVersion;
         const operationId = this.beginOperation("projects.create", undefined, created);
         this.creationRequests.set(idempotencyKey, { fingerprint, projectId, operationId });

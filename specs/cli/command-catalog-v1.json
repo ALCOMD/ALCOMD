@@ -73,6 +73,7 @@
                 {"name": "get", "aliases": ["info"]},
                 {"name": "register", "aliases": ["add"]},
                 {"name": "refresh", "aliases": []},
+                {"name": "set-favorite", "aliases": []},
                 {"name": "unregister", "aliases": ["remove"]}
             ]
         },
@@ -91,10 +92,25 @@
             ]
         },
         {
+            "name": "plan",
+            "aliases": [],
+            "commands": [
+                {"name": "get", "aliases": []}
+            ]
+        },
+        {
             "name": "package",
             "aliases": ["packages"],
             "commands": [
                 {"name": "inventory", "aliases": []},
+                {"name": "candidates", "aliases": []},
+                {"name": "bulk", "aliases": []},
+                {"name": "reinstall", "aliases": []},
+                {"name": "user-package list", "aliases": []},
+                {"name": "user-package get", "aliases": []},
+                {"name": "user-package enroll", "aliases": []},
+                {"name": "user-package refresh", "aliases": []},
+                {"name": "user-package remove", "aliases": []},
                 {"name": "install", "aliases": ["i"]},
                 {"name": "remove", "aliases": ["rm"]},
                 {"name": "upgrade", "aliases": []},

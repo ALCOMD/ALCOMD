@@ -25,7 +25,7 @@
 | `backups.restore.v1` | 普通 ZIP，接受源文件与恢复目录 | GUI/CLI/MCP/SDK、恢复重开 |
 | `mcp.clients.v1` | 连接认证、签发与撤销 | Core、GUI 设置、CLI、MCP、撤销测试 |
 | `mcp.oauth.v1` | OAuth 连接 scope、真实 Principal | OAuth 端到端及生命周期测试 |
-| `mcp.project-workflows.v1` | 登记、创建、复制、备份恢复 | 工作流工具、授权、路径、幂等复验 |
+| `projects.register`、`projects.create`、`projects.planCopy` | 三端共用项目目录来源、目标和原始回执；绝对父目录和新名称分开校验 | 工作流工具、授权、路径、幂等复验 |
 | `unity.hub.open.v1` | 以 expectedTargetToken 复验 Hub，返回 launch_requested；所有者补充核定 | Core、GUI、SDK、Schema 和握手 |
 | 管理 WIT 1.0.0 | 当前管理接口、Core 主体与扩展各自授权 | 重建 host、guest、runtime/transport 的 deps 和 Wasm 夹具 |
 | State1 | 当前完整单一 DDL、事务和恢复 | 独立目录新建、重开、结构不符零写入 |

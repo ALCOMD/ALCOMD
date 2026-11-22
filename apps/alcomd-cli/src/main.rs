@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 mod extension_commands;
 mod m8_oauth;
+mod package_catalog;
 
 #[derive(Debug)]
 enum CliError {
@@ -149,6 +150,11 @@ enum Command {
         #[command(subcommand)]
         command: extension_commands::Command,
     },
+    /// Read the exact plan retained by Core before applying it.
+    Plan {
+        #[command(subcommand)]
+        command: PlanCommand,
+    },
     /// Manage authenticated MCP connections.
     Mcp {
         #[command(subcommand)]
@@ -200,6 +206,15 @@ enum Command {
     },
     /// Generate static shell completion without connecting to the daemon.
     Completion { shell: CompletionShell },
+}
+
+#[derive(Debug, Subcommand)]
+enum PlanCommand {
+    Get {
+        #[arg(value_parser = ["package", "project_copy", "project_delete_directory", "project_unity_migration"])]
+        kind: String,
+        plan_id: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -446,8 +461,11 @@ enum ProjectCommand {
     },
     Copy {
         project_id: String,
+        /// Project name under the configured project directory, or an explicit parent followed by NAME.
+        #[arg(value_name = "NAME_OR_PARENT")]
         target_parent: PathBuf,
-        target_leaf: String,
+        #[arg(value_name = "NAME")]
+        target_leaf: Option<String>,
         #[arg(long)]
         expected_revision: u64,
         #[arg(long)]
@@ -456,8 +474,11 @@ enum ProjectCommand {
         idempotency_key: Option<String>,
     },
     Create {
+        /// Project name under the configured project directory, or an explicit parent followed by NAME.
+        #[arg(value_name = "NAME_OR_PARENT")]
         target_parent: PathBuf,
-        name: String,
+        #[arg(value_name = "NAME")]
+        name: Option<String>,
         #[arg(long)]
         unity_version: String,
         #[arg(long, requires = "template_revision")]
@@ -496,17 +517,35 @@ enum ProjectCommand {
         cursor: Option<alcomd_protocol::ProjectRegistryCursor>,
         #[arg(long)]
         limit: Option<u32>,
+        /// JSON list view with sort, descending and optional search; reuse it for each page.
+        #[arg(long, value_parser = parse_project_view)]
+        view: Option<alcomd_protocol::ProjectListView>,
+        /// viewSequence from the first page of the same view.
+        #[arg(long, requires = "view")]
+        expected_view_sequence: Option<u64>,
     },
     #[command(visible_alias = "info")]
     Get { project_id: String },
     #[command(visible_alias = "add")]
     Register {
         path: PathBuf,
+        /// Resolve the supplied relative path beneath Core's configured project directory.
+        #[arg(long)]
+        relative_to_default: bool,
         #[arg(long)]
         idempotency_key: String,
     },
     Refresh {
         project_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    SetFavorite {
+        project_id: String,
+        #[arg(action = clap::ArgAction::Set)]
+        favorite: bool,
         #[arg(long)]
         expected_revision: u64,
         #[arg(long)]
@@ -587,6 +626,17 @@ enum RepositoryCommand {
 
 #[derive(Debug, Subcommand)]
 enum PackageCommand {
+    /// Read candidates and Core recommendations for a project.
+    Candidates(package_catalog::Candidates),
+    /// Preview or apply a mixed set of package intents as a single plan.
+    Bulk(package_catalog::Bulk),
+    /// Reinstall selected or all packages at their locked versions.
+    Reinstall(package_catalog::Reinstall),
+    /// Manage local packages available to project plans.
+    UserPackage {
+        #[command(subcommand)]
+        command: package_catalog::UserPackage,
+    },
     /// Read declared, locked, and locally observed packages in a project.
     Inventory {
         project_id: String,
@@ -914,6 +964,10 @@ fn validate_mcp_output(
     Ok(())
 }
 
+fn parse_project_view(value: &str) -> Result<alcomd_protocol::ProjectListView, String> {
+    serde_json::from_str(value).map_err(|error| format!("invalid project list view: {error}"))
+}
+
 fn parse_cursor<T: serde::de::DeserializeOwned>(value: &str) -> Result<T, String> {
     serde_json::from_str(value).map_err(|err| format!("invalid nextCursor: {err}"))
 }
@@ -930,6 +984,8 @@ fn supports_preview(command: &Command) -> bool {
                 | ProjectCommand::MigrateUnity { .. }
         } | Command::Package {
             command: PackageCommand::Install { .. }
+                | PackageCommand::Bulk(_)
+                | PackageCommand::Reinstall(_)
                 | PackageCommand::Upgrade { .. }
                 | PackageCommand::Downgrade { .. }
                 | PackageCommand::Remove { .. }
@@ -977,6 +1033,11 @@ async fn execute(
         Command::Mcp {command:McpCommand::Runtime {client_id,limit}} => serde_json::to_value(client.mcp_runtime_snapshot(alcomd_protocol::McpRuntimeSnapshotParams {client_id,limit}).await?),
         Command::Mcp {command:McpCommand::Transport {client_id,limit}} => serde_json::to_value(client.mcp_transport_snapshot(alcomd_protocol::McpTransportQuery {client_id,limit}).await?),
         Command::Extension {command} => return extension_commands::execute(&mut client, command, options).await,
+        Command::Plan { command: PlanCommand::Get { kind, plan_id } } => {
+            let kind = serde_json::from_value(serde_json::Value::String(kind))
+                .map_err(|_| CliError::Usage("unknown plan kind"))?;
+            serde_json::to_value(client.get_plan(alcomd_protocol::PlansGetParams { kind, plan_id }).await?)
+        }
         Command::Mcp{command:McpCommand::Oauth{command}}=>return m8_oauth::execute(&mut client,command,options).await,
         Command::Mcp { command: McpCommand::Client { command } } => match command {
             McpClientCommand::Request { command } => return client_requests::execute(&mut client,command,options).await,
@@ -1122,14 +1183,12 @@ async fn execute(
                 plan_idempotency_key,
                 idempotency_key,
             } => {
-                let target_parent =
-                    absolute_path(target_parent).map_err(alcomd_client::ClientError::Transport)?;
+                let target = project_target(target_parent, target_leaf)?;
                 let plan = client
                     .project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
                         source_project_id: project_id,
                         expected_revision,
-                        target_parent_path: target_parent,
-                        target_leaf,
+                        target,
                         idempotency_key: plan_idempotency_key,
                     })
                     .await?;
@@ -1169,15 +1228,13 @@ async fn execute(
                 template_revision,
                 idempotency_key,
             } => {
-                let target_parent =
-                    absolute_path(target_parent).map_err(alcomd_client::ClientError::Transport)?;
+                let target = project_target(target_parent, name)?;
                 let template = template_id
                     .zip(template_revision)
                     .map(|(id, revision)| alcomd_protocol::ProjectTemplateRef { id, revision });
                 let accepted = client
                     .projects_create(alcomd_protocol::ProjectsCreateParams {
-                        name,
-                        target_parent,
+                        target,
                         unity_version,
                         idempotency_key,
                         template,
@@ -1314,18 +1371,26 @@ async fn execute(
                         .await?,
                 )
             }
-            ProjectCommand::List { cursor, limit } => {
-                serde_json::to_value(client.projects_list(cursor, limit).await?)
+            ProjectCommand::List { cursor, limit, view, expected_view_sequence } => {
+                serde_json::to_value(client.projects_list_with_view(alcomd_protocol::ProjectsListParams {
+                    cursor, limit, view, expected_view_sequence,
+                }).await?)
+            }
+            ProjectCommand::SetFavorite { project_id, favorite, expected_revision, idempotency_key } => {
+                serde_json::to_value(client.project_set_favorite(alcomd_protocol::ProjectSetFavoriteParams {
+                    project_id, favorite, expected_revision, idempotency_key,
+                }).await?)
             }
             ProjectCommand::Get { project_id } => {
                 serde_json::to_value(client.project_get(project_id).await?)
             }
-            ProjectCommand::Register {
-                path,
-                idempotency_key,
-            } => {
-                let path = absolute_path(path).map_err(alcomd_client::ClientError::Transport)?;
-                serde_json::to_value(client.project_register(path, idempotency_key).await?)
+            ProjectCommand::Register { path, relative_to_default, idempotency_key } => {
+                let source = if relative_to_default {
+                    alcomd_protocol::ProjectSource::Default { relative_path: path.into_os_string().into_string().map_err(|_| CliError::Usage("project path must be UTF-8"))? }
+                } else {
+                    alcomd_protocol::ProjectSource::Absolute { path: absolute_path(path).map_err(CliError::LocalIo)? }
+                };
+                serde_json::to_value(client.project_register(alcomd_protocol::ProjectRegisterParams { source, idempotency_key }).await?)
             }
             ProjectCommand::Refresh {
                 project_id,
@@ -1424,6 +1489,10 @@ async fn execute(
             ),
         },
         Command::Package { command } => match command {
+            PackageCommand::Candidates(query) => serde_json::to_value(client.package_query_project_candidates(query.into()).await?),
+            PackageCommand::Bulk(request) => return request.execute(&mut client, options).await,
+            PackageCommand::Reinstall(request) => return request.execute(&mut client, options).await,
+            PackageCommand::UserPackage { command } => return command.execute(&mut client, options).await,
             PackageCommand::Inventory { project_id, expected_revision, cursor, limit } => {
                 serde_json::to_value(client.project_inventory(alcomd_protocol::ProjectInventoryParams {
                     project_id, expected_revision, cursor, limit,
@@ -1818,6 +1887,7 @@ impl Command {
                 ProjectCommand::Get { .. } => "project get",
                 ProjectCommand::Register { .. } => "project register",
                 ProjectCommand::Refresh { .. } => "project refresh",
+                ProjectCommand::SetFavorite { .. } => "project set-favorite",
                 ProjectCommand::Unregister { .. } => "project unregister",
             },
             Self::Repository { command } => match command {
@@ -1830,7 +1900,12 @@ impl Command {
                 RepositoryCommand::Refresh { .. } => "repository refresh",
                 RepositoryCommand::Unregister { .. } => "repository unregister",
             },
+            Self::Plan { .. } => "plan get",
             Self::Package { command } => match command {
+                PackageCommand::Candidates(_) => "package candidates",
+                PackageCommand::Bulk(_) => "package bulk",
+                PackageCommand::Reinstall(_) => "package reinstall",
+                PackageCommand::UserPackage { command } => command.name(),
                 PackageCommand::Install { .. } => "package install",
                 PackageCommand::Inventory { .. } => "package inventory",
                 PackageCommand::Remove { .. } => "package remove",
@@ -1967,6 +2042,24 @@ fn write_result(
         )
     }?;
     output.flush()
+}
+
+fn project_target(
+    name_or_parent: PathBuf,
+    name: Option<String>,
+) -> Result<alcomd_protocol::ProjectTarget, CliError> {
+    match name {
+        Some(name) => Ok(alcomd_protocol::ProjectTarget::Absolute {
+            parent_path: absolute_path(name_or_parent).map_err(CliError::LocalIo)?,
+            name,
+        }),
+        None => Ok(alcomd_protocol::ProjectTarget::Default {
+            name: name_or_parent
+                .into_os_string()
+                .into_string()
+                .map_err(|_| CliError::Usage("project name must be UTF-8"))?,
+        }),
+    }
 }
 
 fn absolute_path(path: PathBuf) -> std::io::Result<String> {

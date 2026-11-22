@@ -1022,10 +1022,12 @@ fn subprocess_runs_project_delete_until_parent_kills_it() {
         .expect("start owned test daemon");
         let mut client = connect_client(config).await;
         let registered = client
-            .project_register(
-                project.to_string_lossy().into_owned(),
-                "m7-delete-kill-register".to_owned(),
-            )
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute {
+                    path: project.to_string_lossy().into_owned(),
+                },
+                idempotency_key: "m7-delete-kill-register".to_owned(),
+            })
             .await
             .expect("register project");
         let project_id = registered.project.project_id.expect("project ID");

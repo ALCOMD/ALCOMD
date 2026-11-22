@@ -36,7 +36,6 @@ fn repository_target(
 }
 
 const PROJECT_REGISTER: &str = "projects.register";
-const MCP_PROJECT_REGISTER: &str = "mcp.projects.register";
 const PROJECT_REFRESH: &str = "projects.refresh";
 const PROJECT_SET_FAVORITE: &str = "projects.setFavorite";
 const PROJECT_UNREGISTER: &str = "projects.unregister";
@@ -592,41 +591,7 @@ pub(super) fn register_project(
     now_ms: u64,
 ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
     let fingerprint = project_fingerprint(&observation)?;
-    let transaction = begin(connection)?;
-    let owner = project_resource_owner(&transaction, caller, app::Permission::ProjectsManage)?;
-    if let Some(mut response) = existing_response::<SyncWrite<ProjectRecord>>(
-        &transaction,
-        caller,
-        PROJECT_REGISTER,
-        key,
-        &fingerprint,
-    )? {
-        response.replayed = true;
-        transaction.commit().map_err(sql_failure)?;
-        return Ok(response);
-    }
-    let response = SyncWrite {
-        value: insert_project(
-            &transaction,
-            &owner,
-            caller,
-            observation,
-            now_ms,
-            Some(now_ms),
-        )?,
-        replayed: false,
-    };
-    save_response(
-        &transaction,
-        caller,
-        PROJECT_REGISTER,
-        key,
-        &fingerprint,
-        &response,
-        now_ms,
-    )?;
-    transaction.commit().map_err(sql_failure)?;
-    Ok(response)
+    register_project_receipt(connection, caller, observation, &fingerprint, key, now_ms)
 }
 
 pub(super) fn replay_project_registration(
@@ -634,32 +599,26 @@ pub(super) fn replay_project_registration(
     caller: &PrincipalId,
     fingerprint: &str,
     key: &IdempotencyKey,
-) -> Result<Option<SyncWrite<app::McpRegisteredProject>>, M3Error> {
+) -> Result<Option<SyncWrite<ProjectRecord>>, M3Error> {
     super::m8_workflows::require(db, caller, &[app::Permission::ProjectsManage])
         .map_err(|cause| M3Error::new(M3ErrorCode::PermissionDenied).with_source(cause))?;
-    existing_response::<SyncWrite<app::McpRegisteredProject>>(
-        db,
-        caller,
-        MCP_PROJECT_REGISTER,
-        key,
-        fingerprint,
-    )
-    .map(|existing| {
-        existing.map(|mut value| {
-            value.replayed = true;
-            value
+    existing_response::<SyncWrite<ProjectRecord>>(db, caller, PROJECT_REGISTER, key, fingerprint)
+        .map(|existing| {
+            existing.map(|mut value| {
+                value.replayed = true;
+                value
+            })
         })
-    })
 }
 
-pub(super) fn register_mcp_project(
+pub(super) fn register_project_receipt(
     db: &mut Connection,
     caller: &PrincipalId,
     observation: ProjectObservation,
     fingerprint: &str,
     key: &IdempotencyKey,
     now_ms: u64,
-) -> Result<SyncWrite<app::McpRegisteredProject>, M3Error> {
+) -> Result<SyncWrite<ProjectRecord>, M3Error> {
     let transaction = begin(db)?;
     if let Some(existing) = replay_project_registration(&transaction, caller, fingerprint, key)? {
         return Ok(existing);
@@ -674,19 +633,13 @@ pub(super) fn register_mcp_project(
         Some(now_ms),
     )?;
     let response = SyncWrite {
-        value: app::McpRegisteredProject {
-            project_id: record.project_id,
-            revision: record.revision,
-            display_name: project_display_name(&record.observation.root_path).map(str::to_owned),
-            project_type: record.observation.project_type,
-            unity_version: record.observation.unity_version,
-        },
+        value: record,
         replayed: false,
     };
     save_response(
         &transaction,
         caller,
-        MCP_PROJECT_REGISTER,
+        PROJECT_REGISTER,
         key,
         fingerprint,
         &response,

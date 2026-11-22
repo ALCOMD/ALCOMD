@@ -227,6 +227,15 @@ fn check(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     {
         errors.push("first-release contract registry check failed".to_owned());
     }
+    if !Command::new(python)
+        .arg(root.join("scripts/generate-project-tool-schemas.py"))
+        .arg("--check")
+        .current_dir(root)
+        .status()?
+        .success()
+    {
+        errors.push("MCP project tool schemas differ from the native contracts".to_owned());
+    }
 
     for relative in PRODUCTION_ROOTS {
         scan_forbidden_tokens(&root.join(relative), &mut errors)?;

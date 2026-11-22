@@ -106,25 +106,10 @@ pub(super) async fn execute(
     }
     let value = ipc_fields(Value::Object(request.arguments.unwrap_or_default()))?;
     let (result, summary, plan) = match request.name.as_ref() {
-        "alcomd_register_project" => (
-            reply(client.mcp_project_register(params(value)?).await, true),
-            "Project registered.",
-            false,
-        ),
         "alcomd_list_project_templates" => (
             reply(client.project_templates_list(params(value)?).await, false),
             "Project templates available for creation.",
             false,
-        ),
-        "alcomd_create_project" => (
-            reply(client.mcp_project_create(params(value)?).await, true),
-            "Project creation accepted. Check the operation.",
-            false,
-        ),
-        "alcomd_plan_project_copy" => (
-            reply(client.mcp_project_plan_copy(params(value)?).await, true),
-            "Review the project copy plan before confirming.",
-            true,
         ),
         "alcomd_apply_project_copy" => {
             let input = confirmed(value)?;

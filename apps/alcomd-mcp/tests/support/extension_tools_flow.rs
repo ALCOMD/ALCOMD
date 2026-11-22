@@ -378,10 +378,12 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         let p = root.join(format!("Fault-{fault}"));
         project(&p, false);
         let registered = owner
-            .project_register(
-                p.to_string_lossy().into_owned(),
-                format!("fault-project-{fault}"),
-            )
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute {
+                    path: p.to_string_lossy().into_owned(),
+                },
+                idempotency_key: format!("fault-project-{fault}"),
+            })
             .await
             .expect("valid isolated Provider fixture")
             .project;
@@ -462,10 +464,12 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         let p = root.join(format!("Project-{index}"));
         project(&p, false);
         let record = owner
-            .project_register(
-                p.to_string_lossy().into_owned(),
-                format!("register-{index}"),
-            )
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute {
+                    path: p.to_string_lossy().into_owned(),
+                },
+                idempotency_key: format!("register-{index}"),
+            })
             .await
             .expect("valid isolated Provider fixture")
             .project;

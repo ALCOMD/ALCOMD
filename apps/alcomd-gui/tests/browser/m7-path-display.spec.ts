@@ -87,7 +87,7 @@ test("Unity launch choices display friendly paths and submit only the selected i
     ]);
 });
 
-test("project paths and copy review use display labels while the plan request keeps the raw parent", async ({ page }) => {
+test("copy review displays the configured path and sends Core a default-directory target", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects&windows-paths=1");
     await expect(page.getByTitle("C:\\Projects\\Sample", { exact: true })).toBeVisible();
     await selectActionMenuItem(page.getByRole("button", { name: "More actions for Sample", exact: true }), page.getByRole("menuitem", { name: "Copy Project", exact: true }));
@@ -97,7 +97,7 @@ test("project paths and copy review use display labels while the plan request ke
     await expect(dialog).toContainText("C:\\Projects\\Sample Copy");
     await expect(dialog).not.toContainText("\\\\?\\");
     expect(await page.evaluate(() => window.h3Requests.filter((request) => request.method === "projects.planCopy"))).toEqual([
-        { method: "projects.planCopy", params: { sourceProjectId: "00000000-0000-4000-8000-000000000101", expectedRevision: 2, targetParentPath: "\\\\?\\C:\\Projects", targetLeaf: "Sample Copy" } }
+        { method: "projects.planCopy", params: { sourceProjectId: "00000000-0000-4000-8000-000000000101", expectedRevision: 2, target: { kind: "default", name: "Sample Copy" } } }
     ]);
     await dialog.getByRole("button", { name: "Back", exact: true }).click();
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -111,7 +111,7 @@ test("create shows the default project directory without changing its request", 
     await page.getByRole("textbox", { name: "Create project name", exact: true }).fill("Path Fixture");
     await page.locator("md-dialog[open]").getByRole("button", { name: "Create project", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.templateRequests.find((request) => request.method === "projects.create")?.params))
-        .toMatchObject({ targetParent: "\\\\?\\C:\\Projects" });
+        .toMatchObject({ target: { kind: "default", name: "Path Fixture" } });
 });
 
 test("user package source folders use the same UNC display rule", async ({ page }) => {

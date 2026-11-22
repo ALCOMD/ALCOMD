@@ -220,10 +220,17 @@ impl std::error::Error for M7CopyError {
 }
 
 pub trait M7CopyStore: Clone + Send + Sync + 'static {
+    fn replay_project_copy_plan(
+        &self,
+        owner: PrincipalId,
+        fingerprint: String,
+        key: IdempotencyKey,
+    ) -> impl Future<Output = Result<Option<ProjectCopyPlanOutcome>, M7CopyError>> + Send;
     fn create_project_copy_plan(
         &self,
         owner: PrincipalId,
         draft: ProjectCopyPlanDraft,
+        fingerprint: String,
     ) -> impl Future<Output = Result<ProjectCopyPlanOutcome, M7CopyError>> + Send;
     fn get_project_copy_plan(
         &self,
@@ -404,6 +411,19 @@ where
             .await
     }
 
+    pub async fn replay_plan(
+        &self,
+        access: &AccessContext,
+        fingerprint: String,
+        key: IdempotencyKey,
+    ) -> Result<Option<ProjectCopyPlanOutcome>, M7CopyError> {
+        require(access, Permission::ProjectsRead)?;
+        require(access, Permission::ProjectsCreate)?;
+        self.store
+            .replay_project_copy_plan(access.principal().clone(), fingerprint, key)
+            .await
+    }
+
     pub async fn plan_copy(
         &self,
         access: &AccessContext,
@@ -411,6 +431,7 @@ where
         expected_revision: Revision,
         destination: ProjectDestination,
         key: IdempotencyKey,
+        fingerprint: String,
     ) -> Result<ProjectCopyPlanOutcome, M7CopyError> {
         require(access, Permission::ProjectsRead)?;
         require(access, Permission::ProjectsCreate)?;
@@ -454,7 +475,7 @@ where
             return Err(error(M7CopyErrorCode::ProjectCopyPlanStale));
         }
         self.store
-            .create_project_copy_plan(access.principal().clone(), draft)
+            .create_project_copy_plan(access.principal().clone(), draft, fingerprint)
             .await
     }
 

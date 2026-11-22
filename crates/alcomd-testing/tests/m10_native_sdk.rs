@@ -55,10 +55,12 @@ async fn native_sdk_projects_packages_tasks_and_live_events_agree_on_real_core()
         let project = root.path.join(name);
         create_project(&project);
         let project = rust
-            .project_register(
-                project.to_string_lossy().into_owned(),
-                format!("register-{name}"),
-            )
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute {
+                    path: project.to_string_lossy().into_owned(),
+                },
+                idempotency_key: format!("register-{name}"),
+            })
             .await
             .expect("register an owned project")
             .project;

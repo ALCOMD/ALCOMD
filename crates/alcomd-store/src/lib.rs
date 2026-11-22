@@ -423,26 +423,26 @@ impl M3RegistryStore for StateStoreHandle {
         .await
     }
 
-    async fn replay_mcp_project_registration(
+    async fn replay_project_registration(
         &self,
         caller: PrincipalId,
         fingerprint: String,
         key: IdempotencyKey,
-    ) -> Result<Option<SyncWrite<alcomd_application::McpRegisteredProject>>, M3Error> {
+    ) -> Result<Option<SyncWrite<ProjectRecord>>, M3Error> {
         self.request_m3(move |db| m3::replay_project_registration(db, &caller, &fingerprint, &key))
             .await
     }
 
-    async fn register_mcp_project(
+    async fn register_project_receipt(
         &self,
         caller: PrincipalId,
         observation: ProjectObservation,
         fingerprint: String,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> Result<SyncWrite<alcomd_application::McpRegisteredProject>, M3Error> {
+    ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         self.request_m3(move |db| {
-            m3::register_mcp_project(db, &caller, observation, &fingerprint, &key, now_ms)
+            m3::register_project_receipt(db, &caller, observation, &fingerprint, &key, now_ms)
         })
         .await
     }
@@ -2105,13 +2105,27 @@ impl M5BackupStore for StateStoreHandle {
 }
 
 impl M7CopyStore for StateStoreHandle {
+    async fn replay_project_copy_plan(
+        &self,
+        owner: PrincipalId,
+        fingerprint: String,
+        key: IdempotencyKey,
+    ) -> Result<Option<ProjectCopyPlanOutcome>, M7CopyError> {
+        self.request_worker(
+            move |connection| m7_copy::replay_plan(connection, &owner, &fingerprint, &key),
+            m7_copy::unavailable,
+        )
+        .await
+    }
+
     async fn create_project_copy_plan(
         &self,
         owner: PrincipalId,
         draft: ProjectCopyPlanDraft,
+        fingerprint: String,
     ) -> Result<ProjectCopyPlanOutcome, M7CopyError> {
         self.request_worker(
-            move |connection| m7_copy::create_plan(connection, &owner, draft),
+            move |connection| m7_copy::create_plan(connection, &owner, draft, &fingerprint),
             m7_copy::unavailable,
         )
         .await

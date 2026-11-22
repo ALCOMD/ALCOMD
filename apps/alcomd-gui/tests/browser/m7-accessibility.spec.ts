@@ -58,6 +58,8 @@ test("modal traps focus, closes on Escape, and restores the invoking control", a
     const dialog = page.getByRole("dialog", { name: "Register this project?" });
     await expect(dialog).toBeVisible();
     const drop = page.getByRole("button", { name: "Drop a folder here or click to select", exact: true });
+    await expect(page.getByRole("checkbox", { name: "Relative to default project directory", exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
     await expect(drop).toBeFocused();
     await expect(page.getByRole("button", { name: "Confirm" })).toBeDisabled();
     await page.getByRole("textbox", { name: "Project location", exact: true }).fill("C:\\Fixture\\Avatar");

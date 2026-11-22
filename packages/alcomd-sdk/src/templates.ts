@@ -23,9 +23,11 @@ export type ProjectTemplateSource =
     | { kind: "project"; projectId: string; expectedProjectRevision: number; id: string; name: string; includeAssets?: boolean; lockPackageVersions?: boolean }
     | { kind: "manual"; id: string; name: string; unityVersion: string; dependencies: ProjectTemplateDependency[]; baseTemplate: ProjectTemplateRef };
 
+export type ProjectSource = { kind: "default"; relativePath: string } | { kind: "absolute"; path: string };
+export type ProjectTarget = { kind: "default"; name: string } | { kind: "absolute"; parentPath: string; name: string };
+
 export interface ProjectsCreateParams {
-    name: string;
-    targetParent: string;
+    target: ProjectTarget;
     unityVersion: string;
     idempotencyKey: string;
     template?: ProjectTemplateRef;

@@ -8,7 +8,7 @@
         {
             "name": "alcomd_list_projects",
             "title": "List authorized projects",
-            "description": "Read registered project summaries. This list is filtered by current Core authorization.",
+            "description": "Read registered project snapshots in a requested search and sort view. Pass its cursor and view sequence unchanged when continuing.",
             "inputSchema": {
                 "type": "object",
                 "$ref": "#/$defs/list_projectsInput"
@@ -435,54 +435,14 @@
                 "project_id"
             ]
         },
-        "projectSummary": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "project_id": {
-                    "$ref": "#/$defs/id"
-                },
-                "root_path": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 32768
-                },
-                "display_name": {
-                    "type": "string",
-                    "maxLength": 1024
-                },
-                "revision": {
-                    "$ref": "#/$defs/revision"
-                },
-                "project_type": {
-                    "type": "string",
-                    "maxLength": 64
-                },
-                "unity_version": {
-                    "type": "string",
-                    "maxLength": 128
-                },
-                "directory_state": {
-                    "enum": [
-                        "available",
-                        "missing",
-                        "unavailable"
-                    ]
-                }
-            },
-            "required": [
-                "project_id",
-                "root_path",
-                "revision",
-                "project_type",
-                "unity_version",
-                "directory_state"
-            ]
-        },
         "projectDetail": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
+                "favorite": {"type": "boolean"},
+                "registered_at_ms": {"$ref": "#/$defs/time"},
+                "last_modified_at_ms": {"$ref": "#/$defs/time"},
+                "unity_revision": {"type": ["string", "null"]},
                 "project_id": {
                     "$ref": "#/$defs/id"
                 },
@@ -580,6 +540,7 @@
                                 "type": "string",
                                 "maxLength": 128
                             },
+                            "item": {"type": "string"},
                             "component": {
                                 "type": "string",
                                 "maxLength": 128
@@ -593,7 +554,8 @@
                         },
                         "required": [
                             "code",
-                            "component"
+                            "component",
+                            "item"
                         ]
                     }
                 }
@@ -905,6 +867,23 @@
                         "package_download_too_large",
                         "package_hash_required",
                         "package_integrity_mismatch",
+                        "package_candidate_evidence_stale",
+                        "package_candidate_limit_exceeded",
+                        "package_intent_conflict",
+                        "package_not_installed",
+                        "project_delete_plan_not_found",
+                        "project_delete_plan_stale",
+                        "project_delete_recovery_required",
+                        "project_delete_source_changed",
+                        "project_delete_source_missing",
+                        "project_delete_source_unsafe",
+                        "user_package_already_enrolled",
+                        "user_package_limit_exceeded",
+                        "user_package_manifest_invalid",
+                        "user_package_not_found",
+                        "user_package_source_changed",
+                        "user_package_source_unavailable",
+                        "user_package_source_unsafe",
                         "package_legacy_cleanup_required",
                         "package_manifest_invalid",
                         "package_not_found",
@@ -1048,7 +1027,23 @@
         "list_projectsInput": {
             "type": "object",
             "additionalProperties": false,
+            "allOf": [{
+                "if": {"required": ["view", "cursor"]},
+                "then": {"required": ["expected_view_sequence"]},
+                "else": {"not": {"required": ["expected_view_sequence"]}}
+            }],
             "properties": {
+                "view": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["sort", "descending"],
+                    "properties": {
+                        "sort": {"enum": ["name", "type", "unity", "added", "modified"]},
+                        "descending": {"type": "boolean"},
+                        "search": {"type": "string", "maxLength": 256, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"}
+                    }
+                },
+                "expected_view_sequence": {"$ref": "#/$defs/time"},
                 "cursor": {
                     "$ref": "#/$defs/cursor"
                 },
@@ -1075,9 +1070,10 @@
                                     "type": "array",
                                     "maxItems": 1000,
                                     "items": {
-                                        "$ref": "#/$defs/projectSummary"
+                                        "$ref": "#/$defs/projectDetail"
                                     }
                                 },
+                                "view_sequence": {"$ref": "#/$defs/time"},
                                 "next_cursor": {
                                     "$ref": "#/$defs/cursor"
                                 }

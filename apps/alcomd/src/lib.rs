@@ -113,11 +113,11 @@ mod m8_repositories_rpc;
 mod m8_runtime_rpc;
 mod m8_tools_rpc;
 mod m8_transport_rpc;
-mod m8_workflows_rpc;
 mod m9_runtime;
 mod plans_rpc;
 mod project_create_rpc;
 mod project_discovery_platform;
+mod project_paths_rpc;
 mod repository_list_rpc;
 mod storage_platform;
 
@@ -996,14 +996,6 @@ async fn dispatch_authenticated(
     }
     if matches!(
         request.method.as_str(),
-        alcomd_protocol::METHOD_MCP_PROJECTS_CREATE
-            | alcomd_protocol::METHOD_MCP_PROJECTS_REGISTER
-            | alcomd_protocol::METHOD_MCP_PROJECTS_PLAN_COPY
-    ) {
-        return m8_workflows_rpc::dispatch(request, state, applications, access).await;
-    }
-    if matches!(
-        request.method.as_str(),
         alcomd_protocol::METHOD_MCP_TOOLS_CATALOG
             | alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL
             | alcomd_protocol::METHOD_EXTENSIONS_CLI_COMMANDS_LIST
@@ -1142,7 +1134,6 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1,
         alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1,
         alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1,
-        alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_OAUTH_V1,
@@ -1431,12 +1422,12 @@ async fn dispatch_m2(
         _ if request.method.starts_with("packages.") => {
             m4_rpc::dispatch(request, state, &applications.m4, access).await
         }
-        _ if matches!(
-            request.method.as_str(),
-            alcomd_protocol::METHOD_PROJECTS_PLAN_COPY
-                | alcomd_protocol::METHOD_PROJECTS_APPLY_COPY
-        ) =>
-        {
+        alcomd_protocol::METHOD_PROJECTS_REGISTER
+        | alcomd_protocol::METHOD_PROJECTS_CREATE
+        | alcomd_protocol::METHOD_PROJECTS_PLAN_COPY => {
+            project_paths_rpc::dispatch(request, state, applications, access).await
+        }
+        alcomd_protocol::METHOD_PROJECTS_APPLY_COPY => {
             m7_copy_rpc::dispatch(request, state, &applications.project_copy, access).await
         }
         _ if matches!(
@@ -1459,8 +1450,7 @@ async fn dispatch_m2(
         _ if request.method.starts_with("unity.") => {
             m5_rpc::dispatch(request, state, &applications.m5, access).await
         }
-        alcomd_protocol::METHOD_PROJECTS_CREATE
-        | alcomd_protocol::METHOD_PROJECT_TEMPLATES_LIST
+        alcomd_protocol::METHOD_PROJECT_TEMPLATES_LIST
         | alcomd_protocol::METHOD_PROJECT_TEMPLATES_SAVE
         | alcomd_protocol::METHOD_PROJECT_TEMPLATES_EXPORT
         | alcomd_protocol::METHOD_PROJECT_TEMPLATES_REMOVE => {

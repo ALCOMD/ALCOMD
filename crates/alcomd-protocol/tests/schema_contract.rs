@@ -2040,7 +2040,7 @@ fn project_creation_and_template_archives_round_trip() {
     );
     assert_eq!(
         contract["$defs"]["createParams"]["required"],
-        json!(["name", "targetParent", "unityVersion", "idempotencyKey"])
+        json!(["target", "unityVersion", "idempotencyKey"])
     );
     let vectors: Value = serde_json::from_str(include_str!(
         "../../../specs/rpc/m7-project-create.contract-vectors.json"

@@ -55,21 +55,21 @@
 | `operations.get` | 已提供 · 任务条目或等待操作完成时按 ID 查询 | 已提供 · operation get；follow 轮询同一任务 | 部分可达 · alcomd_get_operation；返回任务状态和修订，部分任务不返回类型专属结果 |
 | `operations.list` | 已提供 · 任务页与活动任务指示器读取分页列表 | 已提供 · operation list；支持活动筛选和完整游标 | 部分可达 · alcomd_list_operations；游标、活动筛选和调用者范围，条目沿用受限结果投影 |
 | `packages.applyPlan` | 已提供 · 软件包审阅窗口提交当前预演所得计划 | 已提供 · package apply-plan；或各预演命令确认后提交 | 已提供 · alcomd_apply_package_changes；确认原计划、修订和幂等键 |
-| `packages.planBulk` | 部分可达 · 软件包表的批量操作可组合所选行；界面不接受任意意图数组 | 缺少入口 · package 命令没有该计划或候选查询动作 | 已提供 · alcomd_plan_package_changes；使用 bulk 意图，经 mcp.packages.plan |
+| `packages.planBulk` | 已提供 · 自定义软件包计划可组合多个有序意图 | 已提供 · package bulk | 已提供 · alcomd_plan_package_changes；使用 bulk 意图，经 mcp.packages.plan |
 | `packages.planDowngrade` | 已提供 · 软件包版本菜单选择较低版本，可确认精确 Unity 例外 | 已提供 · package downgrade | 已提供 · alcomd_plan_package_changes；降级意图，经 mcp.packages.plan |
-| `packages.planInstall` | 部分可达 · 软件包表直接安装 Core 推荐或选定精确版本、来源；没有自由输入 SemVer 范围的控件 | 已提供 · package install；省略版本走 Core，可显式传范围、来源或精确例外 | 已提供 · alcomd_plan_package_install 或 alcomd_plan_package_changes；缺省版本由 Core 选择 |
-| `packages.planReinstall` | 已提供 · 软件包行菜单重装选中包；工作区菜单可全部重装 | 缺少入口 · package 命令没有该计划或候选查询动作 | 已提供 · alcomd_plan_package_reinstall 或 alcomd_plan_package_changes；按锁定包重装 |
+| `packages.planInstall` | 已提供 · 软件包表采用 Core 推荐；自定义计划可指定范围、来源及预发布策略 | 已提供 · package install；省略版本走 Core，可显式传范围、来源或精确例外 | 已提供 · alcomd_plan_package_install 或 alcomd_plan_package_changes；缺省版本由 Core 选择 |
+| `packages.planReinstall` | 已提供 · 软件包行菜单重装选中包；工作区菜单可全部重装 | 已提供 · package reinstall | 已提供 · alcomd_plan_package_reinstall 或 alcomd_plan_package_changes；按锁定包重装 |
 | `packages.planRemove` | 已提供 · 软件包行的移除动作预演连带变更 | 已提供 · package remove | 已提供 · alcomd_plan_package_uninstall；通用 changes 工具也接受移除意图 |
-| `packages.planResolve` | 部分可达 · 软件包菜单重新解析依赖，按 Core 设置选择预发布策略；没有针对本次解析单独覆盖的控件 | 已提供 · package resolve | 已提供 · alcomd_plan_package_changes；解析意图，经 mcp.packages.plan |
-| `packages.planUpgrade` | 部分可达 · 软件包表使用推荐或选定版本、来源；没有自由输入 SemVer 范围的控件 | 已提供 · package upgrade；省略版本走 Core，可显式传范围、来源或精确例外 | 已提供 · alcomd_plan_package_changes；升级意图可省略版本 |
+| `packages.planResolve` | 已提供 · 软件包菜单或自定义计划，后者支持本次解析的显式策略 | 已提供 · package resolve | 已提供 · alcomd_plan_package_changes；解析意图，经 mcp.packages.plan |
+| `packages.planUpgrade` | 已提供 · 软件包表采用 Core 推荐；自定义计划可指定范围、来源及预发布策略 | 已提供 · package upgrade；省略版本走 Core，可显式传范围、来源或精确例外 | 已提供 · alcomd_plan_package_changes；升级意图可省略版本 |
 | `packages.projectInventory` | 已提供 · 项目详情打开已安装软件包清单 | 已提供 · package inventory；支持项目修订及分页 | 已提供 · alcomd_list_installed_packages；直接读取项目清单 |
-| `packages.queryProjectCandidates` | 已提供 · 项目包表、版本和来源选择器按当前项目快照查询 | 缺少入口 · package 命令没有该计划或候选查询动作 | 部分可达 · alcomd_search_packages、alcomd_get_package、alcomd_list_package_sources 经 mcp.packages.query 查询；不提供原生候选批量动作视图 |
-| `packages.userPackages.enroll` | 已提供 · 资源页的用户包列表选择本地目录登记 | 缺少入口 · CLI 没有管理本地用户包来源的命令 | 缺少入口 · 工具可使用已登记来源，缺少管理本地用户包的工具 |
-| `packages.userPackages.get` | 已提供 · 用户包详情查询选定来源 | 缺少入口 · CLI 没有管理本地用户包来源的命令 | 缺少入口 · 工具可使用已登记来源，缺少管理本地用户包的工具 |
-| `packages.userPackages.list` | 已提供 · 资源页读取本地用户包清单 | 缺少入口 · CLI 没有管理本地用户包来源的命令 | 缺少入口 · 工具可使用已登记来源，缺少管理本地用户包的工具 |
-| `packages.userPackages.refresh` | 已提供 · 用户包详情重新读取目录 | 缺少入口 · CLI 没有管理本地用户包来源的命令 | 缺少入口 · 工具可使用已登记来源，缺少管理本地用户包的工具 |
-| `packages.userPackages.remove` | 已提供 · 用户包详情移除登记 | 缺少入口 · CLI 没有管理本地用户包来源的命令 | 缺少入口 · 工具可使用已登记来源，缺少管理本地用户包的工具 |
-| `plans.get` | 缺少入口 · 界面审阅内存中刚生成的计划，没有按既有 ID 读取计划的入口 | 部分可达 · package apply-plan、project apply-* 的交互确认可内部读取原计划；没有独立查询命令 | 缺少入口 · 工具可以提交自己的既有计划，缺少按 ID 查询计划详情的工具 |
+| `packages.queryProjectCandidates` | 已提供 · 项目包表、版本和来源选择器按当前项目快照查询 | 已提供 · package candidates；项目、修订与候选视图 | 已提供 · alcomd_query_project_candidates 接受原生候选视图及分页。alcomd_search_packages、alcomd_get_package 和 alcomd_list_package_sources 提供搜索、详情和来源视图 |
+| `packages.userPackages.enroll` | 已提供 · 资源页的用户包列表选择本地目录登记 | 已提供 · package user-package enroll | 已提供 · alcomd_enroll_user_package |
+| `packages.userPackages.get` | 已提供 · 用户包详情查询选定来源 | 已提供 · package user-package get | 已提供 · alcomd_get_user_package |
+| `packages.userPackages.list` | 已提供 · 资源页读取本地用户包清单 | 已提供 · package user-package list | 已提供 · alcomd_list_user_packages |
+| `packages.userPackages.refresh` | 已提供 · 用户包详情重新读取目录 | 已提供 · package user-package refresh | 已提供 · alcomd_refresh_user_package |
+| `packages.userPackages.remove` | 已提供 · 用户包详情移除登记 | 已提供 · package user-package remove | 已提供 · alcomd_remove_user_package |
+| `plans.get` | 已提供 · 项目列表 → 查阅原计划，选择种类并输入 ID | 已提供 · plan get | 已提供 · alcomd_get_plan |
 | `projectTemplates.edit` | 已提供 · 模板详情编辑并确认保存 | 已提供 · template edit | 已提供 · alcomd_edit_project_template |
 | `projectTemplates.export` | 已提供 · 模板详情选择输出位置后导出 | 已提供 · template export | 已提供 · alcomd_export_project_template |
 | `projectTemplates.get` | 已提供 · 模板详情读取定义与附件 | 已提供 · template get | 已提供 · alcomd_get_project_template |
@@ -77,19 +77,19 @@
 | `projectTemplates.remove` | 已提供 · 模板工作区确认移除所选模板 | 已提供 · template remove | 已提供 · alcomd_remove_project_template |
 | `projectTemplates.save` | 已提供 · 模板工作区创建并保存用户模板 | 已提供 · template save | 已提供 · alcomd_create_project_template |
 | `projects.applyCopy` | 已提供 · 复制对话框确认原计划 | 已提供 · project apply-copy；或 project copy 确认后提交 | 已提供 · alcomd_apply_project_copy；确认原计划 |
-| `projects.applyDeleteDirectory` | 已提供 · 项目目录删除对话框确认原计划 | 已提供 · project apply-delete-directory；或 project delete-directory 确认后提交 | 缺少入口 · 工具目录没有这项项目操作 |
-| `projects.applyUnityMigration` | 已提供 · 确认迁移对话框中已审阅的计划 | 已提供 · project apply-unity-migration；或 project migrate-unity 确认后提交 | 缺少入口 · 工具目录没有这项项目操作 |
-| `projects.create` | 已提供 · 项目列表打开创建对话框，选择模板、Unity 版本和目录 | 已提供 · project create | 已提供 · alcomd_create_project；经 mcp.projects.create 解析目标并调用创建用例 |
-| `projects.get` | 已提供 · 从项目列表进入项目详情 | 已提供 · project get | 部分可达 · alcomd_get_project；按 ID 查询，返回项目快照选取的字段 |
-| `projects.inspect` | 缺少入口 · 有 projectsInspect 桥接，项目添加对话框直接登记，没有独立检查操作 | 已提供 · project inspect | 缺少入口 · 工具目录没有这项项目操作 |
-| `projects.list` | 已提供 · 项目列表或网格，支持筛选、排序和加载余页 | 部分可达 · project list 可分页；未提供原生列表的搜索和排序视图 | 部分可达 · alcomd_list_projects；支持分页与 OAuth 绑定，缺少搜索/排序视图，列表只返回摘要 |
-| `projects.planCopy` | 已提供 · 项目操作菜单输入副本目录并预演 | 已提供 · project copy --dry-run | 已提供 · alcomd_plan_project_copy；经 mcp.projects.planCopy 解析复制目标 |
-| `projects.planDeleteDirectory` | 已提供 · 项目操作菜单选择删除目录并预演 | 已提供 · project delete-directory --dry-run | 缺少入口 · 工具目录没有这项项目操作 |
-| `projects.planUnityMigration` | 已提供 · 项目选择另一 Unity 安装，预演迁移 | 已提供 · project migrate-unity --dry-run | 缺少入口 · 工具目录没有这项项目操作 |
-| `projects.refresh` | 缺少入口 · 重新加载列表走 projects.list，项目详情走 projects.get；未发现 projectRefresh 的界面调用 | 已提供 · project refresh | 缺少入口 · 工具目录没有这项项目操作 |
-| `projects.register` | 已提供 · 项目列表选择现有目录登记 | 已提供 · project register | 部分可达 · alcomd_register_project；经 mcp.projects.register 登记目录，只返回已登记项目摘要 |
-| `projects.setFavorite` | 已提供 · 项目行或卡片的收藏按钮 | 缺少入口 · project 命令未提供收藏设置 | 缺少入口 · 工具目录没有这项项目操作 |
-| `projects.unregister` | 已提供 · 项目操作菜单从列表移除登记 | 已提供 · project unregister | 缺少入口 · 工具目录没有这项项目操作 |
+| `projects.applyDeleteDirectory` | 已提供 · 项目目录删除对话框确认原计划 | 已提供 · project apply-delete-directory；或 project delete-directory 确认后提交 | 已提供 · alcomd_apply_project_delete_directory |
+| `projects.applyUnityMigration` | 已提供 · 确认迁移对话框中已审阅的计划 | 已提供 · project apply-unity-migration；或 project migrate-unity 确认后提交 | 已提供 · alcomd_apply_project_unity_migration |
+| `projects.create` | 已提供 · 项目列表打开创建对话框，选择模板、Unity 版本和目录 | 已提供 · project create | 已提供 · alcomd_create_project；同一原生方法绑定用户选择的默认目录或绝对目录 |
+| `projects.get` | 已提供 · 从项目列表进入项目详情 | 已提供 · project get | 已提供 · alcomd_get_project；读取完整项目快照 |
+| `projects.inspect` | 已提供 · 项目列表 → 检查项目，选择精确根目录或向上查找 | 已提供 · project inspect | 已提供 · alcomd_inspect_project |
+| `projects.list` | 已提供 · 项目列表或网格，支持筛选、排序和加载余页 | 已提供 · project list；筛选、排序、视图序号和游标 | 已提供 · alcomd_list_projects；筛选、排序、视图序号和原游标 |
+| `projects.planCopy` | 已提供 · 项目操作菜单输入副本目录并预演 | 已提供 · project copy --dry-run | 已提供 · alcomd_plan_project_copy；同一原生方法绑定副本目标 |
+| `projects.planDeleteDirectory` | 已提供 · 项目操作菜单选择删除目录并预演 | 已提供 · project delete-directory --dry-run | 已提供 · alcomd_plan_project_delete_directory |
+| `projects.planUnityMigration` | 已提供 · 项目选择另一 Unity 安装，预演迁移 | 已提供 · project migrate-unity --dry-run | 已提供 · alcomd_plan_project_unity_migration |
+| `projects.refresh` | 已提供 · 项目操作菜单 → 刷新项目 | 已提供 · project refresh | 已提供 · alcomd_refresh_project |
+| `projects.register` | 已提供 · 项目列表选择现有目录登记 | 已提供 · project register | 已提供 · alcomd_register_project；返回原登记快照 |
+| `projects.setFavorite` | 已提供 · 项目行或卡片的收藏按钮 | 已提供 · project set-favorite | 已提供 · alcomd_set_project_favorite |
+| `projects.unregister` | 已提供 · 项目操作菜单从列表移除登记 | 已提供 · project unregister | 已提供 · alcomd_unregister_project |
 | `repositories.cancelListRegistration` | 已提供 · 导入对话框用当前导入键停止后续登记 | 缺少入口 · repository 命令没有这项管理动作 | 缺少入口 · 工具目录没有这项仓库管理操作 |
 | `repositories.exportListFile` | 已提供 · 资源页导出仓库清单并选择文件及格式 | 缺少入口 · repository 命令没有这项管理动作 | 缺少入口 · 工具目录没有这项仓库管理操作 |
 | `repositories.get` | 已提供 · 仓库详情按 ID 读取元数据 | 已提供 · repository get | 缺少入口 · 工具目录没有这项仓库管理操作 |
@@ -143,9 +143,6 @@
 | `mcp.oauth.token` | 协议专用 · GUI 不承担 OAuth 客户端的令牌交换 | 协议专用 · CLI 授权管理不交换外部客户端令牌 | 协议专用 · HTTP token 端点调用 oauth_token，按协议交付令牌 |
 | `mcp.packages.plan` | 协议专用 · 项目包表走原生 packages.plan*，无需 MCP 工具投影 | 协议专用 · package 命令走原生计划方法 | 协议专用 · 安装、重装及通用计划工具将工具意图转成 mcp.packages.plan |
 | `mcp.packages.query` | 协议专用 · 项目包表走 queryProjectCandidates，不使用工具分页投影 | 协议专用 · 此适配器服务 MCP 工具；CLI 的项目候选入口见主表 | 协议专用 · 搜索包、读取包或列来源工具调用统一的 MCP 目录查询 |
-| `mcp.projects.create` | 协议专用 · 创建对话框走原生 projects.create | 协议专用 · project create 走原生方法 | 协议专用 · alcomd_create_project 将工具目标映射到 Core |
-| `mcp.projects.planCopy` | 协议专用 · 项目复制对话框走原生 projects.planCopy | 协议专用 · project copy 走原生方法 | 协议专用 · alcomd_plan_project_copy 将复制目标映射到 Core |
-| `mcp.projects.register` | 协议专用 · 项目选择器走原生 projects.register | 协议专用 · project register 走原生方法 | 协议专用 · alcomd_register_project 解析工具中的目录目标 |
 | `mcp.repositories.inspect` | 协议专用 · 添加仓库走原生 repositories.inspect | 协议专用 · repository inspect 走原生方法 | 协议专用 · alcomd_inspect_repository 用远程来源取得认证绑定的预览 |
 | `mcp.repositories.list` | 协议专用 · 资源页走原生 repositories.list | 协议专用 · repository list 走原生方法 | 协议专用 · alcomd_list_repositories 返回工具侧仓库摘要和续页游标 |
 | `mcp.repositories.register` | 协议专用 · 确认登记走原生 repositories.register | 协议专用 · repository register 走原生方法 | 协议专用 · alcomd_register_repository 确认已绑定的远程预览 |

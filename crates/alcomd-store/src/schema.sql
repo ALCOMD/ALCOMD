@@ -538,8 +538,13 @@ CREATE TABLE project_unity_migration_plans (
     plan_id TEXT PRIMARY KEY CHECK (length(plan_id) = 36),
     owner_principal_id TEXT NOT NULL
         CHECK (length(owner_principal_id) BETWEEN 1 AND 128),
-    project_id TEXT NOT NULL
-        REFERENCES projects(project_id) ON DELETE RESTRICT,
+    project_id TEXT NOT NULL CHECK (
+        length(project_id) = 36 AND project_id = lower(project_id)
+        AND substr(project_id, 9, 1) = '-' AND substr(project_id, 14, 1) = '-'
+        AND substr(project_id, 19, 1) = '-' AND substr(project_id, 24, 1) = '-'
+        AND length(replace(project_id, '-', '')) = 32
+        AND replace(project_id, '-', '') NOT GLOB '*[^0-9a-f]*'
+    ),
     project_revision INTEGER NOT NULL
         CHECK (project_revision BETWEEN 1 AND 9223372036854775807),
     source_unity_version TEXT NOT NULL
@@ -560,8 +565,13 @@ CREATE TABLE project_unity_migration_plans (
         CHECK (length(target_unity_version) BETWEEN 8 AND 64),
     target_revision_metadata TEXT
         CHECK (target_revision_metadata IS NULL OR length(target_revision_metadata) BETWEEN 1 AND 128),
-    target_installation_id TEXT NOT NULL
-        REFERENCES unity_installations(installation_id) ON DELETE RESTRICT,
+    target_installation_id TEXT NOT NULL CHECK (
+        length(target_installation_id) = 36 AND target_installation_id = lower(target_installation_id)
+        AND substr(target_installation_id, 9, 1) = '-' AND substr(target_installation_id, 14, 1) = '-'
+        AND substr(target_installation_id, 19, 1) = '-' AND substr(target_installation_id, 24, 1) = '-'
+        AND length(replace(target_installation_id, '-', '')) = 32
+        AND replace(target_installation_id, '-', '') NOT GLOB '*[^0-9a-f]*'
+    ),
     target_installation_revision INTEGER NOT NULL
         CHECK (target_installation_revision BETWEEN 1 AND 9223372036854775807),
     target_installation_identity BLOB NOT NULL

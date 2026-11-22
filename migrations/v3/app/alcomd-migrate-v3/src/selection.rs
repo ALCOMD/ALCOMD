@@ -390,7 +390,13 @@ async fn has_enrolled_source(core: &mut AlcomdClient, path: &str) -> Result<bool
 
 async fn apply_step(core: &mut AlcomdClient, step: Step) -> Result<Reply> {
     match step {
-        Step::RegisterProject { path, key } => match core.project_register(path, key).await {
+        Step::RegisterProject { path, key } => match core
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute { path },
+                idempotency_key: key,
+            })
+            .await
+        {
             Ok(result) => Ok(Reply::Project {
                 id: result
                     .project

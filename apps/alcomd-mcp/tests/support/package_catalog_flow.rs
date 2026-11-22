@@ -22,10 +22,12 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
     let fixture = root.join("Project");
     project(&fixture, false);
     let project_record = owner
-        .project_register(
-            fixture.to_string_lossy().into_owned(),
-            "catalog-project".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: fixture.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "catalog-project".into(),
+        })
         .await
         .expect("register project")
         .project;

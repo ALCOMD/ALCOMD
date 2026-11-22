@@ -34,6 +34,40 @@ pub fn mcp_environment_tool_capability(name: &str) -> Option<&'static str> {
     })
 }
 
+/// Each tool requires one of the listed native capabilities.
+pub fn mcp_project_catalog_capabilities(name: &str) -> Option<&'static [&'static str]> {
+    use crate::*;
+    Some(match name {
+        "alcomd_inspect_project" => &[CAPABILITY_PROJECTS_READ_V1],
+        "alcomd_register_project"
+        | "alcomd_refresh_project"
+        | "alcomd_set_project_favorite"
+        | "alcomd_unregister_project" => &[CAPABILITY_PROJECTS_REGISTRY_V1],
+        "alcomd_create_project" => &[CAPABILITY_PROJECTS_CREATE_V1],
+        "alcomd_plan_project_copy" => &[CAPABILITY_PROJECTS_COPY_V1],
+        "alcomd_plan_project_delete_directory" | "alcomd_apply_project_delete_directory" => {
+            &[CAPABILITY_PROJECTS_DELETE_V1]
+        }
+        "alcomd_plan_project_unity_migration" | "alcomd_apply_project_unity_migration" => {
+            &[CAPABILITY_PROJECTS_UNITY_MIGRATION_V1]
+        }
+        "alcomd_get_plan" => &[
+            CAPABILITY_EXTENSIONS_LIFECYCLE_V1,
+            CAPABILITY_PACKAGES_PLAN_V1,
+            CAPABILITY_PROJECTS_COPY_V1,
+            CAPABILITY_PROJECTS_DELETE_V1,
+            CAPABILITY_PROJECTS_UNITY_MIGRATION_V1,
+        ],
+        "alcomd_query_project_candidates" => &[CAPABILITY_PACKAGES_CANDIDATES_V1],
+        "alcomd_list_user_packages"
+        | "alcomd_get_user_package"
+        | "alcomd_enroll_user_package"
+        | "alcomd_refresh_user_package"
+        | "alcomd_remove_user_package" => &[CAPABILITY_PACKAGES_USER_PACKAGES_V1],
+        _ => return None,
+    })
+}
+
 pub const METHOD_PROJECT_INVENTORY: &str = "packages.projectInventory";
 pub const METHOD_TEMPLATE_GET: &str = "projectTemplates.get";
 pub const METHOD_TEMPLATE_EDIT: &str = "projectTemplates.edit";

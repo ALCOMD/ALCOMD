@@ -21,56 +21,12 @@ pub(super) async fn dispatch(
     application: &ProjectCreateApplication,
     access: &AccessContext,
 ) -> DispatchAction {
-    let capability = match request.method.as_str() {
-        rpc::METHOD_PROJECTS_CREATE => rpc::CAPABILITY_PROJECTS_CREATE_V1,
-        _ => rpc::CAPABILITY_PROJECT_TEMPLATES_V1,
-    };
-    if let Some(action) = require_capability(&request.id, state, capability) {
+    if let Some(action) =
+        require_capability(&request.id, state, rpc::CAPABILITY_PROJECT_TEMPLATES_V1)
+    {
         return action;
     }
-    dispatch_method(request, state, application, access).await
-}
-
-async fn dispatch_method(
-    request: rpc::RequestEnvelope,
-    state: &ConnectionState,
-    application: &ProjectCreateApplication,
-    access: &AccessContext,
-) -> DispatchAction {
     match request.method.as_str() {
-        rpc::METHOD_PROJECTS_CREATE => {
-            let params = parse!(request, rpc::ProjectsCreateParams);
-            if params.template.is_some()
-                && let Some(action) =
-                    require_capability(&request.id, state, rpc::CAPABILITY_PROJECT_TEMPLATES_V1)
-            {
-                return action;
-            }
-            let Ok(key) = IdempotencyKey::parse(params.idempotency_key) else {
-                return invalid(request.id);
-            };
-            let input = app::ProjectCreateInput {
-                name: params.name,
-                target_parent: params.target_parent,
-                unity_version: params.unity_version,
-                template: params.template.map(|value| app::ProjectTemplateRef {
-                    id: value.id,
-                    revision: value.revision,
-                }),
-            };
-            match application.create(access, input, key).await {
-                Ok(value) => success_action(
-                    request.id,
-                    rpc::ProjectsCreateResult {
-                        operation_id: value.operation_id.to_string(),
-                        project_id: value.project_id.to_string(),
-                        replayed: value.replayed,
-                    },
-                    None,
-                ),
-                Err(source) => project_create_error(request.id, source),
-            }
-        }
         rpc::METHOD_PROJECT_TEMPLATES_LIST => {
             let params = parse!(request, rpc::ProjectTemplatesListParams);
             if params.cursor.as_deref().is_some_and(str::is_empty) {

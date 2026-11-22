@@ -459,6 +459,7 @@ fn staged_operation(connection: &mut Connection, kind: &str) -> OperationId {
                     created_at_ms: 1,
                     expires_at_ms: 900_001,
                 },
+                r#"{"fixture":true}"#,
             )
             .expect("copy plan")
             .plan;

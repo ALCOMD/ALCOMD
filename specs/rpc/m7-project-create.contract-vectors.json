@@ -1,13 +1,11 @@
 {
     "create": {
-        "name": "Created Project",
-        "targetParent": "C:\\Fixture",
+        "target": {"kind": "default", "name": "Created Project"},
         "unityVersion": "2022.3.22f1",
         "idempotencyKey": "create-without-template"
     },
     "createFromTemplate": {
-        "name": "Created Project",
-        "targetParent": "C:\\Fixture",
+        "target": {"kind": "absolute", "parentPath": "C:\\Fixture", "name": "Created Project"},
         "unityVersion": "2022.3.22f1",
         "idempotencyKey": "create-from-template",
         "template": {

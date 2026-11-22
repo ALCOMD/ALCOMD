@@ -53,6 +53,10 @@ async fn live_vrcfury_installs_with_a_locally_pinned_digest() {
         .register_project(
             &access,
             project_root.to_string_lossy().into_owned(),
+            alcomd_platform::resolve_plain_storage_directory(&project_root)
+                .expect("fixture directory identity")
+                .1,
+            r#"{"fixture":true}"#.into(),
             key("project"),
         )
         .await

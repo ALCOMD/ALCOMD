@@ -128,12 +128,22 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
     let original_manifest =
         std::fs::read(p1.join("Packages/vpm-manifest.json")).expect("manifest before");
     let first = owner
-        .project_register(p1.to_string_lossy().into_owned(), "project-one".into())
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: p1.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "project-one".into(),
+        })
         .await
         .expect("project one")
         .project;
     let second = owner
-        .project_register(p2.to_string_lossy().into_owned(), "project-two".into())
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: p2.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "project-two".into(),
+        })
         .await
         .expect("project two")
         .project;
@@ -250,10 +260,12 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
     let future_path = root.join("Created-after-connect");
     project(&future_path);
     let future = owner
-        .project_register(
-            future_path.to_string_lossy().into_owned(),
-            "future-project".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: future_path.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "future-project".into(),
+        })
         .await
         .expect("new disposable project")
         .project;

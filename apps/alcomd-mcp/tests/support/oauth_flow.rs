@@ -515,10 +515,12 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
         .await
         .expect("set isolated defaults");
     let project_id = owner
-        .project_register(
-            source.to_string_lossy().into_owned(),
-            "environment-project".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: source.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "environment-project".into(),
+        })
         .await
         .expect("register native project")
         .project
@@ -750,10 +752,12 @@ async fn oauth_backup_write_works_after_consent_until_revoked() {
         .await
         .expect("isolated backup destination");
     let registered = owner
-        .project_register(
-            source.to_string_lossy().into_owned(),
-            "oauth-backup-project".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: source.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "oauth-backup-project".into(),
+        })
         .await
         .expect("registered project")
         .project;
@@ -1401,10 +1405,12 @@ async fn oauth_package_catalog_and_https_download(protected: bool) {
     let project_root = root.join("Project");
     project(&project_root, false);
     let project = owner
-        .project_register(
-            project_root.to_string_lossy().into_owned(),
-            "register-oauth-package-project".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: project_root.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "register-oauth-package-project".into(),
+        })
         .await
         .expect("register isolated project")
         .project;
@@ -1928,10 +1934,12 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
         let path = root.join(name);
         project(&path, false);
         owner
-            .project_register(
-                path.to_string_lossy().into_owned(),
-                format!("register-{name}"),
-            )
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute {
+                    path: path.to_string_lossy().into_owned(),
+                },
+                idempotency_key: format!("register-{name}"),
+            })
             .await
             .expect("project")
             .project
@@ -2323,10 +2331,12 @@ async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
         projects.push((
             path,
             owner
-                .project_register(
-                    root.join(name).to_string_lossy().into_owned(),
-                    format!("register-{name}"),
-                )
+                .project_register(alcomd_protocol::ProjectRegisterParams {
+                    source: alcomd_protocol::ProjectSource::Absolute {
+                        path: root.join(name).to_string_lossy().into_owned(),
+                    },
+                    idempotency_key: format!("register-{name}"),
+                })
                 .await
                 .expect("register disposable project")
                 .project,
@@ -2913,10 +2923,12 @@ pub(super) async fn extension_provider_oauth(
     let directory = root.join("OAuth-provider-project");
     project(&directory, false);
     let registered = owner
-        .project_register(
-            directory.to_string_lossy().into_owned(),
-            "provider-oauth-project".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: directory.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "provider-oauth-project".into(),
+        })
         .await
         .expect("valid isolated Provider OAuth fixture")
         .project;

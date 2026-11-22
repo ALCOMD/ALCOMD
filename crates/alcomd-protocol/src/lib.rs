@@ -1415,7 +1415,7 @@ pub struct ProjectIdParams {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectRegisterParams {
-    pub path: String,
+    pub source: ProjectSource,
     pub idempotency_key: String,
 }
 
@@ -2389,8 +2389,7 @@ pub struct BackupRestoreParams {
 pub struct ProjectsPlanCopyParams {
     pub source_project_id: String,
     pub expected_revision: u64,
-    pub target_parent_path: String,
-    pub target_leaf: String,
+    pub target: ProjectTarget,
     pub idempotency_key: String,
 }
 

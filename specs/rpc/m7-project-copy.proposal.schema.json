@@ -132,12 +132,11 @@
         "planCopyParams": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["sourceProjectId", "expectedRevision", "targetParentPath", "targetLeaf", "idempotencyKey"],
+            "required": ["sourceProjectId", "expectedRevision", "target", "idempotencyKey"],
             "properties": {
                 "sourceProjectId": {"$ref": "#/$defs/uuid"},
                 "expectedRevision": {"$ref": "#/$defs/revision"},
-                "targetParentPath": {"$ref": "#/$defs/canonicalPath"},
-                "targetLeaf": {"$ref": "#/$defs/targetLeaf"},
+                "target": {"$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m3-project-repository.json#/$defs/projectTarget"},
                 "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128}
             }
         },

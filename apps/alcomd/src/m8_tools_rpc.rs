@@ -164,8 +164,17 @@ fn builtin_entries(capabilities: &HashSet<String>) -> Result<Vec<Entry>, E> {
         &mut entries,
         include_str!("../../../specs/mcp/extensions-v1.schema.json"),
     )?;
+    append_builtin_tools(
+        &mut entries,
+        include_str!("../../../specs/mcp/project-catalog-v1.schema.json"),
+    )?;
     entries.retain(|entry| {
         let name = &entry.descriptor.name;
+        if let Some(required) = rpc::mcp_project_catalog_capabilities(name) {
+            return required
+                .iter()
+                .any(|capability| capabilities.contains(*capability));
+        }
         rpc::mcp_workflows_tool_capability(name)
             .or_else(|| rpc::mcp_repositories_tool_capability(name))
             .or_else(|| rpc::mcp_environment_tool_capability(name))
@@ -727,7 +736,7 @@ mod connection_access_tests {
             (
                 rpc::CAPABILITY_PROJECTS_COPY_V1,
                 "alcomd_apply_project_copy",
-                "alcomd_plan_project_copy",
+                "alcomd_create_project",
             ),
             (
                 rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1,
@@ -763,7 +772,8 @@ mod connection_access_tests {
                 rpc::CAPABILITY_BACKUPS_CREATE_V1,
                 rpc::CAPABILITY_BACKUPS_RESTORE_V1,
                 rpc::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1,
-                rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1,
+                rpc::CAPABILITY_PROJECTS_CREATE_V1,
+                rpc::CAPABILITY_PROJECTS_REGISTRY_V1,
                 rpc::CAPABILITY_MCP_REPOSITORIES_V1,
                 rpc::CAPABILITY_PROJECTS_COPY_V1,
                 rpc::CAPABILITY_PROJECT_INVENTORY_V1,

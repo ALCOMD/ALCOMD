@@ -265,7 +265,9 @@ test("Projects creation split button groups add and restore with distinct action
     await toggle.focus();
     await page.keyboard.press("ArrowDown");
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    await expect(page.getByRole("menuitem")).toHaveCount(2);
+    await expect(page.getByRole("menuitem")).toHaveCount(4);
+    await expect(page.getByRole("menuitem", { name: "Inspect project", exact: true })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Look up plan", exact: true })).toBeVisible();
     await expect(page.getByRole("menuitem").nth(0)).toHaveAccessibleName("Add existing project");
     await expect(page.getByRole("menuitem").nth(1)).toHaveAccessibleName("Restore from backup");
     await expect(page.locator(".alcomd-split-button-options .menu.open")).not.toHaveClass(/animating/);

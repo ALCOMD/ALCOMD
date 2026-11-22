@@ -604,23 +604,19 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
         self.create_in_destination(access, input, key, None).await
     }
 
-    pub async fn replay_mcp_create(
+    pub async fn replay_create(
         &self,
         access: &AccessContext,
         fingerprint: String,
         key: IdempotencyKey,
     ) -> Result<Option<ProjectCreateAccepted>, ProjectCreateError> {
-        if !access.is_mcp_client() {
-            return Err(ProjectCreateError::new(
-                ProjectCreateErrorCode::PermissionDenied,
-            ));
-        }
+        require_template_permission(access, Permission::ProjectsCreate)?;
         self.store
             .project_create_replay(access.principal().clone(), fingerprint, key)
             .await
     }
 
-    pub async fn create_mcp_project(
+    pub async fn create_bound_project(
         &self,
         access: &AccessContext,
         input: ProjectCreateInput,
@@ -628,11 +624,7 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
         fingerprint: String,
         expected_parent_identity: Vec<u8>,
     ) -> Result<ProjectCreateAccepted, ProjectCreateError> {
-        if !access.is_mcp_client() {
-            return Err(ProjectCreateError::new(
-                ProjectCreateErrorCode::PermissionDenied,
-            ));
-        }
+        require_template_permission(access, Permission::ProjectsCreate)?;
         self.create_in_destination(
             access,
             input,

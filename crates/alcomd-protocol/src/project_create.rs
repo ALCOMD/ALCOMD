@@ -3,8 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectsCreateParams {
-    pub name: String,
-    pub target_parent: String,
+    pub target: crate::ProjectTarget,
     pub unity_version: String,
     pub idempotency_key: String,
     #[serde(

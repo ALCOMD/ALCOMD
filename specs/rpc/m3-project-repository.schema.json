@@ -200,10 +200,24 @@
             "type": "object", "additionalProperties": false, "required": ["projectId"],
             "properties": {"projectId": {"$ref": "#/$defs/uuid"}}
         },
+        "relativeProjectPath": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "projectLeaf": {"type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[^/\\\\]+$"},
+        "projectSource": {
+            "oneOf": [
+                {"type": "object", "additionalProperties": false, "required": ["kind", "relativePath"], "properties": {"kind": {"const": "default"}, "relativePath": {"$ref": "#/$defs/relativeProjectPath"}}},
+                {"type": "object", "additionalProperties": false, "required": ["kind", "path"], "properties": {"kind": {"const": "absolute"}, "path": {"$ref": "#/$defs/absolutePath"}}}
+            ]
+        },
+        "projectTarget": {
+            "oneOf": [
+                {"type": "object", "additionalProperties": false, "required": ["kind", "name"], "properties": {"kind": {"const": "default"}, "name": {"$ref": "#/$defs/projectLeaf"}}},
+                {"type": "object", "additionalProperties": false, "required": ["kind", "parentPath", "name"], "properties": {"kind": {"const": "absolute"}, "parentPath": {"$ref": "#/$defs/absolutePath"}, "name": {"$ref": "#/$defs/projectLeaf"}}}
+            ]
+        },
         "projectRegisterParams": {
-            "type": "object", "additionalProperties": false, "required": ["path", "idempotencyKey"],
+            "type": "object", "additionalProperties": false, "required": ["source", "idempotencyKey"],
             "properties": {
-                "path": {"$ref": "#/$defs/absolutePath"},
+                "source": {"$ref": "#/$defs/projectSource"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
             }
         },
