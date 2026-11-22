@@ -63,7 +63,7 @@
 | `packages.planResolve` | 已提供 · 软件包菜单或自定义计划，后者支持本次解析的显式策略 | 已提供 · package resolve | 已提供 · alcomd_plan_package_changes；解析意图，经 mcp.packages.plan |
 | `packages.planUpgrade` | 已提供 · 软件包表采用 Core 推荐；自定义计划可指定范围、来源及预发布策略 | 已提供 · package upgrade；省略版本走 Core，可显式传范围、来源或精确例外 | 已提供 · alcomd_plan_package_changes；升级意图可省略版本 |
 | `packages.projectInventory` | 已提供 · 项目详情打开已安装软件包清单 | 已提供 · package inventory；支持项目修订及分页 | 已提供 · alcomd_list_installed_packages；直接读取项目清单 |
-| `packages.queryProjectCandidates` | 已提供 · 项目包表、版本和来源选择器按当前项目快照查询 | 已提供 · package candidates；项目、修订与候选视图 | 已提供 · alcomd_query_project_candidates；原生候选视图及分页 |
+| `packages.queryProjectCandidates` | 已提供 · 项目包表、版本和来源选择器按当前项目快照查询 | 已提供 · package candidates；项目、修订与候选视图 | 已提供 · alcomd_query_project_candidates 接受原生候选视图及分页。alcomd_search_packages、alcomd_get_package 和 alcomd_list_package_sources 提供搜索、详情和来源视图 |
 | `packages.userPackages.enroll` | 已提供 · 资源页的用户包列表选择本地目录登记 | 已提供 · package user-package enroll | 已提供 · alcomd_enroll_user_package |
 | `packages.userPackages.get` | 已提供 · 用户包详情查询选定来源 | 已提供 · package user-package get | 已提供 · alcomd_get_user_package |
 | `packages.userPackages.list` | 已提供 · 资源页读取本地用户包清单 | 已提供 · package user-package list | 已提供 · alcomd_list_user_packages |
