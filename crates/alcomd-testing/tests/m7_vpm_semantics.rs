@@ -56,7 +56,10 @@ async fn fixture(
     manifests: Vec<Value>,
     missing: Option<&str>,
 ) -> Fixture {
-    let dir = std::env::temp_dir().join(format!("alcomd-seven-{label}-{}", uuid::Uuid::new_v4()));
+    let temp = std::env::temp_dir()
+        .canonicalize()
+        .expect("resolve temporary fixture parent");
+    let dir = temp.join(format!("alcomd-seven-{label}-{}", uuid::Uuid::new_v4()));
     fs::create_dir(&dir).expect("owned VPM regression fixture succeeds");
     let root = dir.join("Project");
     for part in ["Assets", "Packages", "ProjectSettings"] {
