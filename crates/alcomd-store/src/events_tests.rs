@@ -126,6 +126,59 @@ pub(super) async fn installed_extension_for(
 }
 
 #[tokio::test]
+async fn delegated_installations_remain_visible_to_owner_after_revocation() {
+    use alcomd_application::{McpIdentityApplication, McpIdentityWrite};
+    let directory = Directory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("isolated store");
+    let management = McpIdentityApplication::new(store.clone());
+    let local = AccessContext::local_owner();
+    let installer = management
+        .write(
+            &local,
+            "create-installer".into(),
+            McpIdentityWrite::Create {
+                name: "Installer".into(),
+            },
+            1,
+        )
+        .await
+        .expect("installer")
+        .client;
+    let reader = management
+        .write(
+            &local,
+            "create-reader".into(),
+            McpIdentityWrite::Create {
+                name: "Reader".into(),
+            },
+            1,
+        )
+        .await
+        .expect("reader")
+        .client;
+    let extension = installed_extension_for(&store, installer.principal_id.clone()).await;
+    let inspect =
+        |principal| M6Store::get_extension(&store, principal, extension.extension_id.clone());
+    assert!(inspect(reader.principal_id.clone()).await.is_ok());
+    for client in [&reader, &installer] {
+        management
+            .write(
+                &local,
+                format!("revoke-{}", client.client_id),
+                McpIdentityWrite::Revoke {
+                    id: client.client_id,
+                    expected: client.revision,
+                },
+                10,
+            )
+            .await
+            .expect("revoke");
+    }
+    assert!(inspect(reader.principal_id).await.is_err());
+    assert!(inspect(PrincipalId::local_owner()).await.is_ok());
+}
+
+#[tokio::test]
 async fn extension_changes_of_another_owner_do_not_invalidate_local_resources() {
     let directory = Directory::new();
     let store = StateStoreHandle::open(directory.database()).expect("isolated store");

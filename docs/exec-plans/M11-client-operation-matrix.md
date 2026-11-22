@@ -49,7 +49,7 @@
 | `extensions.ui.close` | 已提供 · 离开扩展页面或关闭视图后释放原会话 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
 | `extensions.ui.dispatch` | 已提供 · 在扩展视图内操作控件，发送会话、快照修订和事件序号 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
 | `extensions.ui.open` | 已提供 · 从导航或扩展页打开界面并取得会话 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
-| `extensions.ui.refresh` | 已提供 · 刷新打开的扩展视图，提交同一会话 ID 和快照修订 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
+| `extensions.ui.refresh` | 已提供 · [扩展视图刷新按钮](../../apps/alcomd-gui/src/App.tsx)传入当前会话 ID 与快照修订；[浏览器回归](../../apps/alcomd-gui/tests/browser/m7-h4-portable.spec.ts)连续刷新并核对两次实际请求 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
 | `logs.read` | 已提供 · 日志页筛选和续页 | 已提供 · logs read | 已提供 · alcomd_read_logs |
 | `operations.cancel` | 已提供 · 任务详情确认取消 | 已提供 · operation cancel | 已提供 · alcomd_cancel_operation |
 | `operations.get` | 已提供 · 打开任务、查看进度和终态 | 已提供 · operation get 和 operation follow 按同一任务 ID 查询 | 已提供 · alcomd_get_operation |
@@ -63,7 +63,7 @@
 | `packages.planResolve` | 已提供 · 软件包菜单或自定义计划，后者支持本次解析的显式策略 | 已提供 · package resolve | 已提供 · alcomd_plan_package_changes；解析意图，经 mcp.packages.plan |
 | `packages.planUpgrade` | 已提供 · 软件包表采用 Core 推荐；自定义计划可指定范围、来源及预发布策略 | 已提供 · package upgrade；省略版本走 Core，可显式传范围、来源或精确例外 | 已提供 · alcomd_plan_package_changes；升级意图可省略版本 |
 | `packages.projectInventory` | 已提供 · 项目详情打开已安装软件包清单 | 已提供 · package inventory；支持项目修订及分页 | 已提供 · alcomd_list_installed_packages；直接读取项目清单 |
-| `packages.queryProjectCandidates` | 已提供 · 项目包表、版本和来源选择器按当前项目快照查询 | 已提供 · package candidates；项目、修订与候选视图 | 已提供 · alcomd_query_project_candidates；原生候选视图及分页 |
+| `packages.queryProjectCandidates` | 已提供 · 项目包表、版本和来源选择器按当前项目快照查询 | 已提供 · package candidates；项目、修订与候选视图 | 已提供 · alcomd_query_project_candidates 接受原生候选视图及分页。alcomd_search_packages、alcomd_get_package 和 alcomd_list_package_sources 提供搜索、详情和来源视图 |
 | `packages.userPackages.enroll` | 已提供 · 资源页的用户包列表选择本地目录登记 | 已提供 · package user-package enroll | 已提供 · alcomd_enroll_user_package |
 | `packages.userPackages.get` | 已提供 · 用户包详情查询选定来源 | 已提供 · package user-package get | 已提供 · alcomd_get_user_package |
 | `packages.userPackages.list` | 已提供 · 资源页读取本地用户包清单 | 已提供 · package user-package list | 已提供 · alcomd_list_user_packages |

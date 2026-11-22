@@ -27,9 +27,34 @@ struct InterfaceEvidence {
     optional: Vec<String>,
 }
 
+// Registration binds delegated MCP principals to the same installation inventory
+// as the local owner. Revocation terminates access while retaining ownership
+// history so the owner can still manage packages installed by that client.
+fn shares_local_inventory(connection: &Connection, caller: &PrincipalId) -> Result<bool, M6Error> {
+    if caller == &PrincipalId::local_owner() {
+        return Ok(true);
+    }
+    connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM mcp_clients WHERE principal_id=?1 AND revoked_at_ms IS NULL)",
+        [caller.as_str()], |row| row.get(0)
+    ).map_err(store_error)
+}
+
+fn visible_extension(
+    connection: &Connection,
+    caller: &PrincipalId,
+    id: &str,
+) -> Result<bool, M6Error> {
+    connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM extensions WHERE extension_id=?1 AND
+         (principal_id=?2 OR (?3 AND (principal_id=?4 OR principal_id IN (SELECT principal_id FROM mcp_clients)))))",
+        params![id, caller.as_str(), shares_local_inventory(connection,caller)?, PrincipalId::local_owner().as_str()], |row| row.get(0)
+    ).map_err(store_error)
+}
+
 pub(super) fn list_extensions(
     connection: &Connection,
-    _caller: &PrincipalId,
+    caller: &PrincipalId,
     cursor: Option<&ExtensionCursor>,
     limit: u32,
 ) -> Result<ExtensionPage, M6Error> {
@@ -41,7 +66,7 @@ pub(super) fn list_extensions(
                     e.grant_revision, e.lifecycle_generation, e.revision, e.ui_protocol
              FROM extensions e
              LEFT JOIN extension_instances i ON i.extension_id=e.extension_id
-             WHERE e.extension_id>?1
+             WHERE e.extension_id>?1 AND (e.principal_id=?3 OR (?4 AND (e.principal_id=?5 OR e.principal_id IN (SELECT principal_id FROM mcp_clients))))
              ORDER BY e.extension_id LIMIT ?2",
         )
         .map_err(store_error)?;
@@ -49,7 +74,10 @@ pub(super) fn list_extensions(
         .query_map(
             params![
                 cursor.map_or("", ExtensionCursor::last_extension_id),
-                i64::from(limit) + 1
+                i64::from(limit) + 1,
+                caller.as_str(),
+                shares_local_inventory(connection, caller)?,
+                PrincipalId::local_owner().as_str()
             ],
             load_extension_row,
         )
@@ -72,9 +100,12 @@ pub(super) fn list_extensions(
 
 pub(super) fn get_extension(
     connection: &Connection,
-    _caller: &PrincipalId,
+    caller: &PrincipalId,
     extension_id: &str,
 ) -> Result<ExtensionRecord, M6Error> {
+    if !visible_extension(connection, caller, extension_id)? {
+        return Err(error(M6ErrorCode::NotInstalled));
+    }
     connection
         .query_row(
             "SELECT e.extension_id, e.version, e.api_major, e.package_digest,
@@ -222,9 +253,12 @@ pub(super) fn list_permissions(
 
 fn installed_permission_evidence(
     connection: &Connection,
-    _caller: &PrincipalId,
+    caller: &PrincipalId,
     extension_id: &str,
 ) -> Result<(PlanId, PermissionEvidence), M6Error> {
+    if !visible_extension(connection, caller, extension_id)? {
+        return Err(error(M6ErrorCode::NotInstalled));
+    }
     let frozen = connection
         .query_row(
             "SELECT p.plan_id, p.requested_permissions_json
@@ -299,9 +333,12 @@ fn valid_permission_declarations(permissions: &[String]) -> bool {
 
 pub(super) fn live_package_locator(
     connection: &Connection,
-    _caller: &PrincipalId,
+    caller: &PrincipalId,
     extension_id: &str,
 ) -> Result<String, M6Error> {
+    if !visible_extension(connection, caller, extension_id)? {
+        return Err(error(M6ErrorCode::NotInstalled));
+    }
     connection
         .query_row(
             "SELECT live_package_locator FROM extensions
@@ -316,9 +353,12 @@ pub(super) fn live_package_locator(
 
 pub(super) fn has_background_authority(
     connection: &Connection,
-    _caller: &PrincipalId,
+    caller: &PrincipalId,
     extension_id: &str,
 ) -> Result<bool, M6Error> {
+    if !visible_extension(connection, caller, extension_id)? {
+        return Ok(false);
+    }
     connection
         .query_row(
             "SELECT EXISTS(
@@ -447,7 +487,14 @@ fn create_install_plan_on(
         .map_err(|_| internal())?;
     reject_tool_namespace_collision(transaction, &draft.evidence)?;
     let current = extension_revision(transaction, owner, &draft.evidence.extension_id)?;
-    if current.is_some() {
+    if transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM extensions WHERE extension_id=?1)",
+            [&draft.evidence.extension_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(store_error)?
+    {
         return Err(error(M6ErrorCode::AlreadyInstalled));
     }
     if current != draft.expected_revision {
@@ -636,11 +683,10 @@ pub(super) fn begin_apply(
                 "UPDATE extensions SET desired_state='uninstalling',
                  grant_revision=grant_revision+1, lifecycle_generation=lifecycle_generation+1,
                  revision=revision+1, updated_at_ms=?1
-                 WHERE extension_id=?2 AND principal_id=?3 AND revision=?4",
+                 WHERE extension_id=?2 AND revision=?3",
                 params![
                     now,
                     plan.evidence.extension_id,
-                    plan.owner.as_str(),
                     plan.expected_revision.map(sqlite_revision)
                 ],
             )
@@ -648,7 +694,7 @@ pub(super) fn begin_apply(
         if changed != 1 {
             return Err(error(M6ErrorCode::RecoveryRequired));
         }
-        extension_changed = true;
+        extension_changed = shares_local_inventory(&transaction, &plan.owner)?;
         transaction
             .execute(
                 "DELETE FROM extension_grants WHERE extension_id=?1",
@@ -1274,8 +1320,9 @@ pub(super) fn set_grant(
     super::operation_logs::committed(&transaction, owner, now_ms, log)
         .map_err(|cause| unavailable().with_source(cause))?;
     save_idempotent(&transaction, owner, method, key, &fingerprint, &result, now)?;
+    let changed = shares_local_inventory(&transaction, owner)?;
     transaction.commit().map_err(store_error)?;
-    Ok((result, true))
+    Ok((result, changed))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1408,8 +1455,9 @@ pub(super) fn set_desired(
     )
     .map_err(|cause| unavailable().with_source(cause))?;
     save_idempotent(&transaction, owner, method, key, &fingerprint, &result, now)?;
+    let changed = shares_local_inventory(&transaction, owner)?;
     transaction.commit().map_err(store_error)?;
-    Ok((result, true))
+    Ok((result, changed))
 }
 
 pub(super) fn data_get(
@@ -1678,6 +1726,9 @@ pub(super) fn prepare_instance(
     now_ms: u64,
 ) -> Result<(ExtensionStartContext, bool), M6Error> {
     let transaction = transaction(connection)?;
+    if !visible_extension(&transaction, owner, extension_id)? {
+        return Err(error(M6ErrorCode::NotInstalled));
+    }
     let (publisher, grant_revision, lifecycle_generation, locator): (String, i64, i64, String) =
         transaction
             .query_row(
@@ -1755,8 +1806,9 @@ pub(super) fn prepare_instance(
         background_integration: Default::default(),
         activation_kind: alcomd_application::ExtensionActivationKind::Background,
     };
+    let changed = shares_local_inventory(&transaction, owner)?;
     transaction.commit().map_err(store_error)?;
-    Ok((context, true))
+    Ok((context, changed))
 }
 
 pub(super) fn mark_instance_running(
@@ -1807,13 +1859,7 @@ pub(super) fn mark_instance_stopped(
 }
 
 fn is_local_extension(connection: &Connection, extension_id: &str) -> Result<bool, M6Error> {
-    connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM extensions WHERE extension_id=?1 AND principal_id=?2)",
-            params![extension_id, PrincipalId::LOCAL_OWNER],
-            |row| row.get(0),
-        )
-        .map_err(store_error)
+    visible_extension(connection, &PrincipalId::local_owner(), extension_id)
 }
 
 pub(super) fn renew_instance(
@@ -1998,7 +2044,7 @@ pub(super) fn recover_instances(
     let local_changed = transaction
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM extension_instances i JOIN extensions e
-         ON e.extension_id=i.extension_id WHERE e.principal_id=?1 AND i.daemon_epoch<>?2
+         ON e.extension_id=i.extension_id WHERE (e.principal_id=?1 OR e.principal_id IN (SELECT principal_id FROM mcp_clients)) AND i.daemon_epoch<>?2
          AND i.runtime_state IN ('starting', 'running', 'stopping'))",
             params![PrincipalId::LOCAL_OWNER, daemon_epoch],
             |row| row.get::<_, bool>(0),
@@ -2178,9 +2224,12 @@ fn load_extension_row(row: &Row<'_>) -> rusqlite::Result<ExtensionRecord> {
 
 fn extension_revision(
     connection: &Connection,
-    _caller: &PrincipalId,
+    caller: &PrincipalId,
     extension_id: &str,
 ) -> Result<Option<Revision>, M6Error> {
+    if !visible_extension(connection, caller, extension_id)? {
+        return Ok(None);
+    }
     connection
         .query_row(
             "SELECT revision FROM extensions WHERE extension_id=?1",

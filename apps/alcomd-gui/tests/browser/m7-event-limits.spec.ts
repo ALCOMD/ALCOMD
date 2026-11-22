@@ -1,12 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function open(page: Page) {
-    await page.clock.install();
+    await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
+    await page.clock.pauseAt(new Date("2026-01-01T01:00:00Z"));
     await page.goto("/tests/browser/utility-workspace.html?eventLimits=1");
     await expect(page.getByRole("heading", { name: "Event coordinator limits evidence", exact: true })).toBeVisible();
     // The heading renders before the lazy evidence module initializes its global.
     await expect.poll(() => page.evaluate(() => window.eventLimits?.coordinator.getSnapshot().kind)).toBe("ready");
-    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
 }
 
 test("event limits startup waits for the lazy evidence module after the heading is visible", async ({ page }) => {
