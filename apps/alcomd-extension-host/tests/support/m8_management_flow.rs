@@ -6,7 +6,7 @@ use alcomd_protocol::{
     McpTransportStreamInput, UiFieldValue, UiSnapshot, UiSubmittedField,
 };
 
-const MANAGEMENT_FIXTURE_PROFILE: &str = "[permissions]\nrequired=[]\noptional=[\"mcp.clients.read\",\"mcp.clients.manage\",\"mcp.connections.read\",\"mcp.requests.read\",\"mcp.subscription-streams.read\"]\n[ui]\nprotocol=\"portable-v1\"\n";
+const MANAGEMENT_FIXTURE_PROFILE: &str = "[permissions]\nrequired=[]\noptional=[\"mcp.clients.manage\",\"mcp.clients.read\",\"mcp.connections.read\",\"mcp.requests.read\",\"mcp.subscription-streams.read\"]\n[ui]\nprotocol=\"portable-v1\"\n";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn transport_host_reads_only_current_granted_groups_and_revokes_old_ui_lease() {
@@ -73,7 +73,10 @@ async fn transport_host_reads_only_current_granted_groups_and_revokes_old_ui_lea
         })
         .await
         .expect("current catalog");
-    assert_eq!(permissions.available_permissions.len(), 15);
+    assert_eq!(
+        permissions.available_permissions,
+        alcomd_application::EXTENSION_PERMISSIONS
+    );
     assert!(
         permissions
             .available_permissions
