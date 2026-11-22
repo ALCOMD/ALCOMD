@@ -184,6 +184,8 @@ const SUPPORTED_CAPABILITIES = [
     RPC_CAPABILITIES.repositoriesListFiles,
     RPC_CAPABILITIES.repositoriesListImport,
     "state.check.v1",
+    "clients.registry.v1",
+    "desktop.actions.v1",
     "projects.create.v1",
     "projectTemplates.v1",
     "unity.hub.open.v1",
@@ -263,6 +265,113 @@ class BrowserUnityWindows implements GuiUnityWindows {
 }
 
 class DeterministicGuiClient implements GuiRpcClient {
+    async aiRuntimeSnapshot(): ReturnType<GuiRpcClient["aiRuntimeSnapshot"]> {
+        const rows = {items:[],totalTracked:0,truncated:false};
+        return {instanceId:"core-fixture",observedAtMs:1,canReadConnections:true,canReadRequests:true,coverageIncomplete:false,connections:rows,requests:rows};
+    }
+    async aiTransportSnapshot(): ReturnType<GuiRpcClient["aiTransportSnapshot"]> {
+        const rows = {items:[],totalTracked:0,truncated:false};
+        return {instanceId:"core-fixture",observedAtMs:1,status:"available",canReadConnections:true,canReadRequests:true,
+            canReadSubscriptionStreams:true,coverageIncomplete:false,observers:[],connections:rows,requests:rows,subscriptionStreams:rows};
+    }
+    private readonly aiReviews = new Map<string, Awaited<ReturnType<GuiRpcClient["aiRequestGet"]>>>();
+    private readonly registrations = new Map<string, Awaited<ReturnType<GuiRpcClient["aiOAuthRevoke"]>>>();
+    async aiRequestCreate(p: Parameters<GuiRpcClient["aiRequestCreate"]>[0]): ReturnType<GuiRpcClient["aiRequestCreate"]> {
+        const id = crypto.randomUUID();
+        const record = {requestId:id,action:p.action,requester:"local:owner",fingerprint:crypto.randomUUID(),status:"pending" as const, expiresAtMs:Date.now()+600000};
+        this.aiReviews.set(id,record);
+        return record;
+    }
+    async aiRequestGet({requestId}: Parameters<GuiRpcClient["aiRequestGet"]>[0]): ReturnType<GuiRpcClient["aiRequestGet"]> {
+        const record = this.aiReviews.get(requestId);
+        if (!record) throw {code:"invalid_request"};
+        return record;
+    }
+    async aiRequestList(): ReturnType<GuiRpcClient["aiRequestList"]> {return {items:[...this.aiReviews.values()],nextCursor:null};}
+    async aiRequestDecide(p: Parameters<GuiRpcClient["aiRequestDecide"]>[0]): ReturnType<GuiRpcClient["aiRequestDecide"]> {
+        const previous = await this.aiRequestGet(p);
+        if (previous.fingerprint !== p.expectedFingerprint || previous.status !== "pending") throw {code:"revision_conflict"};
+        const request = {...previous,status:p.approve ? "approved" as const : "denied" as const};
+        let credential: string | undefined;
+        let clientSecret: string | undefined;
+        if (p.approve) {
+            const action = request.action;
+            const key = {idempotencyKey:p.idempotencyKey};
+            switch (action.kind) {
+                case "createClient": await this.aiClientCreate({...action,...key}); break;
+                case "issueCredential": credential = (await this.aiClientIssueCredential({...action,...key})).credential; break;
+                case "revokeClient": await this.aiClientRevoke({...action,...key}); break;
+                case "setOAuthRegistration": clientSecret = (await this.aiOAuthSet({...action,...key})).clientSecret ?? undefined; break;
+                case "revokeOAuthRegistration": await this.aiOAuthRevoke({...action,...key}); break;
+            }
+        }
+        this.aiReviews.set(request.requestId,request);
+        return {request,credential,clientSecret};
+    }
+    async aiOAuthList(): ReturnType<GuiRpcClient["aiOAuthList"]> {return {items:[...this.registrations.values()]};}
+    async aiOAuthSet(p: Parameters<GuiRpcClient["aiOAuthSet"]>[0]): ReturnType<GuiRpcClient["aiOAuthSet"]> {
+        const previous = [...this.registrations.values()].find(item => item.clientId === p.clientId && !item.revokedAtMs);
+        if ((previous?.revision ?? 0) !== p.expectedRevision) throw {code:"revision_conflict"};
+        const registration = {clientId:p.clientId,issuer:p.issuer,resource:p.resource,redirectUris:p.redirectUris,confidential:p.confidential,
+            allowRefresh:p.allowRefresh,oauthClientId:previous?.oauthClientId ?? crypto.randomUUID(),revision:p.expectedRevision+1,createdAtMs:Date.now()};
+        this.registrations.set(registration.oauthClientId,registration);
+        return {registration,clientSecret:p.confidential ? "browser-fixture-once" : undefined};
+    }
+    async aiOAuthRevoke(p: Parameters<GuiRpcClient["aiOAuthRevoke"]>[0]): ReturnType<GuiRpcClient["aiOAuthRevoke"]> {
+        const previous = this.registrations.get(p.oauthClientId);
+        if (!previous || previous.revision !== p.expectedRevision) throw {code:"revision_conflict"};
+        const record = {...previous,revision:previous.revision+1,revokedAtMs:Date.now()};
+        this.registrations.set(record.oauthClientId,record);
+        return record;
+    }
+    async aiOAuthRequestGet({requestId}: Parameters<GuiRpcClient["aiOAuthRequestGet"]>[0]): ReturnType<GuiRpcClient["aiOAuthRequestGet"]> {
+        if (requestId !== "oauth-browser-request") throw {code:"mcp_oauth_expired"};
+        return {requestId,oauthClientId:"browser-oauth",clientId:"browser-client",displayName:"Browser client",issuer:"https://localhost:4443",resource:"https://localhost:4443/mcp",redirectUri:"http://localhost:8080/callback",scopes:["mcp"],approvalFingerprint:"browser-review",status:"pending",expiresAtMs:Date.now()+600000};
+    }
+    async aiOAuthRequestDecide(p: Parameters<GuiRpcClient["aiOAuthRequestDecide"]>[0]): ReturnType<GuiRpcClient["aiOAuthRequestDecide"]> {
+        const review = await this.aiOAuthRequestGet(p);
+        if (review.approvalFingerprint !== p.expectedFingerprint) throw {code:"revision_conflict"};
+        return {requestId:p.requestId,status:p.approve ? "approved" : "denied"};
+    }
+    private readonly aiClients = new Map<string, Awaited<ReturnType<GuiRpcClient["aiClientCreate"]>>>();
+    async aiClientsList(): ReturnType<GuiRpcClient["aiClientsList"]> {
+        return { items: Array.from(this.aiClients.values()), nextCursor: null };
+    }
+    async aiClientCreate(params: Parameters<GuiRpcClient["aiClientCreate"]>[0]): ReturnType<GuiRpcClient["aiClientCreate"]> {
+        const clientId = crypto.randomUUID();
+        const item = { clientId, principalId: `mcp:${clientId}`, displayName: params.displayName, revision: 1, createdAtMs: Date.now(), revokedAtMs: null };
+        this.aiClients.set(clientId, item);
+        return item;
+    }
+    async aiClientRevoke(params: Parameters<GuiRpcClient["aiClientRevoke"]>[0]): ReturnType<GuiRpcClient["aiClientRevoke"]> {
+        const current = this.aiClients.get(params.clientId);
+        if (!current || current.revision !== params.expectedRevision) throw { code: "revision_conflict" };
+        const item = { ...current, revision: current.revision + 1, revokedAtMs: Date.now() };
+        this.aiClients.set(item.clientId, item);
+        return item;
+    }
+    async aiClientIssueCredential(params: Parameters<GuiRpcClient["aiClientIssueCredential"]>[0]): ReturnType<GuiRpcClient["aiClientIssueCredential"]> {
+        const current = this.aiClients.get(params.clientId);
+        if (!current || current.revision !== params.expectedRevision) throw { code: "revision_conflict" };
+        const revision = current.revision + 1;
+        this.aiClients.set(current.clientId, { ...current, revision });
+        return { clientId: current.clientId, revision, credentialId: crypto.randomUUID(), credential: "browser-fixture-one-time-credential" };
+    }
+    private registryActive = true;
+    async clientsList(): ReturnType<GuiRpcClient["clientsList"]> {
+        return { coreInstanceId: "core-fixture", coverageIncomplete: false, items: [{ programKey: "org.test.gui", programId: "org.test.gui",
+            displayName: "Installed GUI", kind: "gui", installations: [{ scope: "user", productVersion: "1.0" }],
+            activeInstanceCount: this.registryActive ? 1 : 0, activeConnectionCount: this.registryActive ? 1 : 0 }] };
+    }
+    async clientInstancesList(): ReturnType<GuiRpcClient["clientInstancesList"]> {
+        return { coreInstanceId: "core-fixture", items: this.registryActive ? [{ instanceId: "instance-fixture", connections: [{ connectionId: "connection-fixture",
+            connectedAtMs: 1, reported: { name: "self-reported GUI", version: "1.0", instanceId: "diagnostic" } }] }] : [] };
+    }
+    async clientsDisconnect(params: Parameters<GuiRpcClient["clientsDisconnect"]>[0]): ReturnType<GuiRpcClient["clientsDisconnect"]> {
+        if (params.expectedCoreInstanceId !== "core-fixture" || params.target.id !== (params.target.kind === "instance" ? "instance-fixture" : "connection-fixture")) throw { code: "client_registry_not_found" };
+        this.registryActive = false;
+        return { disconnectedConnectionIds: ["connection-fixture"] };
+    }
     readonly unityWindows = query.has("unityWindows") ? (window.unityWindowEvidence = new BrowserUnityWindows()) : undefined;
     async logsRead(params: LogsReadParams): Promise<LogsReadResult> {
         const fixture = window.fixtureLogs;

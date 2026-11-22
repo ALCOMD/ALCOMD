@@ -90,20 +90,24 @@ fn invalid_registration() -> io::Error {
 }
 
 #[cfg(windows)]
-use crate::windows::core_installation::{open_registration, validate_core_executable};
+pub(crate) use crate::windows::core_installation::{open_registration, validate_core_executable};
 
 #[cfg(unix)]
-fn open_registration(path: &Path) -> io::Result<std::fs::File> {
-    open_protected_file(path, false).map(std::fs::File::from)
+pub(crate) fn open_registration(path: &Path) -> io::Result<std::fs::File> {
+    open_protected_file(path, false, false).map(std::fs::File::from)
 }
 
 #[cfg(unix)]
-fn validate_core_executable(path: &Path) -> io::Result<()> {
-    open_protected_file(path, true).map(drop)
+pub(crate) fn validate_core_executable(path: &Path) -> io::Result<()> {
+    open_protected_file(path, true, true).map(drop)
 }
 
 #[cfg(unix)]
-fn open_protected_file(path: &Path, executable: bool) -> io::Result<rustix::fd::OwnedFd> {
+pub(crate) fn open_protected_file(
+    path: &Path,
+    executable: bool,
+    root_owner_allowed: bool,
+) -> io::Result<rustix::fd::OwnedFd> {
     use rustix::fs::{FileType, Mode, OFlags, fstat, openat};
     use rustix::process::geteuid;
 
@@ -126,7 +130,7 @@ fn open_protected_file(path: &Path, executable: bool) -> io::Result<rustix::fd::
     .map_err(io::Error::from)?;
     let stat = fstat(&file).map_err(io::Error::from)?;
     let uid = geteuid().as_raw();
-    let owner_allowed = stat.st_uid == uid || executable && stat.st_uid == 0;
+    let owner_allowed = stat.st_uid == uid || root_owner_allowed && stat.st_uid == 0;
     let executable_mode = if stat.st_uid == uid { 0o100 } else { 0o001 };
     if !owner_allowed
         || FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile

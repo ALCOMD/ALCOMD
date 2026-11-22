@@ -194,17 +194,24 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
     )
     .await
     .expect("B bound");
-    let delegated = ca
+    let registry = owner
         .mcp_clients_list(McpClientsListParams::default())
         .await
-        .expect("authenticated client reads the same client registry");
-    assert_eq!(
-        delegated,
-        owner
+        .expect("owner reads registry");
+    assert_eq!(registry.items.len(), 2);
+    for (client, id) in [(&mut ca, &a.client_id), (&mut cb, &b.client_id)] {
+        let own_record = registry
+            .items
+            .iter()
+            .find(|record| &record.client_id == id)
+            .expect("registered identity");
+        let delegated = client
             .mcp_clients_list(McpClientsListParams::default())
             .await
-            .expect("owner reads registry")
-    );
+            .expect("authenticated client reads its own registration");
+        assert_eq!(delegated.items.as_slice(), std::slice::from_ref(own_record));
+        assert!(delegated.next_cursor.is_none());
+    }
     let page = owner
         .mcp_clients_list(McpClientsListParams {
             cursor: None,

@@ -50,17 +50,18 @@ def check_native_sdk():
     declared_types.add("EmptyParams")
     assert declared_methods.issuperset(methods), "catalogue contains an undeclared RPC method"
 
-    rust = (ROOT / "crates/alcomd-client/src/lib.rs").read_text(encoding="utf-8")
+    rust = "\n".join(path.read_text(encoding="utf-8") for path in (ROOT / "crates/alcomd-client/src").glob("*.rs"))
     wrappers = {}
     for entry in re.finditer(r"    pub async fn (\w+)\(.*?(?=\n    (?:pub |async |fn )|\Z)", rust, re.S):
         method_call = re.search(r"\.call\(\s*(?:alcomd_protocol::)?(METHOD_\w+),", entry[0])
         if method_call:
             wrappers[entry[1]] = constants[method_call[1]]
     wrappers["EventSubscription::connect"] = constants["METHOD_EVENTS_SUBSCRIBE"]
+    service_methods = set(json.loads((RPC.parent / "first-release-contracts.json").read_text(encoding="utf-8"))["serviceMethods"])
     for wire, entry in methods.items():
         assert entry["kind"] in ("read", "write", "stream"), wire
         assert entry["kind"] != "stream" or wire == "events.subscribe", wire
-        assert not wire.startswith("mcp.") and wire != "system.hello", wire
+        assert wire not in service_methods, f"{wire} is reserved for the protocol adapter"
         assert wrappers[entry["rustMethod"]] == wire, wire
         assert capabilities.issuperset(entry["capabilities"]), wire
         error_profiles = entry["errorProfiles"]

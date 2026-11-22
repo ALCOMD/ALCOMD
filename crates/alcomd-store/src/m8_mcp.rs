@@ -40,6 +40,17 @@ impl From<PrincipalId> for AdministrativeActor {
 }
 
 impl AdministrativeActor {
+    pub(super) fn verify_owner(&self, db: &Connection) -> Result<(), E> {
+        if self.principal != PrincipalId::local_owner() {
+            return Err(E::PermissionDenied);
+        }
+        self.verify(db)
+    }
+
+    pub(super) fn scope(&self) -> Option<&str> {
+        (self.principal != PrincipalId::local_owner()).then(|| self.principal.as_str())
+    }
+
     pub(super) fn verify(&self, db: &Connection) -> Result<(), E> {
         if let Some(authentication) = &self.authentication {
             let client = super::m8_tools::authenticate(db, authentication)
@@ -64,7 +75,7 @@ fn write(
     let tx = db
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(unavailable)?;
-    actor.verify(&tx)?;
+    actor.verify_owner(&tx)?;
     let result = write_on(&tx, actor.principal, key, command, now)?;
     tx.commit().map_err(unavailable)?;
     Ok(result)
@@ -171,18 +182,21 @@ pub(super) fn write_on(
 }
 
 impl McpIdentityStore for StateStoreHandle {
-    async fn mcp_clients(&self) -> Result<Vec<McpClient>, E> {
+    async fn mcp_clients(&self, actor: PrincipalId) -> Result<Vec<McpClient>, E> {
+        let actor = AdministrativeActor::from(actor);
         self.request_worker(
-            |db| {
-                let mut q = db
-                    .prepare("SELECT client_id FROM mcp_clients ORDER BY client_id")
+            move |db| {
+                let tx = db.transaction().map_err(unavailable)?;
+                actor.verify(&tx)?;
+                let mut q = tx
+                    .prepare("SELECT client_id FROM mcp_clients WHERE ?1 IS NULL OR principal_id=?1 ORDER BY client_id")
                     .map_err(unavailable)?;
                 let ids = q
-                    .query_map([], |r| r.get::<_, String>(0))
+                    .query_map([actor.scope()], |r| r.get::<_, String>(0))
                     .map_err(unavailable)?
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(unavailable)?;
-                ids.iter().map(|id| client(db, id)).collect()
+                ids.iter().map(|id| client(&tx, id)).collect()
             },
             || E::Unavailable,
         )

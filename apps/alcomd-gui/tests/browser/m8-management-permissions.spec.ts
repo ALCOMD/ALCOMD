@@ -167,10 +167,10 @@ test("MCP management permission rows read every grant page and use the exact glo
 });
 
 for (const colorScheme of ["light", "dark"] as const) {
-    test(`narrow ${colorScheme} permission switches keep keyboard, error feedback and retry usable`, async ({ browser }) => {
-        const context = await browser.newContext({ viewport: { width: 640, height: 450 }, deviceScaleFactor: 2, colorScheme });
+    test(`narrow ${colorScheme} permission switches keep keyboard, error feedback and retry usable`, async ({ browser, baseURL }) => {
+        const context = await browser.newContext({ baseURL, viewport: { width: 640, height: 450 }, deviceScaleFactor: 2, colorScheme });
         const page = await context.newPage();
-        await page.goto("http://127.0.0.1:4173" + route + "&projectGrid=1");
+        await page.goto(route + "&projectGrid=1");
         await page.getByRole("button", { name: "Manage permissions", exact: true }).click();
         const dialog = page.locator("md-dialog[open]");
         const projects = dialog.getByRole("switch", { name: "Read projects", exact: true });

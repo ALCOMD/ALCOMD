@@ -92,4 +92,4 @@ The scope key is lowercase SHA-256 over `alcomd-local-ipc-target-v1`, target ID 
 
 可选`[installation_terms]`只有`title`与`text`：title非空、最多128 Unicode字符、禁止控制字符；text非空、UTF-8最多16384字节，仅允许换行/回车/制表控制字符。它属于原签名Manifest，不读取远端文本，不执行HTML/Markdown/脚本。不存在时跳过条款步骤。
 
-Plan冻结条款与权限声明。GUI先确认作者条款，再集中确认required权限；最后一次确认才调用带consent的applyInstall。拒绝不提交，不产生安装/授权Operation。Core以相同Plan fingerprint验证同意；安装登记与初始required grants同事务提交；optional/未声明默认关闭。条款同意不构成包安全认证，不替代签名、沙箱及双Principal检查。用户发起的安装完成后仍为 `installed_disabled`。符合 A-019 的随包 MCP 管理扩展由 Core 初始化为 `enabled`，随包入口仅接受没有安装条款和必需权限的已验证包。
+Plan冻结条款与权限声明。GUI先确认作者条款，再集中确认required权限；最后一次确认才调用带consent的applyInstall。拒绝不提交，不产生安装/授权Operation。Core以相同Plan fingerprint验证同意；安装登记与初始required grants同事务提交；optional/未声明默认关闭。条款同意不构成包安全认证，不替代签名、沙箱及双Principal检查。用户发起的安装完成后仍为 `installed_disabled`。随包入口仅接受没有安装条款和必需权限的已验证包。

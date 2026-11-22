@@ -206,6 +206,292 @@
                 "revision",
                 "credential"
             ]
+        },
+        "managementAction": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "createClient"
+                        },
+                        "displayName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "displayName"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "issueCredential"
+                        },
+                        "clientId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "expectedRevision": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9223372036854775807
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "clientId",
+                        "expectedRevision"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "revokeClient"
+                        },
+                        "clientId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "expectedRevision": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9223372036854775807
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "clientId",
+                        "expectedRevision"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "setOAuthRegistration"
+                        },
+                        "clientId": {
+                            "type": "string",
+                            "maxLength": 36,
+                            "minLength": 36
+                        },
+                        "issuer": {
+                            "type": "string",
+                            "maxLength": 2048
+                        },
+                        "resource": {
+                            "type": "string",
+                            "maxLength": 2048
+                        },
+                        "redirectUris": {
+                            "type": "array",
+                            "maxItems": 16,
+                            "items": {
+                                "type": "string",
+                                "maxLength": 2048
+                            },
+                            "minItems": 1
+                        },
+                        "confidential": {
+                            "type": "boolean"
+                        },
+                        "allowRefresh": {
+                            "type": "boolean"
+                        },
+                        "expectedRevision": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9223372036854775807
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "clientId",
+                        "issuer",
+                        "resource",
+                        "redirectUris",
+                        "confidential",
+                        "allowRefresh",
+                        "expectedRevision"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "revokeOAuthRegistration"
+                        },
+                        "oauthClientId": {
+                            "type": "string",
+                            "maxLength": 36,
+                            "minLength": 36
+                        },
+                        "expectedRevision": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9223372036854775807
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "oauthClientId",
+                        "expectedRevision"
+                    ]
+                }
+            ]
+        },
+        "managementReview": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "requestId": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "requester": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "action": {
+                    "$ref": "#/$defs/managementAction"
+                },
+                "status": {
+                    "enum": [
+                        "pending",
+                        "approved",
+                        "denied",
+                        "expired"
+                    ]
+                },
+                "expiresAtMs": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "fingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                }
+            },
+            "required": [
+                "requestId",
+                "requester",
+                "action",
+                "status",
+                "expiresAtMs",
+                "fingerprint"
+            ]
+        },
+        "requestCreateParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "action": {
+                    "$ref": "#/$defs/managementAction"
+                },
+                "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                }
+            },
+            "required": [
+                "action",
+                "idempotencyKey"
+            ]
+        },
+        "requestGetParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "requestId": {
+                    "type": "string",
+                    "format": "uuid"
+                }
+            },
+            "required": [
+                "requestId"
+            ]
+        },
+        "requestDecideParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "requestId": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "approve": {
+                    "type": "boolean"
+                },
+                "expectedFingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                }
+            },
+            "required": [
+                "requestId",
+                "approve",
+                "expectedFingerprint",
+                "idempotencyKey"
+            ]
+        },
+        "requestPage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/managementReview"
+                    }
+                },
+                "nextCursor": {
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "items",
+                "nextCursor"
+            ]
+        },
+        "requestDecision": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "request": {
+                    "$ref": "#/$defs/managementReview"
+                },
+                "credential": {
+                    "type": "string",
+                    "writeOnly": true
+                },
+                "clientSecret": {
+                    "type": "string",
+                    "writeOnly": true
+                }
+            },
+            "required": [
+                "request"
+            ]
         }
     },
     "x-alcomd-methods": {
@@ -226,7 +512,8 @@
                 "$ref": "#/$defs/record"
             },
             "permission": "mcp.clients.manage",
-            "idempotencyKeyRequired": true
+            "idempotencyKeyRequired": true,
+            "localOwnerOnly": true
         },
         "mcp.clients.revoke": {
             "params": {
@@ -236,7 +523,8 @@
                 "$ref": "#/$defs/record"
             },
             "permission": "mcp.clients.manage",
-            "idempotencyKeyRequired": true
+            "idempotencyKeyRequired": true,
+            "localOwnerOnly": true
         },
         "mcp.clients.issueCredential": {
             "params": {
@@ -248,6 +536,45 @@
             "permission": "mcp.clients.manage",
             "localOwnerOnly": true,
             "idempotencyKeyRequired": true
+        },
+        "mcp.clients.requests.create": {
+            "params": {
+                "$ref": "#/$defs/requestCreateParams"
+            },
+            "result": {
+                "$ref": "#/$defs/managementReview"
+            },
+            "permission": "mcp.clients.manage",
+            "idempotencyKeyRequired": true
+        },
+        "mcp.clients.requests.get": {
+            "params": {
+                "$ref": "#/$defs/requestGetParams"
+            },
+            "result": {
+                "$ref": "#/$defs/managementReview"
+            },
+            "permission": "mcp.clients.read"
+        },
+        "mcp.clients.requests.list": {
+            "params": {
+                "$ref": "#/$defs/listParams"
+            },
+            "result": {
+                "$ref": "#/$defs/requestPage"
+            },
+            "permission": "mcp.clients.read"
+        },
+        "mcp.clients.requests.decide": {
+            "params": {
+                "$ref": "#/$defs/requestDecideParams"
+            },
+            "result": {
+                "$ref": "#/$defs/requestDecision"
+            },
+            "permission": "mcp.clients.manage",
+            "idempotencyKeyRequired": true,
+            "localOwnerOnly": true
         }
     },
     "x-alcomd-capability": "mcp.clients.v1"

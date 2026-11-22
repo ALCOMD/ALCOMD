@@ -28,6 +28,8 @@ export const capabilities = {
     repositoriesListImport: RPC_CAPABILITIES.repositoriesListImport,
     repositoriesRegistry: "repositories.registry.v1",
     stateCheck: "state.check.v1",
+    clientRegistry: "clients.registry.v1",
+    desktopActions: "desktop.actions.v1",
     projectsCreate: "projects.create.v1",
     projectTemplates: "projectTemplates.v1",
     unityLaunch: "unity.launch.v1",

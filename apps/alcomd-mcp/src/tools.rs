@@ -29,6 +29,23 @@ static DIAGNOSTICS: AtomicU64 = AtomicU64::new(1);
 pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> {
     let source = if packages::recognized(name) {
         PACKAGE_CONTRACT
+    } else if rpc::mcp_environment_tool_capability(name) == Some(rpc::CAPABILITY_DESKTOP_ACTIONS_V1)
+    {
+        include_str!("../../../specs/mcp/desktop-actions-v1.schema.json")
+    } else if matches!(
+        rpc::mcp_environment_tool_capability(name),
+        Some(
+            rpc::CAPABILITY_MCP_CLIENTS_V1
+                | rpc::CAPABILITY_MCP_OAUTH_V1
+                | rpc::CAPABILITY_MCP_RUNTIME_READ_V1
+                | rpc::CAPABILITY_MCP_TRANSPORT_READ_V1
+        )
+    ) {
+        include_str!("../../../specs/mcp/ai-clients-v1.schema.json")
+    } else if rpc::mcp_environment_tool_capability(name)
+        == Some(rpc::CAPABILITY_CLIENTS_REGISTRY_V1)
+    {
+        include_str!("../../../specs/mcp/client-registry-v1.schema.json")
     } else if repositories::recognized(name) {
         REPOSITORY_CONTRACT
     } else if workflows::recognized(name) {
@@ -72,7 +89,8 @@ pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> 
         }));
     }
     for schema in ["inputSchema", "outputSchema"] {
-        entry.get_mut(schema).ok_or_else(internal_protocol)?["$defs"] = contract["$defs"].clone();
+        let value = entry.get_mut(schema).ok_or_else(internal_protocol)?;
+        *value = rpc::mcp_tool_schema(value, &contract);
     }
     serde_json::from_value(Value::Object(entry))
         .map(Some)
@@ -517,7 +535,10 @@ fn error(
 fn failure(cause: Failure) -> CallToolResult {
     match cause {
         Failure::Remote(ClientError::Remote(e), _)
-            if e.code == "mcp_tool_write_outcome_unknown" =>
+            if matches!(
+                e.code.as_str(),
+                "mcp_tool_write_outcome_unknown" | "desktop_result_unknown"
+            ) =>
         {
             error(
                 "core_write_outcome_unknown",
@@ -556,7 +577,19 @@ fn failure(cause: Failure) -> CallToolResult {
                     codes.iter().any(|code| code == &e.code)
                         || matches!(
                             e.code.as_str(),
-                            "package_candidate_evidence_stale" | "package_candidate_limit_exceeded"
+                            "package_candidate_evidence_stale"
+                                | "package_candidate_limit_exceeded"
+                                | "client_registry_stale"
+                                | "client_registry_not_found"
+                                | "desktop_unavailable"
+                                | "project_directory_missing"
+                                | "project_directory_not_directory"
+                                | "project_directory_open_failed"
+                                | "resource_revision_conflict"
+                                | "unity_hub_download_open_failed"
+                                | "unity_window_not_found"
+                                | "unity_window_focus_rejected"
+                                | "unity_window_focus_failed"
                         )
                 })
                 || e.message.len() > 1024

@@ -20,6 +20,7 @@ mod project_inventory;
 pub use project_inventory::*;
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 
+mod client_requests;
 mod error_context;
 mod events;
 mod m4;
@@ -37,6 +38,11 @@ mod m7_presentation;
 mod m7_unity_migration;
 mod m7_user_packages;
 mod m8_management;
+pub use client_requests::*;
+mod client_registry;
+pub use client_registry::*;
+mod desktop;
+pub use desktop::*;
 mod m8_mcp;
 mod m8_oauth;
 mod m8_oauth_types;
@@ -1304,8 +1310,14 @@ impl AccessContext {
         self.mcp_identity
     }
 
+    /// True only for the platform-authenticated local owner channel.
+    #[must_use]
+    pub fn is_local_owner(&self) -> bool {
+        !self.is_mcp_client() && self.principal == PrincipalId::local_owner()
+    }
+
     pub(crate) fn is_interactive_client(&self) -> bool {
-        self.is_mcp_client() || self.principal == PrincipalId::local_owner()
+        self.is_mcp_client() || self.is_local_owner()
     }
 
     /// Returns the authenticated transport-neutral Principal.

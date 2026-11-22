@@ -437,7 +437,7 @@ pub(super) fn cancel_operation(
     if operation.revision != expected_revision {
         return Err(StoreError::new(StoreErrorKind::RevisionConflict));
     }
-    if operation.state.is_terminal() {
+    if operation.state.is_terminal() || super::desktop::is_desktop(&operation.kind) {
         return Err(StoreError::new(StoreErrorKind::OperationNotCancellable));
     }
     if matches!(
@@ -735,6 +735,11 @@ pub(super) fn recover(
     for (operation_id, state, kind) in candidates {
         let operation_id = OperationId::parse(&operation_id).map_err(|_| corrupt_state())?;
         // Each dedicated handler owns recovery for its durable operation and journal.
+        if super::desktop::is_desktop(&kind) {
+            super::desktop::recover(connection, operation_id, recovered_at_ms)
+                .map_err(|_| corrupt_state())?;
+            continue;
+        }
         if kind == "packages.apply"
             || matches!(kind.as_str(), "backups.create" | "backups.restore")
             || matches!(kind.as_str(), "extensions.install" | "extensions.uninstall")

@@ -317,7 +317,7 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         first_logs
             .entries
             .iter()
-            .all(|entry| entry.actor == "CLI" && entry.action == "projects.register")
+            .all(|entry| entry.actor == "Local IPC" && entry.action == "projects.register")
     );
     assert_eq!(
         first_logs.entries[0].execution_id,
@@ -363,7 +363,7 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         .await
         .expect("read failed check");
     assert_eq!(failure.entries.len(), 1);
-    assert_eq!(failure.entries[0].actor, "GUI");
+    assert_eq!(failure.entries[0].actor, "Local IPC");
     assert_eq!(
         failure.entries[0].outcome,
         alcomd_protocol::LogOutcome::Failed

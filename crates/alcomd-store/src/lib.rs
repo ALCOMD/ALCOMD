@@ -46,6 +46,7 @@ mod events_tests;
 #[cfg(test)]
 mod idle_shutdown_tests;
 
+mod client_requests;
 mod config;
 mod m3;
 mod m4;
@@ -68,6 +69,7 @@ mod m8_workflows;
 pub use m8_packages::{
     DelegatedPackageCatalog, DelegatedPackageSource, DelegatedSourceAvailability,
 };
+mod desktop;
 mod operation_logs;
 mod project_create;
 mod project_template_jobs;

@@ -93,9 +93,13 @@ fn execute(
     ]);
     let response = match request {
         Q::List { cursor, limit } => {
-            let mut query = tx.prepare("SELECT c.client_id,c.display_name,c.revision,c.created_at_ms,c.revoked_at_ms FROM mcp_clients c ORDER BY c.client_id").map_err(unavailable)?;
+            let mut query = tx.prepare("SELECT c.client_id,c.display_name,c.revision,c.created_at_ms,c.revoked_at_ms FROM mcp_clients c WHERE ?1 IS NULL OR c.principal_id=?1 ORDER BY c.client_id").map_err(unavailable)?;
+            let scope = authority
+                .client_access
+                .is_mcp_client()
+                .then(|| authority.client_access.principal().as_str());
             let items = query
-                .query_map([], |row| {
+                .query_map([scope], |row| {
                     let id: String = row.get(0)?;
                     Ok(ManagementClientSummary {
                         client_id: alcomd_application::McpClientId::parse(&id)
@@ -113,7 +117,8 @@ fn execute(
                 .map_err(unavailable)?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(unavailable)?;
-            let can_manage = authority.is_current()
+            let can_manage = authority.client_access.is_local_owner()
+                && authority.is_current()
                 && authority
                     .client_access
                     .require(Permission::McpClientsManage)
@@ -203,6 +208,9 @@ fn authorize(
         request if request.is_write() => Permission::McpClientsManage,
         _ => Permission::McpClientsRead,
     };
+    if request.is_write() && !authority.client_access.is_local_owner() {
+        return Err(E::PermissionDenied.into());
+    }
     authorize_permission(
         db,
         lease,

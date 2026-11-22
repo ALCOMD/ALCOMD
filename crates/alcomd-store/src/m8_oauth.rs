@@ -71,25 +71,34 @@ fn metadata(row: &rusqlite::Row<'_>) -> rusqlite::Result<OAuthRegistration> {
 }
 fn registration_page(
     db: &mut Connection,
+    actor: &super::m8_mcp::AdministrativeActor,
     input: OAuthPageParams,
 ) -> Result<OAuthRegistrationPage, OAuthError> {
     let tx = db.transaction().map_err(unavailable)?;
-    let select = "SELECT oauth_client_id,client_id,issuer,resource,redirect_uris_json,confidential,allow_refresh,revision,created_at_ms,revoked_at_ms FROM mcp_oauth_registrations ORDER BY oauth_client_id";
-    let (fp, count) = {
+    actor.verify(&tx).map_err(|_| OAuthError::Denied)?;
+    let select = "SELECT r.oauth_client_id,r.client_id,r.issuer,r.resource,r.redirect_uris_json,
+            r.confidential,r.allow_refresh,r.revision,r.created_at_ms,r.revoked_at_ms
+        FROM mcp_oauth_registrations r JOIN mcp_clients c USING(client_id)
+        WHERE ?1 IS NULL OR c.principal_id=?1 ORDER BY r.oauth_client_id";
+    let (items_fingerprint, count) = {
         let mut q = tx.prepare(select).map_err(unavailable)?;
-        let rows = q.query_map([], metadata).map_err(unavailable)?;
+        let rows = q
+            .query_map([actor.scope()], metadata)
+            .map_err(unavailable)?;
         oauth_registration_fingerprint(rows.map(|r| r.map_err(unavailable)))?
     };
+    let fp = oauth_fingerprint(&(&actor.principal, items_fingerprint))?;
     let (start, limit) = oauth_page_window(&input.cursor, &fp, count, input.limit)?;
     let mut items = Vec::new();
     let mut bytes = 1024usize;
     {
         let mut q = tx
-            .prepare(&format!("{select} LIMIT ?1 OFFSET ?2"))
+            .prepare(&format!("{select} LIMIT ?2 OFFSET ?3"))
             .map_err(unavailable)?;
         let rows = q
             .query_map(
                 params![
+                    actor.scope(),
                     i64::try_from(limit).map_err(unavailable)?,
                     i64::try_from(start).map_err(unavailable)?
                 ],
@@ -157,11 +166,23 @@ fn set(
     let tx = db
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(unavailable)?;
-    actor.verify(&tx).map_err(|_| OAuthError::Denied)?;
-    let caller = &actor.principal;
+    actor.verify_owner(&tx).map_err(|_| OAuthError::Denied)?;
+    let result = set_on(&tx, &actor.principal, input, id, secret_hash, now)?;
+    tx.commit().map_err(unavailable)?;
+    Ok(result)
+}
+
+pub(super) fn set_on(
+    tx: &rusqlite::Transaction<'_>,
+    caller: &PrincipalId,
+    input: OAuthRegistrationSetParams,
+    id: String,
+    secret_hash: Option<[u8; 32]>,
+    now: u64,
+) -> Result<OAuthRegistration, OAuthError> {
     let fp = oauth_fingerprint(&input)?;
     if let Some(record) = replay(
-        &tx,
+        tx,
         caller,
         "mcp.oauth.registrations.set",
         &input.idempotency_key,
@@ -173,7 +194,7 @@ fn set(
             Ok(record)
         };
     }
-    let core = client(&tx, &input.client_id)?;
+    let core = client(tx, &input.client_id)?;
     if core.revoked_at_ms.is_some() {
         return Err(OAuthError::Denied);
     }
@@ -182,7 +203,7 @@ fn set(
     }
     let existing:Option<String>=tx.query_row("SELECT oauth_client_id FROM mcp_oauth_registrations WHERE client_id=?1 AND revoked_at_ms IS NULL",[&input.client_id],|r|r.get(0)).optional().map_err(unavailable)?;
     let id = if let Some(id) = existing {
-        let current = registration(&tx, &id)?;
+        let current = registration(tx, &id)?;
         if current.registration.revision != input.expected_revision {
             return Err(OAuthError::RevisionConflict);
         }
@@ -196,9 +217,9 @@ fn set(
         tx.execute("INSERT INTO mcp_oauth_registrations(oauth_client_id,client_id,issuer,resource,redirect_uris_json,confidential,secret_hash,allow_refresh,revision,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,?9)",params![id,input.client_id,input.issuer,input.resource,serde_json::to_string(&input.redirect_uris).map_err(unavailable)?,input.confidential,secret_hash.as_ref().map(|v|v.as_slice()),input.allow_refresh,integer(now)?]).map_err(unavailable)?;
         id
     };
-    let result = registration(&tx, &id)?.registration;
+    let result = registration(tx, &id)?.registration;
     remember(
-        &tx,
+        tx,
         caller,
         "mcp.oauth.registrations.set",
         &input.idempotency_key,
@@ -206,7 +227,6 @@ fn set(
         &result,
         now,
     )?;
-    tx.commit().map_err(unavailable)?;
     Ok(result)
 }
 fn revoke_registration(
@@ -218,11 +238,21 @@ fn revoke_registration(
     let tx = db
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(unavailable)?;
-    actor.verify(&tx).map_err(|_| OAuthError::Denied)?;
-    let caller = &actor.principal;
+    actor.verify_owner(&tx).map_err(|_| OAuthError::Denied)?;
+    let result = revoke_registration_on(&tx, &actor.principal, input, now)?;
+    tx.commit().map_err(unavailable)?;
+    Ok(result)
+}
+
+pub(super) fn revoke_registration_on(
+    tx: &rusqlite::Transaction<'_>,
+    caller: &PrincipalId,
+    input: OAuthRegistrationRevokeParams,
+    now: u64,
+) -> Result<OAuthRegistration, OAuthError> {
     let fp = oauth_fingerprint(&input)?;
     if let Some(record) = replay(
-        &tx,
+        tx,
         caller,
         "mcp.oauth.registrations.revoke",
         &input.idempotency_key,
@@ -230,7 +260,7 @@ fn revoke_registration(
     )? {
         return Ok(record);
     }
-    let current = registration(&tx, &input.oauth_client_id)?;
+    let current = registration(tx, &input.oauth_client_id)?;
     if current.registration.revision != input.expected_revision
         || current.registration.revoked_at_ms.is_some()
     {
@@ -238,9 +268,9 @@ fn revoke_registration(
     }
     tx.execute("UPDATE mcp_oauth_registrations SET revoked_at_ms=max(created_at_ms,?2),revision=revision+1 WHERE oauth_client_id=?1",params![input.oauth_client_id,integer(now)?]).map_err(unavailable)?;
     tx.execute("UPDATE mcp_oauth_tokens SET revoked_at_ms=max(created_at_ms,?2) WHERE oauth_client_id=?1 AND revoked_at_ms IS NULL",params![input.oauth_client_id,integer(now)?]).map_err(unavailable)?;
-    let result = registration(&tx, &input.oauth_client_id)?.registration;
+    let result = registration(tx, &input.oauth_client_id)?.registration;
     remember(
-        &tx,
+        tx,
         caller,
         "mcp.oauth.registrations.revoke",
         &input.idempotency_key,
@@ -248,7 +278,6 @@ fn revoke_registration(
         &result,
         now,
     )?;
-    tx.commit().map_err(unavailable)?;
     Ok(result)
 }
 
@@ -416,10 +445,12 @@ impl OAuthStore for StateStoreHandle {
     }
     async fn oauth_registrations(
         &self,
+        caller: PrincipalId,
         input: OAuthPageParams,
     ) -> Result<OAuthRegistrationPage, OAuthError> {
+        let actor = super::m8_mcp::AdministrativeActor::from(caller);
         self.request_worker(
-            move |db| registration_page(db, input),
+            move |db| registration_page(db, &actor, input),
             || OAuthError::Unavailable,
         )
         .await

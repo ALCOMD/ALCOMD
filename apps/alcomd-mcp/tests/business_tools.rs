@@ -12,6 +12,8 @@ use rmcp::{
 use serde_json::{Value, json};
 use std::{path::Path, time::Duration};
 type Sdk = RunningService<RoleClient, ()>;
+#[path = "support/native_clients_flow.rs"]
+mod native_clients_flow;
 static REAL_CORE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 #[path = "support/extension_tools_flow.rs"]
 mod extension_tools_flow;
@@ -280,15 +282,7 @@ async fn http_identity_and_admission(
             .to_bytes();
         let text = std::str::from_utf8(&bytes).expect("UTF-8 response");
         assert!(!text.contains(a) && !text.contains(b));
-        let value: Value = serde_json::from_str(text).unwrap_or_else(|_| {
-            serde_json::from_str(
-                text.lines()
-                    .find_map(|v| v.strip_prefix("data:"))
-                    .expect("SSE data")
-                    .trim(),
-            )
-            .expect("SSE JSON")
-        });
+        let value = http_rpc_result(text);
         assert_eq!(value["id"], 7);
         let operations = value["result"]["structuredContent"]["data"]["operations"]
             .as_array()
@@ -501,6 +495,13 @@ async fn http_identity_and_admission(
     http_request_limits(url, a).await;
 }
 
+fn http_rpc_result(text: &str) -> Value {
+    serde_json::from_str(text).unwrap_or_else(|_| {
+        let data = text.lines().find_map(|line| line.strip_prefix("data:"));
+        serde_json::from_str(data.expect("SSE data").trim()).expect("SSE JSON")
+    })
+}
+
 async fn http_request_limits(url: &str, secret: &str) {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
     let authority = url
@@ -605,27 +606,37 @@ async fn http_request_limits(url: &str, secret: &str) {
 
     let exact = json!({"jsonrpc":"2.0","id":19,"method":"tools/list","params":{"_meta":{
         "io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}).to_string();
-    let mut exact = exact.into_bytes();
-    exact.resize(4 * 1024 * 1024, b' ');
-    let response = client
+    let request = client
         .post(url)
         .bearer_auth(secret)
         .header("Accept", "application/json,text/event-stream")
         .header("Content-Type", "application/json")
         .header("MCP-Protocol-Version", "2026-07-28")
-        .header("Mcp-Method", "tools/list")
+        .header("Mcp-Method", "tools/list");
+    let baseline = request
+        .try_clone()
+        .expect("clone request headers")
+        .body(exact.clone())
+        .send()
+        .await
+        .expect("ordinary catalog request");
+    assert_eq!(baseline.status(), 200);
+    let baseline = http_rpc_result(&baseline.text().await.expect("ordinary catalog response"));
+    let mut exact = exact.into_bytes();
+    exact.resize(4 * 1024 * 1024, b' ');
+    let response = request
         .body(exact)
         .send()
         .await
         .expect("exact maximum request");
     assert_eq!(response.status(), 200, "4 MiB valid JSON remains accepted");
-    assert!(
-        response
-            .text()
-            .await
-            .expect("maximum request response")
-            .contains("alcomd_get_project")
-    );
+    let page = http_rpc_result(&response.text().await.expect("maximum request response"));
+    assert_eq!(page["id"], 19);
+    let tools = page["result"]["tools"]
+        .as_array()
+        .expect("tool catalog page");
+    assert!(!tools.is_empty());
+    assert_eq!(page["result"]["tools"], baseline["result"]["tools"]);
 
     let mut slow = BufReader::new(
         tokio::net::TcpStream::connect(authority)
@@ -820,10 +831,11 @@ async fn package_removal_flow(http: bool) {
     let core = CoreConfiguration::new();
     let ipc = core.ipc.clone();
     let config = core.client.clone();
+    let (stop_core, core_stopped) = tokio::sync::oneshot::channel();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc.clone(),
         DataConfig::isolated(data_root.clone()),
-        std::future::pending(),
+        async { core_stopped.await.expect("restart requested") },
     )
     .await
     .expect("exclusive real Core bind");
@@ -910,16 +922,17 @@ async fn package_removal_flow(http: bool) {
     let sa = sdk(&token_a.credential, url, &core).await;
     let sb = sdk(&token_b.credential, url, &core).await;
     let mut trace = vec![];
-    let definitions = sa.list_tools(None).await.expect("SDK tools/list");
+    let definitions = sa
+        .list_all_tools()
+        .await
+        .expect("complete SDK tool catalog");
     assert!(
         definitions
-            .tools
             .iter()
             .any(|tool| tool.name == "alcomd_get_project")
     );
     assert!(
         definitions
-            .tools
             .iter()
             .any(|tool| tool.name == "alcomd_apply_package_changes")
     );
@@ -1196,8 +1209,11 @@ async fn package_removal_flow(http: bool) {
     stop(reconnected).await;
     stop(sb).await;
     drop(owner);
-    daemon.abort();
-    let _ = daemon.await;
+    stop_core.send(()).expect("request Core shutdown");
+    daemon
+        .await
+        .expect("join Core")
+        .expect("complete Core shutdown");
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc,
         DataConfig::isolated(data_root.clone()),

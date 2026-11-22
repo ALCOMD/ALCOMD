@@ -57,7 +57,7 @@ Operation。当前应用仍是 scaffold，本页描述验收基线，不代表�
   Principal 不得复用同一个后端 RPC 连接，除非未来经审批引入可验证的逐请求委托合同。
 - 写工具保留 Plan/Apply、审批、幂等键、expected revision 与资源锁。响应丢失后以幂等键
   找回同一 Operation，不得重复写入。
-- GUI 未运行，或 MCP 管理扩展被禁用/卸载时，STDIO 与 HTTP 协议服务仍必须可用。
+- GUI 未运行时，STDIO 与 HTTP 协议服务仍必须可用。
 
 ## 请求取消与 Operation 取消
 

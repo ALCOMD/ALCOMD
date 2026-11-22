@@ -53,7 +53,7 @@ test("Chinese Settings segments keep 24px inner spacing before and after selecti
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
     const group = page.locator(".resource-navigation md-outlined-segmented-button-set");
     const main = page.locator("#main-content");
-    await expect(group.getByRole("button")).toHaveText(["常规", "Unity", "外观"]);
+    await expect(group.getByRole("button")).toHaveText(["常规", "Unity", "外观", "客户端"]);
     await expect(page.locator(".alcomd-segmented-sizer")).toHaveCount(0);
     await expectSegmentsVisible(group, main);
     for (const zoom of [1, 0.8, 1.25]) {

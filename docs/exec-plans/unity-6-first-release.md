@@ -57,3 +57,7 @@ Windows 实测中，SDK 暂存树刷盘使用只读句柄导致 Apply 失败，�
 本轮为 Windows 本地功能验收。三平台托管 CI、CodeQL 和同一冻结 SHA 的签收仍待执行。
 
 整合主线 `d91d6920` 后，Windows 用户会话用重新编译的程序单独复跑零授权管理页通过。此前触发限额的测试程序按串行运行整个宿主测试组，12 项通过、3 项按原配置忽略。历史限额失败的原因仍未确定。全仓 fmt 与主工作目录的 xtask 检查均通过；扫描器依据 Git 登记排除 `.local/parity` 下的独立工作树。11 月 22 日复核官方发布清单，Unity 6 验收 SDK 仍为 `3.11.0-beta.1`，最新稳定版为 `3.10.6`。
+
+候选 `575d1dfc` 的 Windows 串行工作区测试 1054 项通过、22 项忽略，Chromium 751 项全部通过。两次创建和八组迁移均由真实 Editor 完成本地构建。所有副本源内容哈希一致，五组 Worlds 的构建报告均为 Succeeded、零错误和警告；历史原地 Worlds 在验收克隆补入 VRCWorld 描述器后复开产物得到 Assets/Probe.unity。实测 Core/CLI 来自相同生产源码的 `f0ace592`。
+
+`1e3c9eb1` 调整两组 SDK 错误码的清单顺序，完整 Windows 本地检查、Ubuntu、macOS 和 CodeQL 均通过。托管 Windows 同一提交的 Node SDK 重启步骤通过，第一次完整作业在 MCP OAuth 测试组达到 120 分钟上限。整合主线 `e644dced` 后，三端合同检查得到 132 个 RPC、45 项能力、50 个内建 MCP 工具和 114 个原生 SDK 方法。最新候选及托管结果见 [PR #13](https://github.com/ALCOMD/ALCOMD/pull/13)。

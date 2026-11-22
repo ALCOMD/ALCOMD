@@ -1,0 +1,1602 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/mcp/ai-clients-v1.json",
+    "title": "AI client administration and independent approval",
+    "$defs": {
+        "listParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "cursor": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "limit": {
+                    "anyOf": [
+                        {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 1000
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": []
+        },
+        "record": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "principal_id": {
+                    "type": "string",
+                    "pattern": "^mcp:[0-9a-f-]{36}$"
+                },
+                "display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "revision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9223372036854775807
+                },
+                "created_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9223372036854775807
+                },
+                "revoked_at_ms": {
+                    "anyOf": [
+                        {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9223372036854775807
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "client_id",
+                "principal_id",
+                "display_name",
+                "revision",
+                "created_at_ms",
+                "revoked_at_ms"
+            ]
+        },
+        "listResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                        "$ref": "#/$defs/record"
+                    }
+                },
+                "next_cursor": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "items",
+                "next_cursor"
+            ]
+        },
+        "managementAction": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "createClient"
+                        },
+                        "display_name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "display_name"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "issueCredential"
+                        },
+                        "client_id": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "expected_revision": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9223372036854775807
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "client_id",
+                        "expected_revision"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "revokeClient"
+                        },
+                        "client_id": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "expected_revision": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9223372036854775807
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "client_id",
+                        "expected_revision"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "setOAuthRegistration"
+                        },
+                        "client_id": {
+                            "type": "string",
+                            "maxLength": 36,
+                            "minLength": 36
+                        },
+                        "issuer": {
+                            "type": "string",
+                            "maxLength": 2048
+                        },
+                        "resource": {
+                            "type": "string",
+                            "maxLength": 2048
+                        },
+                        "redirect_uris": {
+                            "type": "array",
+                            "maxItems": 16,
+                            "items": {
+                                "type": "string",
+                                "maxLength": 2048
+                            },
+                            "minItems": 1
+                        },
+                        "confidential": {
+                            "type": "boolean"
+                        },
+                        "allow_refresh": {
+                            "type": "boolean"
+                        },
+                        "expected_revision": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9223372036854775807
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "client_id",
+                        "issuer",
+                        "resource",
+                        "redirect_uris",
+                        "confidential",
+                        "allow_refresh",
+                        "expected_revision"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "revokeOAuthRegistration"
+                        },
+                        "oauth_client_id": {
+                            "type": "string",
+                            "maxLength": 36,
+                            "minLength": 36
+                        },
+                        "expected_revision": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9223372036854775807
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "oauth_client_id",
+                        "expected_revision"
+                    ]
+                }
+            ]
+        },
+        "managementReview": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "request_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "requester": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "action": {
+                    "$ref": "#/$defs/managementAction"
+                },
+                "status": {
+                    "enum": [
+                        "pending",
+                        "approved",
+                        "denied",
+                        "expired"
+                    ]
+                },
+                "expires_at_ms": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "fingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                }
+            },
+            "required": [
+                "request_id",
+                "requester",
+                "action",
+                "status",
+                "expires_at_ms",
+                "fingerprint"
+            ]
+        },
+        "requestCreateParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "action": {
+                    "$ref": "#/$defs/managementAction"
+                },
+                "idempotency_key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                }
+            },
+            "required": [
+                "action",
+                "idempotency_key"
+            ]
+        },
+        "requestGetParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "request_id": {
+                    "type": "string",
+                    "format": "uuid"
+                }
+            },
+            "required": [
+                "request_id"
+            ]
+        },
+        "requestPage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/managementReview"
+                    }
+                },
+                "next_cursor": {
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "items",
+                "next_cursor"
+            ]
+        },
+        "PageParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "cursor": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "maxLength": 512
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "limit": {
+                    "anyOf": [
+                        {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 128
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": []
+        },
+        "Registration": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "oauth_client_id": {
+                    "type": "string",
+                    "maxLength": 36,
+                    "minLength": 36
+                },
+                "client_id": {
+                    "type": "string",
+                    "maxLength": 36,
+                    "minLength": 36
+                },
+                "issuer": {
+                    "type": "string",
+                    "maxLength": 2048
+                },
+                "resource": {
+                    "type": "string",
+                    "maxLength": 2048
+                },
+                "redirect_uris": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                        "type": "string",
+                        "maxLength": 2048
+                    },
+                    "minItems": 1
+                },
+                "confidential": {
+                    "type": "boolean"
+                },
+                "allow_refresh": {
+                    "type": "boolean"
+                },
+                "revision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9223372036854775807
+                },
+                "created_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9223372036854775807
+                },
+                "revoked_at_ms": {
+                    "anyOf": [
+                        {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9223372036854775807
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "oauth_client_id",
+                "client_id",
+                "issuer",
+                "resource",
+                "redirect_uris",
+                "confidential",
+                "allow_refresh",
+                "revision",
+                "created_at_ms"
+            ]
+        },
+        "RegistrationPage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "items": {
+                        "$ref": "#/$defs/Registration"
+                    }
+                },
+                "next_cursor": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "maxLength": 2048
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "items"
+            ]
+        },
+        "RequestGetParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "request_id": {
+                    "type": "string",
+                    "maxLength": 36,
+                    "minLength": 36
+                }
+            },
+            "required": [
+                "request_id"
+            ]
+        },
+        "RequestReview": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "request_id": {
+                    "type": "string",
+                    "maxLength": 36,
+                    "minLength": 36
+                },
+                "oauth_client_id": {
+                    "type": "string",
+                    "maxLength": 36,
+                    "minLength": 36
+                },
+                "client_id": {
+                    "type": "string",
+                    "maxLength": 36,
+                    "minLength": 36
+                },
+                "display_name": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "issuer": {
+                    "type": "string",
+                    "maxLength": 2048
+                },
+                "resource": {
+                    "type": "string",
+                    "maxLength": 2048
+                },
+                "redirect_uri": {
+                    "type": "string",
+                    "maxLength": 2048
+                },
+                "scopes": {
+                    "const": [
+                        "mcp"
+                    ]
+                },
+                "approval_fingerprint": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 64,
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "status": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "enum": [
+                        "pending",
+                        "denied",
+                        "expired",
+                        "approved",
+                        "consumed"
+                    ]
+                },
+                "expires_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9223372036854775807
+                }
+            },
+            "required": [
+                "request_id",
+                "oauth_client_id",
+                "client_id",
+                "display_name",
+                "issuer",
+                "resource",
+                "redirect_uri",
+                "scopes",
+                "approval_fingerprint",
+                "status",
+                "expires_at_ms"
+            ]
+        },
+        "toolError": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "message": {
+                    "type": "string",
+                    "maxLength": 1024
+                },
+                "retryable": {
+                    "type": "boolean"
+                },
+                "diagnostic_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "subreason": {
+                            "type": "string",
+                            "maxLength": 128
+                        }
+                    },
+                    "required": [
+                        "subreason"
+                    ]
+                }
+            },
+            "required": [
+                "code",
+                "message",
+                "retryable"
+            ]
+        },
+        "Runtimeid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "Runtimesnapshot": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "instance_id": {
+                    "$ref": "#/$defs/Runtimeid"
+                },
+                "observed_at_ms": {
+                    "$ref": "#/$defs/Runtimetime"
+                },
+                "can_read_connections": {
+                    "type": "boolean"
+                },
+                "can_read_requests": {
+                    "type": "boolean"
+                },
+                "coverage_incomplete": {
+                    "type": "boolean"
+                },
+                "connections": {
+                    "$ref": "#/$defs/RuntimeconnectionRows"
+                },
+                "requests": {
+                    "$ref": "#/$defs/RuntimecallRows"
+                }
+            },
+            "required": [
+                "instance_id",
+                "observed_at_ms",
+                "can_read_connections",
+                "can_read_requests",
+                "coverage_incomplete"
+            ],
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "can_read_connections": {
+                                "const": true
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "connections"
+                        ]
+                    },
+                    "else": {
+                        "not": {
+                            "required": [
+                                "connections"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "can_read_requests": {
+                                "const": true
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "requests"
+                        ]
+                    },
+                    "else": {
+                        "not": {
+                            "required": [
+                                "requests"
+                            ]
+                        }
+                    }
+                }
+            ],
+            "anyOf": [
+                {
+                    "properties": {
+                        "can_read_connections": {
+                            "const": true
+                        }
+                    }
+                },
+                {
+                    "properties": {
+                        "can_read_requests": {
+                            "const": true
+                        }
+                    }
+                }
+            ]
+        },
+        "Runtimeparams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "client_id": {
+                    "oneOf": [
+                        {
+                            "$ref": "#/$defs/Runtimeid"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "limit": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "minimum": 1,
+                    "maximum": 100,
+                    "default": 25
+                }
+            },
+            "required": []
+        },
+        "Transportsnapshot": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "instance_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "observed_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "status": {
+                    "enum": [
+                        "available",
+                        "stale",
+                        "unavailable"
+                    ]
+                },
+                "can_read_connections": {
+                    "type": "boolean"
+                },
+                "can_read_requests": {
+                    "type": "boolean"
+                },
+                "can_read_subscription_streams": {
+                    "type": "boolean"
+                },
+                "coverage_incomplete": {
+                    "type": "boolean"
+                },
+                "observers": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                        "$ref": "#/$defs/Transportobserver"
+                    }
+                },
+                "connections": {
+                    "$ref": "#/$defs/TransportconnectionPage"
+                },
+                "requests": {
+                    "$ref": "#/$defs/TransportrequestPage"
+                },
+                "subscription_streams": {
+                    "$ref": "#/$defs/TransportstreamPage"
+                }
+            },
+            "required": [
+                "instance_id",
+                "observed_at_ms",
+                "status",
+                "can_read_connections",
+                "can_read_requests",
+                "can_read_subscription_streams",
+                "coverage_incomplete",
+                "observers"
+            ],
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "can_read_connections": {
+                                "const": false
+                            }
+                        }
+                    },
+                    "then": {
+                        "not": {
+                            "required": [
+                                "connections"
+                            ]
+                        }
+                    },
+                    "else": {
+                        "required": [
+                            "connections"
+                        ]
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "can_read_requests": {
+                                "const": false
+                            }
+                        }
+                    },
+                    "then": {
+                        "not": {
+                            "required": [
+                                "requests"
+                            ]
+                        }
+                    },
+                    "else": {
+                        "required": [
+                            "requests"
+                        ]
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "can_read_subscription_streams": {
+                                "const": false
+                            }
+                        }
+                    },
+                    "then": {
+                        "not": {
+                            "required": [
+                                "subscription_streams"
+                            ]
+                        }
+                    },
+                    "else": {
+                        "required": [
+                            "subscription_streams"
+                        ]
+                    }
+                }
+            ]
+        },
+        "Transportstream": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "stream_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "request_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "observer_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "source": {
+                    "const": "adapterReported"
+                },
+                "first_observed_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "tools_list_changed": {
+                    "const": true
+                },
+                "client_id": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "format": "uuid",
+                    "maxLength": 36
+                }
+            },
+            "required": [
+                "stream_id",
+                "request_id",
+                "observer_id",
+                "source",
+                "first_observed_at_ms",
+                "tools_list_changed",
+                "client_id"
+            ]
+        },
+        "Transportconnection": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "connection_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "observer_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "source": {
+                    "const": "adapterReported"
+                },
+                "first_observed_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "stage": {
+                    "enum": [
+                        "accepted",
+                        "tls",
+                        "idle",
+                        "active"
+                    ]
+                }
+            },
+            "required": [
+                "connection_id",
+                "observer_id",
+                "source",
+                "first_observed_at_ms",
+                "stage"
+            ]
+        },
+        "Transportrequest": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "request_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "connection_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "observer_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "source": {
+                    "const": "adapterReported"
+                },
+                "first_observed_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "method": {
+                    "enum": [
+                        "server/discover",
+                        "tools/list",
+                        "tools/call",
+                        "subscriptions/listen"
+                    ]
+                },
+                "stage": {
+                    "enum": [
+                        "receiving",
+                        "executing",
+                        "streaming"
+                    ]
+                },
+                "client_id": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "format": "uuid",
+                    "maxLength": 36
+                }
+            },
+            "required": [
+                "request_id",
+                "connection_id",
+                "observer_id",
+                "source",
+                "first_observed_at_ms",
+                "method",
+                "stage",
+                "client_id"
+            ]
+        },
+        "TransportrequestPage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/$defs/Transportrequest"
+                    }
+                },
+                "total_tracked": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4096
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "items",
+                "total_tracked",
+                "truncated"
+            ]
+        },
+        "Transportobserver": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "observer_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "transport": {
+                    "enum": [
+                        "stdio",
+                        "http",
+                        "https-oauth"
+                    ]
+                },
+                "last_report_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "status": {
+                    "enum": [
+                        "available",
+                        "stale",
+                        "unavailable"
+                    ]
+                }
+            },
+            "required": [
+                "observer_id",
+                "transport",
+                "last_report_at_ms",
+                "status"
+            ]
+        },
+        "TransportconnectionPage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/$defs/Transportconnection"
+                    }
+                },
+                "total_tracked": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4096
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "items",
+                "total_tracked",
+                "truncated"
+            ]
+        },
+        "TransportstreamPage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/$defs/Transportstream"
+                    }
+                },
+                "total_tracked": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4096
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "items",
+                "total_tracked",
+                "truncated"
+            ]
+        },
+        "Transportquery": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "client_id": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "limit": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "minimum": 1,
+                    "maximum": 100
+                }
+            },
+            "required": []
+        }
+    },
+    "x-alcomd-tools": [
+        {
+            "name": "alcomd_list_ai_clients",
+            "title": "List AI client identities",
+            "description": "List AI client records visible to the authenticated caller. Continue with next_cursor.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "cursor": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4096
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "limit": {
+                        "anyOf": [
+                            {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 1000
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "required": []
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/listResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": [
+                "mcp.clients.read"
+            ]
+        },
+        {
+            "name": "alcomd_request_client_change",
+            "title": "Request AI client administration",
+            "description": "Submit an immutable management request. A local owner reviews and decides it independently. Retain the same idempotency_key when retrying.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "action": {
+                        "$ref": "#/$defs/managementAction"
+                    },
+                    "idempotency_key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "confirm": {
+                        "const": true
+                    }
+                },
+                "required": [
+                    "action",
+                    "idempotency_key",
+                    "confirm"
+                ]
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/managementReview"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": [
+                "mcp.clients.manage"
+            ]
+        },
+        {
+            "name": "alcomd_get_client_change_request",
+            "title": "Read a client management request",
+            "description": "Read the action, decision and expiry of an accessible management request.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "request_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                },
+                "required": [
+                    "request_id"
+                ]
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/managementReview"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": [
+                "mcp.clients.read"
+            ]
+        },
+        {
+            "name": "alcomd_list_client_change_requests",
+            "title": "List client management requests",
+            "description": "List requests visible to the authenticated caller. Continue with next_cursor.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "cursor": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4096
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "limit": {
+                        "anyOf": [
+                            {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 1000
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "required": []
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/requestPage"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": [
+                "mcp.clients.read"
+            ]
+        },
+        {
+            "name": "alcomd_list_oauth_registrations",
+            "title": "List OAuth registrations",
+            "description": "List OAuth registration metadata visible to the current caller. Continue with next_cursor.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "cursor": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 512
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "limit": {
+                        "anyOf": [
+                            {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 128
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "required": []
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/RegistrationPage"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": [
+                "mcp.clients.read"
+            ]
+        },
+        {
+            "name": "alcomd_get_oauth_request",
+            "title": "Read an OAuth authorization request",
+            "description": "Read the authorization details for a request belonging to the authenticated client.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "request_id": {
+                        "type": "string",
+                        "maxLength": 36,
+                        "minLength": 36
+                    }
+                },
+                "required": [
+                    "request_id"
+                ]
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/RequestReview"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": [
+                "mcp.clients.read"
+            ]
+        },
+        {
+            "name": "alcomd_get_mcp_runtime_snapshot",
+            "title": "Read MCP runtime activity",
+            "description": "Read current runtime activity visible to the caller, optionally filtered by AI client ID.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "client_id": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/$defs/Runtimeid"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "limit": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 25
+                    }
+                },
+                "required": []
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/Runtimesnapshot"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_get_mcp_transport_snapshot",
+            "title": "Read MCP transport activity",
+            "description": "Read current transport activity visible to the caller, optionally filtered by AI client ID.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "client_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid",
+                        "maxLength": 36
+                    },
+                    "limit": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 100
+                    }
+                },
+                "required": []
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/Transportsnapshot"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": []
+        }
+    ]
+}

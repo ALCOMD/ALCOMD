@@ -21,6 +21,8 @@ capability 已真实实现时才可进入 help；合同中存在名称不等于�
 
 ## 输出模式
 
+`client list [--cursor CURSOR] [--limit N]` 查询本机已安装或当前活动的原生程序；`client instances PROGRAM_KEY` 查询实例及连接，可接受相同分页参数。`client disconnect connection|instance ID --core-instance-id CORE_ID --idempotency-key KEY` 经确认后断开选定连接或实例。可重连，凭据仍有效。与 AI 身份登记相关的命令位于 `mcp client` 和 `mcp oauth`。
+
 `human` 是默认模式；`--json` 与 `--ndjson` 互斥。
 
 | 模式 | stdout | stderr |
@@ -81,3 +83,6 @@ NDJSON。普通日志不得污染任何 machine stdout。
 `project apply-copy`、`project apply-delete-directory` 和 `project apply-unity-migration` 接受原预演返回的 planId 和 `--idempotency-key`。软件包、复制与删除缺省使用原计划的项目修订，显式传入的 `--expected-revision` 由 Core 复验。交互式按 ID Apply 使用 `plans.get` 读回当前主体的原始计划并展示；非交互调用使用 `--yes` 确认已审阅相应预演，Core 在执行时复验计划。
 
 项目复制、目录删除和 Unity 迁移使用 `--plan-idempotency-key` 创建计划。直接确认执行时另传 `--idempotency-key`，预演可省略执行键。回执未知时携原参数与原键重试。
+# Core desktop actions
+
+`desktop focus-project-unity <PROJECT_ID> --expected-revision <REVISION> --idempotency-key <KEY>` focuses the project's running Unity editor on the Core machine. `desktop open-project-directory <PROJECT_ID> --idempotency-key <KEY>` opens the registered directory. `desktop open-unity-hub-download --idempotency-key <KEY>` opens the official Unity download page. Reuse the original key and arguments to recover a lost response. Each command reports the system outcome and rejects `--dry-run`.

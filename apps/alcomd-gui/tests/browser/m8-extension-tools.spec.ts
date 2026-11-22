@@ -24,15 +24,15 @@ test("provider publication is optional, global, keyboard accessible and failed w
     expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "projects.list").length)).toBe(0);
 });
 for (const colorScheme of ["light", "dark"] as const) {
-    test(`provider ${colorScheme} signed review and long details fit a narrow window`, async ({ browser }) => {
-        const context = await browser.newContext({ viewport: { width: 640, height: 700 }, colorScheme });
-        const page = await context.newPage(); await page.goto("http://127.0.0.1:4173" + route);
+    test(`provider ${colorScheme} signed review and long details fit a narrow window`, async ({ browser, baseURL }) => {
+        const context = await browser.newContext({ baseURL, viewport: { width: 640, height: 700 }, colorScheme });
+        const page = await context.newPage(); await page.goto(route);
         const tools = page.getByRole("region", { name: "Declared MCP tools" });
         await expect(tools.getByText("Echo text", { exact: true })).toBeVisible();
         await tools.scrollIntoViewIfNeeded();
         expect(await tools.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
         await page.screenshot({ path: `target/m8-extension-tools/provider-details-${colorScheme}.png`, fullPage: true });
-        await page.goto("http://127.0.0.1:4173/browser-harness.html?route=%2Fextensions&state=ready&h4-management=1&m8-tool-provider=1");
+        await page.goto("/browser-harness.html?route=%2Fextensions&state=ready&h4-management=1&m8-tool-provider=1");
         await openLocalExtensionInstall(page);
         const dialog = page.locator("md-dialog[open]");
         await dialog.getByLabel("Extension package", { exact: true }).fill("C:\\Fixture\\provider.alcomdextension");

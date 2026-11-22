@@ -99,7 +99,7 @@ Core 在接受任务前核对当前授权、路径身份及目的地可用性。
 | `alcomd_list_unity_installations` | `unity.installations.list`。使用同一安装登记与游标，包含安装路径。 | `unity.read` |
 | `alcomd_get_project_launch_config` | `unity.projectLaunchConfig.get`。返回项目覆盖、默认值及实际有效的完整参数。 | `projects.read`、`unity.read` |
 
-三端由 Core 按当前调用者检查相同的读取权限。MCP 管理扩展负责登记与撤销连接，OAuth 使用连接 scope `mcp`。MCP 工具仅将字段名转换为 snake_case，保留 Core 返回的值。 [工具 Schema](environment-v1.schema.json)
+三端由 Core 按当前调用者检查相同的读取权限。GUI 设置页「客户端」通过 Core 登记与撤销 AI 客户端连接，OAuth 使用连接 scope `mcp`。MCP 工具仅将字段名转换为 snake_case，保留 Core 返回的值。 [工具 Schema](environment-v1.schema.json)
 
 项目列表与详情在 `projects.read` 下返回同一 Core 登记路径 `root_path`。MCP 的项目操作继续使用稳定项目 ID。
 
@@ -115,7 +115,7 @@ Core 在接受任务前核对当前授权、路径身份及目的地可用性。
 
 ### Codex CLI 0.153.4 的回环 HTTP 接入
 
-1. 在 MCP 管理扩展中创建独立客户端。用 `alcomd-cli mcp client list` 核对 ID 和当前修订，再运行 `alcomd-cli mcp client issue-credential <id> --expected-revision <n> --idempotency-key <key>` 取得一次性凭据。用 `alcomd-mcp serve --port 0` 启动监听，记下实际报告的地址。
+1. 在 GUI 设置页「客户端」中登记独立的 AI 客户端。用 `alcomd-cli mcp client list` 核对 ID 和当前修订，再运行 `alcomd-cli mcp client issue-credential <id> --expected-revision <n> --idempotency-key <key>` 取得一次性凭据。用 `alcomd-mcp serve --port 0` 启动监听，记下实际报告的地址。
 2. 运行 `codex mcp get alcomd` 查看目标条目。确认该条目不存在时，核对下面的地址和环境变量名后执行添加。已有同名条目时，先确认要修改的字段，再手动合并该条目，或选择新名称。`codex mcp add` 会直接覆盖同名条目，读取配置出错时应先解决错误。
 
    ```powershell
@@ -190,3 +190,7 @@ Windows x64 具名版本在隔离配置实测 HTTP、STDIO 均发出 `2025-11-25
 工具字段见[项目包 Schema](project-inventory-v1.schema.json)和[模板 Schema](template-edit-v1.schema.json)。
 
 Unity 迁移使用 `alcomd_plan_unity_migration` 预检当前项目、目标安装和 SDK。默认先确认项目复制，成功后用副本项目 ID 再取得迁移计划。确认 `alcomd_apply_unity_migration` 写入所选项目，用户可明确选择原地升级。复制与迁移有独立的 Operation 和幂等回执。Unity 6 的副本计划以 `copy_operation_id` 证明写入目标是已完成复制所产生的项目。原地操作显式传入 `in_place: true`。Apply 前可从已生成的迁移计划响应读取 `destination_path` 和 `plan.target_sdk_version`。
+
+三个原生客户端工具使用 `clients.registry.v1`，参数和返回值见[安装与连接工具定义](client-registry-v1.schema.json)。`alcomd_list_clients` 读取已安装及活跃程序，`alcomd_list_client_instances` 读取指定程序的实例/连接，`alcomd_disconnect_client` 按已确认的 Core 实例、目标及原幂等键断开。AI 凭据仍由 Core 验证和撤销。
+
+桌面工具使用 `desktop.actions.v1`。三项请求分别接收已登记的项目、项目修订或固定 Unity 下载页操作；调用者传入本次操作的幂等键。Core 在其本机桌面执行。相同请求的回执未知时，原参数和原键可用于取回结果。[桌面工具字段](desktop-actions-v1.schema.json)

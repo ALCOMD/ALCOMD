@@ -40,11 +40,11 @@ ALCOMD 的入口共享同一个 `alcomd-application` 用例层，但不共享万
 - 宿主只暴露窄 Host Capability；扩展不能获得裸文件系统、命名管道、数据库或凭据句柄。
 - 禁用扩展或撤销权限时必须关闭 UI 实例、后台租约和已授予句柄。
 
-## 第一方扩展验收不变量
+## 客户端管理与扩展验收
 
-### MCP 管理扩展
+### 客户端管理
 
-- 禁用或卸载管理 UI 不影响 `alcomd-mcp` 的 STDIO/HTTP 协议服务。
+- GUI 设置页「客户端」通过 Core 管理连接。关闭 GUI 不影响 `alcomd-mcp` 的 STDIO/HTTP 协议服务。
 - 请求、连接、订阅流、客户端、权限、审批与配置管理全部通过公开 API。
 - 不读取 MCP 适配器私有内存或创建 GUI 私有控制通道。
 - 使用 `mcp.requests.read`、`mcp.connections.read`、`mcp.subscription-streams.read`，不使用
@@ -56,12 +56,12 @@ ALCOMD 的入口共享同一个 `alcomd-application` 用例层，但不共享万
 - 不读取 Discord token、用户数据库，不模拟用户操作，不控制其他应用 Presence。
 - 禁用、卸载、权限撤销或后台租约结束时立即清除 Presence 并停止通信。
 
-默认状态：MCP 管理扩展默认安装并启用；Discord 扩展默认安装但新用户默认禁用；v3 升级
+Discord 扩展默认安装，新用户默认禁用。v3 升级
 用户迁移原 Discord 启用状态。
 
 ## 必须进入后续契约测试的行为
 
-- MCP 客户端和扩展的授权可单独授予、拒绝、查看和撤销。
+- AI 客户端连接可独立登记与撤销。扩展的权限可逐项授予、拒绝、查看和撤销。
 - required 权限被拒绝时扩展不能启用；optional 权限被拒绝时只能降级，不得扩大权限。
 - 权限不隐式包含子权限；高风险调用同时检查 Principal、资源范围与当前授权。
 - 撤销后旧连接、请求、订阅流、句柄和并发请求不能继续获得新能力。

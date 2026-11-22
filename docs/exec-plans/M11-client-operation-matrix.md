@@ -6,6 +6,27 @@
 
 | Core 业务操作 | GUI | CLI | MCP |
 |---|---|---|---|
+| `clients.disconnect` | 已提供 · 确认当前 Core 实例与选定连接后断开 | 已提供 · client disconnect | 已提供 · alcomd_disconnect_client |
+| `clients.instances.list` | 已提供 · 查看所选程序的实例、进程和连接 | 已提供 · client instances | 已提供 · alcomd_list_client_instances |
+| `clients.list` | 已提供 · 设置 → 客户端显示已安装或已连接的程序 | 已提供 · client list | 已提供 · alcomd_list_clients |
+| `desktop.focusProjectUnity` | 已提供 · 项目操作聚焦 Core 所在机器上的 Unity 窗口 | 已提供 · desktop focus-project-unity | 已提供 · alcomd_focus_project_unity |
+| `desktop.openProjectDirectory` | 已提供 · 项目操作在 Core 的文件管理器中打开目录 | 已提供 · desktop open-project-directory | 已提供 · alcomd_open_project_directory |
+| `desktop.openUnityHubDownload` | 已提供 · Unity 设置打开固定的 Hub 下载页 | 已提供 · desktop open-unity-hub-download | 已提供 · alcomd_open_unity_hub_download |
+| `mcp.clients.create` | 已提供 · 登记 AI 客户端 | 已提供 · mcp client create | 仅本机交互 · AI 通过 alcomd_request_client_change 提交同一动作，由独立所有者批准 |
+| `mcp.clients.issueCredential` | 已提供 · 确认替换凭据，签发后展示一次 | 已提供 · mcp client issue-credential | 仅本机交互 · AI 通过 alcomd_request_client_change 提交同一动作，由独立所有者批准 |
+| `mcp.clients.list` | 已提供 · AI 客户端分页清单 | 已提供 · mcp client list | 已提供 · alcomd_list_ai_clients |
+| `mcp.clients.requests.create` | 已提供 · 提交已审阅的管理动作 | 已提供 · mcp client request create | 已提供 · alcomd_request_client_change |
+| `mcp.clients.requests.decide` | 已提供 · 所有者批准或拒绝原申请 | 已提供 · mcp client request approve 或 mcp client request deny | 仅本机交互 · 独立所有者决定，AI 调用方可查询原申请 |
+| `mcp.clients.requests.get` | 已提供 · 查看申请人、原操作与期限 | 已提供 · mcp client request get | 已提供 · alcomd_get_client_change_request |
+| `mcp.clients.requests.list` | 已提供 · 管理申请分页列表 | 已提供 · mcp client request list | 已提供 · alcomd_list_client_change_requests |
+| `mcp.clients.revoke` | 已提供 · 选中并确认撤销客户端 | 已提供 · mcp client revoke | 仅本机交互 · AI 通过 alcomd_request_client_change 提交同一动作，由独立所有者批准 |
+| `mcp.oauth.registrations.list` | 已提供 · OAuth 登记分页清单 | 已提供 · mcp oauth registration list | 已提供 · alcomd_list_oauth_registrations |
+| `mcp.oauth.registrations.revoke` | 已提供 · 确认撤销选中的 OAuth 登记 | 已提供 · mcp oauth registration revoke | 仅本机交互 · AI 通过 alcomd_request_client_change 提交同一动作，由独立所有者批准 |
+| `mcp.oauth.registrations.set` | 已提供 · 确认 OAuth 登记配置 | 已提供 · mcp oauth registration set | 仅本机交互 · AI 通过 alcomd_request_client_change 提交同一动作，由独立所有者批准 |
+| `mcp.oauth.requests.decide` | 已提供 · 所有者审阅跳转目标后决定 | 已提供 · mcp oauth request approve 或 mcp oauth request deny | 仅本机交互 · 独立所有者决定，AI 调用方可查询原申请 |
+| `mcp.oauth.requests.get` | 已提供 · 按 ID 读取 OAuth 授权申请 | 已提供 · mcp oauth request show | 已提供 · alcomd_get_oauth_request |
+| `mcp.runtime.snapshot` | 已提供 · 客户端活动中的 Core 连接与调用 | 已提供 · mcp runtime | 已提供 · alcomd_get_mcp_runtime_snapshot |
+| `mcp.transport.snapshot` | 已提供 · 客户端活动中的传输、观察者与订阅 | 已提供 · mcp transport | 已提供 · alcomd_get_mcp_transport_snapshot |
 | `backups.create` | 已提供 · 项目备份对话框选择目的地及覆盖项，确认创建 | 已提供 · backup create | 已提供 · alcomd_create_backup；项目修订、可选目的地和备份选项 |
 | `backups.restore` | 已提供 · 项目列表「恢复备份」选择 ZIP、名称或目的地 | 已提供 · backup restore | 已提供 · alcomd_restore_backup；确认源 ZIP 及恢复目标 |
 | `events.list` | 缺少入口 · 没有历史事件页，任务页查询 operations | 缺少入口 · CLI 未提供事件读取或订阅；operation follow 轮询单项任务 | 缺少入口 · MCP 的工具目录变更订阅不能读取或续接 Core 业务事件 |
@@ -105,7 +126,7 @@
 | 桌面操作 | GUI | CLI | MCP |
 |---|---|---|---|
 | 原生文件和文件夹选择器 | 仅本机交互 · 系统对话框接收当前桌面用户选取的路径 | 协议专用 · 在有相应业务命令时用路径参数指定目标 | 协议专用 · 在有相应工具时用路径或目录目标字段指定 |
-| 聚焦本机 Unity 窗口 | 已提供 · 从项目操作定位本机已观察到的 Editor 窗口 | 缺少入口 · 当前没有窗口聚焦命令 | 缺少入口 · 当前没有窗口聚焦工具 |
+| 聚焦本机 Unity 窗口 | 已提供 · 从项目操作定位本机已观察到的 Editor 窗口 | 已提供 · desktop focus-project-unity | 已提供 · alcomd_focus_project_unity |
 
 有可用桌面时，启动 Unity Hub、打开目录或聚焦窗口可以由客户端向桌面宿主请求。文件选择器本身依赖当前桌面会话。业务操作接收目标后仍由 Core 校验。扩展界面的打开、事件分派和刷新依赖会话快照，扩展的命令或工具另按扩展声明和授权交付。
 
@@ -114,17 +135,8 @@
 | 服务方法 | GUI | CLI | MCP |
 |---|---|---|---|
 | `extensions.mcpTools.call` | 协议专用 · GUI 的可移植扩展界面走 UI 分派，MCP 工具调用属于工具传输 | 协议专用 · CLI 没有 MCP 工具传输会话 | 协议专用 · tools/call 分派已公布的扩展工具，宿主复核扩展权限和沙箱 |
-| `mcp.clients.create` | 已提供 · MCP 管理扩展的「创建客户端」，经 clients WIT | 缺少入口 · mcp client 没有 create 命令 | 缺少入口 · 工具目录没有创建客户端的工具 |
-| `mcp.clients.issueCredential` | 缺少入口 · 管理扩展引导到 CLI，没有签发控件 | 已提供 · mcp client issue-credential；显式选择一次性密钥输出方式 | 缺少入口 · 没有凭据签发工具 |
-| `mcp.clients.list` | 已提供 · MCP 管理扩展分页列出客户端，经 clients WIT | 已提供 · mcp client list | 缺少入口 · 没有客户端管理清单工具 |
-| `mcp.clients.revoke` | 已提供 · MCP 管理扩展确认撤销选定客户端，经 clients WIT | 缺少入口 · mcp client 没有 revoke 命令；OAuth registration revoke 针对另一类记录 | 缺少入口 · 没有撤销客户端的工具 |
 | `mcp.oauth.begin` | 协议专用 · 发起授权属于 OAuth 客户端与 HTTP 授权端交互 | 协议专用 · CLI 管理授权请求，不发起这个协议交换 | 协议专用 · HTTP 授权端接收 OAuth 请求，调用 oauth_begin |
 | `mcp.oauth.finish` | 协议专用 · 系统浏览器参与跳转，GUI 不作为授权协议端点 | 协议专用 · CLI 决定请求，授权端负责完成重定向 | 协议专用 · HTTP 授权端调用 oauth_finish，完成浏览器授权流程 |
-| `mcp.oauth.registrations.list` | 缺少入口 · 管理扩展没有 OAuth 登记清单视图 | 已提供 · mcp oauth registration list | 缺少入口 · 没有 OAuth 登记管理工具 |
-| `mcp.oauth.registrations.revoke` | 缺少入口 · 管理扩展没有撤销 OAuth 登记的动作 | 已提供 · mcp oauth registration revoke | 缺少入口 · 没有撤销 OAuth 登记的工具 |
-| `mcp.oauth.registrations.set` | 缺少入口 · 管理扩展没有编辑 OAuth 登记的动作 | 已提供 · mcp oauth registration set | 缺少入口 · 没有配置 OAuth 登记的工具 |
-| `mcp.oauth.requests.decide` | 缺少入口 · 管理扩展没有批准或拒绝请求的界面 | 已提供 · mcp oauth request approve、mcp oauth request deny | 缺少入口 · 没有代替本机用户决定授权的工具 |
-| `mcp.oauth.requests.get` | 缺少入口 · 管理扩展没有 OAuth 请求详情 | 已提供 · mcp oauth request show | 缺少入口 · 没有读取待决授权请求的工具 |
 | `mcp.oauth.revoke` | 协议专用 · OAuth 撤销端点由外部客户端访问 | 协议专用 · CLI 的登记撤销不是此令牌撤销端点 | 协议专用 · HTTP 令牌撤销请求调用 oauth_revoke |
 | `mcp.oauth.token` | 协议专用 · GUI 不承担 OAuth 客户端的令牌交换 | 协议专用 · CLI 授权管理不交换外部客户端令牌 | 协议专用 · HTTP token 端点调用 oauth_token，按协议交付令牌 |
 | `mcp.packages.plan` | 协议专用 · 项目包表走原生 packages.plan*，无需 MCP 工具投影 | 协议专用 · package 命令走原生计划方法 | 协议专用 · 安装、重装及通用计划工具将工具意图转成 mcp.packages.plan |
@@ -136,11 +148,9 @@
 | `mcp.repositories.list` | 协议专用 · 资源页走原生 repositories.list | 协议专用 · repository list 走原生方法 | 协议专用 · alcomd_list_repositories 返回工具侧仓库摘要和续页游标 |
 | `mcp.repositories.register` | 协议专用 · 确认登记走原生 repositories.register | 协议专用 · repository register 走原生方法 | 协议专用 · alcomd_register_repository 确认已绑定的远程预览 |
 | `mcp.repositories.remove` | 协议专用 · 仓库详情走原生 repositories.unregister | 协议专用 · repository unregister 走原生方法 | 协议专用 · alcomd_remove_repository 明确确认要移除的仓库 |
-| `mcp.runtime.snapshot` | 已提供 · MCP 管理扩展通过 runtime WIT 查看运行快照 | 缺少入口 · 没有管理快照命令 | 缺少入口 · 工具目录没有运行快照工具 |
 | `mcp.tools.catalog` | 协议专用 · GUI 查看管理运行快照，工具发现属于 MCP 传输 | 协议专用 · CLI 没有工具目录协商流程 | 协议专用 · MCP tools/list、扩展工具发现和目录变更订阅读取 Core 目录 |
 | `mcp.transport.bindRequest` | 协议专用 · 只有收到该连接请求的传输能提供绑定证据 | 协议专用 · CLI 无传输连接证据 | 协议专用 · MCP 传输绑定实际接收的请求与身份 |
 | `mcp.transport.report` | 协议专用 · GUI 观察快照，本身不持有 MCP 传输观测证据 | 协议专用 · CLI 不产生该传输观测 | 协议专用 · MCP 传输报告实际连接和请求状态 |
-| `mcp.transport.snapshot` | 已提供 · MCP 管理扩展通过 transport WIT 查看传输快照 | 缺少入口 · 没有传输快照命令 | 缺少入口 · 工具目录没有传输快照工具 |
 | `system.hello` | 协议专用 · Tauri 客户端连接 Core 时自动协商 | 协议专用 · 命令建立 Core 连接时自动协商 | 协议专用 · MCP 服务建立 Core 连接时自动协商；与 MCP 客户端的 initialize 不同 |
 
 ## 对照请求与复验入口

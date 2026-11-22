@@ -258,53 +258,20 @@ pub(crate) fn gui_unity_windows_stop(windows: State<'_, UnityWindows>, token: St
 pub(crate) async fn gui_focus_project_unity(
     state: State<'_, GuiClientState>,
     windows: State<'_, UnityWindows>,
-    project_id: String,
-    revision: u64,
+    params: alcomd_protocol::DesktopFocusProjectUnityParams,
 ) -> Result<(), RpcError> {
-    #[cfg(not(windows))]
-    {
-        let _ = (state, windows, project_id, revision);
-        Err(RpcError::extension("unity_window_observation_unavailable"))
-    }
+    let mut connection = state.work.lock().await;
+    super::connect_if_needed(&mut connection).await?;
+    let result = connection
+        .as_mut()
+        .ok_or_else(super::daemon_unavailable)?
+        .desktop_focus_project_unity(params)
+        .await;
     #[cfg(windows)]
-    {
-        use alcomd_platform::UnityWindowFocus;
-        use alcomd_protocol::UnityWriterStateKind;
-        let path = {
-            let mut client = state.reads.lock().await;
-            super::connect_if_needed(&mut client).await?;
-            let connection = client.as_mut().ok_or_else(super::daemon_unavailable)?;
-            let result = connection.project_get(project_id.clone()).await;
-            let project = super::finish_call(&mut client, result)?.project;
-            if project.revision != Some(revision) {
-                return Err(RpcError::extension("resource_revision_conflict"));
-            }
-            let connection = client.as_mut().ok_or_else(super::daemon_unavailable)?;
-            let result = connection.unity_writer_state(project_id).await;
-            let observed = super::finish_call(&mut client, result)?;
-            if !matches!(
-                observed.state,
-                UnityWriterStateKind::RunningConfirmed | UnityWriterStateKind::RunningSuspected
-            ) {
-                windows.refresh();
-                return Err(RpcError::extension("unity_window_not_found"));
-            }
-            project.root_path
-        };
-        let result = tauri::async_runtime::spawn_blocking(move || {
-            let root = super::validated_registered_project_root(&path)?;
-            alcomd_platform::focus_unity_window(&root)
-                .map_err(|_| RpcError::extension("unity_window_focus_failed"))
-        })
-        .await
-        .map_err(|_| RpcError::extension("unity_window_focus_failed"))??;
-        windows.refresh();
-        match result {
-            UnityWindowFocus::Activated => Ok(()),
-            UnityWindowFocus::WindowNotFound => Err(RpcError::extension("unity_window_not_found")),
-            UnityWindowFocus::Rejected => Err(RpcError::extension("unity_window_focus_rejected")),
-        }
-    }
+    windows.refresh();
+    #[cfg(not(windows))]
+    let _ = windows;
+    super::finish_call(&mut connection, result).map(|_| ())
 }
 
 fn closed() -> RpcError {

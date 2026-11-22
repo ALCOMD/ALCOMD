@@ -1,0 +1,561 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/mcp/client-registry-v1.json",
+    "$defs": {
+        "clientsListParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+                "cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 128
+                }
+            }
+        },
+        "clientInstancesListParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "program_key"
+            ],
+            "properties": {
+                "program_key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                },
+                "cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 128
+                }
+            }
+        },
+        "clientsDisconnectParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "expected_core_instance_id",
+                "target",
+                "idempotency_key"
+            ],
+            "properties": {
+                "expected_core_instance_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "target": {
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "kind",
+                                "id"
+                            ],
+                            "properties": {
+                                "kind": {
+                                    "const": "connection"
+                                },
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                }
+                            }
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "kind",
+                                "id"
+                            ],
+                            "properties": {
+                                "kind": {
+                                    "const": "instance"
+                                },
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                }
+                            }
+                        }
+                    ]
+                },
+                "idempotency_key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                }
+            }
+        },
+        "clientsDisconnectResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "disconnected_connection_ids"
+            ],
+            "properties": {
+                "disconnected_connection_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "maxItems": 1024
+                }
+            }
+        },
+        "installation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "scope",
+                "product_version"
+            ],
+            "properties": {
+                "scope": {
+                    "enum": [
+                        "user",
+                        "machine"
+                    ]
+                },
+                "product_version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                }
+            }
+        },
+        "program": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "program_key",
+                "display_name",
+                "kind",
+                "installations",
+                "active_instance_count",
+                "active_connection_count"
+            ],
+            "properties": {
+                "program_key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                },
+                "program_id": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
+                },
+                "display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                },
+                "kind": {
+                    "enum": [
+                        "gui",
+                        "cli",
+                        "mcp",
+                        "unknown"
+                    ]
+                },
+                "installations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/installation"
+                    },
+                    "maxItems": 3
+                },
+                "active_instance_count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1024
+                },
+                "active_connection_count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1024
+                }
+            }
+        },
+        "reported": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "name",
+                "version",
+                "instance_id"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                },
+                "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                },
+                "instance_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                }
+            }
+        },
+        "connection": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "connection_id",
+                "connected_at_ms",
+                "reported"
+            ],
+            "properties": {
+                "connection_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "connected_at_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "reported": {
+                    "$ref": "#/$defs/reported"
+                }
+            }
+        },
+        "instance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "instance_id",
+                "connections"
+            ],
+            "properties": {
+                "instance_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/connection"
+                    },
+                    "maxItems": 1024
+                }
+            }
+        },
+        "clientsListResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "core_instance_id",
+                "items",
+                "coverage_incomplete"
+            ],
+            "properties": {
+                "core_instance_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/program"
+                    },
+                    "maxItems": 128
+                },
+                "next_cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "coverage_incomplete": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "clientInstancesListResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "core_instance_id",
+                "items"
+            ],
+            "properties": {
+                "core_instance_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/instance"
+                    },
+                    "maxItems": 128
+                },
+                "next_cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                }
+            }
+        },
+        "toolError": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "message": {
+                    "type": "string",
+                    "maxLength": 1024
+                },
+                "retryable": {
+                    "type": "boolean"
+                },
+                "diagnostic_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "subreason": {
+                            "type": "string",
+                            "maxLength": 128
+                        }
+                    },
+                    "required": [
+                        "subreason"
+                    ]
+                }
+            },
+            "required": [
+                "code",
+                "message",
+                "retryable"
+            ]
+        }
+    },
+    "title": "ALCOMD native client inventory and connection management",
+    "x-alcomd-tools": [
+        {
+            "name": "alcomd_list_clients",
+            "title": "List installed and active client programs",
+            "description": "List one row per program, including installed programs that have never connected. Pass next_cursor to continue.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {
+                    "cursor": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 128
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/clientsListResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_list_client_instances",
+            "title": "List client instances and their connections",
+            "description": "Show the current instances of the selected program and their individual IPC connections.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "program_key"
+                ],
+                "properties": {
+                    "program_key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 128
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/clientInstancesListResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_disconnect_client",
+            "title": "Disconnect a client connection or instance",
+            "description": "After confirmation, disconnect the selected live target on this Core. Reuse the original parameters and key if the receipt was lost. The program may reconnect.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_core_instance_id",
+                    "target",
+                    "idempotency_key",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_core_instance_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "target": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "kind",
+                                    "id"
+                                ],
+                                "properties": {
+                                    "kind": {
+                                        "const": "connection"
+                                    },
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    }
+                                }
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "kind",
+                                    "id"
+                                ],
+                                "properties": {
+                                    "kind": {
+                                        "const": "instance"
+                                    },
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    "idempotency_key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "confirm": {
+                        "const": true
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/clientsDisconnectResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": []
+        }
+    ]
+}
