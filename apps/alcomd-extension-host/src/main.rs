@@ -12,7 +12,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use serde_json::{Value, json};
 use wasmtime::component::{Component, HasSelf, Linker};
-use wasmtime::{Config, Engine, Store};
+use wasmtime::{Config, Engine, OptLevel, Store};
 
 wasmtime::component::bindgen!({
     path: "../../specs/extensions/wit/extension-v1",
@@ -98,7 +98,8 @@ async fn run() -> Result<()> {
         if bytes.len() > alcomd_extensions::MAX_HOST_FRAME_BYTES {
             bail!("catalogue limit");
         }
-        let engine = create_engine()?;
+        // Preflight links and type-checks the declarations without running guest code.
+        let engine = create_engine(OptLevel::None)?;
         let component = Component::from_file(&engine, &arguments.component)
             .map_err(|_| anyhow::anyhow!("component"))?;
         mcp_tools::preflight(&engine, &component, &bytes)?;
@@ -133,7 +134,7 @@ async fn run() -> Result<()> {
         },
     };
 
-    let engine = create_engine()?;
+    let engine = create_engine(OptLevel::Speed)?;
     let component = Component::from_file(&engine, &arguments.component)
         .map_err(|_| anyhow::anyhow!("component"))?;
     let store_limits = resource_limits::HostLimits::new(limits)?;
@@ -1053,9 +1054,10 @@ fn diagnostic_id() -> String {
     alcomd_application::OperationId::new().to_string()
 }
 
-fn create_engine() -> Result<Engine> {
+fn create_engine(optimization: OptLevel) -> Result<Engine> {
     let mut config = Config::new();
     config
+        .cranelift_opt_level(optimization)
         .wasm_component_model(true)
         .concurrency_support(false)
         .consume_fuel(true)
