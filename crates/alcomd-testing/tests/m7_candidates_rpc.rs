@@ -310,6 +310,21 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
         })
         .await
         .expect("explicit config update");
+    let after_settings_operations = wire(
+        client
+            .operations_list(None, Some(200), false)
+            .await
+            .expect("operations after settings update"),
+    );
+    let previous = before_operations["operations"]
+        .as_array()
+        .expect("original tasks");
+    let current = after_settings_operations["operations"]
+        .as_array()
+        .expect("current tasks");
+    assert_eq!(current.len(), previous.len() + 1);
+    assert_eq!(current[0]["kind"], "settings.update");
+    assert_eq!(&current[1..], previous);
     assert_eq!(
         remote_code(
             client
@@ -521,7 +536,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
                 .await
                 .expect("operations")
         ),
-        before_operations
+        after_settings_operations
     );
     assert!(matches!(network.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
 
