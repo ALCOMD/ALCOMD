@@ -4,16 +4,18 @@ test("the task center reads consecutive event pages and follows the accepted sta
     await page.goto("/browser-harness.html?route=/operations&hold-core-operation=1");
     const events = page.getByRole("button", { name: "Core events", exact: true });
     await expect(events).toBeVisible();
-    await page.evaluate(() => {
+    const lastSequence = await page.evaluate(() => {
+        let lastSequence = 0;
         for (let revision = 1; revision <= 51; revision += 1) {
-            window.coreEvents.emit("repository", "event-page-fixture", "repository.refreshed", revision);
+            lastSequence = window.coreEvents.emit("repository", "event-page-fixture", "repository.refreshed", revision).sequence;
         }
+        return lastSequence;
     });
     await events.click();
-    const dialog = page.getByRole("dialog", { name: "Core events", exact: true });
+    const dialog = page.locator('md-dialog[open][data-aria-label="Core events"]');
     await expect(dialog.getByRole("listitem")).toHaveCount(50);
     await dialog.getByRole("button", { name: "Load more" }).click();
-    await expect(dialog.getByRole("listitem")).toHaveCount(51);
+    await expect(dialog.getByRole("listitem")).toHaveCount(lastSequence);
     await expect(dialog.getByText("No further events")).toBeVisible();
     const pages = await page.evaluate(() => window.coreEvents.rpcRequests.filter(({ method }) => method === "eventsList"));
     expect(pages.map(({ args }) => args)).toEqual([[0, 50], [50, 50]]);

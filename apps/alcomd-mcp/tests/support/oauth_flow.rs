@@ -505,6 +505,7 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
     let default_args = vec!["-logFile", "Default file with spaces.log"];
     owner
         .settings_update(serde_json::from_value(json!({
+            "idempotencyKey": "environment-fixture-defaults",
             "expectedRevision": initial.revision,
             "update": {
                 "paths": {"projectDirectory": root.to_string_lossy(), "backupDirectory": archives.to_string_lossy()},
@@ -632,6 +633,70 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
         settings_tool["settings"]["unity"]["default_launch_arguments"],
         json!(default_args)
     );
+    let observation = data(
+        call(&sdk, &mut trace, "subscribe_events", json!({ "limit": 1 }))
+            .await
+            .expect("subscribe to Core business events"),
+    );
+    assert_eq!(observation["ready"]["resync_required"], true);
+    let cursor = &observation["ready"]["baseline_cursor"];
+    assert!(cursor["instance_id"].is_string());
+    let after = cursor["sequence"].as_u64().expect("Core sequence");
+    let patch = json!({
+        "expected_revision": settings.revision,
+        "update": { "packages": { "show_prerelease": false } },
+        "idempotency_key": "environment-settings-update",
+        "confirm": true
+    });
+    let saved = data(
+        call(&sdk, &mut trace, "update_settings", patch.clone())
+            .await
+            .expect("save patch"),
+    );
+    let replay = data(
+        call(&sdk, &mut trace, "update_settings", patch)
+            .await
+            .expect("replay saved patch"),
+    );
+    assert_eq!(replay, saved);
+    assert_eq!(saved["settings"]["packages"]["show_prerelease"], false);
+    assert_eq!(saved["settings"]["packages"]["prefer_prerelease"], false);
+    assert_eq!(
+        native
+            .settings_get()
+            .await
+            .expect("native revision")
+            .revision,
+        saved["revision"].as_u64().expect("saved revision")
+    );
+    let history = data(
+        call(
+            &sdk,
+            &mut trace,
+            "list_events",
+            json!({ "after_sequence": after, "limit": 1 }),
+        )
+        .await
+        .expect("read this caller's operation event"),
+    );
+    assert_eq!(history["events"].as_array().expect("events").len(), 1);
+    assert_eq!(history["events"][0]["sequence"], history["next_sequence"]);
+    let resumed = data(
+        call(
+            &sdk,
+            &mut trace,
+            "subscribe_events",
+            json!({ "cursor": cursor, "limit": 1 }),
+        )
+        .await
+        .expect("continue from original cursor"),
+    );
+    assert_eq!(
+        resumed["ready"]["instance_id"],
+        observation["ready"]["instance_id"]
+    );
+    assert_eq!(resumed["ready"]["resync_required"], false);
+    assert!(resumed["notification"].is_object());
     let installs = data(
         call(
             &sdk,
@@ -773,6 +838,7 @@ async fn oauth_backup_write_works_after_consent_until_revoked() {
     owner
         .settings_update(
             serde_json::from_value(json!({
+                "idempotencyKey": "oauth-backup-defaults",
                 "expectedRevision": settings.revision,
                 "update": {
                     "paths": {"backupDirectory": archives.to_string_lossy()},

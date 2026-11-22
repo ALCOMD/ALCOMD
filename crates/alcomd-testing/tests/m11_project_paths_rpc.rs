@@ -51,6 +51,7 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
     owner
         .settings_update(
             serde_json::from_value(serde_json::json!({
+                "idempotencyKey": "project-paths-fixture-defaults",
                 "expectedRevision": settings.revision,
                 "update": {
                     "paths": {"projectDirectory": configured},

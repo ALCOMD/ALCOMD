@@ -172,6 +172,7 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         .expect("owner");
     let settings = owner.settings_get().await.expect("settings");
     owner.settings_update(serde_json::from_value(json!({
+        "idempotencyKey": "workflow-fixture-paths",
         "expectedRevision": settings.revision,
         "update": {
             "paths": {"projectDirectory":projects.to_string_lossy(),"backupDirectory":archives.to_string_lossy()},

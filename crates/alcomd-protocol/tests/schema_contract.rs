@@ -712,7 +712,7 @@ fn unity_hub_open_has_separate_authority_and_closed_guarded_payloads() {
         proposal["openActionProposal"]["schemaFragments"]["$defs"]["openResult"]
     );
     for expected_path in [Value::Null, json!("a".repeat(64))] {
-        let wire = json!({"expectedRevision": 7, "expectedTargetToken": expected_path});
+        let wire = json!({"idempotencyKey":"hub-evidence","expectedRevision": 7, "expectedTargetToken": expected_path});
         let parsed: UnityHubOpenParams =
             serde_json::from_value(wire.clone()).expect("guarded request");
         assert_eq!(
@@ -721,14 +721,15 @@ fn unity_hub_open_has_separate_authority_and_closed_guarded_payloads() {
         );
     }
     for invalid in [
-        json!({"expectedRevision":1}),
-        json!({"expectedTargetToken":null}),
-        json!({"expectedRevision":0,"expectedTargetToken":null}),
-        json!({"expectedRevision":1,"expectedTargetToken":""}),
-        json!({"expectedRevision":1,"expectedTargetToken":"line\nbreak"}),
-        json!({"expectedRevision":1,"expectedTargetToken":"界".repeat(1366)}),
-        json!({"expectedRevision":1,"expectedTargetToken":null,"arguments":["--projectPath","other"]}),
-        json!({"expectedRevision":1,"expectedTargetToken":null,"url":"https://example.invalid"}),
+        json!({"expectedRevision":1,"expectedTargetToken":null}),
+        json!({"idempotencyKey":"hub-evidence","expectedRevision":1}),
+        json!({"idempotencyKey":"hub-evidence","expectedTargetToken":null}),
+        json!({"idempotencyKey":"hub-evidence","expectedRevision":0,"expectedTargetToken":null}),
+        json!({"idempotencyKey":"hub-evidence","expectedRevision":1,"expectedTargetToken":""}),
+        json!({"idempotencyKey":"hub-evidence","expectedRevision":1,"expectedTargetToken":"line\nbreak"}),
+        json!({"idempotencyKey":"hub-evidence","expectedRevision":1,"expectedTargetToken":"界".repeat(1366)}),
+        json!({"idempotencyKey":"hub-evidence","expectedRevision":1,"expectedTargetToken":null,"arguments":["--projectPath","other"]}),
+        json!({"idempotencyKey":"hub-evidence","expectedRevision":1,"expectedTargetToken":null,"url":"https://example.invalid"}),
     ] {
         assert!(serde_json::from_value::<UnityHubOpenParams>(invalid).is_err());
     }
@@ -922,7 +923,7 @@ fn config1_appearance_snapshot_and_update_reject_unknown_fields() {
             serde_json::from_value::<AppearanceSettingsUpdate>(json!({"unexpectedField":invalid}))
                 .is_err()
         );
-        assert!(serde_json::from_value::<SettingsUpdateParams>(json!({"expectedRevision":1,"update":{"appearance":{"unexpectedField":invalid},"locale":"ja-JP"}})).is_err());
+        assert!(serde_json::from_value::<SettingsUpdateParams>(json!({"idempotencyKey":"settings-fields","expectedRevision":1,"update":{"appearance":{"unexpectedField":invalid},"locale":"ja-JP"}})).is_err());
     }
 }
 
@@ -1015,12 +1016,12 @@ fn config1_directory_updates_are_closed_nullable_and_snapshot_complete() {
     ] {
         assert!(
             serde_json::from_value::<SettingsUpdateParams>(
-                json!({"expectedRevision":1,"update":invalid})
+                json!({"idempotencyKey":"settings-fields","expectedRevision":1,"update":invalid})
             )
             .is_err()
         );
     }
-    let update: SettingsUpdateParams = serde_json::from_value(json!({"expectedRevision":7,"update":{"paths":{"projectDirectory":"/fixture/projects","backupDirectory":null}}})).expect("two path update");
+    let update: SettingsUpdateParams = serde_json::from_value(json!({"idempotencyKey":"settings-fields","expectedRevision":7,"update":{"paths":{"projectDirectory":"/fixture/projects","backupDirectory":null}}})).expect("two path update");
     let paths = update.update.paths.expect("paths present");
     assert_eq!(
         paths.project_directory,
@@ -1028,7 +1029,7 @@ fn config1_directory_updates_are_closed_nullable_and_snapshot_complete() {
     );
     assert_eq!(paths.backup_directory, NullableUpdate::Clear);
     let omitted: SettingsUpdateParams = serde_json::from_value(
-        json!({"expectedRevision":7,"update":{"paths":{"backupDirectory":null}}}),
+        json!({"idempotencyKey":"settings-fields","expectedRevision":7,"update":{"paths":{"backupDirectory":null}}}),
     )
     .expect("one nullable path");
     assert_eq!(
@@ -1080,7 +1081,7 @@ fn settings_partial_updates_reject_explicit_null_except_nullable_values() {
     ] {
         assert!(
             serde_json::from_value::<SettingsUpdateParams>(json!({
-                "expectedRevision": 1, "update": invalid_update
+                "idempotencyKey":"settings-fields","expectedRevision": 1, "update": invalid_update
             }))
             .is_err(),
             "explicit null must reject the whole mixed update: {invalid_update}"

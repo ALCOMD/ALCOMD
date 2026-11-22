@@ -40,6 +40,8 @@ async fn cli_settings_applies_only_the_requested_fields_at_the_given_revision() 
         &revision,
         "--update",
         r#"{"packages":{"showPrerelease":false}}"#,
+        "--idempotency-key",
+        "cli-settings-update",
     ];
     let preview = run_group_cli(
         runtime.clone(),
@@ -59,7 +61,12 @@ async fn cli_settings_applies_only_the_requested_fields_at_the_given_revision() 
     let mut expected = initial["settings"].clone();
     expected["packages"]["showPrerelease"] = false.into();
     assert_eq!(saved["settings"], expected);
-    let conflicting = run_group_cli(runtime.clone(), &args);
+    let replay = run_group_cli(runtime.clone(), &args);
+    assert!(replay.status.success());
+    assert_eq!(replay.stdout, response.stdout);
+    let mut new_request = args;
+    *new_request.last_mut().expect("request key") = "cli-settings-new-request";
+    let conflicting = run_group_cli(runtime.clone(), &new_request);
     assert!(!conflicting.status.success());
     assert_eq!(read(), saved);
     let mut sdk = AlcomdClient::connect(config)

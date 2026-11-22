@@ -524,7 +524,8 @@
                     "additionalProperties": false,
                     "required": [
                         "expectedRevision",
-                        "expectedTargetToken"
+                        "expectedTargetToken",
+                        "idempotencyKey"
                     ],
                     "properties": {
                         "expectedRevision": {
@@ -538,6 +539,12 @@
                                 "null"
                             ],
                             "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "idempotencyKey": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[\\u0000-\\u007f]+$"
                         }
                     }
                 },
@@ -564,7 +571,8 @@
                 "definition": "openParams",
                 "value": {
                     "expectedRevision": 153,
-                    "expectedTargetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    "expectedTargetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "idempotencyKey": "hub-resolved-path"
                 },
                 "valid": true
             },
@@ -573,7 +581,8 @@
                 "definition": "openParams",
                 "value": {
                     "expectedRevision": 153,
-                    "expectedTargetToken": null
+                    "expectedTargetToken": null,
+                    "idempotencyKey": "hub-no-path"
                 },
                 "valid": true
             },
@@ -581,7 +590,8 @@
                 "id": "missing-revision",
                 "definition": "openParams",
                 "value": {
-                    "expectedTargetToken": null
+                    "expectedTargetToken": null,
+                    "idempotencyKey": "hub-missing-revision"
                 },
                 "valid": false
             },
@@ -589,7 +599,8 @@
                 "id": "missing-path",
                 "definition": "openParams",
                 "value": {
-                    "expectedRevision": 153
+                    "expectedRevision": 153,
+                    "idempotencyKey": "hub-missing-path"
                 },
                 "valid": false
             },
@@ -598,7 +609,8 @@
                 "definition": "openParams",
                 "value": {
                     "expectedRevision": 0,
-                    "expectedTargetToken": null
+                    "expectedTargetToken": null,
+                    "idempotencyKey": "hub-zero-revision"
                 },
                 "valid": false
             },
@@ -607,7 +619,8 @@
                 "definition": "openParams",
                 "value": {
                     "expectedRevision": 153,
-                    "expectedTargetToken": ""
+                    "expectedTargetToken": "",
+                    "idempotencyKey": "hub-empty-path"
                 },
                 "valid": false
             },
@@ -620,7 +633,8 @@
                     "arguments": [
                         "--projectPath",
                         "other"
-                    ]
+                    ],
+                    "idempotencyKey": "hub-argv-injection"
                 },
                 "valid": false
             },
@@ -630,7 +644,8 @@
                 "value": {
                     "expectedRevision": 153,
                     "expectedTargetToken": null,
-                    "url": "https://example.invalid"
+                    "url": "https://example.invalid",
+                    "idempotencyKey": "hub-url-injection"
                 },
                 "valid": false
             },
@@ -664,6 +679,15 @@
                 "value": {
                     "outcome": "download_required",
                     "url": "https://example.invalid"
+                },
+                "valid": false
+            },
+            {
+                "id": "missing-key",
+                "definition": "openParams",
+                "value": {
+                    "expectedRevision": 153,
+                    "expectedTargetToken": null
                 },
                 "valid": false
             }
