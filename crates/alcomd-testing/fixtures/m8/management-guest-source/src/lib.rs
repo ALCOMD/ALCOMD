@@ -5,7 +5,9 @@ mod bindings {
         inline: "package fixtures:management; world fixture { include alcomd:mcp-runtime/runtime-v1@1.0.0; import alcomd:mcp-transport/observations@1.0.0; }",
         world: "fixture", generate_all,
     });
+    #[cfg(target_arch = "wasm32")]
     use super::Guest;
+    #[cfg(target_arch = "wasm32")]
     export!(Guest with_types_in self);
 }
 use bindings::alcomd::{
@@ -16,6 +18,13 @@ use bindings::exports::alcomd::extension::{guest_lifecycle, guest_ui as ui};
 use std::{cell::RefCell, collections::BTreeMap};
 
 struct Guest;
+
+// Check the guest implementation on native hosts without emitting Wasm ABI symbols.
+#[cfg(not(target_arch = "wasm32"))]
+const _: () = {
+    fn check<T: guest_lifecycle::Guest + ui::Guest>() {}
+    let _ = check::<Guest>;
+};
 #[derive(Default)]
 struct View {
     activity: bool,

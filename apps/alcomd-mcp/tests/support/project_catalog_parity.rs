@@ -259,6 +259,11 @@ async fn project_catalog_parity() {
     .await;
     assert_eq!(terminal["state"], "succeeded", "{terminal}");
     assert!(!directory.exists());
+    let retained = success!(
+        "get_plan",
+        json!({"kind":"project_unity_migration","plan_id":migration_id})
+    );
+    assert_eq!(retained["plan"], migration["plan"]);
     let other_dir = root.join("Keep");
     project(&other_dir, false);
     let other = owner
