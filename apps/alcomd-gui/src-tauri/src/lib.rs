@@ -631,6 +631,7 @@ async fn gui_project_apply_unity_migration(
     finish_call(&mut client, result)
 }
 
+#[cfg(any(windows, test))]
 fn validated_registered_project_root(root_path: &str) -> Result<std::path::PathBuf, RpcError> {
     let registered = std::path::Path::new(root_path);
     if !registered.is_absolute() {
