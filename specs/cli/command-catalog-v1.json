@@ -32,6 +32,17 @@
             ]
         },
         {
+            "name": "settings",
+            "aliases": [],
+            "commands": [
+                {"name": "get", "aliases": []},
+                {"name": "update", "aliases": []}
+            ]
+        },
+        {"name": "events", "aliases": [], "commands": [{"name": "list", "aliases": []}, {"name": "subscribe", "aliases": []}]},
+        {"name": "logs", "aliases": [], "commands": [{"name": "read", "aliases": []}]},
+        {"name": "state", "aliases": [], "commands": [{"name": "check", "aliases": []}]},
+        {
             "name": "operation",
             "aliases": ["operations"],
             "commands": [
@@ -65,6 +76,14 @@
             "name": "repository",
             "aliases": ["repo"],
             "commands": [
+                {"name": "move", "aliases": []},
+                {"name": "set-display-name", "aliases": []},
+                {"name": "refresh-all", "aliases": []},
+                {"name": "inspect-list-file", "aliases": []},
+                {"name": "import-list-file", "aliases": []},
+                {"name": "cancel-list-registration", "aliases": []},
+                {"name": "preview-list-export", "aliases": []},
+                {"name": "export-list-file", "aliases": []},
                 {"name": "inspect", "aliases": []},
                 {"name": "list", "aliases": []},
                 {"name": "get", "aliases": ["info"]},
@@ -107,6 +126,7 @@
             "name": "unity",
             "aliases": [],
             "commands": [
+                {"name": "hub-open", "aliases": []},
                 {"name": "list", "aliases": []},
                 {"name": "get", "aliases": ["info"]},
                 {"name": "refresh", "aliases": []},

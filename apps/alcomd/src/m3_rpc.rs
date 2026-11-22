@@ -212,15 +212,15 @@ pub(super) async fn dispatch(
             match application
                 .inspect_repository(
                     access,
-                    &state.connection_id,
                     source,
                     params.credentials.map(repository_credentials),
                 )
                 .await
             {
-                Ok(value) => success_action(
+                Ok((value, id)) => success_action(
                     request.id,
-                    rpc::RepositoryResult {
+                    rpc::RepositoryInspectResult {
+                        preview_id: id.map(|id| id.to_string()),
                         repository: repository_observation(value),
                     },
                     None,
@@ -306,15 +306,11 @@ pub(super) async fn dispatch(
             require!(request, state, rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1);
             let params: rpc::RepositoryRegisterParams = parse!(request);
             let key = key!(request, params.idempotency_key);
-            let source = repository_source(params.source);
+            let Ok(preview_id) = OperationId::parse(&params.preview_id) else {
+                return invalid(request.id);
+            };
             match application
-                .register_repository_for_connection(
-                    access,
-                    &state.connection_id,
-                    source,
-                    key,
-                    params.credentials.map(repository_credentials),
-                )
+                .register_repository_preview(access, preview_id, key)
                 .await
             {
                 Ok(value) => success_action(
@@ -728,7 +724,7 @@ fn repository_record(
     snapshot
 }
 
-fn repository_snapshot(
+pub(super) fn repository_snapshot(
     repository_id: Option<String>,
     value: app::RepositoryMetadata,
     revision: Option<u64>,

@@ -472,7 +472,7 @@
         ],
         "principal": "Core checks the authenticated interactive caller and both permissions before configuration, filesystem or process access. Extensions retain their own permission boundary.",
         "whyExistingAuthorityCannotBeReused": "unity.launch and unity.launch.v1 are Project/exact-Editor launch authority; settings.manage and unity.manage explicitly exclude process launch. Do not widen their meanings or execute the Hub inside Tauri.",
-        "input": "expectedRevision is the accepted settings revision; expectedTargetToken is the accepted Core activation token or null. It is an equality/race guard only, never an executable/argv/URL instruction.",
+        "input": "idempotencyKey identifies the logical action. expectedRevision is the accepted settings revision; expectedTargetToken is the accepted Core activation token or null. It is an equality/race guard only, never an executable/argv/URL instruction.",
         "authority": [
             "Core reads the current authoritative settings under its existing settings coordination, verifies expectedRevision, then inspects the Hub through the existing read-only port.",
             "If current effective target token differs from expectedTargetToken, reject hub_path_changed with no process/browser action; do not auto-launch a different target.",
@@ -498,7 +498,7 @@
             "maxActiveReapers": 4,
             "worker": "Reserve bounded capacity and successfully establish a reaper worker before any process creation. The worker spawns, reports OS acceptance, then waits the owned Child even if the request/response receiver is dropped. Worker creation failure cannot occur after spawning an untracked child.",
             "shutdown": "ALCOMD does not intentionally kill Hub when GUI disconnects or daemon exits; detached reaping must not block daemon shutdown. No polling of unrelated Hub/Unity processes.",
-            "retry": "No automatic retry after transport failure or unknown reply. No durable at-most-once or cross-request idempotency guarantee; single in-flight GUI guard prevents duplicate submission within one action. Explicit later clicks are separate intents."
+            "retry": "Use the original method, arguments and idempotencyKey to recover a lost receipt. An interrupted external dispatch returns external_write_outcome_unknown. A deliberate new action uses a fresh key."
         },
         "download": {
             "url": "https://unity.com/download",
@@ -514,7 +514,7 @@
             "unsupported": "No open capability means no claim of launch support; show disabled/unavailable action according to existing capability convention",
             "feedback": "No fleeting success label/status line. Keep explicit errors; unknown launch outcome instructs checking Hub before another intentional click."
         },
-        "persistence": "No Config/State schema change, durable table, Plan, Apply, Operation or Event. Existing resolver, Editor launch, source rules and project files unchanged.",
+        "persistence": "The current State1 operations, idempotency records and events store acceptance and the outcome. Keep Config1 and registered projects read-only during Hub opening.",
         "dependencies": "Existing platform bindings and process ownership, with native registered activation for packaged Hub",
         "schemaFragments": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -674,8 +674,8 @@
             "configured and discovered usable paths, including invalid manual plus available fallback, dispatch exactly the Core target without argv",
             "automatic not-found returns download_required; explicit missing path without fallback and inaccessible evidence fail closed",
             "reaper capacity and worker-creation failure occur before spawn; successful spawn always waited despite response cancellation; spawn failure releases capacity; daemon shutdown does not wait for Hub lifetime",
-            "no config revision/file, package cache, project, Plan, Operation or Event mutation; the existing in-memory accepted-settings cache may be refreshed from the same authoritative config read",
-            "GUI header geometry and composed focus; dirty draft blocks open; busy/repeated mouse/keyboard actions submit once; lost replies never auto-retry",
+            "no Config1, package cache or project mutation; publish one owned operation and receipt for an accepted Hub action",
+            "GUI header geometry and composed focus; dirty draft blocks open; busy/repeated mouse/keyboard actions submit once; lost replies use the original key and arguments",
             "download opens only fixed official URL through closed adapter; custom URL input cannot redirect it; opener errors remain visible",
             "capability absent, three locales, manual real Hub/browser/desktop evidence recorded separately from mocks"
         ]

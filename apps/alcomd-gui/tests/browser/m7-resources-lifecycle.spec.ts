@@ -233,7 +233,7 @@ test("repository authentication is write-only through registration, replacement 
     await row.getByRole("button", { name: "Manage repository", exact: true }).click();
     await expect(dialog.getByRole("button", { name: "Clear authentication", exact: true })).toHaveCount(0);
     expect(await requests(page, "repositories.inspect")).toEqual([expect.objectContaining({ params: expect.objectContaining({ credentialsConfigured: true }) })]);
-    expect(await requests(page, "repositories.register")).toEqual([expect.objectContaining({ params: expect.objectContaining({ credentialsConfigured: true }) })]);
+    expect(await requests(page, "repositories.register")).toEqual([{ method: "repositories.register", params: {previewId: expect.any(String), idempotencyKey: expect.any(String)} }]);
     expect(await requests(page, "repositories.setCredentials")).toEqual([true, false].map((credentialsConfigured) => expect.objectContaining({ params: expect.objectContaining({ credentialsConfigured }) })));
     expect(await page.evaluate(() => JSON.stringify(window.resourceRequests))).not.toContain(token);
 });

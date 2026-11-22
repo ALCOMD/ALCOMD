@@ -165,6 +165,26 @@ enum Command {
         #[command(subcommand)]
         command: SystemCommand,
     },
+    /// Read or resume Core business events.
+    Events {
+        #[command(subcommand)]
+        command: EventsCommand,
+    },
+    /// Read Core operation logs with the selected filters.
+    Logs {
+        #[command(subcommand)]
+        command: LogsCommand,
+    },
+    /// Check the integrity of the Core state.
+    State {
+        #[command(subcommand)]
+        command: StateCommand,
+    },
+    /// Read Core settings or update the selected fields.
+    Settings {
+        #[command(subcommand)]
+        command: SettingsCommand,
+    },
     /// Inspect, follow, or cooperatively cancel daemon Operations.
     #[command(visible_alias = "operations")]
     Operation {
@@ -211,9 +231,48 @@ enum Command {
 #[derive(Debug, Subcommand)]
 enum PlanCommand {
     Get {
-        #[arg(value_parser = ["package", "project_copy", "project_delete_directory", "project_unity_migration"])]
+        #[arg(value_parser = ["package", "project_copy", "project_delete_directory", "project_unity_migration", "extension_install", "extension_uninstall", "repositoryRegistration"])]
         kind: String,
         plan_id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum EventsCommand {
+    List {
+        #[arg(long, default_value_t = 0)]
+        after_sequence: u64,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Wait for the next batch and return its full continuation cursor.
+    Subscribe {
+        #[arg(long,value_parser=parse_cursor::<alcomd_protocol::EventsCursor>)]
+        cursor: Option<alcomd_protocol::EventsCursor>,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum LogsCommand {
+    Read {
+        #[arg(long)]
+        before_sequence: Option<u64>,
+        #[arg(long)]
+        after_sequence: Option<u64>,
+        #[arg(long)]
+        limit: Option<u32>,
+        #[arg(long,value_parser=parse_cursor::<alcomd_protocol::LogFilter>)]
+        filter: Option<alcomd_protocol::LogFilter>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum StateCommand {
+    Check {
+        #[arg(long)]
+        idempotency_key: String,
     },
 }
 
@@ -276,6 +335,26 @@ enum NativeClientCommand {
 enum DisconnectKind {
     Connection,
     Instance,
+}
+
+#[derive(Debug, Subcommand)]
+enum SettingsCommand {
+    /// Read the current settings and their revision.
+    Get,
+    /// Apply a partial settings update at the revision returned by settings get.
+    Update {
+        #[arg(long)]
+        idempotency_key: String,
+        #[arg(long)]
+        expected_revision: u64,
+        /// JSON object containing the fields to change.
+        #[arg(long, value_parser = parse_settings_update)]
+        update: Box<alcomd_protocol::SettingsUpdate>,
+    },
+}
+
+fn parse_settings_update(value: &str) -> Result<Box<alcomd_protocol::SettingsUpdate>, String> {
+    serde_json::from_str(value).map_err(|error| format!("invalid settings update: {error}"))
 }
 
 #[derive(Debug, Subcommand)]
@@ -349,10 +428,9 @@ enum OperationCommand {
     List {
         #[arg(long)]
         active_only: bool,
-        #[arg(long, requires = "cursor_operation_id")]
-        cursor_created_at_ms: Option<u64>,
-        #[arg(long, requires = "cursor_created_at_ms")]
-        cursor_operation_id: Option<String>,
+        /// JSON nextCursor from the preceding operation list.
+        #[arg(long, value_parser = parse_cursor::<alcomd_protocol::OperationsListCursor>)]
+        cursor: Option<alcomd_protocol::OperationsListCursor>,
         #[arg(long)]
         limit: Option<u32>,
     },
@@ -563,6 +641,63 @@ enum ProjectCommand {
 
 #[derive(Debug, Subcommand)]
 enum RepositoryCommand {
+    /// Move a repository before another, or to the end when no predecessor is supplied.
+    Move {
+        repository_id: String,
+        #[arg(long)]
+        before_repository_id: Option<String>,
+        #[arg(long)]
+        expected_order_fingerprint: String,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    /// Set a repository label, or clear its override with --clear.
+    SetDisplayName {
+        repository_id: String,
+        #[arg(long, required_unless_present = "clear", conflicts_with = "clear")]
+        display_name: Option<String>,
+        #[arg(long)]
+        clear: bool,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    RefreshAll {
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    InspectListFile {
+        path: String,
+    },
+    ImportListFile {
+        path: String,
+        #[arg(long)]
+        expected_fingerprint: String,
+        #[arg(long)]
+        idempotency_key: String,
+        #[arg(long,num_args=0..=1,default_missing_value="true",require_equals=true)]
+        overwrite_existing: Option<bool>,
+    },
+    /// Stop admitting new registrations for the selected import.
+    CancelListRegistration {
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    PreviewListExport {
+        #[arg(long, value_enum, default_value = "native")]
+        format: RepositoryExportFormat,
+    },
+    /// Write the reviewed repository list to a new file on the Core machine.
+    ExportListFile {
+        target_path: String,
+        #[arg(long)]
+        expected_fingerprint: String,
+        #[arg(long, value_enum, default_value = "native")]
+        format: RepositoryExportFormat,
+        #[arg(long)]
+        idempotency_key: String,
+    },
     Inspect {
         source: String,
         #[arg(long)]
@@ -576,7 +711,9 @@ enum RepositoryCommand {
         limit: Option<u32>,
     },
     #[command(visible_alias = "info")]
-    Get { repository_id: String },
+    Get {
+        repository_id: String,
+    },
     Packages {
         #[arg(long, value_parser = parse_cursor::<alcomd_protocol::PackageCursor>)]
         cursor: Option<alcomd_protocol::PackageCursor>,
@@ -586,9 +723,8 @@ enum RepositoryCommand {
     },
     #[command(visible_alias = "add")]
     Register {
-        source: String,
-        #[arg(long)]
-        credentials_stdin: bool,
+        /// ID returned by repository inspect.
+        preview_id: String,
         #[arg(long)]
         idempotency_key: String,
     },
@@ -728,9 +864,35 @@ enum PackageCommand {
     },
 }
 
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum RepositoryExportFormat {
+    Native,
+    VccTxt,
+}
+impl From<RepositoryExportFormat> for alcomd_protocol::RepositoryListFormat {
+    fn from(value: RepositoryExportFormat) -> Self {
+        match value {
+            RepositoryExportFormat::Native => Self::Native,
+            RepositoryExportFormat::VccTxt => Self::Legacy,
+        }
+    }
+}
+
 #[derive(Debug, Subcommand)]
 enum UnityCommand {
+    /// Open the Unity Hub observed at the specified settings revision.
+    HubOpen {
+        #[arg(long)]
+        expected_revision: u64,
+        /// Pass the target token from settings get. Omit for the observed missing target.
+        #[arg(long)]
+        expected_target_token: Option<String>,
+        #[arg(long)]
+        idempotency_key: String,
+    },
     List {
+        #[arg(long,num_args=0..=1,default_missing_value="true",require_equals=true)]
+        include_version_options: Option<bool>,
         #[arg(long)]
         cursor: Option<String>,
         #[arg(long)]
@@ -788,6 +950,8 @@ enum UnityCommand {
         idempotency_key: String,
     },
     LaunchOptions {
+        #[arg(long,num_args=0..=1,default_missing_value="true",require_equals=true)]
+        include_migration_version_options: Option<bool>,
         project_id: String,
         #[arg(long)]
         expected_project_revision: u64,
@@ -1003,6 +1167,23 @@ async fn execute(
         return Err(CliError::Usage("this command does not support --dry-run"));
     }
     validate_mcp_output(&command, options, io::stdout().is_terminal())?;
+    if let Command::Events {
+        command: EventsCommand::Subscribe { cursor, limit },
+    } = command
+    {
+        let mut subscription = alcomd_client::EventSubscription::connect(
+            config,
+            alcomd_protocol::EventsSubscribeParams { cursor, limit },
+        )
+        .await?;
+        let ready = subscription.ready().clone();
+        if ready.resync_required {
+            return Ok(serde_json::json!({"ready":ready}));
+        }
+        return Ok(
+            serde_json::json!({"ready":ready,"notification":subscription.next_notification().await?}),
+        );
+    }
     let mut client = alcomd_client::AlcomdClient::connect(config).await?;
     let value = match command {
         Command::Desktop {command} => {
@@ -1038,6 +1219,10 @@ async fn execute(
                 .map_err(|_| CliError::Usage("unknown plan kind"))?;
             serde_json::to_value(client.get_plan(alcomd_protocol::PlansGetParams { kind, plan_id }).await?)
         }
+        Command::Events {command:EventsCommand::Subscribe{..}} => unreachable!("subscription owns its dedicated connection"),
+        Command::Events {command:EventsCommand::List{after_sequence,limit}} => serde_json::to_value(client.events_list(after_sequence,limit).await?),
+        Command::State {command:StateCommand::Check{idempotency_key}} => serde_json::to_value(client.state_check(idempotency_key).await?),
+        Command::Logs {command:LogsCommand::Read{before_sequence,after_sequence,limit,filter}} => serde_json::to_value(client.logs_read(alcomd_protocol::LogsReadParams{before_sequence,after_sequence,limit,filter}).await?),
         Command::Mcp{command:McpCommand::Oauth{command}}=>return m8_oauth::execute(&mut client,command,options).await,
         Command::Mcp { command: McpCommand::Client { command } } => match command {
             McpClientCommand::Request { command } => return client_requests::execute(&mut client,command,options).await,
@@ -1072,22 +1257,23 @@ async fn execute(
         Command::System {
             command: SystemCommand::Status,
         } => serde_json::to_value(client.system_status().await?),
+        Command::Settings { command } => match command {
+            SettingsCommand::Get => serde_json::to_value(client.settings_get().await?),
+            SettingsCommand::Update { expected_revision, update, idempotency_key } => {
+                let result = client.settings_update(alcomd_protocol::SettingsUpdateParams {
+                    idempotency_key,
+                    expected_revision,
+                    update: *update,
+                }).await?;
+                serde_json::to_value(result)
+            }
+        },
         Command::Operation { command } => match command {
             OperationCommand::List {
                 active_only,
-                cursor_created_at_ms,
-                cursor_operation_id,
+                cursor,
                 limit,
             } => {
-                let cursor = match (cursor_created_at_ms, cursor_operation_id) {
-                    (Some(created_at_ms), Some(operation_id)) => {
-                        Some(alcomd_protocol::OperationsListCursor {
-                            created_at_ms,
-                            operation_id,
-                        })
-                    }
-                    _ => None,
-                };
                 serde_json::to_value(client.operations_list(cursor, limit, active_only).await?)
             }
             OperationCommand::Get { operation_id } => {
@@ -1412,6 +1598,17 @@ async fn execute(
             ),
         },
         Command::Repository { command } => match command {
+            RepositoryCommand::Move {repository_id,before_repository_id,expected_order_fingerprint,idempotency_key} => serde_json::to_value(client.repository_move(alcomd_protocol::RepositoryMoveParams{repository_id,before_repository_id,expected_order_fingerprint,idempotency_key}).await?),
+            RepositoryCommand::SetDisplayName {repository_id,display_name,expected_revision,idempotency_key,..} => serde_json::to_value(client.repository_set_display_name(alcomd_protocol::RepositorySetDisplayNameParams{repository_id,display_name,expected_revision,idempotency_key}).await?),
+            RepositoryCommand::RefreshAll {idempotency_key} => serde_json::to_value(client.repositories_refresh_all(alcomd_protocol::RepositoryRefreshAllParams{idempotency_key}).await?),
+            RepositoryCommand::InspectListFile {path} => serde_json::to_value(client.repository_list_inspect_file(path).await?),
+            RepositoryCommand::ImportListFile {path,expected_fingerprint,idempotency_key,overwrite_existing} => {
+                eprintln!("Import repository configuration from {} with fingerprint {}.",path.escape_debug(),expected_fingerprint.escape_debug());
+                confirm_high_impact(options)?;
+                serde_json::to_value(client.repository_list_import_file(alcomd_protocol::RepositoryListImportParams{path,expected_fingerprint,idempotency_key,overwrite_existing}).await?)
+            }
+            RepositoryCommand::CancelListRegistration {idempotency_key} => serde_json::to_value(client.repository_list_cancel_registration(alcomd_protocol::RepositoryListCancelParams{idempotency_key}).await?),
+            RepositoryCommand::PreviewListExport {format} => serde_json::to_value(client.repository_configuration_preview_export(format.into()).await?),
             RepositoryCommand::Inspect {
                 source,
                 credentials_stdin,
@@ -1423,6 +1620,8 @@ async fn execute(
                     )
                     .await?,
             ),
+            RepositoryCommand::ExportListFile {target_path,expected_fingerprint,format,idempotency_key} =>
+                serde_json::to_value(client.repository_configuration_export_file(target_path,expected_fingerprint,format.into(),idempotency_key).await?),
             RepositoryCommand::List { cursor, limit } => {
                 serde_json::to_value(client.repositories_list(cursor, limit).await?)
             }
@@ -1438,19 +1637,10 @@ async fn execute(
                     .repository_packages(repository_id, cursor, limit)
                     .await?,
             ),
-            RepositoryCommand::Register {
-                source,
-                idempotency_key,
-                credentials_stdin,
-            } => serde_json::to_value(
-                client
-                    .repository_register_with_credentials(
-                        repository_source(source)?,
-                        idempotency_key,
-                        repository_credentials_from_stdin(credentials_stdin)?,
-                    )
-                    .await?,
-            ),
+            RepositoryCommand::Register { preview_id, idempotency_key } => {
+                confirm_frozen_plan(&mut client, alcomd_protocol::PlanKind::RepositoryRegistration, &preview_id, None, options).await?;
+                serde_json::to_value(client.repository_register(preview_id,idempotency_key).await?)
+            }
             RepositoryCommand::SetCredentials {
                 repository_id,
                 expected_revision,
@@ -1657,12 +1847,14 @@ async fn execute(
             }
         },
         Command::Unity { command } => match command {
-            UnityCommand::List { cursor, limit } => serde_json::to_value(
+            UnityCommand::HubOpen{expected_revision,expected_target_token,idempotency_key} =>
+                serde_json::to_value(client.unity_hub_open(alcomd_protocol::UnityHubOpenParams {expected_revision,expected_target_token,idempotency_key}).await?),
+            UnityCommand::List { cursor, limit, include_version_options } => serde_json::to_value(
                 client
                     .unity_installations_list(alcomd_protocol::UnityInstallationsListParams {
                         cursor,
                         limit,
-                        include_version_options: None,
+                        include_version_options,
                     })
                     .await?,
             ),
@@ -1751,6 +1943,7 @@ async fn execute(
                     .await?,
             ),
             UnityCommand::LaunchOptions {
+                include_migration_version_options,
                 project_id,
                 expected_project_revision,
             } => serde_json::to_value(
@@ -1758,7 +1951,7 @@ async fn execute(
                     .unity_launch_options(alcomd_protocol::UnityLaunchOptionsParams {
                         project_id,
                         expected_project_revision,
-                        include_migration_version_options: None,
+                        include_migration_version_options,
                     })
                     .await?,
             ),
@@ -1860,6 +2053,10 @@ impl Command {
             },
             Self::Extension { command } => command.name(),
             Self::System { .. } => "system status",
+            Self::Settings { command } => match command {
+                SettingsCommand::Get => "settings get",
+                SettingsCommand::Update { .. } => "settings update",
+            },
             Self::Operation { command } => match command {
                 OperationCommand::List { .. } => "operation list",
                 OperationCommand::Get { .. } => "operation get",
@@ -1890,9 +2087,31 @@ impl Command {
                 ProjectCommand::SetFavorite { .. } => "project set-favorite",
                 ProjectCommand::Unregister { .. } => "project unregister",
             },
+            Self::Events {
+                command: EventsCommand::List { .. },
+            } => "events list",
+            Self::Events {
+                command: EventsCommand::Subscribe { .. },
+            } => "events subscribe",
+            Self::Logs {
+                command: LogsCommand::Read { .. },
+            } => "logs read",
+            Self::State {
+                command: StateCommand::Check { .. },
+            } => "state check",
             Self::Repository { command } => match command {
+                RepositoryCommand::Move { .. } => "repository move",
+                RepositoryCommand::SetDisplayName { .. } => "repository set-display-name",
+                RepositoryCommand::RefreshAll { .. } => "repository refresh-all",
+                RepositoryCommand::InspectListFile { .. } => "repository inspect-list-file",
+                RepositoryCommand::ImportListFile { .. } => "repository import-list-file",
+                RepositoryCommand::CancelListRegistration { .. } => {
+                    "repository cancel-list-registration"
+                }
+                RepositoryCommand::PreviewListExport { .. } => "repository preview-list-export",
                 RepositoryCommand::Inspect { .. } => "repository inspect",
                 RepositoryCommand::List { .. } => "repository list",
+                RepositoryCommand::ExportListFile { .. } => "repository export-list-file",
                 RepositoryCommand::Get { .. } => "repository get",
                 RepositoryCommand::Packages { .. } => "repository packages",
                 RepositoryCommand::Register { .. } => "repository register",
@@ -1916,6 +2135,7 @@ impl Command {
             },
             Self::Unity { command } => match command {
                 UnityCommand::List { .. } => "unity list",
+                UnityCommand::HubOpen { .. } => "unity hub-open",
                 UnityCommand::Get { .. } => "unity get",
                 UnityCommand::Refresh { .. } => "unity refresh",
                 UnityCommand::Register { .. } => "unity register",
@@ -2132,7 +2352,13 @@ async fn confirm_frozen_plan(
     options: ExecutionOptions,
 ) -> Result<Option<u64>, CliError> {
     use alcomd_protocol::{PlanKind, PlansGetResult};
-    if options.yes && (expected_revision.is_some() || kind == PlanKind::ProjectUnityMigration) {
+    if options.yes
+        && (expected_revision.is_some()
+            || matches!(
+                kind,
+                PlanKind::ProjectUnityMigration | PlanKind::RepositoryRegistration
+            ))
+    {
         return Ok(expected_revision);
     }
     if !options.yes
@@ -2149,6 +2375,16 @@ async fn confirm_frozen_plan(
         })
         .await?;
     let revision = match frozen {
+        PlansGetResult::RepositoryRegistration { plan }
+            if kind == PlanKind::RepositoryRegistration =>
+        {
+            eprintln!(
+                "{}",
+                serde_json::to_string_pretty(&plan)
+                    .map_err(|_| alcomd_client::ClientError::InvalidResponse)?
+            );
+            None
+        }
         PlansGetResult::Package { plan } if kind == PlanKind::Package => {
             if !options.yes {
                 show_package_plan(&plan);

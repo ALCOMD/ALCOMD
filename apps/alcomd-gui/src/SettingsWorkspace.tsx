@@ -512,6 +512,15 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     const [mutation, setMutation] = useState<"refresh" | "select" | "register" | "remove">();
     const [actionError, setActionError] = useState<RpcError>();
     const [removing, setRemoving] = useState<UnityInstallation>();
+    const [detail,setDetail] = useState<UnityInstallation>();
+    const detailRequest = useRef(0);
+    async function openDetail(id:string) {
+        const request = ++detailRequest.current;
+        try {
+            const result = await client.unityInstallationGet(id);
+            if (isCurrent() && request === detailRequest.current) setDetail(result.installation);
+        } catch (error) { if (isCurrent() && request === detailRequest.current) setActionError(normalizeRequestError(error)); }
+    }
     const writeRequest = useGuiWrite(client, removing);
     const actionPending = useRef(false);
     const selectedPath = useRef("");
@@ -602,11 +611,16 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
                     {error === undefined || loaded ? null : <div role="alert"><strong>{t("Unity installations could not be loaded.")}</strong><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
                         <Button disabled={busy} onClick={retryRead} type="button" variant="text">{t("Retry")}</Button>
                     </div>}
-                    <DesktopList columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }, { key: "actions", header: t("Actions"), width: 96 }]} label={t("Unity installations")} minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, <span title={displayPath(item.executablePath)}>{displayPath(item.executablePath)}</span>, t(unityInstallationSourceLabel(item.sourceKind)), <Button className="material-button--danger" disabled={!manage || controlsBusy} title={manageTitle} onClick={() => { setActionError(undefined); setRemoving(item); }} type="button" variant="text">{t("Remove")}</Button>] }))} />
+                    <DesktopList columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }, { key: "actions", header: t("Actions"), width: 96 }]} label={t("Unity installations")} minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [<Button variant="text" type="button" onClick={() => void openDetail(item.installationId)}>{item.unityVersion}</Button>, <span title={displayPath(item.executablePath)}>{displayPath(item.executablePath)}</span>, t(unityInstallationSourceLabel(item.sourceKind)), <Button className="material-button--danger" disabled={!manage || controlsBusy} title={manageTitle} onClick={() => { setActionError(undefined); setRemoving(item); }} type="button" variant="text">{t("Remove")}</Button>] }))} />
                     {items.length === 0 ? loaded ? <p role="status">{t("No Unity installations registered")}</p> : busy ? <LoadingState title={t("Loading Unity installations…")} /> : null : null}
                     {cursor === undefined ? null : <Button disabled={busy} onClick={() => void read(cursor)} type="button" variant="text">{t("Load more installations")}</Button>}
                 </>
             )}
+            {detail && <Dialog open title={detail.unityVersion} onClose={() => setDetail(undefined)} actions={<DialogCloseButton>{t("Close")}</DialogCloseButton>}>
+                <p title={displayPath(detail.executablePath)}>{displayPath(detail.executablePath)}</p>
+                <p>{detail.architecture} · {t(unityInstallationSourceLabel(detail.sourceKind))}</p>
+                <code>{detail.installationId}</code>
+            </Dialog>}
             {removing === undefined ? null : <Dialog open dismissible={mutation === undefined} title={t("Remove Unity installation")} onClose={() => { setRemoving(undefined); setActionError(undefined); }} actions={<>
                 <DialogCloseButton disabled={mutation !== undefined} variant="text">{t("Cancel")}</DialogCloseButton>
                 <Button className="material-button--danger" disabled={!manage || mutation !== undefined} onClick={() => void mutate("remove")} type="button">{t("Remove installation")}</Button>

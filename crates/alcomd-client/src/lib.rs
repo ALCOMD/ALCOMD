@@ -24,7 +24,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod events;
 mod m8_oauth;
-mod m8_repositories;
 #[doc(hidden)]
 pub mod sdk_stdio;
 pub use events::EventSubscription;
@@ -379,7 +378,6 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_TEMPLATE_EDIT_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),
@@ -1178,7 +1176,7 @@ impl AlcomdClient {
     pub async fn repository_inspect(
         &mut self,
         source: alcomd_protocol::RepositorySource,
-    ) -> Result<alcomd_protocol::RepositoryResult, ClientError> {
+    ) -> Result<alcomd_protocol::RepositoryInspectResult, ClientError> {
         self.repository_inspect_with_credentials(source, None).await
     }
 
@@ -1186,7 +1184,7 @@ impl AlcomdClient {
         &mut self,
         source: alcomd_protocol::RepositorySource,
         credentials: Option<alcomd_protocol::RepositoryCredentials>,
-    ) -> Result<alcomd_protocol::RepositoryResult, ClientError> {
+    ) -> Result<alcomd_protocol::RepositoryInspectResult, ClientError> {
         self.call(
             alcomd_protocol::METHOD_REPOSITORIES_INSPECT,
             alcomd_protocol::RepositoryInspectParams {
@@ -1231,10 +1229,12 @@ impl AlcomdClient {
         target_path: String,
         expected_fingerprint: String,
         format: alcomd_protocol::RepositoryListFormat,
+        idempotency_key: String,
     ) -> Result<alcomd_protocol::RepositoryListExportResult, ClientError> {
         self.call(
             alcomd_protocol::METHOD_REPOSITORIES_EXPORT_LIST_FILE,
             alcomd_protocol::RepositoryListExportParams {
+                idempotency_key,
                 target_path,
                 expected_fingerprint,
                 format,
@@ -1269,11 +1269,13 @@ impl AlcomdClient {
         &mut self,
         target_path: String,
         expected_fingerprint: String,
+        idempotency_key: String,
     ) -> Result<alcomd_protocol::RepositoryListExportResult, ClientError> {
         self.repository_configuration_export_file(
             target_path,
             expected_fingerprint,
             alcomd_protocol::RepositoryListFormat::Native,
+            idempotency_key,
         )
         .await
     }
@@ -1320,25 +1322,14 @@ impl AlcomdClient {
 
     pub async fn repository_register(
         &mut self,
-        source: alcomd_protocol::RepositorySource,
+        preview_id: String,
         idempotency_key: String,
-    ) -> Result<alcomd_protocol::RepositoryWriteResult, ClientError> {
-        self.repository_register_with_credentials(source, idempotency_key, None)
-            .await
-    }
-
-    pub async fn repository_register_with_credentials(
-        &mut self,
-        source: alcomd_protocol::RepositorySource,
-        idempotency_key: String,
-        credentials: Option<alcomd_protocol::RepositoryCredentials>,
     ) -> Result<alcomd_protocol::RepositoryWriteResult, ClientError> {
         self.call(
             alcomd_protocol::METHOD_REPOSITORIES_REGISTER,
             alcomd_protocol::RepositoryRegisterParams {
-                source,
+                preview_id,
                 idempotency_key,
-                credentials,
             },
         )
         .await

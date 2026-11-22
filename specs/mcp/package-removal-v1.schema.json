@@ -618,40 +618,96 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "project_id": {"$ref": "#/$defs/id"},
-                "revision": {"$ref": "#/$defs/revision"}
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "revision": {
+                    "$ref": "#/$defs/revision"
+                }
             },
-            "required": ["project_id", "revision"]
+            "required": [
+                "project_id",
+                "revision"
+            ]
         },
         "copiedProjectResult": {
             "type": "object",
             "additionalProperties": false,
-            "properties": {"target_project_id": {"$ref": "#/$defs/id"}},
-            "required": ["target_project_id"]
+            "properties": {
+                "target_project_id": {
+                    "$ref": "#/$defs/id"
+                }
+            },
+            "required": [
+                "target_project_id"
+            ]
         },
         "createdBackupResult": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "backup_id": {"$ref": "#/$defs/id"},
-                "source_project_id": {"$ref": "#/$defs/id"},
-                "archive_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-                "archive_bytes": {"$ref": "#/$defs/time"},
-                "format_version": {"$ref": "#/$defs/revision"},
-                "created_at_ms": {"$ref": "#/$defs/time"},
-                "compression_mode": {"enum": ["store", "fast", "level3", "level5", "level7", "maximum"]},
-                "exclude_vpm_packages": {"type": "boolean"}
+                "backup_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "source_project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "archive_sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                },
+                "archive_bytes": {
+                    "$ref": "#/$defs/time"
+                },
+                "format_version": {
+                    "$ref": "#/$defs/revision"
+                },
+                "created_at_ms": {
+                    "$ref": "#/$defs/time"
+                },
+                "compression_mode": {
+                    "enum": [
+                        "store",
+                        "fast",
+                        "level3",
+                        "level5",
+                        "level7",
+                        "maximum"
+                    ]
+                },
+                "exclude_vpm_packages": {
+                    "type": "boolean"
+                }
             },
-            "required": ["backup_id", "source_project_id", "archive_sha256", "archive_bytes", "format_version", "created_at_ms", "compression_mode", "exclude_vpm_packages"]
+            "required": [
+                "backup_id",
+                "source_project_id",
+                "archive_sha256",
+                "archive_bytes",
+                "format_version",
+                "created_at_ms",
+                "compression_mode",
+                "exclude_vpm_packages"
+            ]
         },
         "restoredProjectResult": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "backup_id": {"$ref": "#/$defs/id"},
-                "project_id": {"$ref": "#/$defs/id"},
-                "target_name": {"type": "string", "minLength": 1, "maxLength": 255},
-                "packages_require_resolve": {"type": "boolean"},
+                "backup_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "target_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                },
+                "packages_require_resolve": {
+                    "type": "boolean"
+                },
                 "excluded_packages": {
                     "type": "array",
                     "maxItems": 4096,
@@ -659,14 +715,29 @@
                         "type": "object",
                         "additionalProperties": false,
                         "properties": {
-                            "package_id": {"$ref": "#/$defs/packageId"},
-                            "version": {"type": "string", "minLength": 1, "maxLength": 128}
+                            "package_id": {
+                                "$ref": "#/$defs/packageId"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            }
                         },
-                        "required": ["package_id", "version"]
+                        "required": [
+                            "package_id",
+                            "version"
+                        ]
                     }
                 }
             },
-            "required": ["backup_id", "project_id", "target_name", "packages_require_resolve", "excluded_packages"]
+            "required": [
+                "backup_id",
+                "project_id",
+                "target_name",
+                "packages_require_resolve",
+                "excluded_packages"
+            ]
         },
         "operationView": {
             "type": "object",
@@ -714,26 +785,7 @@
                     "$ref": "#/$defs/operationProgress"
                 },
                 "result": {
-                    "oneOf": [
-                        {
-                            "$ref": "#/$defs/packageOperationResult"
-                        },
-                        {
-                            "$ref": "#/$defs/stateCheckOperationResult"
-                        },
-                        {
-                            "$ref": "#/$defs/createdProjectResult"
-                        },
-                        {
-                            "$ref": "#/$defs/copiedProjectResult"
-                        },
-                        {
-                            "$ref": "#/$defs/createdBackupResult"
-                        },
-                        {
-                            "$ref": "#/$defs/restoredProjectResult"
-                        }
-                    ]
+                    "type": "object"
                 },
                 "error_code": {
                     "type": "string",
@@ -751,6 +803,104 @@
                 "revision",
                 "created_at_ms",
                 "updated_at_ms"
+            ],
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "kind": {
+                                "const": "packages.apply"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "result": {
+                                "$ref": "#/$defs/packageOperationResult"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "kind": {
+                                "const": "state.check"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "result": {
+                                "$ref": "#/$defs/stateCheckOperationResult"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "kind": {
+                                "const": "projects.create"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "result": {
+                                "$ref": "#/$defs/createdProjectResult"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "kind": {
+                                "const": "projects.copy"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "result": {
+                                "$ref": "#/$defs/copiedProjectResult"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "kind": {
+                                "const": "backups.create"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "result": {
+                                "$ref": "#/$defs/createdBackupResult"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "kind": {
+                                "const": "backups.restore"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "result": {
+                                "$ref": "#/$defs/restoredProjectResult"
+                            }
+                        }
+                    }
+                }
             ]
         },
         "packageOperationResult": {

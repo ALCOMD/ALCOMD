@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub const CONTRACT: &str = include_str!("../../../specs/mcp/package-removal-v1.schema.json");
 const PACKAGE_CONTRACT: &str =
     include_str!("../../../specs/mcp/package-catalog-plan-v1.schema.json");
-const REPOSITORY_CONTRACT: &str = include_str!("../../../specs/mcp/repositories-v1.schema.json");
 const WORKFLOW_CONTRACT: &str = include_str!("../../../specs/mcp/project-workflows-v1.schema.json");
 const ENVIRONMENT_CONTRACT: &str = include_str!("../../../specs/mcp/environment-v1.schema.json");
 const INVENTORY_CONTRACT: &str =
@@ -20,9 +19,10 @@ const INVENTORY_CONTRACT: &str =
 const TEMPLATE_CONTRACT: &str = include_str!("../../../specs/mcp/template-edit-v1.schema.json");
 mod environment;
 mod extensions;
+mod operations;
 mod packages;
 mod project_catalog;
-mod repositories;
+mod tool_fields;
 mod workflows;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 static DIAGNOSTICS: AtomicU64 = AtomicU64::new(1);
@@ -52,8 +52,8 @@ pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> 
         == Some(rpc::CAPABILITY_CLIENTS_REGISTRY_V1)
     {
         include_str!("../../../specs/mcp/client-registry-v1.schema.json")
-    } else if repositories::recognized(name) {
-        REPOSITORY_CONTRACT
+    } else if operations::recognized(name) {
+        operations::CONTRACT
     } else if workflows::recognized(name) {
         WORKFLOW_CONTRACT
     } else if name == "alcomd_list_installed_packages" {
@@ -392,8 +392,6 @@ fn operation(mut value: rpc::Operation) -> Result<Value, Failure> {
         return Err(Failure::InvalidCore);
     }
     if value.kind != "packages.apply" {
-        // Other Core tasks share the lifecycle envelope. Expose their
-        // method-specific payloads only once they have a safe typed projection.
         if value.kind.is_empty()
             || value.kind.len() > 128
             || !value
@@ -412,23 +410,20 @@ fn operation(mut value: rpc::Operation) -> Result<Value, Failure> {
                 serde_json::to_value(value).map_err(|_| Failure::InvalidCore)?,
             ));
         }
-        value.progress = None;
-        if value.kind == "state.check" {
-            if let Some(result) = value.result.as_ref() {
-                let fields = result.as_object().ok_or(Failure::InvalidCore)?;
-                if fields.len() != 2
-                    || ["integrity", "foreignKeys"].into_iter().any(|key| {
-                        !matches!(
-                            fields.get(key).and_then(Value::as_str),
-                            Some("ok" | "issues_detected" | "issues_truncated")
-                        )
-                    })
-                {
-                    return Err(Failure::InvalidCore);
-                }
+        if value.kind == "state.check"
+            && let Some(result) = value.result.as_ref()
+        {
+            let fields = result.as_object().ok_or(Failure::InvalidCore)?;
+            if fields.len() != 2
+                || ["integrity", "foreignKeys"].into_iter().any(|key| {
+                    !matches!(
+                        fields.get(key).and_then(Value::as_str),
+                        Some("ok" | "issues_detected" | "issues_truncated")
+                    )
+                })
+            {
+                return Err(Failure::InvalidCore);
             }
-        } else {
-            value.result = None;
         }
         return Ok(snake(
             serde_json::to_value(value).map_err(|_| Failure::InvalidCore)?,
@@ -521,7 +516,9 @@ fn failure_with_profile(cause: Failure, profile: Option<&str>) -> CallToolResult
         Failure::Remote(ClientError::Remote(e), _)
             if matches!(
                 e.code.as_str(),
-                "mcp_tool_write_outcome_unknown" | "desktop_result_unknown"
+                "mcp_tool_write_outcome_unknown"
+                    | "desktop_result_unknown"
+                    | "external_write_outcome_unknown"
             ) =>
         {
             error(
@@ -649,6 +646,7 @@ pub(crate) fn interrupted(writing: bool) -> CallToolResult {
 pub async fn execute(
     client: &mut AlcomdClient,
     params: CallToolRequestParams,
+    events_config: Option<&alcomd_client::ClientConfig>,
 ) -> Result<CallToolResult, ErrorData> {
     let descriptor = match descriptor(client, params.name.as_ref()).await {
         Ok(value) => value,
@@ -698,12 +696,6 @@ pub async fn execute(
         result.structured_content = Some(output);
         return Ok(result);
     }
-    if let Some(capability) = rpc::mcp_repositories_tool_capability(params.name.as_ref()) {
-        if !client.supports_capability(capability) {
-            return Err(super::unsupported_method());
-        }
-        return repositories::execute(client, params).await;
-    }
     if let Some(capability) = rpc::mcp_workflows_tool_capability(params.name.as_ref()) {
         if !client.supports_capability(capability) {
             return Err(super::unsupported_method());
@@ -724,6 +716,14 @@ pub async fn execute(
             return Err(super::unsupported_method());
         }
         return project_catalog::execute(client, params).await;
+    }
+    if operations::recognized(params.name.as_ref()) {
+        if rpc::mcp_operation_tool_capability(params.name.as_ref())
+            .is_some_and(|cap| !client.supports_capability(cap))
+        {
+            return Err(super::unsupported_method());
+        }
+        return operations::execute(client, params, events_config).await;
     }
     if environment::recognized(params.name.as_ref()) {
         if rpc::mcp_environment_tool_capability(params.name.as_ref())

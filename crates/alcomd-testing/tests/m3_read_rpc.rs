@@ -488,7 +488,12 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         Some("Fixture")
     );
     let registered_repository = client
-        .repository_register(source, "m3-repository-register".to_owned())
+        .repository_register(
+            inspected_repository
+                .preview_id
+                .expect("registration preview"),
+            "m3-repository-register".to_owned(),
+        )
         .await
         .expect("register repository");
     let repository_id = registered_repository

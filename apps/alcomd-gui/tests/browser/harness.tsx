@@ -168,6 +168,7 @@ const SUPPORTED_CAPABILITIES = [
     "extensions.ui.portable.v1",
     "operations.v1",
     "events.live.v1",
+    "events.replay.v1",
     "packages.apply.v1",
     "packages.candidates.v1",
     "packages.plan.v1",
@@ -661,6 +662,9 @@ class DeterministicGuiClient implements GuiRpcClient {
         }, 250);
         return operationId;
     }
+    eventsList(afterSequence: number, limit = 100): ReturnType<GuiRpcClient["eventsList"]> {
+        return this.value(browserCoreEvents.list(afterSequence, limit));
+    }
     stateCheck(): ReturnType<GuiRpcClient["stateCheck"]> {
         return this.value({ operationId: this.beginOperation("state.check"), replayed: false });
     }
@@ -999,12 +1003,15 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operationId: this.beginOperation("projects.deleteDirectory", "00000000-0000-4000-8000-000000000064"), projectId: PROJECT_ID, replayed: false });
     }
 
+    private repositoryPreviews = new Map<string, RepositorySnapshot>();
     async repositoriesInspect(source: Parameters<GuiRpcClient["repositoriesInspect"]>[0], credentials?: Parameters<GuiRpcClient["repositoriesInspect"]>[1]): ReturnType<GuiRpcClient["repositoriesInspect"]> {
         window.resourceRequests.push({ method: "repositories.inspect", params: { source, ...(credentials && { credentialsConfigured: true }) } });
-        if (!query.has("resource-lifecycle")) return this.value({ repository: repository() });
         if (query.has("resource-invalid-source")) return Promise.reject({ code: "repository_document_invalid" });
-        const { repositoryId: _id, revision: _revision, ...preview } = this.resourceRepository(source);
-        return this.value({ repository: preview });
+        const record = { ...(query.has("resource-lifecycle") ? this.resourceRepository(source) : repository()), credentialsConfigured: Boolean(credentials) };
+        const previewId = crypto.randomUUID();
+        this.repositoryPreviews.set(previewId, record);
+        const { repositoryId: _id, revision: _revision, ...preview } = record;
+        return this.value({ repository: preview, previewId });
     }
     async repositoriesList(cursor?: Parameters<GuiRpcClient["repositoriesList"]>[0]): ReturnType<GuiRpcClient["repositoriesList"]> {
         window.repositoryListReads++;
@@ -1099,11 +1106,12 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.has("package-link-error")) return Promise.reject({ code: "permission_denied" });
         return this.value(undefined);
     }
-    async repositoryRegister(source: Parameters<GuiRpcClient["repositoryRegister"]>[0], credentials?: Parameters<GuiRpcClient["repositoryRegister"]>[1]): ReturnType<GuiRpcClient["repositoryRegister"]> {
-        window.resourceRequests.push({ method: "repositories.register", params: { source, ...(credentials && { credentialsConfigured: true }) } });
+    async repositoryRegister(previewId: string, idempotencyKey: string): ReturnType<GuiRpcClient["repositoryRegister"]> {
+        window.resourceRequests.push({ method: "repositories.register", params: { previewId, idempotencyKey } });
         if (query.has("resource-register-invalid")) throw { code: "repository_document_invalid" };
         if (!query.has("resource-lifecycle")) return this.value({ repository: repository(), replayed: false });
-        const record = { ...this.resourceRepository(source), ...(credentials && { credentialsConfigured: true }) };
+        const record = this.repositoryPreviews.get(previewId);
+        if (!record) throw {code: "revision_conflict"};
         if (this.lifecycleRepositories.has(record.repositoryId!)) return Promise.reject({ code: "repository_already_registered" });
         this.lifecycleRepositories.set(record.repositoryId!, record);
         return this.value({ repository: record, replayed: false });
@@ -1193,7 +1201,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ repositoryId, revision: expectedRevision + 1, unregistered: true, replayed: false });
     }
 
-    private resourceRepository(source: Parameters<GuiRpcClient["repositoryRegister"]>[0]): RepositorySnapshot {
+    private resourceRepository(source: Parameters<GuiRpcClient["repositoriesInspect"]>[0]): RepositorySnapshot {
         return { repositoryId: source.kind === "local" ? LOCAL_REPOSITORY_ID : REPOSITORY_ID, source, actions: { canRemove: true, canEditAuthentication: source.kind === "remote" }, declaredId: source.kind === "local" ? "local-example" : "example", name: source.kind === "local" ? "Local packages" : "Example packages", issues: [], revision: 1, refreshedAtMs: 1_700_000_000_000 };
     }
 

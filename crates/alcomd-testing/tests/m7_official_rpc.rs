@@ -224,63 +224,72 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         AppearanceScheme::Vibrant
     );
 
+    let request = SettingsUpdateParams {
+        idempotency_key: "fixture-m7_official_rpc-1".into(),
+        expected_revision: 1,
+        update: SettingsUpdate {
+            projects: Some(alcomd_protocol::ProjectSettingsUpdate {
+                auto_discover: false,
+            }),
+            backups: Some(alcomd_protocol::BackupSettingsUpdate {
+                compression_mode: Some(alcomd_protocol::BackupCompression::Maximum),
+                include_vpm_packages: Some(false),
+                include_library: Some(true),
+            }),
+            window: Some(alcomd_protocol::WindowSettingsUpdate {
+                remember_state: Some(true),
+                fullscreen: None,
+            }),
+            network: Some(alcomd_protocol::NetworkSettings {
+                proxy: alcomd_protocol::NetworkProxy::Direct {},
+            }),
+            integrations: Some(alcomd_protocol::IntegrationSettings {
+                handle_vcc_links: false,
+            }),
+            paths: None,
+            unity: Some(alcomd_protocol::UnitySettingsUpdate {
+                default_launch_arguments: NullableUpdate::Set(vec![
+                    "-logFile".to_owned(),
+                    " C:\\logs with spaces\\Editor.log ".to_owned(),
+                    String::new(),
+                ]),
+                ..alcomd_protocol::UnitySettingsUpdate::default()
+            }),
+            appearance: Some(AppearanceSettingsUpdate {
+                mode: Some(AppearanceMode::Dark),
+                scheme: Some(AppearanceScheme::Fidelity),
+                source_color: NullableUpdate::Set("#315DA8".to_owned()),
+                motion: Some(AppearanceMotion::Full),
+            }),
+            locale: Some(SettingsLocale::ZhCn),
+            packages: Some(PackageSettingsUpdate {
+                hidden_repository_packages: Some(vec![
+                    alcomd_protocol::RepositoryPackageSettings {
+                        repository_id: "00000000-0000-4000-8000-000000000102".into(),
+                        package_ids: vec!["com.example.z".into(), "com.example.a".into()],
+                    },
+                ]),
+                prefer_prerelease: Some(true),
+                show_prerelease: Some(true),
+                hidden_repository_ids: Some(vec![
+                    "ffffffff-ffff-ffff-ffff-ffffffffffff".to_owned(),
+                    "00000000-0000-0000-0000-000000000000".to_owned(),
+                ]),
+                hide_local_user_packages: Some(true),
+            }),
+        },
+    };
     let updated = client
-        .settings_update(SettingsUpdateParams {
-            expected_revision: 1,
-            update: SettingsUpdate {
-                projects: Some(alcomd_protocol::ProjectSettingsUpdate {
-                    auto_discover: false,
-                }),
-                backups: Some(alcomd_protocol::BackupSettingsUpdate {
-                    compression_mode: Some(alcomd_protocol::BackupCompression::Maximum),
-                    include_vpm_packages: Some(false),
-                    include_library: Some(true),
-                }),
-                window: Some(alcomd_protocol::WindowSettingsUpdate {
-                    remember_state: Some(true),
-                    fullscreen: None,
-                }),
-                network: Some(alcomd_protocol::NetworkSettings {
-                    proxy: alcomd_protocol::NetworkProxy::Direct {},
-                }),
-                integrations: Some(alcomd_protocol::IntegrationSettings {
-                    handle_vcc_links: false,
-                }),
-                paths: None,
-                unity: Some(alcomd_protocol::UnitySettingsUpdate {
-                    default_launch_arguments: NullableUpdate::Set(vec![
-                        "-logFile".to_owned(),
-                        " C:\\logs with spaces\\Editor.log ".to_owned(),
-                        String::new(),
-                    ]),
-                    ..alcomd_protocol::UnitySettingsUpdate::default()
-                }),
-                appearance: Some(AppearanceSettingsUpdate {
-                    mode: Some(AppearanceMode::Dark),
-                    scheme: Some(AppearanceScheme::Fidelity),
-                    source_color: NullableUpdate::Set("#315DA8".to_owned()),
-                    motion: Some(AppearanceMotion::Full),
-                }),
-                locale: Some(SettingsLocale::ZhCn),
-                packages: Some(PackageSettingsUpdate {
-                    hidden_repository_packages: Some(vec![
-                        alcomd_protocol::RepositoryPackageSettings {
-                            repository_id: "00000000-0000-4000-8000-000000000102".into(),
-                            package_ids: vec!["com.example.z".into(), "com.example.a".into()],
-                        },
-                    ]),
-                    prefer_prerelease: Some(true),
-                    show_prerelease: Some(true),
-                    hidden_repository_ids: Some(vec![
-                        "ffffffff-ffff-ffff-ffff-ffffffffffff".to_owned(),
-                        "00000000-0000-0000-0000-000000000000".to_owned(),
-                    ]),
-                    hide_local_user_packages: Some(true),
-                }),
-            },
-        })
+        .settings_update(request.clone())
         .await
         .expect("update settings");
+    assert_eq!(
+        client
+            .settings_update(request)
+            .await
+            .expect("replay the accepted update at its original revision"),
+        updated
+    );
     assert_eq!(updated.revision, 2);
     assert!(updated.settings.window.remember_state);
     assert!(!updated.settings.integrations.handle_vcc_links);
@@ -339,6 +348,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         let previous = latest.clone();
         latest = client
             .settings_update(SettingsUpdateParams {
+                idempotency_key: format!("scheme-update-{}", previous.revision),
                 expected_revision: previous.revision,
                 update: SettingsUpdate {
                     window: None,
@@ -413,7 +423,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
             &mut raw,
             &format!("invalid-null-{index}"),
             alcomd_protocol::METHOD_SETTINGS_UPDATE,
-            json!({"expectedRevision": latest.revision, "update": invalid_update}),
+            json!({"idempotencyKey":"raw-validation","expectedRevision": latest.revision, "update": invalid_update}),
         )
         .await;
         let error =
@@ -441,7 +451,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         &mut raw,
         "clear-source-color",
         alcomd_protocol::METHOD_SETTINGS_UPDATE,
-        json!({"expectedRevision": latest.revision, "update": {"appearance": {"sourceColor": null}}}),
+        json!({"idempotencyKey":"raw-validation","expectedRevision": latest.revision, "update": {"appearance": {"sourceColor": null}}}),
     )
     .await
     .expect("sourceColor null remains an intentional clear");
@@ -463,7 +473,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         &mut raw,
         "hub-open-without-capability",
         alcomd_protocol::METHOD_UNITY_HUB_OPEN,
-        json!({"expectedRevision": expected_clear.revision, "expectedTargetToken": null}),
+        json!({"idempotencyKey":"raw-validation","expectedRevision": expected_clear.revision, "expectedTargetToken": null}),
     )
     .await
     .expect_err("Hub open has an independent negotiated capability");
@@ -499,6 +509,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         .to_owned();
     let hub_saved = client
         .settings_update(SettingsUpdateParams {
+            idempotency_key: "fixture-m7_official_rpc-3".into(),
             expected_revision: expected_clear.revision,
             update: SettingsUpdate {
                 window: None,
@@ -561,6 +572,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     );
     let stale_open = client
         .unity_hub_open(alcomd_protocol::UnityHubOpenParams {
+            idempotency_key: "fixture-m7_official_rpc-4".into(),
             expected_revision: missing.revision - 1,
             expected_target_token: missing.unity_hub.target_token.clone(),
         })
@@ -569,6 +581,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     assert!(matches!(stale_open, ClientError::Remote(error) if error.code == "revision_conflict"));
     let changed_open = client
         .unity_hub_open(alcomd_protocol::UnityHubOpenParams {
+            idempotency_key: "fixture-m7_official_rpc-5".into(),
             expected_revision: missing.revision,
             expected_target_token: Some("a".repeat(64)),
         })
@@ -584,6 +597,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     if missing.unity_hub.status == alcomd_protocol::UnityHubStatus::NotFound {
         let invalid_open = client
             .unity_hub_open(alcomd_protocol::UnityHubOpenParams {
+                idempotency_key: "fixture-m7_official_rpc-6".into(),
                 expected_revision: missing.revision,
                 expected_target_token: None,
             })
@@ -599,6 +613,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     );
     let unrelated = client
         .settings_update(SettingsUpdateParams {
+            idempotency_key: "fixture-m7_official_rpc-7".into(),
             expected_revision: missing.revision,
             update: SettingsUpdate {
                 window: None,
@@ -613,6 +628,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     assert_eq!(unrelated.settings.locale, SettingsLocale::JaJp);
     let hub_cleared = client
         .settings_update(SettingsUpdateParams {
+            idempotency_key: "fixture-m7_official_rpc-8".into(),
             expected_revision: unrelated.revision,
             update: SettingsUpdate {
                 window: None,
@@ -634,6 +650,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     if hub_cleared.unity_hub.status == alcomd_protocol::UnityHubStatus::NotFound {
         let download = client
             .unity_hub_open(alcomd_protocol::UnityHubOpenParams {
+                idempotency_key: "fixture-m7_official_rpc-9".into(),
                 expected_revision: hub_cleared.revision,
                 expected_target_token: None,
             })
@@ -647,6 +664,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
 
     let stale = client
         .settings_update(SettingsUpdateParams {
+            idempotency_key: "fixture-m7_official_rpc-10".into(),
             expected_revision: 1,
             update: SettingsUpdate {
                 window: None,
@@ -841,6 +859,7 @@ async fn fullscreen_settings_survive_daemon_restart_and_narrow_changes_preserve_
     assert!(!defaults.settings.window.fullscreen);
     let enabled = client
         .settings_update(SettingsUpdateParams {
+            idempotency_key: "fixture-m7_official_rpc-11".into(),
             expected_revision: defaults.revision,
             update: SettingsUpdate {
                 window: Some(alcomd_protocol::WindowSettingsUpdate {
@@ -856,6 +875,7 @@ async fn fullscreen_settings_survive_daemon_restart_and_narrow_changes_preserve_
     assert!(!enabled.settings.window.remember_state);
     let remembered = client
         .settings_update(SettingsUpdateParams {
+            idempotency_key: "fixture-m7_official_rpc-12".into(),
             expected_revision: enabled.revision,
             update: SettingsUpdate {
                 window: Some(alcomd_protocol::WindowSettingsUpdate {
@@ -887,6 +907,7 @@ async fn fullscreen_settings_survive_daemon_restart_and_narrow_changes_preserve_
     );
     let disabled = client
         .settings_update(SettingsUpdateParams {
+            idempotency_key: "fixture-m7_official_rpc-13".into(),
             expected_revision: remembered.revision,
             update: SettingsUpdate {
                 window: Some(alcomd_protocol::WindowSettingsUpdate {
@@ -919,7 +940,7 @@ async fn fullscreen_settings_survive_daemon_restart_and_narrow_changes_preserve_
     .into_iter()
     .enumerate()
     {
-        let result = raw_request(&mut stream, &format!("invalid-fullscreen-{index}"), "settings.update", json!({"expectedRevision":disabled.revision,"update":{"window":value,"locale":"ja-JP"}})).await;
+        let result = raw_request(&mut stream, &format!("invalid-fullscreen-{index}"), "settings.update", json!({"idempotencyKey":"raw-validation","expectedRevision":disabled.revision,"update":{"window":value,"locale":"ja-JP"}})).await;
         assert!(matches!(result, Err(error) if error.code == "invalid_request"));
         assert_eq!(
             client

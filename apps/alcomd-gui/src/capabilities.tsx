@@ -27,6 +27,7 @@ export const capabilities = {
     repositoriesListFiles: RPC_CAPABILITIES.repositoriesListFiles,
     repositoriesListImport: RPC_CAPABILITIES.repositoriesListImport,
     repositoriesRegistry: "repositories.registry.v1",
+    eventsReplay: "events.replay.v1",
     stateCheck: "state.check.v1",
     clientRegistry: "clients.registry.v1",
     desktopActions: "desktop.actions.v1",

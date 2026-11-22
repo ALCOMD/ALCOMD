@@ -236,6 +236,15 @@ fn check(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     {
         errors.push("MCP project tool schemas differ from the native contracts".to_owned());
     }
+    if !Command::new(python)
+        .arg(root.join("scripts/derive-mcp-schemas.py"))
+        .args(["specs/mcp/operations-v1.bindings.json", "--check"])
+        .current_dir(root)
+        .status()?
+        .success()
+    {
+        errors.push("MCP operation tool schemas differ from the native contracts".to_owned());
+    }
 
     for relative in PRODUCTION_ROOTS {
         scan_forbidden_tokens(&root.join(relative), &mut errors)?;

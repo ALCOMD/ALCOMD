@@ -171,13 +171,16 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
         .await
         .expect("register project");
     let project_id = registered.project.project_id.expect("project ID");
+    let preview_id = client
+        .repository_inspect(alcomd_protocol::RepositorySource::Local {
+            path: repository_path.to_string_lossy().into_owned(),
+        })
+        .await
+        .expect("inspect repository")
+        .preview_id
+        .expect("registration preview");
     let repository = client
-        .repository_register(
-            alcomd_protocol::RepositorySource::Local {
-                path: repository_path.to_string_lossy().into_owned(),
-            },
-            "candidate-repository".to_owned(),
-        )
+        .repository_register(preview_id, "candidate-repository".to_owned())
         .await
         .expect("register repository");
     let repository_id = repository.repository.repository_id.expect("repository ID");
@@ -294,6 +297,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
     );
     client
         .settings_update(alcomd_protocol::SettingsUpdateParams {
+            idempotency_key: "fixture-m7_candidates_rpc-1".into(),
             expected_revision: settings.revision,
             update: alcomd_protocol::SettingsUpdate {
                 window: None,
@@ -564,13 +568,16 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
         json!({"id":"additional","name":"Additional","packages":{}}).to_string(),
     )
     .expect("additional source");
+    let preview_id = client
+        .repository_inspect(alcomd_protocol::RepositorySource::Local {
+            path: extra_path.to_string_lossy().into_owned(),
+        })
+        .await
+        .expect("inspect repository")
+        .preview_id
+        .expect("registration preview");
     let extra = client
-        .repository_register(
-            alcomd_protocol::RepositorySource::Local {
-                path: extra_path.to_string_lossy().into_owned(),
-            },
-            "candidate-add-source".to_owned(),
-        )
+        .repository_register(preview_id, "candidate-add-source".to_owned())
         .await
         .expect("add source");
     assert_eq!(
@@ -613,13 +620,16 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
     let incomplete_path = fixture.0.join("incomplete-repository.json");
     fs::write(&incomplete_path, json!({"id":"incomplete", "name":"Incomplete",
         "packages":{"com.example.other":{"versions":{"1.0.0":{"name":"com.example.other","version":"1.0.0"}}}}}).to_string()).expect("raw-only repository");
+    let preview_id = client
+        .repository_inspect(alcomd_protocol::RepositorySource::Local {
+            path: incomplete_path.to_string_lossy().into_owned(),
+        })
+        .await
+        .expect("inspect repository")
+        .preview_id
+        .expect("registration preview");
     client
-        .repository_register(
-            alcomd_protocol::RepositorySource::Local {
-                path: incomplete_path.to_string_lossy().into_owned(),
-            },
-            "candidate-incomplete-source".to_owned(),
-        )
+        .repository_register(preview_id, "candidate-incomplete-source".to_owned())
         .await
         .expect("register raw-only source");
     let summary_with_invalid_version = client

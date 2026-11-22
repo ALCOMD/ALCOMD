@@ -69,6 +69,21 @@ async fn gui_state_check(
 }
 
 #[tauri::command]
+async fn gui_events_list(
+    state: State<'_, GuiClientState>,
+    after_sequence: u64,
+    limit: Option<u32>,
+) -> Result<alcomd_protocol::EventsListResult, RpcError> {
+    let mut client = state.reads.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.events_list(after_sequence, limit).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
 async fn gui_logs_read(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::LogsReadParams,
@@ -543,6 +558,7 @@ async fn gui_repository_list_export_file(
     target_path: String,
     expected_fingerprint: String,
     format: Option<alcomd_protocol::RepositoryListFormat>,
+    idempotency_key: String,
 ) -> Result<alcomd_protocol::RepositoryListExportResult, RpcError> {
     let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
@@ -553,6 +569,7 @@ async fn gui_repository_list_export_file(
                     target_path,
                     expected_fingerprint,
                     format.unwrap_or_default(),
+                    idempotency_key,
                 )
                 .await
         }
@@ -737,7 +754,7 @@ async fn gui_project_unregister(
 async fn gui_repositories_inspect(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::RepositoryInspectParams,
-) -> Result<alcomd_protocol::RepositoryResult, RpcError> {
+) -> Result<alcomd_protocol::RepositoryInspectResult, RpcError> {
     let mut client = state.repository.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
@@ -824,16 +841,15 @@ fn validate_package_link_expectation(url: &str) -> Result<(), RpcError> {
 #[tauri::command]
 async fn gui_repository_register(
     state: State<'_, GuiClientState>,
-    source: alcomd_protocol::RepositorySource,
+    preview_id: String,
     idempotency_key: String,
-    credentials: Option<alcomd_protocol::RepositoryCredentials>,
 ) -> Result<alcomd_protocol::RepositoryWriteResult, RpcError> {
     let mut client = state.repository.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
             client
-                .repository_register_with_credentials(source, idempotency_key, credentials)
+                .repository_register(preview_id, idempotency_key)
                 .await
         }
         None => return Err(daemon_unavailable()),
@@ -1803,6 +1819,7 @@ pub fn run() {
             gui_state_check,
             gui_operations_list,
             gui_logs_read,
+            gui_events_list,
             gui_operation_get,
             gui_operation_cancel,
             gui_settings_get,

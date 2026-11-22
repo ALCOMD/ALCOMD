@@ -437,7 +437,10 @@ pub(super) fn cancel_operation(
     if operation.revision != expected_revision {
         return Err(StoreError::new(StoreErrorKind::RevisionConflict));
     }
-    if operation.state.is_terminal() || super::desktop::is_desktop(&operation.kind) {
+    if operation.state.is_terminal()
+        || super::desktop::is_desktop(&operation.kind)
+        || alcomd_application::ExternalMethod::parse(&operation.kind).is_some()
+    {
         return Err(StoreError::new(StoreErrorKind::OperationNotCancellable));
     }
     if matches!(
@@ -737,6 +740,11 @@ pub(super) fn recover(
         // Each dedicated handler owns recovery for its durable operation and journal.
         if super::desktop::is_desktop(&kind) {
             super::desktop::recover(connection, operation_id, recovered_at_ms)
+                .map_err(|_| corrupt_state())?;
+            continue;
+        }
+        if alcomd_application::ExternalMethod::parse(&kind).is_some() {
+            super::external_write::recover(connection, operation_id, recovered_at_ms)
                 .map_err(|_| corrupt_state())?;
             continue;
         }

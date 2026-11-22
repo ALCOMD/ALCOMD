@@ -46,10 +46,14 @@ const REPOSITORY_SET_CREDENTIALS: &str = "repositories.setCredentials";
 const REPOSITORY_MOVE: &str = "repositories.move";
 const REPOSITORY_SET_DISPLAY_NAME: &str = "repositories.setDisplayName";
 
+struct RepositoryAuthority {
+    caller: PrincipalId,
+    authentication: app::ToolAuthentication,
+}
+
 struct RepositoryWriteScope<'a> {
     owner: &'a PrincipalId,
-    authority: Option<&'a app::McpRepositoryAuthority>,
-    command: Option<app::McpRepositoryCommand>,
+    authority: Option<&'a RepositoryAuthority>,
 }
 
 impl<'a> RepositoryWriteScope<'a> {
@@ -83,22 +87,11 @@ impl<'a> RepositoryWriteScope<'a> {
         }
         Ok(())
     }
-
-    fn identity(
-        &self,
-        owner_method: &'static str,
-        owner_fingerprint: impl FnOnce() -> Result<String, M3Error>,
-    ) -> Result<(&'static str, String), M3Error> {
-        self.command.map_or_else(
-            || Ok((owner_method, owner_fingerprint()?)),
-            repository_command_identity,
-        )
-    }
 }
 
 pub(super) struct RepositoryAccess {
     owner: PrincipalId,
-    authority: Option<app::McpRepositoryAuthority>,
+    authority: Option<RepositoryAuthority>,
 }
 
 impl RepositoryAccess {
@@ -108,7 +101,7 @@ impl RepositoryAccess {
         let authority = if owner == caller {
             None
         } else {
-            Some(app::McpRepositoryAuthority {
+            Some(RepositoryAuthority {
                 caller,
                 authentication: app::workflow_authentication()
                     .ok_or_else(|| M3Error::new(M3ErrorCode::PermissionDenied))?,
@@ -121,7 +114,6 @@ impl RepositoryAccess {
         RepositoryWriteScope {
             owner: &self.owner,
             authority: self.authority.as_ref(),
-            command: None,
         }
     }
 
@@ -148,6 +140,10 @@ fn registration_fingerprint(
     json(&serde_json::json!({ "source": source, "authenticated": authenticated, "version": 1 }))
 }
 
+fn preview_fingerprint(preview_id: app::OperationId) -> Result<String, M3Error> {
+    json(&serde_json::json!({"previewId":preview_id,"version":1}))
+}
+
 fn credential_fingerprint(
     id: RepositoryId,
     expected: Revision,
@@ -169,6 +165,9 @@ pub(super) fn replay_repository_write(
     let scope = access.scope();
     scope.require(&tx)?;
     let (method, fingerprint) = match request {
+        app::RepositoryWriteRequest::RegisterPreview { preview_id } => {
+            (REPOSITORY_REGISTER, preview_fingerprint(preview_id)?)
+        }
         app::RepositoryWriteRequest::Register {
             source,
             authenticated,
@@ -221,113 +220,6 @@ pub(super) fn replay_repository_refresh(
     }
     transaction.commit().map_err(sql_failure)?;
     Ok(result)
-}
-
-fn repository_command_identity(
-    command: app::McpRepositoryCommand,
-) -> Result<(&'static str, String), M3Error> {
-    use app::McpRepositoryCommand::*;
-    Ok(match command {
-        Register { preview_id } => (
-            "mcp.repositories.register",
-            json(&serde_json::json!({"previewId":preview_id,"version":1}))?,
-        ),
-        Remove { id, expected } => (
-            "mcp.repositories.remove",
-            aggregate_fingerprint(id, expected)?,
-        ),
-    })
-}
-
-pub(super) fn mcp_repository_replay(
-    connection: &mut Connection,
-    authority: &app::McpRepositoryAuthority,
-    command: app::McpRepositoryCommand,
-    key: &IdempotencyKey,
-) -> Result<Option<app::McpRepositoryReceipt>, M3Error> {
-    let owner = PrincipalId::local_owner();
-    let scope = RepositoryWriteScope {
-        owner: &owner,
-        authority: Some(authority),
-        command: Some(command),
-    };
-    let tx = connection.transaction().map_err(sql_failure)?;
-    scope.require(&tx)?;
-    let (method, fingerprint) = repository_command_identity(command)?;
-    let receipt = match command {
-        app::McpRepositoryCommand::Remove { .. } => {
-            existing_response::<UnregisterResult<RepositoryId>>(
-                &tx,
-                scope.caller(),
-                method,
-                key,
-                &fingerprint,
-            )?
-            .map(|mut value| {
-                value.replayed = true;
-                removed_repository_receipt(value)
-            })
-        }
-        _ => existing_response::<SyncWrite<app::McpRepositoryEntry>>(
-            &tx,
-            scope.caller(),
-            method,
-            key,
-            &fingerprint,
-        )?
-        .map(|mut value| {
-            value.replayed = true;
-            repository_receipt(value)
-        }),
-    };
-    tx.commit().map_err(sql_failure)?;
-    Ok(receipt)
-}
-
-pub(super) fn mcp_repository_commit(
-    connection: &mut Connection,
-    authority: &app::McpRepositoryAuthority,
-    command: app::McpRepositoryCommand,
-    observation: Option<app::RepositoryReadOutcome>,
-    key: &IdempotencyKey,
-    now_ms: u64,
-) -> Result<app::McpRepositoryReceipt, M3Error> {
-    use app::{McpRepositoryCommand::*, RepositoryReadOutcome::*};
-    let owner = PrincipalId::local_owner();
-    let scope = RepositoryWriteScope {
-        owner: &owner,
-        authority: Some(authority),
-        command: Some(command),
-    };
-    match (command, observation) {
-        (Register { .. }, Some(Fresh(observation))) => {
-            register_repository_projected(connection, scope, observation.into(), None, key, now_ms)
-                .map(repository_receipt)
-        }
-        (Remove { id, expected }, None) if app::builtin_repository(id).is_none() => {
-            unregister_repository_scoped(connection, scope, id, expected, key, now_ms)
-                .map(removed_repository_receipt)
-        }
-        _ => Err(M3Error::new(M3ErrorCode::PermissionDenied)),
-    }
-}
-
-fn repository_receipt(value: SyncWrite<app::McpRepositoryEntry>) -> app::McpRepositoryReceipt {
-    app::McpRepositoryReceipt {
-        repository_id: value.value.repository_id,
-        revision: value.value.revision,
-        repository: Some(value.value),
-        replayed: value.replayed,
-    }
-}
-
-fn removed_repository_receipt(value: UnregisterResult<RepositoryId>) -> app::McpRepositoryReceipt {
-    app::McpRepositoryReceipt {
-        repository_id: value.id,
-        revision: value.revision,
-        repository: None,
-        replayed: value.replayed,
-    }
 }
 
 pub(super) fn repository_list_snapshot(
@@ -1592,34 +1484,23 @@ pub(super) fn register_repository(
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
-    register_repository_projected(
-        connection,
-        access.scope(),
-        registration,
-        credential,
-        key,
-        now_ms,
-    )
-}
-
-fn register_repository_projected<T: From<RepositoryRecord> + Serialize + DeserializeOwned>(
-    connection: &mut Connection,
-    scope: RepositoryWriteScope<'_>,
-    registration: app::RepositoryRegistration,
-    credential: Option<&str>,
-    key: &IdempotencyKey,
-    now_ms: u64,
-) -> Result<SyncWrite<T>, M3Error> {
-    let (method, fingerprint) = scope.identity(REPOSITORY_REGISTER, || {
-        registration_fingerprint(&registration.requested_source, credential.is_some())
-    })?;
+    let scope = access.scope();
+    let method = REPOSITORY_REGISTER;
+    let fingerprint = match registration.preview_id {
+        Some(id) => preview_fingerprint(id)?,
+        None => registration_fingerprint(&registration.requested_source, credential.is_some())?,
+    };
     let mut observation = registration.observation;
     let owner = scope.owner;
     let transaction = begin(connection)?;
     scope.require(&transaction)?;
-    if let Some(mut response) =
-        existing_response::<SyncWrite<T>>(&transaction, scope.caller(), method, key, &fingerprint)?
-    {
+    if let Some(mut response) = existing_response::<SyncWrite<RepositoryRecord>>(
+        &transaction,
+        scope.caller(),
+        method,
+        key,
+        &fingerprint,
+    )? {
         response.replayed = true;
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
@@ -1692,7 +1573,7 @@ fn register_repository_projected<T: From<RepositoryRecord> + Serialize + Deseria
     )
     .map_err(sql_failure)?;
     let response = SyncWrite {
-        value: record.into(),
+        value: record,
         replayed: false,
     };
     save_response(
@@ -2287,8 +2168,8 @@ pub(super) fn refresh_repository(
     now_ms: u64,
 ) -> Result<SyncWrite<app::RepositoryRefreshReceipt>, M3Error> {
     let scope = access.scope();
-    let (method, fingerprint) =
-        scope.identity(REPOSITORY_REFRESH, || aggregate_fingerprint(id, expected))?;
+    let method = REPOSITORY_REFRESH;
+    let fingerprint = aggregate_fingerprint(id, expected)?;
     let owner = scope.owner;
     let transaction = begin(connection)?;
     scope.require(&transaction)?;
@@ -2424,8 +2305,8 @@ pub(super) fn update_repository_validators(
     now_ms: u64,
 ) -> Result<SyncWrite<app::RepositoryRefreshReceipt>, M3Error> {
     let scope = access.scope();
-    let (method, fingerprint) =
-        scope.identity(REPOSITORY_REFRESH, || aggregate_fingerprint(id, expected))?;
+    let method = REPOSITORY_REFRESH;
+    let fingerprint = aggregate_fingerprint(id, expected)?;
     let owner = scope.owner;
     let transaction = begin(connection)?;
     scope.require(&transaction)?;
@@ -2496,20 +2377,9 @@ pub(super) fn unregister_repository(
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<UnregisterResult<RepositoryId>, M3Error> {
-    unregister_repository_scoped(connection, access.scope(), id, expected, key, now_ms)
-}
-
-fn unregister_repository_scoped(
-    connection: &mut Connection,
-    scope: RepositoryWriteScope<'_>,
-    id: RepositoryId,
-    expected: Revision,
-    key: &IdempotencyKey,
-    now_ms: u64,
-) -> Result<UnregisterResult<RepositoryId>, M3Error> {
-    let (method, fingerprint) = scope.identity(REPOSITORY_UNREGISTER, || {
-        aggregate_fingerprint(id, expected)
-    })?;
+    let scope = access.scope();
+    let method = REPOSITORY_UNREGISTER;
+    let fingerprint = aggregate_fingerprint(id, expected)?;
     let owner = scope.owner;
     let transaction = begin(connection)?;
     scope.require(&transaction)?;

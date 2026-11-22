@@ -106,6 +106,12 @@
             "permission_denied",
             "store_unavailable"
         ],
+        "externalWrite": [
+            "external_write_outcome_unknown",
+            "idempotency_conflict",
+            "permission_denied",
+            "store_unavailable"
+        ],
         "operationCancel": [
             "idempotency_conflict",
             "internal_error",
@@ -1223,7 +1229,8 @@
                 "project_delete_directory": "projects.delete.v1",
                 "project_unity_migration": "projects.unity-migration.v1",
                 "extension_install": "extensions.lifecycle.v1",
-                "extension_uninstall": "extensions.lifecycle.v1"
+                "extension_uninstall": "extensions.lifecycle.v1",
+                "repositoryRegistration": "repositories.read.v1"
             },
             "rustMethod": "get_plan",
             "requestType": "PlansGetParams",
@@ -1235,6 +1242,7 @@
                 "packageTransaction",
                 "projectCopy",
                 "projectDelete",
+                "repositoryRegistry",
                 "unityMigration"
             ]
         },
@@ -1544,6 +1552,7 @@
             "requestSchema": "m7-repository-list.schema.json#/$defs/exportListFileParams",
             "resultSchema": "m7-repository-list.schema.json#/$defs/exportListFileResult",
             "errorProfiles": [
+                "externalWrite",
                 "repositoryList"
             ]
         },
@@ -1582,9 +1591,9 @@
             ],
             "rustMethod": "repository_inspect_with_credentials",
             "requestType": "RepositoryInspectParams",
-            "resultType": "RepositoryResult",
+            "resultType": "RepositoryInspectResult",
             "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryInspectParams",
-            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryResult",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryInspectResult",
             "errorProfiles": [
                 "repositoryRegistry"
             ]
@@ -1692,7 +1701,7 @@
             "capabilities": [
                 "repositories.registry.v1"
             ],
-            "rustMethod": "repository_register_with_credentials",
+            "rustMethod": "repository_register",
             "requestType": "RepositoryRegisterParams",
             "resultType": "RepositoryWriteResult",
             "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryRegisterParams",
@@ -1764,6 +1773,7 @@
             "requestSchema": "m7-official-gui.schema.json#/$defs/settingsUpdateParams",
             "resultSchema": "native-sdk-v1.schema.json#/$defs/SettingsGetResult",
             "errorProfiles": [
+                "externalWrite",
                 "settingsUpdate"
             ]
         },
@@ -1802,6 +1812,7 @@
             "requestSchema": "m7-official-gui.schema.json#/$defs/hubOpenParams",
             "resultSchema": "m7-official-gui.schema.json#/$defs/hubOpenResult",
             "errorProfiles": [
+                "externalWrite",
                 "unityHub"
             ]
         },

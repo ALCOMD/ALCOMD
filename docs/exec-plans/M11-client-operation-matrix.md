@@ -29,8 +29,8 @@
 | `mcp.transport.snapshot` | 已提供 · 客户端活动中的传输、观察者与订阅 | 已提供 · mcp transport | 已提供 · alcomd_get_mcp_transport_snapshot |
 | `backups.create` | 已提供 · 项目备份对话框选择目的地及覆盖项，确认创建 | 已提供 · backup create | 已提供 · alcomd_create_backup；项目修订、可选目的地和备份选项 |
 | `backups.restore` | 已提供 · 项目列表「恢复备份」选择 ZIP、名称或目的地 | 已提供 · backup restore | 已提供 · alcomd_restore_backup；确认源 ZIP 及恢复目标 |
-| `events.list` | 缺少入口 · 没有历史事件页，任务页查询 operations | 缺少入口 · CLI 未提供事件读取或订阅；operation follow 轮询单项任务 | 缺少入口 · MCP 的工具目录变更订阅不能读取或续接 Core 业务事件 |
-| `events.subscribe` | 已提供 · 应用启动后订阅；事件进入通知、任务和资源列表刷新 | 缺少入口 · CLI 未提供事件读取或订阅；operation follow 轮询单项任务 | 缺少入口 · MCP 的工具目录变更订阅不能读取或续接 Core 业务事件 |
+| `events.list` | 已提供 · 任务页查看历史事件，按上一页的末序号续读 | 已提供 · events list | 已提供 · alcomd_list_events |
+| `events.subscribe` | 已提供 · 应用连接到 Core 后订阅任务和资源变化，按会话游标续接 | 已提供 · events subscribe 等待一个通知 | 已提供 · alcomd_subscribe_events 最多等待十秒，在 HTTP 请求期限内返回。CLI 和 MCP 使用返回的游标续接 |
 | `extensions.cliCommands.invoke` | 协议专用 · GUI 按已签名的可移植界面声明展示并分派控件动作 | 已提供 · `extension run` | 协议专用 · MCP 使用单独签名的工具声明和导出 |
 | `extensions.cliCommands.list` | 协议专用 · GUI 按已签名的可移植界面声明展示并分派控件动作 | 已提供 · `extension commands` | 协议专用 · MCP 使用单独签名的工具声明和导出 |
 | `extensions.applyInstall` | 已提供 · 扩展安装审阅后同意权限并提交原计划 | 已提供 · `extension apply-install` | 已提供 · `alcomd_apply_extension_install` |
@@ -49,11 +49,11 @@
 | `extensions.ui.close` | 已提供 · 离开扩展页面或关闭视图后释放原会话 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
 | `extensions.ui.dispatch` | 已提供 · 在扩展视图内操作控件，发送会话、快照修订和事件序号 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
 | `extensions.ui.open` | 已提供 · 从导航或扩展页打开界面并取得会话 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
-| `extensions.ui.refresh` | 缺少入口 · 桥接层声明了刷新，实际视图只打开、分派和关闭；没有刷新调用点 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
-| `logs.read` | 已提供 · 日志路由按条件查询并续页 | 缺少入口 · CLI 没有读取 Core 操作日志的子命令 | 缺少入口 · 工具目录没有读取 Core 操作日志的工具 |
-| `operations.cancel` | 已提供 · 任务面板及创建项目进度窗口取消当前任务 | 已提供 · operation cancel | 已提供 · alcomd_cancel_operation；自己的任务、预期修订和幂等键 |
-| `operations.get` | 已提供 · 任务条目或等待操作完成时按 ID 查询 | 已提供 · operation get；follow 轮询同一任务 | 部分可达 · alcomd_get_operation；返回任务状态和修订，部分任务不返回类型专属结果 |
-| `operations.list` | 已提供 · 任务页与活动任务指示器读取分页列表 | 已提供 · operation list；支持活动筛选和完整游标 | 部分可达 · alcomd_list_operations；游标、活动筛选和调用者范围，条目沿用受限结果投影 |
+| `extensions.ui.refresh` | 已提供 · 刷新打开的扩展视图，提交同一会话 ID 和快照修订 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
+| `logs.read` | 已提供 · 日志页筛选和续页 | 已提供 · logs read | 已提供 · alcomd_read_logs |
+| `operations.cancel` | 已提供 · 任务详情确认取消 | 已提供 · operation cancel | 已提供 · alcomd_cancel_operation |
+| `operations.get` | 已提供 · 打开任务、查看进度和终态 | 已提供 · operation get 和 operation follow 按同一任务 ID 查询 | 已提供 · alcomd_get_operation |
+| `operations.list` | 已提供 · 任务列表及活动任务指示器读取分页 | 已提供 · operation list | 已提供 · alcomd_list_operations |
 | `packages.applyPlan` | 已提供 · 软件包审阅窗口提交当前预演所得计划 | 已提供 · package apply-plan；或各预演命令确认后提交 | 已提供 · alcomd_apply_package_changes；确认原计划、修订和幂等键 |
 | `packages.planBulk` | 已提供 · 自定义软件包计划可组合多个有序意图 | 已提供 · package bulk | 已提供 · alcomd_plan_package_changes；使用 bulk 意图，经 mcp.packages.plan |
 | `packages.planDowngrade` | 已提供 · 软件包版本菜单选择较低版本，可确认精确 Unity 例外 | 已提供 · package downgrade | 已提供 · alcomd_plan_package_changes；降级意图，经 mcp.packages.plan |
@@ -90,38 +90,38 @@
 | `projects.register` | 已提供 · 项目列表选择现有目录登记 | 已提供 · project register | 已提供 · alcomd_register_project；返回原登记快照 |
 | `projects.setFavorite` | 已提供 · 项目行或卡片的收藏按钮 | 已提供 · project set-favorite | 已提供 · alcomd_set_project_favorite |
 | `projects.unregister` | 已提供 · 项目操作菜单从列表移除登记 | 已提供 · project unregister | 已提供 · alcomd_unregister_project |
-| `repositories.cancelListRegistration` | 已提供 · 导入对话框用当前导入键停止后续登记 | 缺少入口 · repository 命令没有这项管理动作 | 缺少入口 · 工具目录没有这项仓库管理操作 |
-| `repositories.exportListFile` | 已提供 · 资源页导出仓库清单并选择文件及格式 | 缺少入口 · repository 命令没有这项管理动作 | 缺少入口 · 工具目录没有这项仓库管理操作 |
-| `repositories.get` | 已提供 · 仓库详情按 ID 读取元数据 | 已提供 · repository get | 缺少入口 · 工具目录没有这项仓库管理操作 |
-| `repositories.importListFile` | 已提供 · 导入对话框确认检查过的文件，可选择覆盖已有配置 | 缺少入口 · repository 命令没有这项管理动作 | 缺少入口 · 工具目录没有这项仓库管理操作 |
-| `repositories.inspect` | 已提供 · 添加仓库对话框检查来源，可输入认证头 | 已提供 · repository inspect | 部分可达 · alcomd_inspect_repository；通过 mcp.repositories.inspect 检查远程来源，不接收本地路径或自定义认证头 |
-| `repositories.inspectListFile` | 已提供 · 导入仓库文件后显示逐行检查结果 | 缺少入口 · repository 命令没有这项管理动作 | 缺少入口 · 工具目录没有这项仓库管理操作 |
-| `repositories.list` | 已提供 · 资源页的仓库列表及其顺序 | 已提供 · repository list；可原样续传游标 | 部分可达 · alcomd_list_repositories；有序分页摘要，省略来源地址和凭据 |
-| `repositories.move` | 已提供 · 仓库列表的排序控件移动目标 | 缺少入口 · repository 命令没有这项管理动作 | 缺少入口 · 工具目录没有这项仓库管理操作 |
-| `repositories.packages` | 已提供 · 仓库详情按页查看完整包版本清单 | 已提供 · repository packages；可原样续传游标 | 部分可达 · alcomd_search_packages 可按仓库筛选候选；工具面缺少含隐藏预发布版的原生仓库管理分页清单 |
-| `repositories.previewListExport` | 已提供 · 导出对话框先显示当前格式的预览 | 缺少入口 · repository 命令没有这项管理动作 | 缺少入口 · 工具目录没有这项仓库管理操作 |
-| `repositories.refresh` | 已提供 · 仓库详情的刷新按钮更新该来源 | 已提供 · repository refresh | 部分可达 · alcomd_refresh_repository；按 ID、修订刷新，返回仓库摘要 |
-| `repositories.refreshAll` | 已提供 · 资源页刷新所有仓库 | 缺少入口 · repository 命令没有这项管理动作 | 缺少入口 · 工具目录没有这项仓库管理操作 |
-| `repositories.register` | 已提供 · 添加仓库对话框确认检查过的来源 | 已提供 · repository register；本地路径或远程 URL，远程可带凭据 | 部分可达 · alcomd_register_repository；确认原远程预览，缺少本地来源及带自定义认证头的登记入口 |
-| `repositories.setCredentials` | 已提供 · 仓库认证对话框替换或清除凭据 | 已提供 · repository set-credentials | 缺少入口 · 工具目录没有这项仓库管理操作 |
-| `repositories.setDisplayName` | 已提供 · 仓库详情修改显示名称 | 缺少入口 · repository 命令没有这项管理动作 | 缺少入口 · 工具目录没有这项仓库管理操作 |
-| `repositories.unregister` | 已提供 · 仓库详情确认移除该来源 | 已提供 · repository unregister | 已提供 · alcomd_remove_repository；经 mcp.repositories.remove 确认选定 ID、修订 |
-| `settings.get` | 已提供 · 应用启动及设置页读取设置 | 缺少入口 · 本基线没有 settings 命令组 | 已提供 · alcomd_get_settings；直接读取 Core 配置 |
-| `settings.update` | 已提供 · 设置页自动保存修改项，发送预期修订 | 缺少入口 · 本基线没有部分设置更新命令 | 缺少入口 · 目前只有 settings 读取工具 |
-| `state.check` | 缺少入口 · 能力表和通知层识别请求名，界面没有提交检查的操作 | 缺少入口 · CLI 没有 state check 命令 | 缺少入口 · 工具目录没有发起 Core 状态检查的工具 |
-| `system.status` | 已提供 · 首页、应用连接状态读取 Core 状态 | 已提供 · system status | 缺少入口 · 工具目录没有 Core 状态工具；server/discover 返回 MCP 能力 |
-| `unity.hub.open` | 已提供 · 设置页打开已配置的本机 Unity Hub | 缺少入口 · unity 命令未提供启动 Hub 的动作 | 缺少入口 · 工具只提供安装列表或项目启动参数读取，缺少这项操作 |
-| `unity.installations.get` | 缺少入口 · 桥接和事件缓存识别单条读取，安装管理页实际使用 installations.list | 已提供 · unity get | 缺少入口 · 工具只提供安装列表或项目启动参数读取，缺少这项操作 |
-| `unity.installations.list` | 已提供 · Unity 设置和新建项目版本选择器读取安装列表 | 部分可达 · unity list 可分页；未提供 includeVersionOptions | 已提供 · alcomd_list_unity_installations；读取登记和版本选项 |
-| `unity.installations.refresh` | 已提供 · Unity 设置或工具页发现安装 | 已提供 · unity refresh | 缺少入口 · 工具只提供安装列表或项目启动参数读取，缺少这项操作 |
-| `unity.installations.register` | 已提供 · Unity 设置选择编辑器可执行文件登记 | 已提供 · unity register | 缺少入口 · 工具只提供安装列表或项目启动参数读取，缺少这项操作 |
-| `unity.installations.remove` | 已提供 · Unity 设置移除选定安装 | 已提供 · unity remove | 缺少入口 · 工具只提供安装列表或项目启动参数读取，缺少这项操作 |
-| `unity.launch` | 已提供 · 项目行或详情选择匹配的编辑器后启动 | 已提供 · unity launch | 缺少入口 · 工具只提供安装列表或项目启动参数读取，缺少这项操作 |
-| `unity.launchOptions` | 已提供 · 项目启动或版本迁移前查询匹配安装 | 部分可达 · unity launch-options 读取精确匹配；未提供 includeMigrationVersionOptions | 缺少入口 · 工具只提供安装列表或项目启动参数读取，缺少这项操作 |
-| `unity.projectLaunchConfig.clear` | 已提供 · 项目启动参数对话框清除覆盖并恢复继承 | 已提供 · unity project-launch-config-clear | 缺少入口 · 工具只提供安装列表或项目启动参数读取，缺少这项操作 |
-| `unity.projectLaunchConfig.get` | 已提供 · 项目详情与参数对话框读取覆盖值及有效参数 | 已提供 · unity project-launch-config-get | 已提供 · alcomd_get_project_launch_config；读取覆盖、默认值与生效参数 |
-| `unity.projectLaunchConfig.set` | 已提供 · 项目启动参数对话框保存覆盖 | 已提供 · unity project-launch-config-set | 缺少入口 · 工具只提供安装列表或项目启动参数读取，缺少这项操作 |
-| `unity.writerState` | 已提供 · 项目详情读取编辑器运行状态 | 已提供 · unity writer-state | 缺少入口 · 工具只提供安装列表或项目启动参数读取，缺少这项操作 |
+| `repositories.cancelListRegistration` | 已提供 · 导入对话框按导入键停止后续登记 | 已提供 · repository cancel-list-registration | 已提供 · alcomd_cancel_repository_import |
+| `repositories.exportListFile` | 已提供 · 导出对话框确认预览、格式和目标文件 | 已提供 · repository export-list-file | 已提供 · alcomd_export_repository_file |
+| `repositories.get` | 已提供 · 打开仓库详情 | 已提供 · repository get | 已提供 · alcomd_get_repository |
+| `repositories.importListFile` | 已提供 · 导入对话框确认原文件指纹及覆盖选项 | 已提供 · repository import-list-file | 已提供 · alcomd_import_repository_file |
+| `repositories.inspect` | 已提供 · 添加对话框检查本地或远程来源，可指定请求头 | 已提供 · repository inspect | 已提供 · alcomd_inspect_repository |
+| `repositories.inspectListFile` | 已提供 · 选择仓库文件，查看逐行结果 | 已提供 · repository inspect-list-file | 已提供 · alcomd_inspect_repository_file |
+| `repositories.list` | 已提供 · 资源页按 Core 顺序列出仓库 | 已提供 · repository list | 已提供 · alcomd_list_repositories |
+| `repositories.move` | 已提供 · 仓库列表按顺序指纹移动选中仓库 | 已提供 · repository move | 已提供 · alcomd_move_repository |
+| `repositories.packages` | 已提供 · 仓库详情查看完整的包版本分页 | 已提供 · repository packages | 已提供 · alcomd_list_repository_packages |
+| `repositories.previewListExport` | 已提供 · 导出对话框预览选定格式 | 已提供 · repository preview-list-export | 已提供 · alcomd_preview_repository_export |
+| `repositories.refresh` | 已提供 · 仓库详情刷新原目标 | 已提供 · repository refresh | 已提供 · alcomd_refresh_repository |
+| `repositories.refreshAll` | 已提供 · 资源页刷新全部仓库 | 已提供 · repository refresh-all | 已提供 · alcomd_refresh_all_repositories |
+| `repositories.register` | 已提供 · 确认同一调用者检查过的预览 ID | 已提供 · repository register | 已提供 · alcomd_register_repository |
+| `repositories.setCredentials` | 已提供 · 仓库详情修改或清除请求凭据 | 已提供 · repository set-credentials | 已提供 · alcomd_set_repository_credentials |
+| `repositories.setDisplayName` | 已提供 · 仓库详情修改显示名称 | 已提供 · repository set-display-name | 已提供 · alcomd_set_repository_display_name |
+| `repositories.unregister` | 已提供 · 仓库详情确认移除目标和修订 | 已提供 · repository unregister | 已提供 · alcomd_remove_repository |
+| `settings.get` | 已提供 · 设置页读取快照和修订 | 已提供 · settings get | 已提供 · alcomd_get_settings |
+| `settings.update` | 已提供 · 设置页按修订保存用户更改的字段 | 已提供 · settings update | 已提供 · alcomd_update_settings |
+| `state.check` | 已提供 · 任务页发起 Core 检查并转到已受理的任务 | 已提供 · state check | 已提供 · alcomd_check_state |
+| `system.status` | 已提供 · 建立连接或重新连接时读取 Core 状态和已协商能力 | 已提供 · system status | 已提供 · alcomd_get_system_status |
+| `unity.hub.open` | 已提供 · Unity 设置启动已确认路径的 Hub | 已提供 · unity hub-open | 已提供 · alcomd_open_unity_hub |
+| `unity.installations.get` | 已提供 · Unity 设置查看选定安装详情 | 已提供 · unity get | 已提供 · alcomd_get_unity_installation |
+| `unity.installations.list` | 已提供 · Unity 设置读取安装，创建项目时读取可选版本 | 已提供 · unity list | 已提供 · alcomd_list_unity_installations |
+| `unity.installations.refresh` | 已提供 · Unity 设置发现编辑器 | 已提供 · unity refresh | 已提供 · alcomd_refresh_unity_installations |
+| `unity.installations.register` | 已提供 · Unity 设置指定编辑器路径登记 | 已提供 · unity register | 已提供 · alcomd_register_unity_installation |
+| `unity.installations.remove` | 已提供 · Unity 设置确认移除已选安装 | 已提供 · unity remove | 已提供 · alcomd_remove_unity_installation |
+| `unity.launch` | 已提供 · 项目列表及详情选择编辑器启动项目 | 已提供 · unity launch | 已提供 · alcomd_launch_unity |
+| `unity.launchOptions` | 已提供 · 项目启动与迁移前读取匹配项、可选版本 | 已提供 · unity launch-options | 已提供 · alcomd_get_unity_launch_options |
+| `unity.projectLaunchConfig.clear` | 已提供 · 项目启动参数对话框清除覆盖 | 已提供 · unity project-launch-config-clear | 已提供 · alcomd_clear_project_launch_config |
+| `unity.projectLaunchConfig.get` | 已提供 · 项目详情与启动参数对话框读取生效值 | 已提供 · unity project-launch-config-get | 已提供 · alcomd_get_project_launch_config |
+| `unity.projectLaunchConfig.set` | 已提供 · 项目启动参数对话框保存覆盖 | 已提供 · unity project-launch-config-set | 已提供 · alcomd_set_project_launch_config |
+| `unity.writerState` | 已提供 · 项目详情读取 Unity 写入状态 | 已提供 · unity writer-state | 已提供 · alcomd_get_unity_writer_state |
 
 ## 本机交互
 
@@ -142,11 +142,7 @@
 | `mcp.oauth.revoke` | 协议专用 · OAuth 撤销端点由外部客户端访问 | 协议专用 · CLI 的登记撤销不是此令牌撤销端点 | 协议专用 · HTTP 令牌撤销请求调用 oauth_revoke |
 | `mcp.oauth.token` | 协议专用 · GUI 不承担 OAuth 客户端的令牌交换 | 协议专用 · CLI 授权管理不交换外部客户端令牌 | 协议专用 · HTTP token 端点调用 oauth_token，按协议交付令牌 |
 | `mcp.packages.plan` | 协议专用 · 项目包表走原生 packages.plan*，无需 MCP 工具投影 | 协议专用 · package 命令走原生计划方法 | 协议专用 · 安装、重装及通用计划工具将工具意图转成 mcp.packages.plan |
-| `mcp.packages.query` | 协议专用 · 项目包表走 queryProjectCandidates，不使用工具分页投影 | 协议专用 · 此适配器服务 MCP 工具；CLI 的项目候选入口见主表 | 协议专用 · 搜索包、读取包或列来源工具调用统一的 MCP 目录查询 |
-| `mcp.repositories.inspect` | 协议专用 · 添加仓库走原生 repositories.inspect | 协议专用 · repository inspect 走原生方法 | 协议专用 · alcomd_inspect_repository 用远程来源取得认证绑定的预览 |
-| `mcp.repositories.list` | 协议专用 · 资源页走原生 repositories.list | 协议专用 · repository list 走原生方法 | 协议专用 · alcomd_list_repositories 返回工具侧仓库摘要和续页游标 |
-| `mcp.repositories.register` | 协议专用 · 确认登记走原生 repositories.register | 协议专用 · repository register 走原生方法 | 协议专用 · alcomd_register_repository 确认已绑定的远程预览 |
-| `mcp.repositories.remove` | 协议专用 · 仓库详情走原生 repositories.unregister | 协议专用 · repository unregister 走原生方法 | 协议专用 · alcomd_remove_repository 明确确认要移除的仓库 |
+| `mcp.packages.query` | 协议专用 · 项目包表走 queryProjectCandidates，不使用工具分页投影 | 协议专用 · 此适配器服务 MCP 工具；CLI 的项目候选入口见主表 | 协议专用 · alcomd_search_packages、alcomd_get_package 和 alcomd_list_package_sources 调用同一目录查询 |
 | `mcp.tools.catalog` | 协议专用 · GUI 查看管理运行快照，工具发现属于 MCP 传输 | 协议专用 · CLI 没有工具目录协商流程 | 协议专用 · MCP tools/list、扩展工具发现和目录变更订阅读取 Core 目录 |
 | `mcp.transport.bindRequest` | 协议专用 · 只有收到该连接请求的传输能提供绑定证据 | 协议专用 · CLI 无传输连接证据 | 协议专用 · MCP 传输绑定实际接收的请求与身份 |
 | `mcp.transport.report` | 协议专用 · GUI 观察快照，本身不持有 MCP 传输观测证据 | 协议专用 · CLI 不产生该传输观测 | 协议专用 · MCP 传输报告实际连接和请求状态 |
@@ -162,7 +158,7 @@
 | GUI 页面和桌面适配 | 从路由、控件或自动订阅定位业务请求，并沿 TypeScript 客户端追到 Tauri。仅有客户端方法定义、能力标识、通知名称或测试桩不能证明用户可发起请求。[主页面](../../apps/alcomd-gui/src/CorePages.tsx) · [操作对话框](../../apps/alcomd-gui/src/CoreActions.tsx) · [客户端](../../apps/alcomd-gui/src/rpc.ts) · [Tauri 分派](../../apps/alcomd-gui/src-tauri/src/lib.rs) |
 | 项目、计划与任务 | 核对项目修订、路径、planId、确认、幂等键、任务归属和终态。CLI 交互读取既有计划再提交，指定 --yes 时按参数情况跳过展示。GUI 与 MCP 的 Apply 都需回到已审阅计划。任务与普通项目清单的游标不可混用。[CLI 分派与确认](../../apps/alcomd-cli/src/main.rs) · [GUI 项目流程](../../apps/alcomd-gui/src/CorePages.tsx) · [MCP 项目工作流](../../apps/alcomd-mcp/src/tools/workflows.rs) · [MCP 项目工具测试](../../apps/alcomd-mcp/tests/support/project_workflows_flow.rs) · [GUI 任务回归](../../apps/alcomd-gui/tests/browser/m7-operation-follow.spec.ts) |
 | 软件包 | 单包及批量默认安装、升级时省略版本；显式范围、来源、精确版本及 Unity 例外逐项对照。Apply 复核计划原项目、修订、可见候选及调用者。[GUI 请求构造](../../apps/alcomd-gui/src/CoreActions.tsx) · [GUI 版本与来源选择](../../apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts) · [MCP 包投影](../../apps/alcomd-mcp/src/tools/packages.rs) · [MCP 包测试](../../apps/alcomd-mcp/tests/support/package_catalog_flow.rs) · [真实包 RPC](../../crates/alcomd-testing/tests/m4_package_rpc.rs) |
-| 仓库、设置与同步 | 仓库清单保持自身分页、排序与完整收录范围。更新设置时对照部分字段、显式 false、预期修订和关闭预发布可见性后的偏好复位。仓库登记重试绑定调用者、原来源和原键。[GUI 仓库文件导入导出](../../apps/alcomd-gui/src/RepositoryListDialog.tsx) · [MCP 仓库适配](../../apps/alcomd-mcp/src/tools/repositories.rs) · [跨客户端仓库 RPC](../../crates/alcomd-testing/tests/m7_repository_list_rpc.rs) · [GUI 设置回归](../../apps/alcomd-gui/tests/browser/m7-settings-autosave.spec.ts) · [CLI 真实 IPC](../../apps/alcomd-cli/tests/m1_cli.rs) |
+| 仓库、设置与同步 | 仓库清单保持自身分页、排序与完整收录范围。更新设置时对照部分字段、显式 false、预期修订和关闭预发布可见性后的偏好复位。仓库登记重试绑定调用者、原来源和原键。[GUI 仓库文件导入导出](../../apps/alcomd-gui/src/RepositoryListDialog.tsx) · [MCP 仓库适配](../../apps/alcomd-mcp/src/tools/operations.rs) · [跨客户端仓库 RPC](../../crates/alcomd-testing/tests/m7_repository_list_rpc.rs) · [GUI 设置回归](../../apps/alcomd-gui/tests/browser/m7-settings-autosave.spec.ts) · [CLI 真实 IPC](../../apps/alcomd-cli/tests/m1_cli.rs) |
 | 模板、备份与 Unity | 对照模板 ID、ZIP 目标、明确覆盖的选项、启动参数及原修订。GUI 文件选择和 CLI/MCP 路径输入最终指向同一个 Core 目标。[GUI 创建与恢复](../../apps/alcomd-gui/src/ProjectCreationDialogs.tsx) · [GUI 模板工作区](../../apps/alcomd-gui/src/ProjectTemplatesWorkspace.tsx) · [备份用例](../../apps/alcomd-gui/tests/browser/m7-project-backup-defaults.spec.ts) · [MCP 模板测试](../../apps/alcomd-mcp/tests/support/project_assets_flow.rs) · [真实 Unity RPC](../../crates/alcomd-testing/tests/m5_unity_rpc.rs) |
 | 日志、事件与 GUI 扩展 | 日志、资源变化和调用者任务分别观察。检查订阅续接、会话 ID、快照修订、事件序号和显式授权。适配器未接入的按钮不能通过调用测试桩代替。[GUI 事件消费](../../apps/alcomd-gui/src/core-events.ts) · [日志页面](../../apps/alcomd-gui/src/OperationLogsRoute.tsx) · [GUI 便携界面分派](../../apps/alcomd-gui/src/App.tsx) · [会话交互测试](../../apps/alcomd-gui/tests/browser/m7-h4-portable.spec.ts) |
 | 连接与管理服务 | 第三方扩展的 WIT 调用和原生 RPC 可以到达同一管理用例。检查真实客户端、凭据代次、授权请求归属、一次性展示、撤销和扩展沙箱。OAuth 授权端的输入和状态与原生管理请求分开验证。[第三方管理接口测试](../../crates/alcomd-testing/fixtures/m8/management-guest-source/src/lib.rs) · [CLI 授权管理](../../apps/alcomd-cli/src/m8_oauth.rs) · [HTTP 端点](../../apps/alcomd-mcp/src/http/oauth.rs) · [传输观测](../../apps/alcomd-mcp/src/observations.rs) · [OAuth 真实工具测试](../../apps/alcomd-mcp/tests/support/oauth_flow.rs) · [扩展工具集成测试](../../apps/alcomd-mcp/tests/support/extension_tools_flow.rs) |

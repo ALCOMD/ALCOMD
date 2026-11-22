@@ -1,3 +1,4 @@
+import { CoreDiagnostics } from "./CoreDiagnostics";
 import { useGuiWrite } from "./gui-write-attempt";
 import { unityInstallationSourceLabel } from "./unity-installation-source";
 import { ExtensionToolPreview } from "./ExtensionPermissions";
@@ -2290,7 +2291,8 @@ export function ProjectBackupsPage({ client, navigate, projectId }: PageProps & 
 export function OperationsPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => client.operationsList(), [client]);
-    return <UtilityWorkspace table loading={<TableLoading label={t("Tasks")} headers={[t("Task"), t("Status"), t("Updated"), t("Actions")]} />} title={t(navigationLabels.taskCenter)} load={load}>{(value) => <OperationItems client={client} initial={value}>
+    return <UtilityWorkspace table loading={<TableLoading label={t("Tasks")} headers={[t("Task"), t("Status"), t("Updated"), t("Actions")]} />}
+        title={t(navigationLabels.taskCenter)} load={load} tools={() => <CoreDiagnostics client={client} navigate={navigate} />}>{(value) => <OperationItems client={client} initial={value}>
         {(operations) => operations.length === 0 ? <RouteState kind="empty" title={t("No operations yet")} /> : <UtilityTable label={t("Tasks")} headers={[t("Task"), t("Status"), t("Updated"), t("Actions")]} rows={operations.map((operation) => ({ key: operation.operationId, cells: [humanize(t, operation.kind), <span className={"state-chip state-chip--" + operation.state}>{humanize(t, operation.state)}</span>, formatTime(t, locale, operation.updatedAtMs), <NavigationButton to={"/operations/" + operation.operationId} onClick={() => navigate("/operations/" + operation.operationId)} type="button" variant="text">{t("View operation")}</NavigationButton>] }))} />}
     </OperationItems>}</UtilityWorkspace>;
 }

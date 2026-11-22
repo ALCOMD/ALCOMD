@@ -21,3 +21,5 @@
 项目菜单提供检查、刷新及按 ID 查阅原计划。软件包工作区支持混合意图、版本范围、来源和预发布策略；CLI 和 MCP 可查询原生候选视图及本地用户包。模板与备份选择的文件仍以 Core 主机上的路径提交。三端入口及调用差异见[操作矩阵](M11-client-operation-matrix.md)，具体请求见[GUI 场景](../../apps/alcomd-gui/tests/browser/project-catalog-parity.spec.ts)和[MCP 场景](../../apps/alcomd-mcp/tests/support/project_catalog_parity.rs)。
 
 所有者已核定[原生客户端合同差异](M11-native-client-contract-review.md)和[扩展入口合同差异及删除路径](M11-extension-entry-contract-review.md)，并核定使用已有 Core 用例补齐具名 MCP 工具。矩阵中“已提供”记录静态可达性，“已验证”须链接验收证据。每个服务操作也逐方法登记；系统文件选择、扩展可移植界面、OAuth 协议参与方等具体差异分别登记到对应行。未验收条目保留实际状态。
+
+仓库、设置、事件和 Unity 操作采用[操作矩阵](M11-client-operation-matrix.md)中的原生方法。登记仓库须先检查来源，再确认同一调用者的预览 ID。设置更新、启动 Hub 和导出仓库清单须携幂等键。中断后 Core 根据首次受理的记录恢复结果。首发合同的这次修订要求开发客户端更新上述请求，已有开发数据库须符合包含这些任务类型的 State1 结构。[MCP 工具](../../specs/mcp/operations-v1.schema.json) · [持久化与恢复](../../specs/storage/state-v1.md)

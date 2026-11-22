@@ -1,0 +1,354 @@
+{
+    "schemaFile": "operations-v1.schema.json",
+    "schemaId": "https://alcomd.vrclearn.com/schema/mcp/operations-v1.json",
+    "title": "Repository, settings, diagnostics and Unity operations",
+    "tools": [
+        {
+            "method": "events.list",
+            "name": "alcomd_list_events",
+            "title": "List events",
+            "description": "Read events after the last sequence observed. Pass the returned position when continuing.",
+            "effect": "read",
+            "permissions": [
+                "events.read"
+            ]
+        },
+        {
+            "method": "logs.read",
+            "name": "alcomd_read_logs",
+            "title": "Read operation logs",
+            "description": "Read a bounded page of log entries with the supplied filters and sequence bounds.",
+            "effect": "read",
+            "permissions": [
+                "operations.read"
+            ]
+        },
+        {
+            "method": "state.check",
+            "name": "alcomd_check_state",
+            "title": "Check Core state",
+            "description": "Start the state check and use its operation ID to follow progress.",
+            "effect": "apply",
+            "permissions": [
+                "state.check"
+            ]
+        },
+        {
+            "method": "settings.update",
+            "name": "alcomd_update_settings",
+            "title": "Update settings",
+            "description": "Apply only the supplied settings fields at the reviewed revision.",
+            "effect": "apply",
+            "permissions": [
+                "settings.manage"
+            ]
+        },
+        {
+            "method": "repositories.get",
+            "name": "alcomd_get_repository",
+            "title": "Get a repository",
+            "description": "Read the registered repository and its current revision.",
+            "effect": "read",
+            "permissions": [
+                "repositories.read"
+            ]
+        },
+        {
+            "method": "repositories.packages",
+            "name": "alcomd_list_repository_packages",
+            "title": "List repository packages",
+            "description": "Read a page of the complete repository inventory. Pass the returned cursor for the next page.",
+            "effect": "read",
+            "permissions": [
+                "repositories.read"
+            ]
+        },
+        {
+            "method": "repositories.move",
+            "name": "alcomd_move_repository",
+            "title": "Move a repository",
+            "description": "Apply the reviewed repository order using the current order fingerprint. A null before_repository_id moves it to the end.",
+            "effect": "apply",
+            "permissions": [
+                "repositories.manage"
+            ]
+        },
+        {
+            "method": "repositories.setDisplayName",
+            "name": "alcomd_set_repository_display_name",
+            "title": "Set repository display name",
+            "description": "Change the display name at the supplied revision.",
+            "effect": "apply",
+            "permissions": [
+                "repositories.manage"
+            ]
+        },
+        {
+            "method": "repositories.refreshAll",
+            "name": "alcomd_refresh_all_repositories",
+            "title": "Refresh all repositories",
+            "description": "Start the shared repository refresh operation. Retain the idempotency key on retry.",
+            "effect": "apply",
+            "permissions": [
+                "repositories.manage"
+            ]
+        },
+        {
+            "method": "repositories.setCredentials",
+            "name": "alcomd_set_repository_credentials",
+            "title": "Set repository credentials",
+            "description": "Update the credentials bound to the repository at the expected revision.",
+            "effect": "apply",
+            "permissions": [
+                "repositories.manage"
+            ]
+        },
+        {
+            "method": "repositories.inspectListFile",
+            "name": "alcomd_inspect_repository_file",
+            "title": "Inspect a repository list file",
+            "description": "Inspect a repository exchange file on the Core machine before importing it.",
+            "effect": "read",
+            "permissions": [
+                "repositories.read"
+            ]
+        },
+        {
+            "method": "repositories.importListFile",
+            "name": "alcomd_import_repository_file",
+            "title": "Import a repository list file",
+            "description": "Import the reviewed file with its fingerprint and selected overwrite behavior.",
+            "effect": "apply",
+            "permissions": [
+                "repositories.manage"
+            ]
+        },
+        {
+            "method": "repositories.cancelListRegistration",
+            "name": "alcomd_cancel_repository_import",
+            "title": "Cancel repository registration",
+            "description": "Cancel the outstanding repository list registration identified by the original idempotency key.",
+            "effect": "apply",
+            "permissions": [
+                "repositories.manage"
+            ]
+        },
+        {
+            "method": "repositories.previewListExport",
+            "name": "alcomd_preview_repository_export",
+            "title": "Preview repository export",
+            "description": "Preview the native repository exchange format by default. Explicitly select VCC TXT when required.",
+            "effect": "read",
+            "permissions": [
+                "repositories.read"
+            ]
+        },
+        {
+            "method": "repositories.exportListFile",
+            "name": "alcomd_export_repository_file",
+            "title": "Export a repository list file",
+            "description": "Write the reviewed export to the chosen path on the Core machine.",
+            "effect": "apply",
+            "permissions": [
+                "repositories.read",
+                "repositories.manage"
+            ]
+        },
+        {
+            "method": "unity.installations.get",
+            "name": "alcomd_get_unity_installation",
+            "title": "Get a Unity installation",
+            "description": "Read a registered Unity Editor installation by ID.",
+            "effect": "read",
+            "permissions": [
+                "unity.read"
+            ]
+        },
+        {
+            "method": "unity.installations.refresh",
+            "name": "alcomd_refresh_unity_installations",
+            "title": "Refresh Unity installations",
+            "description": "Ask Core to discover available Unity installations.",
+            "effect": "apply",
+            "permissions": [
+                "unity.manage"
+            ]
+        },
+        {
+            "method": "unity.installations.register",
+            "name": "alcomd_register_unity_installation",
+            "title": "Register a Unity installation",
+            "description": "Register an Editor executable on the Core machine.",
+            "effect": "apply",
+            "permissions": [
+                "unity.manage"
+            ]
+        },
+        {
+            "method": "unity.installations.remove",
+            "name": "alcomd_remove_unity_installation",
+            "title": "Remove a Unity installation",
+            "description": "Remove the reviewed installation registration at its current revision.",
+            "effect": "apply",
+            "permissions": [
+                "unity.manage"
+            ]
+        },
+        {
+            "method": "unity.launchOptions",
+            "name": "alcomd_get_unity_launch_options",
+            "title": "Get Unity launch options",
+            "description": "Read the launch options for the specified project revision.",
+            "effect": "read",
+            "permissions": [
+                "unity.read"
+            ]
+        },
+        {
+            "method": "unity.writerState",
+            "name": "alcomd_get_unity_writer_state",
+            "title": "Get Unity writer state",
+            "description": "Read the current Unity writer state for the project.",
+            "effect": "read",
+            "permissions": [
+                "unity.read"
+            ]
+        },
+        {
+            "method": "unity.launch",
+            "name": "alcomd_launch_unity",
+            "title": "Launch Unity",
+            "description": "Request the selected installation for the reviewed project revision.",
+            "effect": "apply",
+            "permissions": [
+                "projects.read",
+                "unity.read",
+                "unity.launch"
+            ]
+        },
+        {
+            "method": "unity.hub.open",
+            "name": "alcomd_open_unity_hub",
+            "title": "Open Unity Hub",
+            "description": "Open the Hub identified by the reviewed target token and settings revision.",
+            "effect": "apply",
+            "permissions": [
+                "settings.read",
+                "unity.hub.open"
+            ]
+        },
+        {
+            "method": "unity.projectLaunchConfig.set",
+            "name": "alcomd_set_project_launch_config",
+            "title": "Set project launch arguments",
+            "description": "Save the explicit Unity launch argument override at the current revision.",
+            "effect": "apply",
+            "permissions": [
+                "projects.read",
+                "unity.manage"
+            ]
+        },
+        {
+            "method": "unity.projectLaunchConfig.clear",
+            "name": "alcomd_clear_project_launch_config",
+            "title": "Clear project launch arguments",
+            "description": "Remove the project override so Core uses its effective defaults.",
+            "effect": "apply",
+            "permissions": [
+                "projects.read",
+                "unity.manage"
+            ]
+        },
+        {
+            "method": "repositories.list",
+            "name": "alcomd_list_repositories",
+            "title": "List repositories",
+            "description": "List registered repository snapshots and continue with the original cursor.",
+            "effect": "read",
+            "permissions": [
+                "repositories.read"
+            ],
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false
+            }
+        },
+        {
+            "method": "repositories.inspect",
+            "name": "alcomd_inspect_repository",
+            "title": "Inspect a repository",
+            "description": "Inspect the local or remote source and keep its preview ID to register exactly what was reviewed. Supplied credentials are write-only.",
+            "effect": "read",
+            "permissions": [
+                "repositories.read"
+            ],
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": true
+            }
+        },
+        {
+            "method": "repositories.register",
+            "name": "alcomd_register_repository",
+            "title": "Register a repository",
+            "description": "Register the confirmed original preview after Core revalidates its source and contents.",
+            "effect": "apply",
+            "permissions": [
+                "repositories.manage"
+            ],
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": true
+            }
+        },
+        {
+            "method": "repositories.refresh",
+            "name": "alcomd_refresh_repository",
+            "title": "Refresh a repository",
+            "description": "Refresh the registered repository at the reviewed revision.",
+            "effect": "apply",
+            "permissions": [
+                "repositories.manage"
+            ],
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": true
+            }
+        },
+        {
+            "method": "repositories.unregister",
+            "name": "alcomd_remove_repository",
+            "title": "Remove a repository",
+            "description": "Remove the selected repository at its reviewed revision.",
+            "effect": "apply",
+            "permissions": [
+                "repositories.manage"
+            ],
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": true,
+                "openWorldHint": false
+            }
+        },
+        {
+            "method": "events.subscribe",
+            "name": "alcomd_subscribe_events",
+            "title": "Subscribe to Core events",
+            "description": "Open a live event subscription as this client. Wait up to ten seconds for a batch. Resume with its next cursor, or the ready baseline cursor when idle. Honor a resync request before continuing.",
+            "effect": "read",
+            "permissions": [
+                "events.read"
+            ],
+            "notificationSchema": "m7-events-live.schema.json#/$defs/notification"
+        }
+    ]
+}
