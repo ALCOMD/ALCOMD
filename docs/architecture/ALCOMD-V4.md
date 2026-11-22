@@ -426,7 +426,7 @@ host.notification.send
 MCP 分为：
 
 1. 独立协议适配器 `alcomd-mcp`。
-2. MCP 管理第一方扩展。
+2. Core 客户端管理用例及 GUI 设置页「客户端」。
 
 `alcomd-mcp` 必须在 GUI 未运行时工作，并支持 STDIO 与当前规范要求的 HTTP 传输。
 
@@ -750,7 +750,7 @@ M4  VPM Plan / Apply 与包事务
 M5  完整 CLI 与核心项目能力
 M6  扩展运行时与公开 API
 M7  官方 GUI 与 Portable Extension UI
-M8  MCP 协议与 MCP 管理扩展
+M8  MCP 协议与连接管理
 M9  Discord 第一方扩展
 M10 TypeScript/Rust SDK 与公共合同硬化
 M11 v3 迁移、Bootstrap、Updater 与 bridge installer 协调
@@ -768,7 +768,7 @@ Post-v4 可选 Loopback API、Python SDK 与 .NET SDK
 4. 只有 `alcomd` 可以写数据库和项目。
 5. 所有入口使用同一应用用例层。
 6. MCP 协议独立于 GUI。
-7. MCP 管理 GUI 是第一方扩展。
+7. GUI 设置页「客户端」通过 Core 管理原生客户端和 AI 客户端连接。
 8. Discord 全部功能是第一方扩展。
 9. 第一方扩展不得拥有隐藏捷径。
 10. v3/VCC 兼容代码不得进入正常运行时。

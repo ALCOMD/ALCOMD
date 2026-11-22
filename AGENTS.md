@@ -17,7 +17,7 @@
 ## 架构与代码
 
 - `alcomd` 是唯一权威状态持有者、数据库和 Unity 项目写入者。GUI、CLI、MCP、Local API、外部应用和扩展统一通过 `alcomd-application` 用例，不直接访问数据库或写项目。业务校验、资格与范围、调度、冲突恢复和结果由 Core 实现，GUI 只负责交互、呈现和本地视图状态。
-- `alcomd-mcp` 独立于 GUI 和扩展。Core 管理原生客户端及 AI 客户端连接，GUI 的入口为设置页「客户端」。Discord 是第一方扩展，遵循与第三方相同的公开 API、权限、宿主和沙箱。
+- `alcomd-mcp` 独立于 GUI 和扩展。Core 管理原生客户端及 AI 客户端连接，GUI 在原生设置页「客户端」集中展示已发现的客户端和连接实例。原生客户端直接连接 Core，AI 客户端经 MCP 认证。第三方扩展可按获授权限调用公开管理与观察接口。Discord 是第一方扩展，遵循与第三方相同的公开 API、权限、宿主和沙箱。
 - 正常运行时代码与安装产物排除旧解析器。v3、VCC 与旧 ALCOM 的配置迁移解析器只留在 `migrations/v3/`。仓库清单的 VCC TXT 是独立交换格式，按用户显式选择读写。
 - 从 `alcomd.product.toml` 派生产品身份。永久技术身份是 `ALCOMD`、`alcomd`、`com.vrclearn.alcomd`、`VRCLearn`、`vrclearn.ALCOMD`。生产代码不得引入 `com.cqmhv.*`、`CQMHV`、`CQMHV.ALCOMD*`、`alcomd3-mcp` 或 `ALCOMD3.exe`。迁移输入与历史证据保留真实旧值。
 - Rust 与 TypeScript 用 4 空格缩进。优先强类型和显式错误，公共 DTO 与领域对象分离，不硬编码平台路径、产品名或旧标识。`alcomd-domain` 不依赖 Tauri、SQLite、HTTP、MCP 或 OS API。`unsafe` 须说明。

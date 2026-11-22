@@ -99,7 +99,7 @@ Core 在接受任务前核对当前授权、路径身份及目的地可用性。
 | `alcomd_list_unity_installations` | `unity.installations.list`。使用同一安装登记与游标，包含安装路径。 | `unity.read` |
 | `alcomd_get_project_launch_config` | `unity.projectLaunchConfig.get`。返回项目覆盖、默认值及实际有效的完整参数。 | `projects.read`、`unity.read` |
 
-三端由 Core 按当前调用者检查相同的读取权限。MCP 管理扩展负责登记与撤销连接，OAuth 使用连接 scope `mcp`。MCP 工具仅将字段名转换为 snake_case，保留 Core 返回的值。 [工具 Schema](environment-v1.schema.json)
+三端由 Core 按当前调用者检查相同的读取权限。GUI 设置页「客户端」通过 Core 登记与撤销 AI 客户端连接，OAuth 使用连接 scope `mcp`。MCP 工具仅将字段名转换为 snake_case，保留 Core 返回的值。 [工具 Schema](environment-v1.schema.json)
 
 项目列表与详情在 `projects.read` 下返回同一 Core 登记路径 `root_path`。MCP 的项目操作继续使用稳定项目 ID。
 
@@ -115,7 +115,7 @@ Core 在接受任务前核对当前授权、路径身份及目的地可用性。
 
 ### Codex CLI 0.153.4 的回环 HTTP 接入
 
-1. 在 MCP 管理扩展中创建独立客户端。用 `alcomd-cli mcp client list` 核对 ID 和当前修订，再运行 `alcomd-cli mcp client issue-credential <id> --expected-revision <n> --idempotency-key <key>` 取得一次性凭据。用 `alcomd-mcp serve --port 0` 启动监听，记下实际报告的地址。
+1. 在 GUI 设置页「客户端」中登记独立的 AI 客户端。用 `alcomd-cli mcp client list` 核对 ID 和当前修订，再运行 `alcomd-cli mcp client issue-credential <id> --expected-revision <n> --idempotency-key <key>` 取得一次性凭据。用 `alcomd-mcp serve --port 0` 启动监听，记下实际报告的地址。
 2. 运行 `codex mcp get alcomd` 查看目标条目。确认该条目不存在时，核对下面的地址和环境变量名后执行添加。已有同名条目时，先确认要修改的字段，再手动合并该条目，或选择新名称。`codex mcp add` 会直接覆盖同名条目，读取配置出错时应先解决错误。
 
    ```powershell

@@ -73,7 +73,7 @@ M5 首先冻结所有 CLI 命令共用的 human/JSON/NDJSON、stdout/stderr、�
 
 - Extension Runtime、WASI/WIT、Extension API 或第一方/第三方扩展宿主（M6）。
 - 官方 GUI 产品页面、Material Design 3 UI、Tauri command 业务接线或 GUI parity（M7）。
-- MCP 协议、MCP 管理扩展、Discord、Local API 或新的 SDK（M8+）。
+- MCP 协议、客户端连接管理、Discord、Local API 或新的 SDK（M8+）。
 - v3 数据迁移、bridge/bootstrap/updater、安装器、签名、dist 或零残留（M11-M12）。
 - Windows 10/11 完整客户端安装、WebView2、注册表、升级和卸载验证；继续 deferred 到 M12。
 - authenticated repository、credential store、header 导入/导出或 credential revocation。
