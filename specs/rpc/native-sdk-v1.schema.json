@@ -104,10 +104,17 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "changed": {"type": "boolean"},
-                "replayed": {"type": "boolean"}
+                "changed": {
+                    "type": "boolean"
+                },
+                "replayed": {
+                    "type": "boolean"
+                }
             },
-            "required": ["changed", "replayed"]
+            "required": [
+                "changed",
+                "replayed"
+            ]
         },
         "RepositoryPackagesResult": {
             "type": "object",
@@ -337,6 +344,21 @@
             },
             "required": [
                 "userPackages"
+            ]
+        },
+        "RepositoryInspectResult": {
+            "type": "object",
+            "properties": {
+                "repository": {
+                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m3-project-repository.json#/$defs/repository"
+                },
+                "previewId": {
+                    "type": "string",
+                    "format": "uuid"
+                }
+            },
+            "required": [
+                "repository"
             ]
         }
     }

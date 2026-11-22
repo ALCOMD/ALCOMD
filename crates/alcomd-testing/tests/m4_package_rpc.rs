@@ -68,13 +68,16 @@ async fn confirmed_manual_unity_override_round_trips_through_rpc_and_apply() {
         .await
         .expect("project")
         .project;
+    let preview_id = client
+        .repository_inspect(RepositorySource::Local {
+            path: repository.to_string_lossy().into_owned(),
+        })
+        .await
+        .expect("inspect repository")
+        .preview_id
+        .expect("registration preview");
     let repository = client
-        .repository_register(
-            RepositorySource::Local {
-                path: repository.to_string_lossy().into_owned(),
-            },
-            "manual-repository".into(),
-        )
+        .repository_register(preview_id, "manual-repository".into())
         .await
         .expect("repository")
         .repository;
@@ -203,8 +206,14 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
     let source = RepositorySource::Local {
         path: repository.to_string_lossy().into_owned(),
     };
+    let preview_id = client
+        .repository_inspect(source)
+        .await
+        .expect("inspect repository")
+        .preview_id
+        .expect("registration preview");
     let registered_repository = client
-        .repository_register(source, "m4-repository-register".to_owned())
+        .repository_register(preview_id, "m4-repository-register".to_owned())
         .await
         .expect("register repository");
     let repository_id = registered_repository
@@ -680,13 +689,16 @@ fn subprocess_runs_package_apply_until_killed() {
             .await
             .expect("register crash project");
         let project_id = project_result.project.project_id.expect("project ID");
+        let preview_id = client
+            .repository_inspect(RepositorySource::Local {
+                path: repository.to_string_lossy().into_owned(),
+            })
+            .await
+            .expect("inspect repository")
+            .preview_id
+            .expect("registration preview");
         let repository_result = client
-            .repository_register(
-                RepositorySource::Local {
-                    path: repository.to_string_lossy().into_owned(),
-                },
-                "m4-crash-repository".to_owned(),
-            )
+            .repository_register(preview_id, "m4-crash-repository".to_owned())
             .await
             .expect("register crash repository");
         let repository_id = repository_result

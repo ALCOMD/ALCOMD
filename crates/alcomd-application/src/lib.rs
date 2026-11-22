@@ -16,7 +16,9 @@ pub use alcomd_domain::{
 };
 use serde::{Deserialize, Serialize};
 
+mod external_write;
 mod project_inventory;
+pub use external_write::*;
 pub use project_inventory::*;
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 
@@ -46,8 +48,6 @@ pub use desktop::*;
 mod m8_mcp;
 mod m8_oauth;
 mod m8_oauth_types;
-mod m8_repositories;
-pub use m8_repositories::*;
 mod m8_runtime;
 mod m8_tools;
 mod m8_transport;
@@ -336,6 +336,20 @@ pub struct RepositoryObservation {
     pub packages: Vec<RepositoryPackageVersion>,
     pub validators: RepositoryValidators,
     pub refreshed_at_ms: u64,
+}
+
+/// Compare the observed source and contents independently of fetch time and validators.
+pub fn same_repository_evidence(
+    left: &RepositoryObservation,
+    right: &RepositoryObservation,
+) -> bool {
+    left.source == right.source
+        && left.source_identity_key == right.source_identity_key
+        && left.declared_id == right.declared_id
+        && left.name == right.name
+        && left.declared_url == right.declared_url
+        && left.issues == right.issues
+        && left.packages == right.packages
 }
 
 /// Repository metadata returned by inspection and frozen in a refresh receipt.
@@ -664,6 +678,7 @@ pub trait M3ReadAdapter: Clone + Send + Sync + 'static {
 
 /// An accepted source is bound to the caller's locator even if inspection resolves an alias.
 pub struct RepositoryRegistration {
+    pub preview_id: Option<OperationId>,
     pub requested_source: RepositorySource,
     pub observation: RepositoryObservation,
 }
@@ -671,6 +686,7 @@ pub struct RepositoryRegistration {
 impl From<RepositoryObservation> for RepositoryRegistration {
     fn from(observation: RepositoryObservation) -> Self {
         Self {
+            preview_id: None,
             requested_source: observation.source.clone(),
             observation,
         }
@@ -679,6 +695,9 @@ impl From<RepositoryObservation> for RepositoryRegistration {
 
 /// Inputs needed to replay an accepted native write without I/O on its repository or keyring.
 pub enum RepositoryWriteRequest {
+    RegisterPreview {
+        preview_id: OperationId,
+    },
     Register {
         source: RepositorySource,
         authenticated: bool,
@@ -1705,18 +1724,34 @@ pub struct M3Application<S: M3RegistryStore, R: M3ReadAdapter> {
     locks: Arc<ResourceLockCoordinator>,
     repository_import: Arc<Mutex<()>>,
     repository_previews: Arc<Mutex<VecDeque<RepositoryPreview>>>,
-    mcp_repository_previews: Arc<Mutex<VecDeque<McpRepositoryPreview>>>,
 }
 
 const REPOSITORY_PREVIEW_TTL: Duration = Duration::from_secs(60);
 const REPOSITORY_PREVIEW_LIMIT: usize = 8;
 
+#[derive(Clone)]
 struct RepositoryPreview {
-    connection_id: String,
+    id: OperationId,
+    source: RepositorySource,
+    credential_binding: Option<String>,
     owner: PrincipalId,
     expires_at: Instant,
     observation: RepositoryObservation,
     credentials: Option<RepositoryCredentials>,
+}
+
+impl RepositoryPreview {
+    fn is_available(
+        &self,
+        access: &AccessContext,
+        id: OperationId,
+        binding: &Option<String>,
+    ) -> bool {
+        self.id == id
+            && &self.owner == access.principal()
+            && &self.credential_binding == binding
+            && self.expires_at > Instant::now()
+    }
 }
 
 impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
@@ -1728,7 +1763,6 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             locks: Arc::new(ResourceLockCoordinator::default()),
             repository_import: Arc::new(Mutex::new(())),
             repository_previews: Arc::new(Mutex::new(VecDeque::new())),
-            mcp_repository_previews: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -1967,51 +2001,41 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
     pub async fn inspect_repository(
         &self,
         access: &AccessContext,
-        connection_id: &str,
         source: RepositorySource,
         credentials: Option<RepositoryCredentials>,
-    ) -> Result<RepositoryObservation, M3Error> {
+    ) -> Result<(RepositoryObservation, Option<OperationId>), M3Error> {
         require_m3(access, Permission::RepositoriesRead)?;
         if credentials.is_some() {
             require_repository_credentials(access)?;
         }
-        self.forget_repository_preview(connection_id).await;
         let mut observation = self
-            .read_repository_preview(source, credentials.clone())
+            .read_repository_preview(source.clone(), credentials.clone())
             .await?;
         flush_log_steps().await;
-        // Retain only remote observations that this connection can register.
-        // Local registration still rechecks the file at the selected path.
-        if matches!(observation.source, RepositorySource::Remote { .. })
-            && access.require(Permission::RepositoriesManage).is_ok()
-        {
-            let packages = std::mem::take(&mut observation.packages);
-            let mut previews = self.repository_previews.lock().await;
-            let now = Instant::now();
-            previews.retain(|preview| preview.expires_at > now);
-            if previews.len() == REPOSITORY_PREVIEW_LIMIT {
-                previews.pop_front();
-            }
-            previews.push_back(RepositoryPreview {
-                connection_id: connection_id.to_owned(),
-                owner: access.principal().clone(),
-                expires_at: now + REPOSITORY_PREVIEW_TTL,
-                observation: RepositoryObservation {
-                    packages,
-                    ..observation.clone()
-                },
-                credentials,
-            });
+        if access.require(Permission::RepositoriesManage).is_err() {
+            return Ok((observation, None));
         }
-        Ok(observation)
-    }
-
-    pub async fn forget_repository_preview(&self, connection_id: &str) {
+        let id = OperationId::new();
+        let packages = std::mem::take(&mut observation.packages);
         let now = Instant::now();
-        self.repository_previews
-            .lock()
-            .await
-            .retain(|preview| preview.connection_id != connection_id && preview.expires_at > now);
+        let mut previews = self.repository_previews.lock().await;
+        previews.retain(|p| p.expires_at > now);
+        if previews.len() >= REPOSITORY_PREVIEW_LIMIT {
+            previews.pop_front();
+        }
+        previews.push_back(RepositoryPreview {
+            id,
+            source,
+            owner: access.principal().clone(),
+            credential_binding: workflow_authentication().map(|a| a.binding()),
+            expires_at: now + REPOSITORY_PREVIEW_TTL,
+            observation: RepositoryObservation {
+                packages,
+                ..observation.clone()
+            },
+            credentials,
+        });
+        Ok((observation, Some(id)))
     }
 
     async fn read_repository_preview(
@@ -2313,6 +2337,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         self.persist_repository(
             access,
             RepositoryRegistration {
+                preview_id: None,
                 requested_source: source,
                 observation,
             },
@@ -2321,70 +2346,87 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         .await
     }
 
-    pub async fn register_repository_for_connection(
+    pub async fn get_repository_preview(
         &self,
         access: &AccessContext,
-        connection_id: &str,
-        source: RepositorySource,
+        id: OperationId,
+    ) -> Result<RepositoryMetadata, M3Error> {
+        require_m3(access, Permission::RepositoriesRead)?;
+        let binding = workflow_authentication().map(|auth| auth.binding());
+        let previews = self.repository_previews.lock().await;
+        let preview = previews
+            .iter()
+            .find(|p| p.is_available(access, id, &binding))
+            .ok_or_else(|| M3Error::new(M3ErrorCode::RevisionConflict))?;
+        let observation = &preview.observation;
+        Ok(RepositoryMetadata {
+            source: observation.source.clone(),
+            declared_id: observation.declared_id.clone(),
+            name: observation.name.clone(),
+            declared_url: observation.declared_url.clone(),
+            issues: observation.issues.clone(),
+            refreshed_at_ms: observation.refreshed_at_ms,
+        })
+    }
+
+    pub async fn register_repository_preview(
+        &self,
+        access: &AccessContext,
+        preview_id: OperationId,
         key: IdempotencyKey,
-        credentials: Option<RepositoryCredentials>,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
         require_m3(access, Permission::RepositoriesManage)?;
-        if credentials.is_some() {
-            require_repository_credentials(access)?;
-        }
+        let _registration = self.repository_import.lock().await;
         if let Some(receipt) = self
             .store
             .replay_repository_write(
                 access.principal().clone(),
-                RepositoryWriteRequest::Register {
-                    source: source.clone(),
-                    authenticated: credentials.is_some(),
-                },
+                RepositoryWriteRequest::RegisterPreview { preview_id },
                 key.clone(),
             )
             .await?
         {
             return Ok(receipt);
         }
-        let preview = {
-            let mut previews = self.repository_previews.lock().await;
-            let now = Instant::now();
-            previews.retain(|preview| preview.expires_at > now);
-            previews
-                .iter()
-                .position(|preview| {
-                    preview.connection_id == connection_id && &preview.owner == access.principal()
-                })
-                .and_then(|index| previews.remove(index))
-        };
-        let observation = if let Some(preview) = preview
-            && preview.credentials == credentials
-            && let RepositorySource::Remote { url } = &source
-            && self
-                .reader
-                .normalize_remote_repository_url(url)
-                .is_ok_and(|url| preview.observation.source == RepositorySource::Remote { url })
-        {
-            preview.observation
-        } else if credentials.is_some() {
-            self.read_repository_preview(source.clone(), credentials.clone())
-                .await?
-        } else {
-            return self
-                .register_repository_after_lookup(access, source, key)
-                .await;
-        };
-        let registration = RepositoryRegistration {
-            requested_source: source,
-            observation,
-        };
-        if let Some(credentials) = credentials {
-            self.persist_authenticated_repository(access, registration, credentials, key)
-                .await
-        } else {
-            self.persist_repository(access, registration, key).await
+        let binding = workflow_authentication().map(|a| a.binding());
+        let preview = self
+            .repository_previews
+            .lock()
+            .await
+            .iter()
+            .find(|p| p.is_available(access, preview_id, &binding))
+            .cloned()
+            .ok_or_else(|| M3Error::new(M3ErrorCode::RevisionConflict))?;
+        if preview.credentials.is_some() {
+            require_repository_credentials(access)?;
         }
+        let fresh = self
+            .read_repository_preview(preview.source.clone(), preview.credentials.clone())
+            .await?;
+        if Instant::now() >= preview.expires_at
+            || !same_repository_evidence(&preview.observation, &fresh)
+        {
+            return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+        }
+        let registration = RepositoryRegistration {
+            preview_id: Some(preview_id),
+            requested_source: preview.source,
+            observation: fresh,
+        };
+        let result = match preview.credentials {
+            Some(credentials) => {
+                self.persist_authenticated_repository(access, registration, credentials, key)
+                    .await
+            }
+            None => self.persist_repository(access, registration, key).await,
+        };
+        if result.is_ok() {
+            self.repository_previews
+                .lock()
+                .await
+                .retain(|p| p.id != preview_id);
+        }
+        result
     }
 
     async fn persist_repository(

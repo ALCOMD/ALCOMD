@@ -20,6 +20,7 @@ pub(super) async fn get(
         PlanKind::ExtensionInstall | PlanKind::ExtensionUninstall => {
             rpc::CAPABILITY_EXTENSIONS_LIFECYCLE_V1
         }
+        PlanKind::RepositoryRegistration => rpc::CAPABILITY_REPOSITORIES_READ_V1,
         PlanKind::Package => rpc::CAPABILITY_PACKAGES_PLAN_V1,
         PlanKind::ProjectCopy => rpc::CAPABILITY_PROJECTS_COPY_V1,
         PlanKind::ProjectDeleteDirectory => rpc::CAPABILITY_PROJECTS_DELETE_V1,
@@ -43,6 +44,23 @@ pub(super) async fn get(
                 PlansGetResult::ExtensionInstall { plan }
             } else {
                 PlansGetResult::ExtensionUninstall { plan }
+            }
+        }
+        PlanKind::RepositoryRegistration => {
+            let Ok(preview_id) = alcomd_application::OperationId::parse(&params.plan_id) else {
+                return invalid(id);
+            };
+            match applications
+                .m3
+                .get_repository_preview(access, preview_id)
+                .await
+            {
+                Ok(metadata) => PlansGetResult::RepositoryRegistration {
+                    plan: Box::new(super::m3_rpc::repository_snapshot(
+                        None, metadata, None, false, None,
+                    )),
+                },
+                Err(error) => return super::m3_rpc::m3_error(id, error),
             }
         }
         PlanKind::Package => match applications.m4.get_plan(access, plan_id).await {

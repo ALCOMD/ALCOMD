@@ -91,6 +91,7 @@ mod native_discord_import;
 mod native_state_import;
 pub use native_discord_import::DiscordImportOptions;
 pub use native_state_import::{check_native_state, import_native_state};
+mod external_write_rpc;
 mod m3_rpc;
 mod m4_rpc;
 mod m5_backup_rpc;
@@ -109,7 +110,6 @@ mod m8_mcp_rpc;
 mod m8_oauth_rpc;
 mod m8_packages_rpc;
 mod m8_project_assets_rpc;
-mod m8_repositories_rpc;
 mod m8_runtime_rpc;
 mod m8_tools_rpc;
 mod m8_transport_rpc;
@@ -830,10 +830,6 @@ async fn serve_connection(
     drop(observed_connection);
     applications.mcp_transport.forget(&state.connection_id);
     applications
-        .m3
-        .forget_repository_preview(&state.connection_id)
-        .await;
-    applications
         .m7
         .close_connection(&state.connection_id, current_time_ms().unwrap_or(0))
         .await;
@@ -963,6 +959,9 @@ async fn dispatch_authenticated(
             gate.intercept().await;
         }
     }
+    if let Some(method) = alcomd_application::ExternalMethod::parse(&request.method) {
+        return external_write_rpc::dispatch(request, state, applications, access, method).await;
+    }
     if request.method.starts_with("mcp.transport.") {
         return m8_transport_rpc::dispatch(request, state, applications, access);
     }
@@ -981,9 +980,6 @@ async fn dispatch_authenticated(
     ) {
         return m8_packages_rpc::dispatch(request, state, applications, access, payload.len())
             .await;
-    }
-    if request.method.starts_with("mcp.repositories.") {
-        return m8_repositories_rpc::dispatch(request, state, applications, access).await;
     }
     if request.method == alcomd_protocol::METHOD_PROJECT_INVENTORY {
         return m8_project_assets_rpc::inventory(request, state, applications, access).await;
@@ -1133,7 +1129,6 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1,
         alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1,
         alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1,
-        alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_OAUTH_V1,
@@ -1403,8 +1398,6 @@ async fn dispatch_m2(
         _ if matches!(
             request.method.as_str(),
             alcomd_protocol::METHOD_SETTINGS_GET
-                | alcomd_protocol::METHOD_SETTINGS_UPDATE
-                | alcomd_protocol::METHOD_UNITY_HUB_OPEN
         ) =>
         {
             m7_official_rpc::dispatch(request, state, &applications.official_gui, access).await
@@ -1485,7 +1478,6 @@ async fn dispatch_m2(
                 | alcomd_protocol::METHOD_REPOSITORIES_IMPORT_LIST_FILE
                 | alcomd_protocol::METHOD_REPOSITORIES_CANCEL_LIST_REGISTRATION
                 | alcomd_protocol::METHOD_REPOSITORIES_PREVIEW_LIST_EXPORT
-                | alcomd_protocol::METHOD_REPOSITORIES_EXPORT_LIST_FILE
         ) =>
         {
             repository_list_rpc::dispatch(

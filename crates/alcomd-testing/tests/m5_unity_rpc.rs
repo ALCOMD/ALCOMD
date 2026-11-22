@@ -82,6 +82,7 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
     let default_arguments = vec!["-logFile".to_owned(), "Log files/Editor.log".to_owned()];
     client
         .settings_update(alcomd_protocol::SettingsUpdateParams {
+            idempotency_key: "fixture-m5_unity_rpc-1".into(),
             expected_revision: settings.revision,
             update: alcomd_protocol::SettingsUpdate {
                 window: None,

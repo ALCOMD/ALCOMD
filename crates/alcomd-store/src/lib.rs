@@ -63,13 +63,13 @@ mod m8_management;
 mod m8_mcp;
 mod m8_oauth;
 mod m8_packages;
-mod m8_repositories;
 mod m8_tools;
 mod m8_workflows;
 pub use m8_packages::{
     DelegatedPackageCatalog, DelegatedPackageSource, DelegatedSourceAvailability,
 };
 mod desktop;
+mod external_write;
 mod operation_logs;
 mod project_create;
 mod project_template_jobs;

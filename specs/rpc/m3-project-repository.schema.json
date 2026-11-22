@@ -259,10 +259,9 @@
             }
         },
         "repositoryRegisterParams": {
-            "type": "object", "additionalProperties": false, "required": ["source", "idempotencyKey"],
+            "type": "object", "additionalProperties": false, "required": ["previewId", "idempotencyKey"],
             "properties": {
-                "source": {"$ref": "#/$defs/repositorySource"},
-                "credentials": {"$ref": "#/$defs/repositoryCredentials"},
+                "previewId": {"$ref": "#/$defs/uuid"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
             }
         },

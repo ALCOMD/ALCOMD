@@ -272,13 +272,16 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
     manifest["zipSHA256"] = json!(digest);
     let repository = root.join("upgrade-repository.json");
     std::fs::write(&repository, json!({"name":"Upgrade fixture","packages":{"com.example.catalog":{"versions":{"2.0.0":manifest}}}}).to_string()).expect("index");
+    let preview_id = owner
+        .repository_inspect(RepositorySource::Local {
+            path: repository.to_string_lossy().into_owned(),
+        })
+        .await
+        .expect("inspect repository")
+        .preview_id
+        .expect("registration preview");
     let newer = owner
-        .repository_register(
-            RepositorySource::Local {
-                path: repository.to_string_lossy().into_owned(),
-            },
-            "register-upgrade-source".into(),
-        )
+        .repository_register(preview_id, "register-upgrade-source".into())
         .await
         .expect("register second version")
         .repository

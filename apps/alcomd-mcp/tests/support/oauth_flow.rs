@@ -505,6 +505,7 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
     let default_args = vec!["-logFile", "Default file with spaces.log"];
     owner
         .settings_update(serde_json::from_value(json!({
+            "idempotencyKey": "environment-fixture-defaults",
             "expectedRevision": initial.revision,
             "update": {
                 "paths": {"projectDirectory": root.to_string_lossy(), "backupDirectory": archives.to_string_lossy()},
@@ -575,6 +576,7 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
         .await;
     let tools = sdk.list_all_tools().await.expect("authorized catalog");
     for name in [
+        "alcomd_get_system_status",
         "alcomd_get_settings",
         "alcomd_list_unity_installations",
         "alcomd_get_project_launch_config",
@@ -582,6 +584,37 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
         assert!(tools.iter().any(|tool| tool.name == name));
     }
     let mut trace = Vec::new();
+    let mut native = AlcomdClient::connect(
+        config
+            .client
+            .clone()
+            .with_client_name("alcomd-mcp")
+            .with_oauth_access(
+                token["access_token"]
+                    .as_str()
+                    .expect("granted token")
+                    .to_owned(),
+                http.resource(),
+            ),
+    )
+    .await
+    .expect("same OAuth identity on native IPC");
+    let expected = native.system_status().await.expect("native status");
+    let status = data(
+        call(&sdk, &mut trace, "get_system_status", json!({}))
+            .await
+            .expect("status tool"),
+    );
+    assert_eq!(
+        status,
+        json!({
+            "product": expected.product,
+            "daemon_version": expected.daemon_version,
+            "rpc_version": expected.rpc_version,
+            "state": expected.state,
+            "capabilities": expected.capabilities,
+        })
+    );
     let settings_tool = data(
         call(&sdk, &mut trace, "get_settings", json!({}))
             .await
@@ -600,6 +633,70 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
         settings_tool["settings"]["unity"]["default_launch_arguments"],
         json!(default_args)
     );
+    let observation = data(
+        call(&sdk, &mut trace, "subscribe_events", json!({ "limit": 1 }))
+            .await
+            .expect("subscribe to Core business events"),
+    );
+    assert_eq!(observation["ready"]["resync_required"], true);
+    let cursor = &observation["ready"]["baseline_cursor"];
+    assert!(cursor["instance_id"].is_string());
+    let after = cursor["sequence"].as_u64().expect("Core sequence");
+    let patch = json!({
+        "expected_revision": settings.revision,
+        "update": { "packages": { "show_prerelease": false } },
+        "idempotency_key": "environment-settings-update",
+        "confirm": true
+    });
+    let saved = data(
+        call(&sdk, &mut trace, "update_settings", patch.clone())
+            .await
+            .expect("save patch"),
+    );
+    let replay = data(
+        call(&sdk, &mut trace, "update_settings", patch)
+            .await
+            .expect("replay saved patch"),
+    );
+    assert_eq!(replay, saved);
+    assert_eq!(saved["settings"]["packages"]["show_prerelease"], false);
+    assert_eq!(saved["settings"]["packages"]["prefer_prerelease"], false);
+    assert_eq!(
+        native
+            .settings_get()
+            .await
+            .expect("native revision")
+            .revision,
+        saved["revision"].as_u64().expect("saved revision")
+    );
+    let history = data(
+        call(
+            &sdk,
+            &mut trace,
+            "list_events",
+            json!({ "after_sequence": after, "limit": 1 }),
+        )
+        .await
+        .expect("read this caller's operation event"),
+    );
+    assert_eq!(history["events"].as_array().expect("events").len(), 1);
+    assert_eq!(history["events"][0]["sequence"], history["next_sequence"]);
+    let resumed = data(
+        call(
+            &sdk,
+            &mut trace,
+            "subscribe_events",
+            json!({ "cursor": cursor, "limit": 1 }),
+        )
+        .await
+        .expect("continue from original cursor"),
+    );
+    assert_eq!(
+        resumed["ready"]["instance_id"],
+        observation["ready"]["instance_id"]
+    );
+    assert_eq!(resumed["ready"]["resync_required"], false);
+    assert!(resumed["notification"].is_object());
     let installs = data(
         call(
             &sdk,
@@ -741,6 +838,7 @@ async fn oauth_backup_write_works_after_consent_until_revoked() {
     owner
         .settings_update(
             serde_json::from_value(json!({
+                "idempotencyKey": "oauth-backup-defaults",
                 "expectedRevision": settings.revision,
                 "update": {
                     "paths": {"backupDirectory": archives.to_string_lossy()},
@@ -878,13 +976,16 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         r#"{"id":"local.fixture","name":"Local fixture","packages":{}}"#,
     )
     .expect("disposable local repository");
+    let preview_id = owner
+        .repository_inspect(RepositorySource::Local {
+            path: local_index.to_string_lossy().into_owned(),
+        })
+        .await
+        .expect("inspect repository")
+        .preview_id
+        .expect("registration preview");
     let local = owner
-        .repository_register(
-            RepositorySource::Local {
-                path: local_index.to_string_lossy().into_owned(),
-            },
-            "local-repository-fixture".into(),
-        )
+        .repository_register(preview_id, "local-repository-fixture".into())
         .await
         .expect("same native registry")
         .repository;
@@ -944,7 +1045,8 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
     assert_eq!(annotations.idempotent_hint, Some(true));
     assert_eq!(annotations.open_world_hint, Some(true));
     let mut trace = Vec::new();
-    let args = json!({"url":format!("{}{}",source.base,source.index_path)});
+    let args =
+        json!({"source":{"kind":"remote","url":format!("{}{}",source.base,source.index_path)}});
     let read_preview = data(
         call(&reader, &mut trace, "inspect_repository", args.clone())
             .await
@@ -956,9 +1058,8 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
             .await
             .expect("inspect for registration"),
     );
-    assert_eq!(preview["display_name"], "M8 VPM fixture");
-    assert_eq!(preview["version_count"], 1);
-    assert!(!preview.to_string().contains(&source.base));
+    assert_eq!(preview["repository"]["name"], "M8 VPM fixture");
+    assert_eq!(preview["repository"]["source"], args["source"]);
     let register = json!({"preview_id":preview["preview_id"],"confirm":true,"idempotency_key":"register-inspected"});
     assert_ne!(read_preview["preview_id"], preview["preview_id"]);
     error(
@@ -1003,15 +1104,17 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
             .await
             .expect("confirm registration"),
     );
-    let id = registered["repository_id"]
+    let id = registered["repository"]["repository_id"]
         .as_str()
         .expect("registered repository");
-    assert_eq!(
-        registered["repository"]["display_name"],
-        "Updated M8 VPM fixture"
+    assert_eq!(registered["repository"]["name"], "Updated M8 VPM fixture");
+    assert_eq!(registered["repository"]["actions"]["can_remove"], true);
+    assert!(
+        registered["repository"]["source"]["url"]
+            .as_str()
+            .expect("repository source URL")
+            .starts_with(&source.base)
     );
-    assert_eq!(registered["repository"]["available"], true);
-    assert!(!registered.to_string().contains(&source.base));
     let native = owner
         .repository_get(id.to_owned())
         .await
@@ -1053,8 +1156,8 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
     assert!(repositories.iter().any(|item| item["repository_id"] == id));
     assert!(repositories.iter().any(|item| item["repository_id"]
         == local.repository_id.as_deref().expect("local ID")
-        && item["source_kind"] == "local"));
-    assert!(!page.to_string().contains("local-fixture.json"));
+        && item["source"]["kind"] == "local"));
+    assert!(page.to_string().contains("local-fixture.json"));
     let mut actor_a = AlcomdClient::connect(
         configuration.client.clone().with_oauth_access(
             write_token["access_token"]
@@ -1197,7 +1300,7 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
     }
     let builtin_id = alcomd_application::VRCHAT_OFFICIAL_REPOSITORY_ID;
     error(call(&writer,&mut trace,"remove_repository",json!({"repository_id":builtin_id.to_string(),"expected_revision":1,"idempotency_key":"protected-remove","confirm":true})).await.expect("protected built-in ID, even with builtin seeding disabled in the test"),"permission_denied");
-    let refresh = json!({"repository_id":id,"expected_revision":refresh_revision,"idempotency_key":"refresh-registered"});
+    let refresh = json!({"repository_id":id,"expected_revision":refresh_revision,"idempotency_key":"refresh-registered","confirm":true});
     source.set_changed(false);
     let requests_before_refresh = source.requests.lock().await.len();
     let refreshed = data(
@@ -1209,7 +1312,7 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         source.requests.lock().await.len(),
         requests_before_refresh + 1
     );
-    assert_eq!(refreshed["repository"]["display_name"], "M8 VPM fixture");
+    assert_eq!(refreshed["repository"]["name"], "M8 VPM fixture");
     assert_eq!(
         data(
             call(&writer, &mut trace, "refresh_repository", refresh.clone())
@@ -1218,7 +1321,7 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         )["replayed"],
         true
     );
-    let remove = json!({"repository_id":id,"expected_revision":refreshed["revision"],"idempotency_key":"remove-registered","confirm":true});
+    let remove = json!({"repository_id":id,"expected_revision":refreshed["repository"]["revision"],"idempotency_key":"remove-registered","confirm":true});
     let removed = data(
         call(&writer, &mut trace, "remove_repository", remove.clone())
             .await
@@ -1301,7 +1404,7 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         expected.sort();
         assert_eq!(principals, expected);
 
-        let mut rows = db.prepare("SELECT principal_id, request_fingerprint, response_json, method FROM idempotency_records WHERE method IN ('mcp.repositories.register', 'repositories.refresh', 'mcp.repositories.remove')").expect("registry receipts");
+        let mut rows = db.prepare("SELECT principal_id, request_fingerprint, response_json, method FROM idempotency_records WHERE idempotency_key IN ('register-inspected', 'refresh-registered', 'remove-registered') AND method IN ('repositories.register', 'repositories.refresh', 'repositories.unregister')").expect("registry receipts");
         let snapshots = rows
             .query_map([], |row| {
                 Ok((
@@ -1328,6 +1431,8 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
                 ] {
                     assert!(!result.contains(private), "{private}");
                 }
+            } else if method == "repositories.register" {
+                assert!(result.contains(&source.base));
             } else {
                 assert!(!result.contains(&source.base));
             }
@@ -1391,13 +1496,16 @@ async fn oauth_package_catalog_and_https_download(protected: bool) {
     let mut owner = AlcomdClient::connect(configuration.client.clone())
         .await
         .expect("isolated owner");
+    let preview_id = owner
+        .repository_inspect(RepositorySource::Remote {
+            url: format!("{}{}", source.base, source.index_path),
+        })
+        .await
+        .expect("inspect repository")
+        .preview_id
+        .expect("registration preview");
     let registered = owner
-        .repository_register(
-            RepositorySource::Remote {
-                url: format!("{}{}", source.base, source.index_path),
-            },
-            "register-anonymous-https".into(),
-        )
+        .repository_register(preview_id, "register-anonymous-https".into())
         .await
         .expect("verified HTTPS repository registration")
         .repository;

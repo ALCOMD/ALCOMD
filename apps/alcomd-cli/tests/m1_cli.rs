@@ -11,6 +11,81 @@ use alcomd_platform::IpcConfig;
 static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cli_settings_applies_only_the_requested_fields_at_the_given_revision() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let (ipc, config, runtime) = isolated_configuration();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon =
+        alcomd_daemon::test_support::start_until(ipc, wait_for_shutdown(Arc::clone(&shutdown)))
+            .await
+            .expect("start owned daemon");
+    let read = || {
+        let response = run_group_cli(runtime.clone(), &["settings", "get"]);
+        assert!(
+            response.status.success(),
+            "{}",
+            String::from_utf8_lossy(&response.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&response.stdout).expect("settings result")["result"].clone()
+    };
+    let initial = read();
+    let revision = initial["revision"]
+        .as_u64()
+        .expect("settings revision")
+        .to_string();
+    let args = [
+        "settings",
+        "update",
+        "--expected-revision",
+        &revision,
+        "--update",
+        r#"{"packages":{"showPrerelease":false}}"#,
+        "--idempotency-key",
+        "cli-settings-update",
+    ];
+    let preview = run_group_cli(
+        runtime.clone(),
+        &[&["--dry-run", "--yes"][..], &args].concat(),
+    );
+    assert!(!preview.status.success());
+    assert_eq!(read(), initial);
+    let response = run_group_cli(runtime.clone(), &args);
+    assert!(
+        response.status.success(),
+        "{}",
+        String::from_utf8_lossy(&response.stderr)
+    );
+    let saved = read();
+    assert_eq!(saved["settings"]["packages"]["showPrerelease"], false);
+    assert_eq!(saved["settings"]["packages"]["preferPrerelease"], false);
+    let mut expected = initial["settings"].clone();
+    expected["packages"]["showPrerelease"] = false.into();
+    assert_eq!(saved["settings"], expected);
+    let replay = run_group_cli(runtime.clone(), &args);
+    assert!(replay.status.success());
+    assert_eq!(replay.stdout, response.stdout);
+    let mut new_request = args;
+    *new_request.last_mut().expect("request key") = "cli-settings-new-request";
+    let conflicting = run_group_cli(runtime.clone(), &new_request);
+    assert!(!conflicting.status.success());
+    assert_eq!(read(), saved);
+    let mut sdk = AlcomdClient::connect(config)
+        .await
+        .expect("connect native client");
+    let authoritative = sdk.settings_get().await.expect("read back from Core");
+    assert_eq!(
+        serde_json::to_value(authoritative).expect("serialize settings returned by Core"),
+        saved
+    );
+    drop(sdk);
+    shutdown.store(true, Ordering::SeqCst);
+    daemon
+        .await
+        .expect("join owned daemon")
+        .expect("stop owned daemon");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cli_reports_human_and_json_status_over_real_ipc() {
     let _serial = RPC_TEST_LOCK.lock().await;
     let (ipc, client, runtime) = isolated_configuration();
@@ -309,6 +384,35 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
         serde_json::from_slice(&restore.stdout).expect("backup restore JSON");
     assert_eq!(restore["command"], "backup restore");
     assert_eq!(restore["result"]["state"], "succeeded");
+    let operations = run_group_cli(runtime.clone(), &["operation", "list", "--limit", "1"]);
+    assert!(operations.status.success());
+    let first: serde_json::Value =
+        serde_json::from_slice(&operations.stdout).expect("parse first task page");
+    let cursor = &first["result"]["nextCursor"];
+    assert!(cursor["createdAtMs"].is_u64() && cursor["operationId"].is_string());
+    let next = run_group_cli(
+        runtime.clone(),
+        &[
+            "operation",
+            "list",
+            "--limit",
+            "1",
+            "--cursor",
+            &cursor.to_string(),
+        ],
+    );
+    assert!(next.status.success());
+    let next: serde_json::Value =
+        serde_json::from_slice(&next.stdout).expect("parse continued task page");
+    assert_ne!(
+        first["result"]["operations"][0]["operationId"],
+        next["result"]["operations"][0]["operationId"]
+    );
+    let incomplete = run_group_cli(
+        runtime.clone(),
+        &["operation", "list", "--cursor", r#"{"createdAtMs":0}"#],
+    );
+    assert_eq!(incomplete.status.code(), Some(2));
     assert!(
         restored
             .join("ProjectSettings/ProjectVersion.txt")

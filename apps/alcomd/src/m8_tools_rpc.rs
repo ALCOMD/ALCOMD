@@ -131,6 +131,10 @@ fn builtin_entries(capabilities: &HashSet<String>) -> Result<Vec<Entry>, E> {
         &mut entries,
         include_str!("../../../specs/mcp/environment-v1.schema.json"),
     )?;
+    append_builtin_tools(
+        &mut entries,
+        include_str!("../../../specs/mcp/operations-v1.schema.json"),
+    )?;
     if capabilities.contains(rpc::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1) {
         append_builtin_tools(
             &mut entries,
@@ -144,10 +148,6 @@ fn builtin_entries(capabilities: &HashSet<String>) -> Result<Vec<Entry>, E> {
             entry.descriptor.description = "Only call after the operator has reviewed and confirmed the entire original plan. Applies that plan without replanning and returns an operation to check.".into();
         }
     }
-    append_builtin_tools(
-        &mut entries,
-        include_str!("../../../specs/mcp/repositories-v1.schema.json"),
-    )?;
     append_builtin_tools(
         &mut entries,
         include_str!("../../../specs/mcp/project-workflows-v1.schema.json"),
@@ -176,9 +176,9 @@ fn builtin_entries(capabilities: &HashSet<String>) -> Result<Vec<Entry>, E> {
                 .any(|capability| capabilities.contains(*capability));
         }
         rpc::mcp_workflows_tool_capability(name)
-            .or_else(|| rpc::mcp_repositories_tool_capability(name))
             .or_else(|| rpc::mcp_environment_tool_capability(name))
             .or_else(|| rpc::mcp_extension_management_capability(name))
+            .or_else(|| rpc::mcp_operation_tool_capability(name))
             .is_none_or(|capability| capabilities.contains(capability))
     });
     Ok(entries)
@@ -774,7 +774,8 @@ mod connection_access_tests {
                 rpc::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1,
                 rpc::CAPABILITY_PROJECTS_CREATE_V1,
                 rpc::CAPABILITY_PROJECTS_REGISTRY_V1,
-                rpc::CAPABILITY_MCP_REPOSITORIES_V1,
+                rpc::CAPABILITY_REPOSITORIES_READ_V1,
+                rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1,
                 rpc::CAPABILITY_PROJECTS_COPY_V1,
                 rpc::CAPABILITY_PROJECT_INVENTORY_V1,
                 rpc::CAPABILITY_PROJECT_TEMPLATES_V1,

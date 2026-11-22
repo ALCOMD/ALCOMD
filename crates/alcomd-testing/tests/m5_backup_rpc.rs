@@ -54,6 +54,7 @@ async fn mcp_restores_a_zip_outside_the_configured_directory_and_rechecks_access
     owner
         .settings_update(
             serde_json::from_value(serde_json::json!({
+                "idempotencyKey": "backup-fixture-defaults",
                 "expectedRevision": settings.revision,
                 "update": {
                     "paths": { "backupDirectory": archive_dir.to_string_lossy(), "projectDirectory": projects.to_string_lossy() },
@@ -493,6 +494,7 @@ fn subprocess_runs_backup_restore_until_parent_kills_it() {
             client
                 .settings_update(
                     serde_json::from_value(serde_json::json!({
+                        "idempotencyKey": "restore-fixture-defaults",
                         "expectedRevision": settings.revision,
                         "update": { "paths": { "projectDirectory": root.to_string_lossy() } }
                     }))

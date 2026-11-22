@@ -81,6 +81,7 @@ where
         ProtocolService {
             core: tokio::sync::Mutex::new(client),
             bound,
+            events_config: configuration.clone(),
             configuration,
             notifications,
             subscription_limits: Default::default(),
@@ -96,6 +97,7 @@ where
 
 struct ProtocolService {
     core: tokio::sync::Mutex<Option<alcomd_client::AlcomdClient>>,
+    events_config: Option<alcomd_client::ClientConfig>,
     bound: bool,
     configuration: Option<alcomd_client::ClientConfig>,
     notifications: bool,
@@ -211,7 +213,7 @@ impl Service<RoleServer> for ProtocolService {
                 let Some(core) = guard.as_mut() else {
                     return Ok(ServerResult::CallToolResult(tools::interrupted(false)));
                 };
-                tools::execute(core, request.params)
+                tools::execute(core, request.params, self.events_config.as_ref())
                     .await
                     .map(ServerResult::CallToolResult)
             };

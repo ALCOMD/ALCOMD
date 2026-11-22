@@ -43,20 +43,20 @@ for (const route of ["/repositories", "/unity"]) {
     });
 }
 
-test("Chinese Settings segments keep 24px inner spacing before and after selection", async ({ page }, testInfo) => {
-    await page.goto("/browser-harness.html?route=/settings&theme-mode=dark");
-    await selectSettingsSection(page, "appearance");
-    await page.locator("#settings-locale").evaluate(element => {
-        (element as HTMLElement & { select(value: string): void }).select("zh-CN");
-        element.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-    const group = page.locator(".resource-navigation md-outlined-segmented-button-set");
-    const main = page.locator("#main-content");
-    await expect(group.getByRole("button")).toHaveText(["常规", "Unity", "外观", "客户端"]);
-    await expect(page.locator(".alcomd-segmented-sizer")).toHaveCount(0);
-    await expectSegmentsVisible(group, main);
-    for (const zoom of [1, 0.8, 1.25]) {
+for (const zoom of [1, 0.8, 1.25]) {
+    test(`Chinese Settings segments keep 24px inner spacing before and after selection at zoom ${zoom}`, async ({ page }, testInfo) => {
+        await page.goto("/browser-harness.html?route=/settings&theme-mode=dark");
+        await selectSettingsSection(page, "appearance");
+        await page.locator("#settings-locale").evaluate(element => {
+            (element as HTMLElement & { select(value: string): void }).select("zh-CN");
+            element.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+        const group = page.locator(".resource-navigation md-outlined-segmented-button-set");
+        const main = page.locator("#main-content");
+        await expect(group.getByRole("button")).toHaveText(["常规", "Unity", "外观", "客户端"]);
+        await expect(page.locator(".alcomd-segmented-sizer")).toHaveCount(0);
+        await expectSegmentsVisible(group, main);
         await page.evaluate(value => { document.documentElement.style.zoom = String(value); }, zoom);
         for (const segment of await group.getByRole("button").all()) {
             await segment.click();
@@ -64,8 +64,8 @@ test("Chinese Settings segments keep 24px inner spacing before and after selecti
             await expectSegmentsVisible(group, main);
         }
         await group.screenshot({ path: testInfo.outputPath(`settings-segments-${zoom}.png`), animations: "disabled" });
-    }
-});
+    });
+}
 
 test("Chinese Resources segments stay clear after selecting each section", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1600, height: 900 });

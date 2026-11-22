@@ -102,7 +102,7 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
     const [value, setValue] = useState(initial?.url ?? "");
     const [authentication, setAuthentication] = useState<RepositoryAuthenticationDraft>(() => initial
         ? { headers: initial.headers } : EMPTY_REPOSITORY_AUTH);
-    const [preview, setPreview] = useState<RepositorySnapshot>();
+    const [preview, setPreview] = useState<RepositorySnapshot & {previewId?: string}>();
     const writeRequest = useGuiWrite(client, preview, authentication);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     useUtilityDialogBusy(feedback.busy);
@@ -117,18 +117,17 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
             const selected = source();
             const result = await client.repositoriesInspect(selected,
                 selected.kind === "remote" ? repositoryCredentials(authentication) : undefined);
-            if (current()) { setPreview(result.repository); setFeedback({ busy: false }); }
+            if (current()) { setPreview({...result.repository,previewId:result.previewId}); setFeedback({ busy: false }); }
         }
         catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
     };
     const register = async () => {
-        if (pending.current || !available || preview === undefined) return;
+        if (pending.current || !available || !preview?.previewId) return;
         pending.current = true;
         setFeedback({ busy: true });
         try {
-            await writeRequest("repositoryRegister", preview.source,
-                preview.source.kind === "remote" ? repositoryCredentials(authentication) : undefined);
+            await writeRequest("repositoryRegister", preview.previewId);
             if (!current()) return;
             setPreview(undefined); setValue(""); setAuthentication(EMPTY_REPOSITORY_AUTH);
             setFeedback(INITIAL_FEEDBACK);  close(); onChanged?.();
@@ -166,7 +165,7 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
             {authentication.headers.length > 0 ? <p>{t("Uses authentication")}</p> : null}
             {preview.issues.length === 0 ? null : <div>{t("This repository has {count} reported issues.", { count: preview.issues.length })}</div>}
             {error}
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPreview(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button disabled={!available || feedback.busy} onClick={() => void register()} type="button">{t("Add repository")}</Button></div>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPreview(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button disabled={!available || !preview.previewId || feedback.busy} onClick={() => void register()} type="button">{t("Add repository")}</Button></div>
         </>}
     </ActionSection>;
 }

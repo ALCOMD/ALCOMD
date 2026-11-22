@@ -2198,7 +2198,7 @@ async fn malformed_publisher_digest_is_logged_and_pinned_but_a_valid_mismatch_is
     with_log_caller(
         fixture.store.clone(),
         &access,
-        registry.inspect_repository(&access, "digest-fixture-preview", source.clone(), None),
+        registry.inspect_repository(&access, source.clone(), None),
     )
     .await
     .expect("repository preview");

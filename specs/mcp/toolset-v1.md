@@ -65,7 +65,7 @@ OAuth续页必须原样回传；缺失、篡改、换token或授权快照变化�
 
 ## 长任务
 
-核心权威状态为 ALCOMD Operation。`alcomd_get_operation` 需要 `operations.read`，`alcomd_cancel_operation` 需要 `operations.cancel`。两项按真实调用者读取或取消自身任务，使用 Core 的生命周期和修订规则。包变更和状态检查有明确结果字段，其余任务提供状态、修订、时间和稳定错误字段。4.0.0 不采用或广告 MCP Tasks。协议请求取消及 STDIO EOF 只结束当前请求，只有显式 `alcomd_cancel_operation` 请求 Core 合作式业务取消。
+核心权威状态为 ALCOMD Operation。`alcomd_get_operation` 需要 `operations.read`，`alcomd_cancel_operation` 需要 `operations.cancel`。两项按真实调用者读取或取消自身任务，使用 Core 的生命周期和修订规则。任务视图包含 Core 实际提供的进度、结果和稳定错误字段。包变更、状态检查、项目复制、模板和备份等类型按各自合同返回结果。4.0.0 不采用或广告 MCP Tasks。协议请求取消及 STDIO EOF 只结束当前请求，只有显式 `alcomd_cancel_operation` 请求 Core 合作式业务取消。
 
 `alcomd_list_operations` 使用同一读取权限和任务视图，接受 `limit`、`cursor` 和 `active_only`，返回当前调用者的任务分页及活动数。
 
@@ -81,7 +81,7 @@ MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档�
 
 ## 仓库管理
 
-`mcp.repositories.v1` 提供 [MCP 工具](repositories-v1.schema.json) 和 [Core RPC](../rpc/m8-mcp-repositories-v1.schema.json)。`alcomd_list_repositories` 用 `repositories.read` 浏览共用仓库顺序。继续分页时使用返回的完整游标。仓库顺序或成员变化后，Core 对旧游标返回 `revision_conflict`，应从首页重读。`alcomd_inspect_repository` 检查远程地址，同时有 `repositories.manage` 时提供 60 秒有效、绑定到当前认证的预览 ID。`alcomd_register_repository` 要求显式确认原预览，Core 在提交前检查来源证据，变动时需要重新检查。`alcomd_refresh_repository` 和 `alcomd_remove_repository` 使用实际仓库 ID 和修订，移除另需显式确认与内置保护。三项写入均要求 `repositories.manage` 和幂等键，以原参数同键恢复。凭据及本地路径由本机入口管理，Core 在原规则下刷新这些已登记来源，安全响应省略来源地址与凭据。
+仓库工具使用与 GUI 和 CLI 相同的 `repositories.*` 方法及分页游标。检查本地或远程来源后，Core 返回仓库快照和绑定到调用者与凭据的预览 ID。登记时确认该 ID，Core 重新核对来源和内容。来源变动须重新检查。登记、刷新和移除均使用原幂等键重试，内置仓库遵守相同的移除保护。身份认证请求头仅在检查时提供。[工具合同](operations-v1.schema.json)
 
 ## 项目和备份
 
@@ -101,6 +101,7 @@ Core 在接受任务前核对当前授权、路径身份及目的地可用性。
 
 | 工具 | 同一 Core 入口 | 权限 |
 | --- | --- | --- |
+| `alcomd_get_system_status` | `system.status`。返回运行中的产品、daemon 版本、RPC 版本、就绪状态和当前连接协商的能力。 | 已认证连接 |
 | `alcomd_get_settings` | `settings.get`。返回当前设置和 Core 解析的默认项目、备份目录。 | `settings.read` |
 | `alcomd_list_unity_installations` | `unity.installations.list`。使用同一安装登记与游标，包含安装路径。 | `unity.read` |
 | `alcomd_get_project_launch_config` | `unity.projectLaunchConfig.get`。返回项目覆盖、默认值及实际有效的完整参数。 | `projects.read`、`unity.read` |

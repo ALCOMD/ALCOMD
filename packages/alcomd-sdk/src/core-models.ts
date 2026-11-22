@@ -462,6 +462,7 @@ export type PlansGetResult =
     | { kind: "package"; plan: PackagePlan }
     | { kind: "project_copy"; plan: ProjectCopyPlan }
     | { kind: "project_delete_directory"; plan: ProjectDeletePlan }
-    | { kind: "project_unity_migration"; plan: ProjectUnityMigrationPlan };
+    | { kind: "project_unity_migration"; plan: ProjectUnityMigrationPlan }
+    | { kind: "repositoryRegistration"; plan: RepositorySnapshot };
 
 export interface PlansGetParams { kind: PlansGetResult["kind"]; planId: string }

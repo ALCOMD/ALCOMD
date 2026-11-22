@@ -10,7 +10,8 @@ use serde_json::Value;
 use super::{Failure, failure, invalid, ipc_fields, read, snake, success};
 
 pub(super) fn recognized(name: &str) -> bool {
-    name == "alcomd_get_settings" || rpc::mcp_environment_tool_capability(name).is_some()
+    matches!(name, "alcomd_get_system_status" | "alcomd_get_settings")
+        || rpc::mcp_environment_tool_capability(name).is_some()
 }
 
 pub(super) fn params<T: DeserializeOwned>(value: Value) -> Result<T, ErrorData> {
@@ -141,14 +142,21 @@ pub(super) async fn execute(
             write_result(client.project_templates_remove(confirmed(fields)?).await),
             "Template removed.",
         ),
-        "alcomd_get_settings" => {
+        "alcomd_get_system_status" | "alcomd_get_settings" => {
             if fields.as_object().is_none_or(|fields| !fields.is_empty()) {
                 return Err(invalid());
             }
-            (
-                result(client.settings_get().await),
-                "Current ALCOMD settings and effective storage directories.",
-            )
+            if request.name == "alcomd_get_system_status" {
+                (
+                    result(client.system_status().await),
+                    "Running Core status and capabilities negotiated for this connection.",
+                )
+            } else {
+                (
+                    result(client.settings_get().await),
+                    "Current ALCOMD settings and effective storage directories.",
+                )
+            }
         }
         "alcomd_list_unity_installations" => (
             result(client.unity_installations_list(params(fields)?).await),

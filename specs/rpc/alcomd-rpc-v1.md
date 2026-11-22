@@ -900,9 +900,9 @@ download_required`，不启动进程；坏的显式路径无 fallback
 退出。容量不足返回 `hub_open_busy`，OS 启动失败返回 `hub_open_failed`，意外内部故障使用现有
 `internal_error` 和 diagnosticId。所有错误文案固定且不含路径、argv、原始 I/O 或进程详情。
 
-此方法不写配置／项目／State，不创建 Plan、Apply、Operation 或 Event。没有持久幂等承诺；
-传输结果不明不能自动重试，GUI 保留明确错误并要求确认 Hub 是否已经打开，再由所有者再次
-点击形成新意图。完整请求、结果及新增错误枚举由当前 RPC Schema 冻结。
+Core 按实际调用者、方法、原始业务参数和必填 `idempotencyKey` 持久受理。接受时验证调用者和目标，运行中的任务与 pending 回执在同一 State1 事务创建，启动结果与终态一起保存。同键重放返回原结果。若 Core 在系统动作和保存结果之间退出，重开后返回 `external_write_outcome_unknown`。只有用户明确再发起一次操作时才使用新键。
+
+`settings.update` 和 `repositories.exportListFile` 使用同一规则，分别在发布 Config1 和创建导出文件之前受理。Core 返回原保存修订对应的设置快照，或原导出文件的数量、长度和摘要。即使设置已再次修改或文件已存在，同键重放照常生效。请求提供的修订、目的位置、指纹或配置字段变化时，复用原键返回 `idempotency_conflict`。
 
 ## 25. M7 兼容增加：Project Copy
 

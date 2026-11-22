@@ -23,6 +23,11 @@ export class BrowserCoreEvents {
     get pending() { return [...this.readers].filter((reader) => reader.pending !== undefined).length; }
     get instanceId() { return this.instance; }
 
+    list(afterSequence: number, limit: number) {
+        const events = this.history.filter((event) => event.sequence > afterSequence).slice(0, limit);
+        return { events, nextSequence: events.at(-1)?.sequence ?? afterSequence };
+    }
+
     subscribe = async (request: GuiEventsRequest, receive: (message: GuiEventMessage) => void): Promise<GuiEventSubscription> => {
         this.requests.push({ method: "subscribe", params: structuredClone(request) });
         const resume = request.cursor?.instanceId === this.instance && request.cursor.sequence <= this.sequence && request.cursor.resourcesRevision === this.resourcesRevision;

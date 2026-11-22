@@ -726,7 +726,8 @@ CREATE TABLE operations (
         'extensions.install', 'extensions.uninstall',
         'projects.create', 'projects.copy', 'projects.delete-directory', 'projects.unity-migration',
         'projectTemplates.save', 'projectTemplates.export',
-        'desktop.focusProjectUnity', 'desktop.openProjectDirectory', 'desktop.openUnityHubDownload'
+        'desktop.focusProjectUnity', 'desktop.openProjectDirectory', 'desktop.openUnityHubDownload',
+        'settings.update', 'unity.hub.open', 'repositories.exportListFile'
     )),
     state TEXT NOT NULL CHECK (state IN (
         'queued', 'planning', 'waiting_for_input', 'running', 'cancelling',

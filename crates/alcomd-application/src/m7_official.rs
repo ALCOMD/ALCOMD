@@ -708,6 +708,7 @@ impl M7OfficialApplication {
         let config = Arc::clone(&self.config);
         let platform = Arc::clone(&self.hub_platform);
         let launcher = Arc::clone(&self.hub_launcher);
+        let acceptance = crate::ExternalAcceptance::current();
         // Cancellation must not release settings coordination between validation and
         // process-creation acknowledgement. Child lifetime belongs to the launcher.
         let disk = tokio::task::spawn_blocking(move || {
@@ -746,18 +747,29 @@ impl M7OfficialApplication {
                 }
                 match location.status {
                     UnityHubStatus::Available => {
+                        let target = location
+                            .launch_target()
+                            .ok_or(UnityHubOpenError::Unavailable)?;
+                        if acceptance
+                            .as_ref()
+                            .is_some_and(|guard| !guard.blocking_claim())
+                        {
+                            return Err(UnityHubOpenError::Unavailable);
+                        }
                         log_target = location
                             .path
                             .as_ref()
                             .map(|path| crate::log_path("unity", path.clone()));
-                        launcher.launch(
-                            location
-                                .launch_target()
-                                .ok_or(UnityHubOpenError::Unavailable)?,
-                        )?;
+                        launcher.launch(target)?;
                         Ok(UnityHubOpenOutcome::LaunchRequested)
                     }
                     UnityHubStatus::NotFound if snapshot.settings.unity.hub_path.is_none() => {
+                        if acceptance
+                            .as_ref()
+                            .is_some_and(|guard| !guard.blocking_claim())
+                        {
+                            return Err(UnityHubOpenError::Unavailable);
+                        }
                         Ok(UnityHubOpenOutcome::DownloadRequired)
                     }
                     UnityHubStatus::NotFound => Err(UnityHubOpenError::PathInvalid),
@@ -843,6 +855,7 @@ impl M7OfficialApplication {
         let directory_platform = Arc::clone(&self.directory_platform);
         let directory_defaults = Arc::clone(&self.directory_defaults);
         let can_manage_projects = access.require(Permission::ProjectsManage).is_ok();
+        let acceptance = crate::ExternalAcceptance::current();
         let discovery_notify = Arc::clone(&self.project_discovery_notify);
         let disk = tokio::task::spawn_blocking(move || {
             let _discovery_notify = ProjectDiscoveryNotify(discovery_notify);
@@ -914,6 +927,12 @@ impl M7OfficialApplication {
                     crate::ToolError::Unavailable => OfficialGuiError::Unavailable,
                     _ => OfficialGuiError::PermissionDenied,
                 });
+            }
+            if acceptance
+                .as_ref()
+                .is_some_and(|guard| !guard.blocking_claim())
+            {
+                return Err(OfficialGuiError::Unavailable);
             }
             config.publish(&snapshot).map_err(OfficialGuiError::from)?;
             *guard = Some(snapshot.clone());

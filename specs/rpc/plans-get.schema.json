@@ -18,7 +18,8 @@
                         "project_delete_directory",
                         "project_unity_migration",
                         "extension_install",
-                        "extension_uninstall"
+                        "extension_uninstall",
+                        "repositoryRegistration"
                     ]
                 },
                 "planId": {
@@ -120,6 +121,22 @@
                         },
                         "plan": {
                             "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m6-extension-runtime.json#/$defs/planRecord"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "kind",
+                        "plan"
+                    ],
+                    "properties": {
+                        "kind": {
+                            "const": "repositoryRegistration"
+                        },
+                        "plan": {
+                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/native-sdk-v1.schema.json#/$defs/RepositoryResult/properties/repository"
                         }
                     },
                     "additionalProperties": false

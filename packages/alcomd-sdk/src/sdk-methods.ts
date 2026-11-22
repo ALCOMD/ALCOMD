@@ -197,14 +197,14 @@ export type ProjectsPlanUnityMigrationParams = { projectId: string; targetInstal
 export type RegistryListParams = { cursor?: Types.RepositoryCursor; limit?: number };
 export type RepositoryIdParams = { repositoryId: string };
 export type RepositoryInspectParams = { source: Types.RepositorySource; credentials?: Types.RepositoryCredentials };
-export type RepositoryListExportParams = { format?: Types.RepositoryListFormat; targetPath: string; expectedFingerprint: string };
+export type RepositoryListExportParams = { format?: Types.RepositoryListFormat; targetPath: string; expectedFingerprint: string; idempotencyKey: string };
 export type RepositoryListInspectParams = { path: string };
 export type RepositoryListPreviewParams = { format?: Types.RepositoryListFormat };
 export type RepositoryMutationParams = { repositoryId: string; expectedRevision: number; idempotencyKey: string };
 export type RepositoryPackagesParams = { repositoryId: string; cursor?: Types.PackageCursor; limit?: number };
-export type RepositoryRegisterParams = { source: Types.RepositorySource; idempotencyKey: string; credentials?: Types.RepositoryCredentials };
+export type RepositoryRegisterParams = { previewId: string; idempotencyKey: string };
 export type RepositorySetCredentialsParams = { repositoryId: string; expectedRevision: number; idempotencyKey: string; credentials: Types.RepositoryCredentials | null };
-export type SettingsUpdateParams = { expectedRevision: number; update: Types.SettingsUpdate };
+export type SettingsUpdateParams = { expectedRevision: number; update: Types.SettingsUpdate; idempotencyKey: string };
 export type StateCheckParams = { idempotencyKey: string };
 export type SystemStatusResult = Types.SystemStatus;
 export type UnityInstallationIdParams = { installationId: string };
@@ -330,7 +330,7 @@ export interface NativeRpcMethods {
     "repositories.exportListFile": { params: RepositoryListExportParams; result: Types.RepositoryListExportResult };
     "repositories.get": { params: RepositoryIdParams; result: NativeRepositoryResult };
     "repositories.importListFile": { params: Types.RepositoryListImportParams; result: Types.RepositoryListImportResult };
-    "repositories.inspect": { params: RepositoryInspectParams; result: NativeRepositoryResult };
+    "repositories.inspect": { params: RepositoryInspectParams; result: NativeRepositoryResult & { previewId?: string } };
     "repositories.inspectListFile": { params: RepositoryListInspectParams; result: Types.RepositoryListInspection };
     "repositories.list": { params: RegistryListParams; result: NativeRepositoriesListResult };
     "repositories.move": { params: Types.RepositoryMoveParams; result: Types.RepositoryMoveResult };

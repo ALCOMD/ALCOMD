@@ -120,9 +120,10 @@
         "exportListFileParams": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["targetPath", "expectedFingerprint"],
+            "required": ["targetPath", "expectedFingerprint", "idempotencyKey"],
             "properties": {
                 "targetPath": {"$ref": "#/$defs/absolutePath"},
+                "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[\\u0000-\\u007f]+$"},
                 "expectedFingerprint": {"$ref": "#/$defs/fingerprint"},
                 "format": {"$ref": "#/$defs/format"}
             }

@@ -18,6 +18,7 @@ export function FrozenPlanDialog({ client, origin, onClose }: { client: GuiRpcCl
         { value: "project_unity_migration", label: t("Unity migration"), disabled: !useCapability(capabilities.projectsUnityMigration) },
         { value: "extension_install", label: t("Install extension"), disabled: !extensionLifecycle },
         { value: "extension_uninstall", label: t("Uninstall extension"), disabled: !extensionLifecycle },
+        { value: "repositoryRegistration", label: t("Add repository"), disabled: !useCapability(capabilities.repositoriesRead) },
     ] as const;
     const [kind, setKind] = useState<PlansGetParams["kind"]>(options.find((option) => !option.disabled)?.value ?? "package");
     const [id, setId] = useState("");

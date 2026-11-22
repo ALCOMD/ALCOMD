@@ -482,7 +482,7 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
 test("failed and cancelled Operations expose stable terminal states", async ({ page }) => {
     for (const state of ["failed", "cancelled"] as const) {
         await page.goto("/browser-harness.html?route=/operations&hold-core-operation=1");
-        const id = await page.evaluate(async () => (await window.fixtureCore.stateCheck()).operationId);
+        const id = await page.evaluate(async () => (await window.fixtureCore.stateCheck(crypto.randomUUID())).operationId);
         await page.evaluate(({ id, state }) => window.completeGuiTask(id, state), { id, state });
         await page.getByRole("row").filter({ hasText: "Check state" }).getByRole("button", { name: "View operation", exact: true }).click();
         const main = page.getByRole("main");

@@ -1,5 +1,6 @@
 /** Guards against opening a different effective Hub than the accepted settings evidence. */
 export interface UnityHubOpenParams {
+    idempotencyKey: string;
     expectedRevision: number;
     expectedTargetToken: string | null;
 }
