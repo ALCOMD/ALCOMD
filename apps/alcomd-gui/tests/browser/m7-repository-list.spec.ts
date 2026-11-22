@@ -234,6 +234,7 @@ test("package browsing groups versions and reads only the selected trailing pack
         { method: "openPackageLink", params: { url: "https://fixture.example/preview-docs" } },
         { method: "openPackageLink", params: { url: "https://fixture.example/preview-changelog" } }
     ]);
+    await page.evaluate(() => window.coreEvents.hold(true));
     const beforeRefresh = await page.evaluate(() => window.repositoryPackageRequests.length);
     const observed = await host.evaluateHandle((element) => {
         const result = { partial: false, observer: undefined as MutationObserver | undefined };
@@ -251,7 +252,17 @@ test("package browsing groups versions and reads only the selected trailing pack
     await observed.dispose();
     await host.getByRole("button", { name: "Back to packages", exact: true }).click();
     await expect(table.getByRole("button", { name: "Avatar tools", exact: true })).toBeFocused();
+    // Deliver the Core invalidation after the explicit refresh and return to the list.
+    const oldRow = await table.getByRole("button", { name: "Avatar tools", exact: true }).elementHandle();
+    expect(oldRow).not.toBeNull();
+    try {
+        await page.evaluate(() => window.coreEvents.hold(false));
+        await expect.poll(() => oldRow!.evaluate((element) => element.isConnected)).toBe(false);
+    } finally {
+        await oldRow?.dispose();
+    }
     await expect(table.locator("tbody tr")).toHaveCount(2);
+    expect(await page.evaluate(() => window.repositoryPackageRequests.some((request) => request.cursor?.packageId === "com.example.remote"))).toBe(false);
     await table.getByRole("button", { name: "Remote tools", exact: true }).click();
     await expect(host.getByRole("combobox", { name: "Version", exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.repositoryPackageRequests.at(-1)?.cursor?.packageId)).toBe("com.example.remote");
