@@ -1,4 +1,5 @@
 import type { BackupCreateParams, BackupRestoreParams } from "@alcomd/sdk";
+import type { PlansGetParams, PlansGetResult, ProjectSource, ProjectTarget } from "@alcomd/sdk";
 import type { ProjectsCreateParams, ProjectsCreateResult, ProjectTemplatesExportParams, ProjectTemplatesExportResult, ProjectTemplatesListResult, ProjectTemplatesSaveParams, ProjectTemplatesSaveResult, ProjectTemplatesRemoveParams, ProjectTemplatesRemoveResult } from "@alcomd/sdk";
 import type { LogsReadParams, LogsReadResult } from "@alcomd/sdk";
 import type { NativeRpcMethods } from "@alcomd/sdk";
@@ -36,6 +37,7 @@ export interface GuiRpcClient {
     clientsList(params: NativeRpcMethods["clients.list"]["params"]): Promise<NativeRpcMethods["clients.list"]["result"]>;
     clientInstancesList(params: NativeRpcMethods["clients.instances.list"]["params"]): Promise<NativeRpcMethods["clients.instances.list"]["result"]>;
     clientsDisconnect(params: NativeRpcMethods["clients.disconnect"]["params"]): Promise<NativeRpcMethods["clients.disconnect"]["result"]>;
+    getPlan(params: PlansGetParams): Promise<PlansGetResult>;
     readonly unityWindows?: GuiUnityWindows;
     subscribeEvents(request: GuiEventsRequest, receive: (message: GuiEventMessage) => void): Promise<GuiEventSubscription>;
     packageQueryProjectCandidates(params: ProjectCandidateRequest): Promise<ProjectCandidatePage>;
@@ -59,11 +61,11 @@ export interface GuiRpcClient {
     selectUnityHub(currentPath: string | null): Promise<string | undefined>;
     unityHubOpen(expectedRevision: number, expectedTargetToken: string | null): Promise<UnityHubOpenResult>;
     openUnityHubDownload(): Promise<void>;
-    projectRegister(path: string, idempotencyKey: string): Promise<ProjectWriteResult>;
-    projectRefresh(projectId: string, expectedRevision: number, idempotencyKey?: string): Promise<ProjectWriteResult>;
+    projectRegister(source: ProjectSource, idempotencyKey: string): Promise<ProjectWriteResult>;
+    projectRefresh(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectWriteResult>;
     projectSetFavorite(projectId: string, favorite: boolean, expectedRevision: number, idempotencyKey: string): Promise<ProjectWriteResult>;
     projectUnregister(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectUnregisterResult>;
-    projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string, idempotencyKey: string): Promise<ProjectsPlanCopyResult>;
+    projectPlanCopy(sourceProjectId: string, expectedRevision: number, target: ProjectTarget, idempotencyKey: string): Promise<ProjectsPlanCopyResult>;
     projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult>;
     projectPlanDeleteDirectory(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectsPlanDeleteDirectoryResult>;
     projectApplyDeleteDirectory(planId: string, expectedRevision: number): Promise<ProjectsApplyDeleteDirectoryResult>;
@@ -285,6 +287,9 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_settings_update", { params: { expectedRevision, update } });
     }
 
+    getPlan(params: PlansGetParams): Promise<PlansGetResult> {
+        return invokeTyped("gui_get_plan", { params });
+    }
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult> {
         return invokeTyped("gui_projects_inspect", { params: { path, discoveryMode } });
     }
@@ -317,11 +322,11 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_open_unity_hub_download", { params: { idempotencyKey: crypto.randomUUID() } });
     }
 
-    projectRegister(path: string, idempotencyKey: string): Promise<ProjectWriteResult> {
-        return invokeTyped("gui_project_register", { path, idempotencyKey });
+    projectRegister(source: ProjectSource, idempotencyKey: string): Promise<ProjectWriteResult> {
+        return invokeTyped("gui_project_register", { params: { source, idempotencyKey } });
     }
 
-    projectRefresh(projectId: string, expectedRevision: number, idempotencyKey: string = crypto.randomUUID()): Promise<ProjectWriteResult> {
+    projectRefresh(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectWriteResult> {
         return invokeTyped("gui_project_refresh", { projectId, expectedRevision, idempotencyKey });
     }
 
@@ -333,8 +338,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_project_unregister", { projectId, expectedRevision, idempotencyKey });
     }
 
-    projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string, idempotencyKey: string): Promise<ProjectsPlanCopyResult> {
-        return invokeTyped("gui_project_plan_copy", { params: { sourceProjectId, expectedRevision, targetParentPath, targetLeaf, idempotencyKey } });
+    projectPlanCopy(sourceProjectId: string, expectedRevision: number, target: ProjectTarget, idempotencyKey: string): Promise<ProjectsPlanCopyResult> {
+        return invokeTyped("gui_project_plan_copy", { params: { sourceProjectId, expectedRevision, target, idempotencyKey } });
     }
 
     projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult> {

@@ -16,7 +16,7 @@ test("Projects Create submits without a template and opens the registered projec
     await page.locator("md-dialog[open]").getByRole("button", { name: "Open project", exact: true }).click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/);
     expect(await page.evaluate(() => window.templateRequests)).toEqual([{
-        method: "projects.create", params: { name: "Created Project", targetParent: "C:\\Fixture\\Avatar", unityVersion: "2022.3.22f1", idempotencyKey: expect.any(String) }
+        method: "projects.create", params: { target: { kind: "absolute", parentPath: "C:\\Fixture\\Avatar", name: "Created Project" }, unityVersion: "2022.3.22f1", idempotencyKey: expect.any(String) }
     }]);
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await expect(page.getByRole("row").filter({ hasText: "Created Project" })).toBeVisible();

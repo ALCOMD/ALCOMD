@@ -289,6 +289,8 @@ export interface PackageActionSelection {
     includePrerelease?: boolean;
     allowUnityIncompatible?: boolean;
     intents?: import("./core-models").PackageBulkIntent[];
+    packageIds?: string[];
+    reinstallSources?: Array<{ packageId: string; source: PackageSourceSelector }>;
     candidateSnapshot?: string;
 }
 
@@ -327,9 +329,15 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
                 result = await client.packagePlanBulk({ projectId, expectedRevision: revision, intents: selection.intents });
             }
             else if (action === "remove") result = await client.packagePlanRemove({ projectId, expectedRevision: revision, packageId: selectedPackageId });
-            else if (action === "resolve") result = await client.packagePlanResolve({ projectId, expectedRevision: revision });
-            else if (action === "reinstall-all") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "all" } });
-            else if (action === "reinstall") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "packages", packageIds: [selectedPackageId] }, ...(selectedSource === undefined ? {} : { sources: [{ packageId: selectedPackageId, source: selectedSource }] }) });
+            else if (action === "resolve") result = await client.packagePlanResolve({ projectId, expectedRevision: revision, ...(includePrerelease === undefined ? {} : { includePrerelease }) });
+            else if (action === "reinstall-all" || action === "reinstall") {
+                const sources = selection?.reinstallSources ?? (selectedSource ? [{ packageId: selectedPackageId, source: selectedSource }] : undefined);
+                result = await client.packagePlanReinstall({
+                    projectId, expectedRevision: revision,
+                    selection: action === "reinstall-all" ? { kind: "all" } : { kind: "packages", packageIds: selection?.packageIds ?? [selectedPackageId] },
+                    ...(sources ? { sources } : {})
+                });
+            }
             else if (action === "downgrade") result = await client.packagePlanDowngrade({ projectId, expectedRevision: revision, packageId: selectedPackageId, version: selectedVersion, ...(allowUnityIncompatible ? { allowUnityIncompatible: true } : {}), ...(selectedSource === undefined ? {} : { source: selectedSource }) });
             else {
                 const params = { projectId, expectedRevision: revision, packageId: selectedPackageId, ...(includePrerelease === undefined ? {} : { includePrerelease }), ...(allowUnityIncompatible ? { allowUnityIncompatible: true } : {}), ...(selectedVersion.length === 0 ? {} : { versionRange: selectedVersion }), ...(selectedSource === undefined ? {} : { source: selectedSource }) };

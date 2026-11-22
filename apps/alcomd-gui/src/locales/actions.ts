@@ -2,6 +2,22 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Inspect project": { "zh-CN": "检查项目", "ja-JP": "プロジェクトを確認" },
+    "Relative to default project directory": { "zh-CN": "相对于默认项目目录", "ja-JP": "既定のプロジェクトディレクトリからの相対パス" },
+    "Look up plan": { "zh-CN": "查阅原计划", "ja-JP": "プランを照会" },
+    "Plan kind": { "zh-CN": "计划类型", "ja-JP": "プランの種類" },
+    "Upgrade": { "zh-CN": "升级", "ja-JP": "アップグレード" },
+    "Mixed package changes": { "zh-CN": "批量更改软件包", "ja-JP": "パッケージの一括変更" },
+    "Custom package plan": { "zh-CN": "自定义软件包计划", "ja-JP": "カスタムパッケージプラン" },
+    "Review package plan": { "zh-CN": "查看软件包计划", "ja-JP": "パッケージプランを確認" },
+    "Package action": { "zh-CN": "软件包操作", "ja-JP": "パッケージの操作" },
+    "Prerelease policy": { "zh-CN": "预发布版本选择", "ja-JP": "プレリリース版の選択" },
+    "Stable versions only": { "zh-CN": "仅稳定版", "ja-JP": "安定版のみ" },
+    "Include prerelease versions": { "zh-CN": "包含预发布版本", "ja-JP": "プレリリース版を含める" },
+    "Plan ID": { "zh-CN": "计划 ID", "ja-JP": "プラン ID" },
+    "Project directory deletion": { "zh-CN": "删除项目目录", "ja-JP": "プロジェクトディレクトリの削除" },
+    "Search parent folders": { "zh-CN": "查找上级目录", "ja-JP": "親フォルダーも検索" },
+    "Refresh project": { "zh-CN": "刷新项目", "ja-JP": "プロジェクトを更新" },
     "Enable extension": { "zh-CN": "启用扩展", "ja-JP": "拡張機能を有効化" },
     "Read active Unity sessions": { "zh-CN": "读取正在运行的 Unity 会话", "ja-JP": "実行中の Unity セッションを読み取る" },
     "Observe which registered projects are open in Unity.": { "zh-CN": "读取已在 Unity 中打开的登记项目。", "ja-JP": "Unity で開いている登録済みプロジェクトを確認します。" },

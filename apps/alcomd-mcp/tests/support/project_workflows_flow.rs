@@ -209,7 +209,16 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         .as_str()
         .expect("registered ID");
     assert!(owner.project_get(project_id.to_owned()).await.is_ok());
-    assert!(registered["project"].get("root_path").is_none());
+    let shared = owner
+        .project_get(project_id.to_owned())
+        .await
+        .expect("owner reads the same project")
+        .project;
+    assert_eq!(registered["project"]["root_path"], shared.root_path);
+    assert_eq!(
+        registered["project"]["favorite"],
+        serde_json::json!(shared.favorite)
+    );
     error(
         call(
             &sdk,
@@ -218,7 +227,7 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
             json!({
                 "source_project_id": project_id,
                 "expected_revision": registered["project"]["revision"],
-                "target": {"kind":"absolute","path":source},
+                "target": {"kind":"absolute","parent_path":source.parent().expect("fixture project parent"),"name":source.file_name().expect("fixture project name").to_str().expect("UTF-8 fixture name")},
                 "idempotency_key":"copy-existing-target"
             }),
         )

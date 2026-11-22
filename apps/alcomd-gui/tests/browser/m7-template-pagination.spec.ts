@@ -34,7 +34,7 @@ test("Projects can select template 101 and create the project returned by Core",
     await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveJSProperty("readOnly", true);
     await dialog.getByRole("button", { name: "Create project", exact: true }).click();
     expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "projects.create"))).toEqual([
-        { method: "projects.create", params: { template: { id: lastTemplateId, revision: 111 }, targetParent: "C:\\Fixture\\Avatar", name: "From page two", unityVersion: "2022.3.22f1", idempotencyKey: expect.any(String) } }
+        { method: "projects.create", params: { template: { id: lastTemplateId, revision: 111 }, target: { kind: "absolute", parentPath: "C:\\Fixture\\Avatar", name: "From page two" }, unityVersion: "2022.3.22f1", idempotencyKey: expect.any(String) } }
     ]);
     const completion = page.locator("md-dialog[open]").filter({ has: page.locator(".operation-follow") });
     await expect(completion.getByText("Task completed.", { exact: true })).toBeVisible();

@@ -6,23 +6,40 @@ use alcomd_application::{
 };
 use rusqlite::{Connection, params};
 
+fn catalog_owner(transaction: &Connection, caller: &PrincipalId) -> Result<PrincipalId, Error> {
+    use alcomd_application::Permission;
+    super::m8_workflows::require(
+        transaction,
+        caller,
+        &[
+            Permission::ProjectsRead,
+            Permission::RepositoriesRead,
+            Permission::PackagesRead,
+            Permission::SettingsRead,
+        ],
+    )
+    .map_err(|_| Error::PermissionDenied)?;
+    Ok(alcomd_application::workflow_resource_owner(caller))
+}
+
 pub(super) fn snapshot(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     project_id: ProjectId,
     ids: Option<Vec<String>>,
     settings: &alcomd_application::ConfigPackageSettings,
 ) -> Result<CandidateStoreSnapshot, Error> {
     // DEFERRED read transaction gives every registry read one SQLite snapshot. No writes.
     let transaction = connection.transaction().map_err(|_| Error::Unavailable)?;
-    let (project, authority) = read_authority(&transaction, owner, project_id, settings)?;
-    let entries = catalog_entries(&transaction, owner, ids, settings)?;
+    let owner = catalog_owner(&transaction, caller)?;
+    let (project, authority) = read_authority(&transaction, &owner, project_id, settings)?;
+    let entries = catalog_entries(&transaction, &owner, ids, settings)?;
     Ok(CandidateStoreSnapshot {
         project,
         entries,
         fingerprint_records: authority.fingerprint_records,
         catalog_complete: authority.catalog_complete,
-        source_metadata: source_metadata(&transaction, owner, settings)?,
+        source_metadata: source_metadata(&transaction, &owner, settings)?,
     })
 }
 
@@ -258,12 +275,13 @@ fn source_metadata(
 /// Revalidate a cached summary without loading any package version rows.
 pub(super) fn authority(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    caller: &PrincipalId,
     project_id: ProjectId,
     settings: &alcomd_application::ConfigPackageSettings,
 ) -> Result<CandidateStoreAuthority, Error> {
     let transaction = connection.transaction().map_err(|_| Error::Unavailable)?;
-    let (_, authority) = read_authority(&transaction, owner, project_id, settings)?;
+    let owner = catalog_owner(&transaction, caller)?;
+    let (_, authority) = read_authority(&transaction, &owner, project_id, settings)?;
     Ok(authority)
 }
 

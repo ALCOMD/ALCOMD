@@ -729,8 +729,8 @@ project revision、canonical exact version、permission 与永久 idempotency。
 
 ## 20. M7 新建项目与模板声明
 
-Core 通过 `projects.create.v1` 发布 `projects.create`。已认证的本机所有者持有 `projects.create` 权限时可提交
-`{name,targetParent,unityVersion,idempotencyKey}`，并获得持久任务和预分配项目
+Core 通过 `projects.create.v1` 发布 `projects.create`。已认证的调用者持有 `projects.create` 权限时可提交
+`{target,unityVersion,idempotencyKey}`，并获得持久任务和预分配项目
 `{operationId,projectId,replayed}`。完整 Unity Editor 版本不要求已安装。同一 owner、方法和幂等键下，
 相同请求返回原任务，不同请求返回 `idempotency_conflict`。成功的任务结果包含 `projectId`。
 Core 校验目标父目录的身份，只向不存在的目标发布，并在同一事务登记项目、完成任务和写入事件。
@@ -761,10 +761,7 @@ Core 校验目标父目录的身份，只向不存在的目标发布，并在同
 
 ### MCP project and backup workflows
 
-The current MCP workflow capability is `mcp.project-workflows.v1`. Project registration,
-creation and copy accept absolute paths on the Core host. Copy retains its Plan/Apply and
-confirmation contract. Each accepted write binds the authenticated principal and checks the
-current business permissions again on replay. [MCP workflow Schema](mcp-project-workflows-v1.schema.json)
+All clients call `projects.register` with a tagged source: a path relative to the configured project directory or an absolute project path. `projects.create` and `projects.planCopy` accept a tagged destination under the default directory, or an absolute parent directory and a separate leaf name. Core validates each leaf, binds the actual directory identity, and rechecks it before writing. Registration returns its original project snapshot on replay and copy planning returns its original immutable plan. Retries use the original arguments and key even if the configured directory changes or the source disappears. Core checks the caller’s authority on each replay. [Project path definitions](m3-project-repository.schema.json)
 
 ## 21. Unity project ZIP
 

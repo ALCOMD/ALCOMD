@@ -239,30 +239,6 @@ impl AlcomdClient {
             .await
     }
 
-    pub async fn mcp_project_create(
-        &mut self,
-        params: alcomd_protocol::McpProjectsCreateParams,
-    ) -> Result<alcomd_protocol::ProjectsCreateResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_MCP_PROJECTS_CREATE, params)
-            .await
-    }
-
-    pub async fn mcp_project_register(
-        &mut self,
-        params: alcomd_protocol::McpProjectsRegisterParams,
-    ) -> Result<alcomd_protocol::McpProjectsRegisterResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_MCP_PROJECTS_REGISTER, params)
-            .await
-    }
-
-    pub async fn mcp_project_plan_copy(
-        &mut self,
-        params: alcomd_protocol::McpProjectsPlanCopyParams,
-    ) -> Result<alcomd_protocol::McpProjectsCopyPlan, ClientError> {
-        self.call(alcomd_protocol::METHOD_MCP_PROJECTS_PLAN_COPY, params)
-            .await
-    }
-
     pub async fn mcp_client_request_create(
         &mut self,
         params: alcomd_protocol::McpClientRequestCreateParams,
@@ -404,7 +380,6 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_TEMPLATE_EDIT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),
@@ -1152,17 +1127,10 @@ impl AlcomdClient {
 
     pub async fn project_register(
         &mut self,
-        path: String,
-        idempotency_key: String,
+        params: alcomd_protocol::ProjectRegisterParams,
     ) -> Result<alcomd_protocol::ProjectWriteResult, ClientError> {
-        self.call(
-            alcomd_protocol::METHOD_PROJECTS_REGISTER,
-            alcomd_protocol::ProjectRegisterParams {
-                path,
-                idempotency_key,
-            },
-        )
-        .await
+        self.call(alcomd_protocol::METHOD_PROJECTS_REGISTER, params)
+            .await
     }
 
     pub async fn project_refresh(

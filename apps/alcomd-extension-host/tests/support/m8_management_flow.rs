@@ -1237,18 +1237,22 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         .expect("VPM");
     }
     let project = client
-        .project_register(
-            first.to_string_lossy().into_owned(),
-            "management-project".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: first.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "management-project".into(),
+        })
         .await
         .expect("register disposable project")
         .project;
     let outside = client
-        .project_register(
-            second.to_string_lossy().into_owned(),
-            "management-outside".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: second.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "management-outside".into(),
+        })
         .await
         .expect("register outside fixture")
         .project;

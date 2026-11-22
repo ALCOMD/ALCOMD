@@ -205,7 +205,7 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
     ) -> Result<(String, Vec<u8>), ProjectCreateError> {
         validate_leaf(&input.name)?;
         let requested = Path::new(&input.target_parent);
-        let (parent, identity) = alcomd_platform::resolve_directory_identity(requested)
+        let (parent, identity) = alcomd_platform::resolve_plain_project_directory(requested)
             .map_err(|cause| invalid().with_source(cause).with_path(&input.target_parent))?;
         ensure_absent(&parent.join(&input.name))?;
         let parent = parent.to_str().ok_or_else(invalid)?.to_owned();
@@ -561,7 +561,7 @@ fn stage_container(id: OperationId, work: &ProjectCreateWork) -> PathBuf {
 fn verify_parent(work: &ProjectCreateWork) -> Result<(), ProjectCreateError> {
     validate_leaf(&work.input.name)?;
     let path = Path::new(&work.canonical_parent);
-    let (resolved, identity) = alcomd_platform::resolve_directory_identity(path)
+    let (resolved, identity) = alcomd_platform::resolve_plain_project_directory(path)
         .map_err(|cause| destination_changed(path).with_source(cause))?;
     if resolved != path || identity != work.parent_identity {
         return Err(destination_changed(path));

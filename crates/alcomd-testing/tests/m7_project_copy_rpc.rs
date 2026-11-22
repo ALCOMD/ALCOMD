@@ -168,6 +168,7 @@ async fn project_copy_plan_expiry_and_all_writer_states_are_fail_closed() {
                 project.revision,
                 copy_destination(&destination, format!("WriterState{index}")),
                 key(&format!("m7-copy-writer-{index}")),
+                r#"{"fixture":true}"#.into(),
             )
             .await
             .expect("advisory writer state permits bounded Plan");
@@ -188,6 +189,7 @@ async fn project_copy_plan_expiry_and_all_writer_states_are_fail_closed() {
         project.revision,
         different_parent,
         key("copy-changed-parent"),
+        r#"{"fixture":true}"#.into(),
     )
     .await
     .expect_err("the same checked parent must survive planning");
@@ -205,6 +207,7 @@ async fn project_copy_plan_expiry_and_all_writer_states_are_fail_closed() {
         project.revision,
         copy_destination(&destination, "RunningConfirmed".to_owned()),
         key("m7-copy-writer-confirmed"),
+        r#"{"fixture":true}"#.into(),
     )
     .await
     .expect_err("confirmed Unity writer must reject Copy");
@@ -230,7 +233,7 @@ async fn project_copy_plan_expiry_and_all_writer_states_are_fail_closed() {
     let plan_id = draft.plan_id;
     let expires_at = draft.expires_at_ms;
     store
-        .create_project_copy_plan(PrincipalId::local_owner(), draft)
+        .create_project_copy_plan(PrincipalId::local_owner(), draft, "fixture-request".into())
         .await
         .expect("persist expiry fixture");
     let expired = store
@@ -279,6 +282,7 @@ async fn project_copy_apply_rechecks_confirmed_writer_without_publishing_or_acce
         project.revision,
         copy_destination(&destination, "MustNotPublish".into()),
         key("copy-writer-recheck-plan"),
+        r#"{"fixture":true}"#.into(),
     )
     .await
     .expect("plan before writer starts")
@@ -339,10 +343,12 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
     let registered = await_rpc(
         trace,
         "project-register-rpc",
-        client.project_register(
-            source.to_string_lossy().into_owned(),
-            "m7-copy-register".to_owned(),
-        ),
+        client.project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: source.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "m7-copy-register".to_owned(),
+        }),
     )
     .await
     .expect("register source");
@@ -381,10 +387,12 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
         trace,
         "project-copy-plan-rpc",
         client.project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
+            target: alcomd_protocol::ProjectTarget::Absolute {
+                parent_path: destination.to_string_lossy().into_owned(),
+                name: "CopiedProject".to_owned(),
+            },
             source_project_id: source_id.clone(),
             expected_revision: 1,
-            target_parent_path: destination.to_string_lossy().into_owned(),
-            target_leaf: "CopiedProject".to_owned(),
             idempotency_key: "m7-copy-plan".to_owned(),
         }),
     )
@@ -488,10 +496,12 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
         trace,
         "project-copy-missing-source-rpc",
         client.project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
+            target: alcomd_protocol::ProjectTarget::Absolute {
+                parent_path: destination.to_string_lossy().into_owned(),
+                name: "MissingSourceCopy".to_owned(),
+            },
             source_project_id: source_id.clone(),
             expected_revision: 1,
-            target_parent_path: destination.to_string_lossy().into_owned(),
-            target_leaf: "MissingSourceCopy".to_owned(),
             idempotency_key: "m7-copy-missing-source".to_owned(),
         }),
     )
@@ -572,10 +582,12 @@ async fn concurrent_copy_plans_for_the_same_target_publish_exactly_once() {
     let registered = await_rpc(
         trace,
         "project-register-rpc",
-        first.project_register(
-            source.to_string_lossy().into_owned(),
-            "m7-copy-race-register".to_owned(),
-        ),
+        first.project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: source.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "m7-copy-race-register".to_owned(),
+        }),
     )
     .await
     .expect("register source");
@@ -584,10 +596,12 @@ async fn concurrent_copy_plans_for_the_same_target_publish_exactly_once() {
         trace,
         "project-copy-plan-rpc",
         first.project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
+            target: alcomd_protocol::ProjectTarget::Absolute {
+                parent_path: destination.to_string_lossy().into_owned(),
+                name: "SameTarget".to_owned(),
+            },
             source_project_id: source_project_id.clone(),
             expected_revision: 1,
-            target_parent_path: destination.to_string_lossy().into_owned(),
-            target_leaf: "SameTarget".to_owned(),
             idempotency_key: "m7-copy-race-plan-a".to_owned(),
         }),
     )
@@ -597,10 +611,12 @@ async fn concurrent_copy_plans_for_the_same_target_publish_exactly_once() {
         trace,
         "project-copy-plan-rpc",
         second.project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
+            target: alcomd_protocol::ProjectTarget::Absolute {
+                parent_path: destination.to_string_lossy().into_owned(),
+                name: "SameTarget".to_owned(),
+            },
             source_project_id,
             expected_revision: 1,
-            target_parent_path: destination.to_string_lossy().into_owned(),
-            target_leaf: "SameTarget".to_owned(),
             idempotency_key: "m7-copy-race-plan-b".to_owned(),
         }),
     )
@@ -820,10 +836,12 @@ fn subprocess_runs_project_copy_until_parent_kills_it() {
         let registered = await_rpc(
             trace,
             "project-register-rpc",
-            client.project_register(
-                source.to_string_lossy().into_owned(),
-                "m7-copy-kill-register".to_owned(),
-            ),
+            client.project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute {
+                    path: source.to_string_lossy().into_owned(),
+                },
+                idempotency_key: "m7-copy-kill-register".to_owned(),
+            }),
         )
         .await
         .expect("register source");
@@ -831,10 +849,12 @@ fn subprocess_runs_project_copy_until_parent_kills_it() {
             trace,
             "project-copy-plan-rpc",
             client.project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
+                target: alcomd_protocol::ProjectTarget::Absolute {
+                    parent_path: destination.to_string_lossy().into_owned(),
+                    name: "CopiedProject".to_owned(),
+                },
                 source_project_id: registered.project.project_id.expect("source ID"),
                 expected_revision: 1,
-                target_parent_path: destination.to_string_lossy().into_owned(),
-                target_leaf: "CopiedProject".to_owned(),
                 idempotency_key: "m7-copy-kill-plan".to_owned(),
             }),
         )

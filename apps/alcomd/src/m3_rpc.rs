@@ -131,25 +131,6 @@ pub(super) async fn dispatch(
                 Err(error) => m3_error(request.id, error),
             }
         }
-        rpc::METHOD_PROJECTS_REGISTER => {
-            require!(request, state, rpc::CAPABILITY_PROJECTS_REGISTRY_V1);
-            let params: rpc::ProjectRegisterParams = parse!(request);
-            let key = key!(request, params.idempotency_key);
-            match application.register_project(access, params.path, key).await {
-                Ok(value) => {
-                    let project = application.project_directory_view(value.value).await;
-                    success_action(
-                        request.id,
-                        rpc::ProjectWriteResult {
-                            project: project_directory_record(project),
-                            replayed: value.replayed,
-                        },
-                        None,
-                    )
-                }
-                Err(error) => m3_error(request.id, error),
-            }
-        }
         rpc::METHOD_PROJECTS_REFRESH => {
             require!(request, state, rpc::CAPABILITY_PROJECTS_REGISTRY_V1);
             let params: rpc::ProjectMutationParams = parse!(request);
@@ -609,7 +590,7 @@ fn project_directory_record(value: app::ProjectDirectoryView) -> rpc::ProjectSna
     snapshot
 }
 
-fn project_record(value: app::ProjectRecord) -> rpc::ProjectSnapshot {
+pub(super) fn project_record(value: app::ProjectRecord) -> rpc::ProjectSnapshot {
     project_snapshot(
         Some(value.project_id.to_string()),
         Some(value.registered_at_ms),

@@ -162,10 +162,12 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
             .any(|c| c == "packages.candidates.v1")
     );
     let registered = client
-        .project_register(
-            project.to_string_lossy().into_owned(),
-            "candidate-project".to_owned(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: project.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "candidate-project".to_owned(),
+        })
         .await
         .expect("register project");
     let project_id = registered.project.project_id.expect("project ID");

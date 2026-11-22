@@ -51,5 +51,5 @@ test("catalog changes invalidate a selected revision until the user reselects", 
     await page.locator("md-dialog[open]").getByRole("button", { name: "Open project", exact: true }).click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/);
     expect(await page.evaluate(() => window.templateRequests.find(({ method }) => method === "projects.create")?.params))
-        .toMatchObject({ name: "Selected again", template: { id: "com.example.fixture", revision: 9 } });
+        .toMatchObject({ target: { kind: "default", name: "Selected again" }, template: { id: "com.example.fixture", revision: 9 } });
 });

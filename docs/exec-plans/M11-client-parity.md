@@ -16,4 +16,8 @@
 
 ## 实施状态
 
+项目登记、创建和复制预演统一使用 `projects.register`、`projects.create` 和 `projects.planCopy`。三端向 Core 传递默认目录或绝对路径，登记重试返回第一次登记时的项目快照。此项首发合同修订会中断依赖专用 MCP 原生方法或旧目标结构的开发客户端，需更新到当前 SDK。
+
+项目菜单提供检查、刷新及按 ID 查阅原计划。软件包工作区支持混合意图、版本范围、来源和预发布策略；CLI 和 MCP 可查询原生候选视图及本地用户包。模板与备份选择的文件仍以 Core 主机上的路径提交。三端入口及调用差异见[操作矩阵](M11-client-operation-matrix.md)，具体请求见[GUI 场景](../../apps/alcomd-gui/tests/browser/project-catalog-parity.spec.ts)和[MCP 场景](../../apps/alcomd-mcp/tests/support/project_catalog_parity.rs)。
+
 所有者已核定[原生客户端合同差异](M11-native-client-contract-review.md)和[扩展入口合同差异及删除路径](M11-extension-entry-contract-review.md)，并核定使用已有 Core 用例补齐具名 MCP 工具。矩阵中“已提供”记录静态可达性，“已验证”须链接验收证据。每个服务操作也逐方法登记；系统文件选择、扩展可移植界面、OAuth 协议参与方等具体差异分别登记到对应行。未验收条目保留实际状态。

@@ -755,20 +755,20 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<SyncWrite<ProjectRecord>, M3Error>> + Send;
-    fn replay_mcp_project_registration(
+    fn replay_project_registration(
         &self,
         caller: PrincipalId,
         fingerprint: String,
         key: IdempotencyKey,
-    ) -> impl Future<Output = Result<Option<SyncWrite<McpRegisteredProject>>, M3Error>> + Send;
-    fn register_mcp_project(
+    ) -> impl Future<Output = Result<Option<SyncWrite<ProjectRecord>>, M3Error>> + Send;
+    fn register_project_receipt(
         &self,
         caller: PrincipalId,
         observation: ProjectObservation,
         fingerprint: String,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> impl Future<Output = Result<SyncWrite<McpRegisteredProject>, M3Error>> + Send;
+    ) -> impl Future<Output = Result<SyncWrite<ProjectRecord>, M3Error>> + Send;
     fn list_oauth_projects(
         &self,
         _principal: PrincipalId,
@@ -1838,10 +1838,24 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         }
     }
 
+    pub async fn replay_project_registration(
+        &self,
+        access: &AccessContext,
+        fingerprint: String,
+        key: IdempotencyKey,
+    ) -> Result<Option<SyncWrite<ProjectRecord>>, M3Error> {
+        require_m3(access, Permission::ProjectsManage)?;
+        self.store
+            .replay_project_registration(access.principal().clone(), fingerprint, key)
+            .await
+    }
+
     pub async fn register_project(
         &self,
         access: &AccessContext,
         path: String,
+        expected_identity: Vec<u8>,
+        fingerprint: String,
         key: IdempotencyKey,
     ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         require_m3(access, Permission::ProjectsManage)?;
@@ -1854,63 +1868,23 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             |error| error.technical_path().map(str::to_owned),
         )
         .await?;
+        if observation.path_identity_key != expected_identity {
+            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+        }
         let target = log_path("project", observation.root_path.clone());
         log_transaction_step(
             "projects.register",
             "registered",
             Some(target),
-            self.store.register_project(
-                access.principal().clone(),
-                observation,
-                key,
-                m3_time_ms()?,
-            ),
-        )
-        .await
-    }
-
-    pub async fn replay_mcp_project_registration(
-        &self,
-        access: &AccessContext,
-        fingerprint: String,
-        key: IdempotencyKey,
-    ) -> Result<Option<SyncWrite<McpRegisteredProject>>, M3Error> {
-        require_m3(access, Permission::ProjectsManage)?;
-        self.store
-            .replay_mcp_project_registration(access.principal().clone(), fingerprint, key)
-            .await
-    }
-
-    pub async fn register_mcp_project(
-        &self,
-        access: &AccessContext,
-        path: String,
-        expected_identity: Vec<u8>,
-        fingerprint: String,
-        key: IdempotencyKey,
-    ) -> Result<SyncWrite<McpRegisteredProject>, M3Error> {
-        require_m3(access, Permission::ProjectsManage)?;
-        let observation = log_execution_step(
-            "mcp.projects.register",
-            "inspect_project",
-            Some(log_path("project", path.clone())),
-            self.reader
-                .inspect_project(path, ProjectDiscoveryMode::ExactRoot),
-            |error| error.technical_path().map(str::to_owned),
-        )
-        .await?;
-        if observation.path_identity_key != expected_identity {
-            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
-        }
-        self.store
-            .register_mcp_project(
+            self.store.register_project_receipt(
                 access.principal().clone(),
                 observation,
                 fingerprint,
                 key,
                 m3_time_ms()?,
-            )
-            .await
+            ),
+        )
+        .await
     }
 
     pub async fn refresh_project(

@@ -23,6 +23,8 @@ mod oauth_flow;
 mod package_catalog_flow;
 #[path = "support/project_assets_flow.rs"]
 mod project_assets_flow;
+#[path = "support/project_catalog_parity.rs"]
+mod project_catalog_parity;
 #[path = "support/project_workflows_flow.rs"]
 mod project_workflows_flow;
 
@@ -857,28 +859,42 @@ async fn package_removal_flow(http: bool) {
     project(&cancel, false);
     project(&detached, false);
     let first = owner
-        .project_register(p.to_string_lossy().into_owned(), "register-one".into())
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: p.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "register-one".into(),
+        })
         .await
         .expect("register")
         .project;
     let risk_record = owner
-        .project_register(risk.to_string_lossy().into_owned(), "register-risk".into())
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: risk.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "register-risk".into(),
+        })
         .await
         .expect("register risk")
         .project;
     let cancel_record = owner
-        .project_register(
-            cancel.to_string_lossy().into_owned(),
-            "register-cancel".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: cancel.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "register-cancel".into(),
+        })
         .await
         .expect("register cancellation")
         .project;
     let detached_record = owner
-        .project_register(
-            detached.to_string_lossy().into_owned(),
-            "register-detached".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: detached.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "register-detached".into(),
+        })
         .await
         .expect("register detached")
         .project;
@@ -1445,7 +1461,12 @@ async fn transport_risks(http: bool) {
         let directory = root.join(name);
         project(&directory, false);
         let snapshot = owner
-            .project_register(directory.to_string_lossy().into_owned(), name.into())
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute {
+                    path: directory.to_string_lossy().into_owned(),
+                },
+                idempotency_key: name.into(),
+            })
             .await
             .expect("isolated registration")
             .project;

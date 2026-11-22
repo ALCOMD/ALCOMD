@@ -174,6 +174,20 @@ async fn gui_settings_update(
 }
 
 #[tauri::command]
+async fn gui_get_plan(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::PlansGetParams,
+) -> Result<alcomd_protocol::PlansGetResult, RpcError> {
+    let mut client = state.reads.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.get_plan(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
 async fn gui_projects_inspect(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectsInspectParams,
@@ -654,13 +668,12 @@ fn validated_registered_project_root(root_path: &str) -> Result<std::path::PathB
 #[tauri::command]
 async fn gui_project_register(
     state: State<'_, GuiClientState>,
-    path: String,
-    idempotency_key: String,
+    params: alcomd_protocol::ProjectRegisterParams,
 ) -> Result<alcomd_protocol::ProjectWriteResult, RpcError> {
     let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.project_register(path, idempotency_key).await,
+        Some(client) => client.project_register(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -1816,6 +1829,7 @@ pub fn run() {
             events::gui_events_ack,
             events::gui_events_cancel,
             gui_projects_inspect,
+            gui_get_plan,
             gui_projects_list,
             gui_project_get,
             gui_open_project_directory,

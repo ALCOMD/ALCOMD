@@ -559,7 +559,7 @@ fn workspace(
 
 fn verify_target_parent(plan: &ProjectCopyPlanRecord) -> Result<PathBuf, M7CopyError> {
     let expected = Path::new(&plan.draft.target_parent_path);
-    let (parent, identity) = alcomd_platform::resolve_plain_storage_directory(expected)
+    let (parent, identity) = alcomd_platform::resolve_plain_project_directory(expected)
         .map_err(|cause| target_error().with_source(cause))?;
     if parent != expected || identity != plan.draft.target_parent_identity {
         return Err(error(M7CopyErrorCode::ProjectCopyPlanStale));

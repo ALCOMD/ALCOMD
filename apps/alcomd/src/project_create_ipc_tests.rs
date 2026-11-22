@@ -33,7 +33,7 @@ async fn completed(store: &StateStoreHandle, accepted: &Value) -> app::Operation
     let id = OperationId::parse(
         accepted["result"]["operationId"]
             .as_str()
-            .expect("operation ID"),
+            .unwrap_or_else(|| panic!("expected accepted operation, received {accepted}")),
     )
     .expect("valid operation ID");
     let mut commits = store.event_commits();
@@ -124,6 +124,7 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
     let client = ClientOptions::new().open(&pipe).expect("private client");
     server.connect().await.expect("accept private client");
     let hello_store = store.clone();
+    let configured_directory = root.clone();
     let task = tokio::spawn(async move {
         let mut stream = IpcStream::Server(server);
         let mut state = ConnectionState {
@@ -151,6 +152,15 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
                 crate::dispatch_hello(request, &state, &hello_store).await
             } else if !state.handshake_complete {
                 error_action(Some(request.id), rpc::RpcError::handshake_required(), false)
+            } else if request.method == rpc::METHOD_PROJECTS_CREATE {
+                crate::project_paths_rpc::dispatch_create(
+                    request,
+                    &state,
+                    &application,
+                    &AccessContext::local_owner(),
+                    async { Ok(configured_directory.clone()) },
+                )
+                .await
             } else {
                 dispatch(request, &state, &application, &AccessContext::local_owner()).await
             };
@@ -173,7 +183,7 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
     let hello = exchange(&mut client, "hello", rpc::METHOD_SYSTEM_HELLO, json!({
         "rpcVersion": 1,
         "client": {"name":"alcomd-cli","version":"test","instanceId":"isolated"},
-        "capabilities": [rpc::CAPABILITY_PROJECTS_CREATE_V1,rpc::CAPABILITY_PROJECT_TEMPLATES_V1,"templates.read.v1"],
+        "capabilities": [rpc::CAPABILITY_PROJECTS_CREATE_V1,rpc::CAPABILITY_PROJECT_TEMPLATES_V1,"unregistered.fixture"],
     })).await;
     assert_eq!(
         hello["result"]["capabilities"],
@@ -182,8 +192,8 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
             rpc::CAPABILITY_PROJECTS_CREATE_V1
         ])
     );
-    let old = exchange(&mut client, "old", "templates.list", json!({})).await;
-    assert_eq!(old["error"]["code"], "method_not_found");
+    let unknown = exchange(&mut client, "unknown", "unregistered.fixture", json!({})).await;
+    assert_eq!(unknown["error"]["code"], "method_not_found");
 
     let catalog = exchange(
         &mut client,
@@ -262,7 +272,7 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
         &mut client,
         "create-from-template",
         rpc::METHOD_PROJECTS_CREATE,
-        json!({"name":"From archive","targetParent":root,"unityVersion":"2022.3.22f1","idempotencyKey":"archive-create",
+        json!({"target":{"kind":"absolute","parentPath":root,"name":"From archive"},"unityVersion":"2022.3.22f1","idempotencyKey":"archive-create",
             "template":{"id":custom["id"],"revision":custom["revision"]}}),
     ).await;
     assert_eq!(
@@ -329,7 +339,7 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
         std::fs::read(&archive).expect("read the source template archive")
     );
 
-    let mut params = json!({"name":"Created IPC","targetParent":root.to_string_lossy(),"idempotencyKey":"isolated-create"});
+    let mut params = json!({"target":{"kind":"absolute","parentPath":root.to_string_lossy(),"name":"Created IPC"},"idempotencyKey":"isolated-create"});
     let missing = exchange(
         &mut client,
         "missing-version",

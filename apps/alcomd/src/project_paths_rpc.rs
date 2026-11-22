@@ -1,8 +1,14 @@
+//! Shared native project paths, including the configured project directory.
 use alcomd_application as app;
 use alcomd_protocol as rpc;
 use std::path::{Component, Path, PathBuf};
 
 use super::{Applications, ConnectionState, DispatchAction, error_action, invalid, success_action};
+
+fn request_fingerprint(value: &impl serde::Serialize) -> Result<String, serde_json::Error> {
+    use sha2::{Digest, Sha256};
+    serde_json::to_string(&app::oauth_hex(&Sha256::digest(serde_json::to_vec(value)?)))
+}
 
 fn ordinary_leaf(name: &str) -> bool {
     !name.is_empty()
@@ -15,7 +21,7 @@ fn ordinary_leaf(name: &str) -> bool {
 fn absolute_path(text: &str) -> Result<PathBuf, rpc::RpcError> {
     let path = Path::new(text);
     if !path.is_absolute()
-        || text.len() > 4096
+        || text.len() > 32_768
         || text.chars().any(char::is_control)
         || path
             .components()
@@ -45,7 +51,7 @@ async fn resolve(
     leaf: String,
 ) -> Result<app::ProjectDestination, rpc::RpcError> {
     tokio::task::spawn_blocking(move || {
-        let (parent, identity) = alcomd_platform::resolve_plain_storage_directory(&directory)
+        let (parent, identity) = alcomd_platform::resolve_plain_project_directory(&directory)
             .map_err(|_| rpc::RpcError::permission_denied())?;
         Ok(app::ProjectDestination {
             parent,
@@ -67,63 +73,57 @@ pub(super) async fn dispatch(
     apps: &Applications,
     access: &app::AccessContext,
 ) -> DispatchAction {
-    if let Some(error) =
-        super::require_capability(&request.id, state, rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1)
-    {
+    let capability = match request.method.as_str() {
+        rpc::METHOD_PROJECTS_REGISTER => rpc::CAPABILITY_PROJECTS_REGISTRY_V1,
+        rpc::METHOD_PROJECTS_CREATE => {
+            return dispatch_create(
+                request,
+                state,
+                &apps.project_create,
+                access,
+                default_directory(apps),
+            )
+            .await;
+        }
+        rpc::METHOD_PROJECTS_PLAN_COPY => rpc::CAPABILITY_PROJECTS_COPY_V1,
+        _ => return error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
+    };
+    if let Some(error) = super::require_capability(&request.id, state, capability) {
         return error;
     }
     let id = request.id;
-    let Ok(authentication) = super::m8_tools_rpc::auth(state, access) else {
-        return error_action(Some(id), rpc::RpcError::permission_denied(), false);
-    };
-    app::with_workflow_authentication(
-        authentication,
-        app::with_log_caller(apps.store.clone(), access, async {
-            match request.method.as_str() {
-                rpc::METHOD_MCP_PROJECTS_REGISTER => {
-                    let Ok(params) = serde_json::from_value(request.params) else {
-                        return invalid(id);
-                    };
-                    register(id, apps, access, params).await
-                }
-                rpc::METHOD_MCP_PROJECTS_CREATE => {
-                    let Ok(params) = serde_json::from_value(request.params) else {
-                        return invalid(id);
-                    };
-                    create(id, apps, access, params).await
-                }
-                rpc::METHOD_MCP_PROJECTS_PLAN_COPY => {
-                    let Ok(params) = serde_json::from_value(request.params) else {
-                        return invalid(id);
-                    };
-                    plan_copy(id, apps, access, params).await
-                }
-                _ => error_action(Some(id), rpc::RpcError::method_not_found(), false),
-            }
-        }),
-    )
-    .await
+    match request.method.as_str() {
+        rpc::METHOD_PROJECTS_REGISTER => {
+            let Ok(params) = serde_json::from_value(request.params) else {
+                return invalid(id);
+            };
+            register(id, apps, access, params).await
+        }
+        rpc::METHOD_PROJECTS_PLAN_COPY => {
+            let Ok(params) = serde_json::from_value(request.params) else {
+                return invalid(id);
+            };
+            plan_copy(id, apps, access, params).await
+        }
+        _ => unreachable!(),
+    }
 }
 
 async fn register(
     id: String,
     apps: &Applications,
     access: &app::AccessContext,
-    params: rpc::McpProjectsRegisterParams,
+    params: rpc::ProjectRegisterParams,
 ) -> DispatchAction {
     let Ok(key) = app::IdempotencyKey::parse(params.idempotency_key.clone()) else {
         return invalid(id);
     };
-    let Ok(encoded) = serde_json::to_string(&params) else {
+    let Ok(fingerprint) = request_fingerprint(&params) else {
         return invalid(id);
     };
-    let fingerprint = format!(
-        "\"{}\"",
-        app::oauth_hex(&app::mcp_credential_hash(&encoded))
-    );
     match apps
         .m3
-        .replay_mcp_project_registration(access, fingerprint.clone(), key.clone())
+        .replay_project_registration(access, fingerprint.clone(), key.clone())
         .await
     {
         Ok(Some(outcome)) => return registration_action(id, Ok(outcome)),
@@ -131,7 +131,7 @@ async fn register(
         Err(error) => return super::m3_rpc::m3_error(id, error),
     }
     let resolved = match params.source {
-        rpc::McpProjectSource::Default { relative_path } => {
+        rpc::ProjectSource::Default { relative_path } => {
             if relative_path.len() > 4096 || !relative_path.split(['/', '\\']).all(ordinary_leaf) {
                 return invalid(id);
             }
@@ -154,7 +154,7 @@ async fn register(
                 Err(error) => Err(error),
             }
         }
-        rpc::McpProjectSource::Absolute { path } => {
+        rpc::ProjectSource::Absolute { path } => {
             let path = match absolute_path(&path) {
                 Ok(path) => path,
                 Err(error) => return error_action(Some(id), error, false),
@@ -170,61 +170,67 @@ async fn register(
     registration_action(
         id,
         apps.m3
-            .register_mcp_project(access, path, destination.identity, fingerprint, key)
+            .register_project(access, path, destination.identity, fingerprint, key)
             .await,
     )
 }
 
 fn registration_action(
     id: String,
-    result: Result<app::SyncWrite<app::McpRegisteredProject>, app::M3Error>,
+    result: Result<app::SyncWrite<app::ProjectRecord>, app::M3Error>,
 ) -> DispatchAction {
     match result {
-        Ok(value) => match serde_json::to_value(value.value).and_then(serde_json::from_value) {
-            Ok(project) => success_action(
+        Ok(value) => {
+            let mut project = super::m3_rpc::project_record(value.value);
+            project.directory_state = Some(rpc::ProjectDirectoryState::Available);
+            success_action(
                 id,
-                rpc::McpProjectsRegisterResult {
+                rpc::ProjectWriteResult {
                     project,
                     replayed: value.replayed,
                 },
                 None,
-            ),
-            Err(_) => error_action(
-                Some(id),
-                rpc::RpcError::internal(app::OperationId::new().to_string()),
-                false,
-            ),
-        },
+            )
+        }
         Err(error) => super::m3_rpc::m3_error(id, error),
     }
 }
 
-async fn create(
-    id: String,
-    apps: &Applications,
+pub(super) async fn dispatch_create(
+    request: rpc::RequestEnvelope,
+    state: &ConnectionState,
+    application: &super::ProjectCreateApplication,
     access: &app::AccessContext,
-    params: rpc::McpProjectsCreateParams,
+    default_parent: impl Future<Output = Result<PathBuf, rpc::RpcError>>,
 ) -> DispatchAction {
+    let id = request.id;
+    if let Some(error) = super::require_capability(&id, state, rpc::CAPABILITY_PROJECTS_CREATE_V1) {
+        return error;
+    }
+    let Ok(params) = serde_json::from_value::<rpc::ProjectsCreateParams>(request.params) else {
+        return invalid(id);
+    };
+    if params.template.is_some()
+        && let Some(error) =
+            super::require_capability(&id, state, rpc::CAPABILITY_PROJECT_TEMPLATES_V1)
+    {
+        return error;
+    }
     let Ok(key) = app::IdempotencyKey::parse(params.idempotency_key.clone()) else {
         return invalid(id);
     };
-    let Ok(encoded) = serde_json::to_string(&params) else {
+    let Ok(fingerprint) = request_fingerprint(&params) else {
         return invalid(id);
     };
-    let fingerprint = format!(
-        "\"{}\"",
-        app::oauth_hex(&app::mcp_credential_hash(&encoded))
-    );
-    match apps
-        .project_create
-        .replay_mcp_create(access, fingerprint.clone(), key.clone())
+    match application
+        .replay_create(access, fingerprint.clone(), key.clone())
         .await
     {
         Ok(Some(outcome)) => return create_action(id, Ok(outcome)),
         Ok(None) => {}
         Err(error) => return super::project_create_rpc::project_create_error(id, error),
     }
-    let destination = match project_target(apps, params.target).await {
+    let destination = match project_target(default_parent, params.target).await {
         Ok(destination) => destination,
         Err(error) => return error_action(Some(id), error, false),
     };
@@ -240,8 +246,8 @@ async fn create(
     };
     create_action(
         id,
-        apps.project_create
-            .create_mcp_project(access, input, key, fingerprint, destination.identity)
+        application
+            .create_bound_project(access, input, key, fingerprint, destination.identity)
             .await,
     )
 }
@@ -264,28 +270,21 @@ fn create_action(
     }
 }
 
+async fn default_directory(apps: &Applications) -> Result<PathBuf, rpc::RpcError> {
+    apps.official_gui
+        .effective_directories()
+        .await
+        .map(|directories| PathBuf::from(directories.project_directory))
+        .map_err(|_| rpc::RpcError::store_unavailable())
+}
+
 async fn project_target(
-    apps: &Applications,
-    target: rpc::McpProjectTarget,
+    default_parent: impl Future<Output = Result<PathBuf, rpc::RpcError>>,
+    target: rpc::ProjectTarget,
 ) -> Result<app::ProjectDestination, rpc::RpcError> {
     let (parent, leaf) = match target {
-        rpc::McpProjectTarget::Default { name } => {
-            let directories = apps
-                .official_gui
-                .effective_directories()
-                .await
-                .map_err(|_| rpc::RpcError::store_unavailable())?;
-            (PathBuf::from(directories.project_directory), name)
-        }
-        rpc::McpProjectTarget::Absolute { path } => {
-            let path = absolute_path(&path)?;
-            let parent = path.parent().ok_or_else(rpc::RpcError::invalid_request)?;
-            let leaf = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .ok_or_else(rpc::RpcError::invalid_request)?;
-            (parent.to_owned(), leaf.to_owned())
-        }
+        rpc::ProjectTarget::Default { name } => (default_parent.await?, name),
+        rpc::ProjectTarget::Absolute { parent_path, name } => (absolute_path(&parent_path)?, name),
     };
     if !ordinary_leaf(&leaf) {
         return Err(rpc::RpcError::invalid_request());
@@ -297,13 +296,16 @@ async fn plan_copy(
     id: String,
     apps: &Applications,
     access: &app::AccessContext,
-    params: rpc::McpProjectsPlanCopyParams,
+    params: rpc::ProjectsPlanCopyParams,
 ) -> DispatchAction {
     if access.require(app::Permission::ProjectsRead).is_err()
         || access.require(app::Permission::ProjectsCreate).is_err()
     {
         return error_action(Some(id), rpc::RpcError::permission_denied(), false);
     }
+    let Ok(fingerprint) = request_fingerprint(&params) else {
+        return invalid(id);
+    };
     let (Ok(source), Some(revision), Ok(key)) = (
         app::ProjectId::parse(&params.source_project_id),
         app::Revision::new(params.expected_revision),
@@ -311,14 +313,30 @@ async fn plan_copy(
     ) else {
         return invalid(id);
     };
-    let destination = match project_target(apps, params.target).await {
+    match apps
+        .project_copy
+        .replay_plan(access, fingerprint.clone(), key.clone())
+        .await
+    {
+        Ok(Some(outcome)) => return copy_action(id, Ok(outcome)),
+        Ok(None) => {}
+        Err(error) => return super::m7_copy_rpc::copy_error(id, error),
+    }
+    let destination = match project_target(default_directory(apps), params.target).await {
         Ok(value) => value,
         Err(error) => return error_action(Some(id), error, false),
     };
     let result = apps
         .project_copy
-        .plan_copy(access, source, revision, destination, key)
+        .plan_copy(access, source, revision, destination, key, fingerprint)
         .await;
+    copy_action(id, result)
+}
+
+fn copy_action(
+    id: String,
+    result: Result<app::ProjectCopyPlanOutcome, app::M7CopyError>,
+) -> DispatchAction {
     let result = match result {
         Ok(value) => value,
         Err(error) => return super::m7_copy_rpc::copy_error(id, error),
@@ -326,16 +344,8 @@ async fn plan_copy(
     let plan = super::m7_copy_rpc::plan(result.plan);
     success_action(
         id,
-        rpc::McpProjectsCopyPlan {
-            plan_id: plan.plan_id,
-            source_project_id: plan.source_project_id,
-            expected_revision: plan.source_project_revision,
-            target_name: plan.normalized_target_leaf,
-            target_project_id: plan.target_project_id,
-            writer_evidence: plan.writer_evidence,
-            profile: plan.profile,
-            expires_at_ms: plan.expires_at_ms,
-            plan_fingerprint: plan.plan_fingerprint,
+        rpc::ProjectsPlanCopyResult {
+            plan,
             replayed: result.replayed,
         },
         None,

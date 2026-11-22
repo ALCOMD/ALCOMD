@@ -95,7 +95,6 @@ pub(super) fn replay(
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AcceptedResponse {
     project_id: String,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     requires_package_changes: bool,
 }
 
@@ -222,8 +221,7 @@ pub(super) fn accept(
                 operation_id.to_string(),
                 json(&AcceptedResponse {
                     project_id: project_id.to_string(),
-                    requires_package_changes: owner.as_str().starts_with("mcp:")
-                        && requires_package_changes,
+                    requires_package_changes,
                 })?,
                 timestamp
             ],

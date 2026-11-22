@@ -17,19 +17,18 @@ fn require_mcp_copy(db: &Connection, owner: &PrincipalId) -> Result<(), M7CopyEr
     .map_err(|cause| error(M7CopyErrorCode::PermissionDenied).with_source(cause))
 }
 
-pub(super) fn create_plan(
-    connection: &mut Connection,
+pub(super) fn replay_plan(
+    db: &Connection,
     owner: &PrincipalId,
-    draft: ProjectCopyPlanDraft,
-) -> Result<ProjectCopyPlanOutcome, M7CopyError> {
-    let fingerprint = plan_request_fingerprint(&draft)?;
-    let transaction = begin(connection)?;
-    require_mcp_copy(&transaction, owner)?;
-    if let Some((stored, response)) = transaction
+    fingerprint: &str,
+    key: &IdempotencyKey,
+) -> Result<Option<ProjectCopyPlanOutcome>, M7CopyError> {
+    require_mcp_copy(db, owner)?;
+    if let Some((stored, response)) = db
         .query_row(
             "SELECT request_fingerprint,response_json FROM idempotency_records
              WHERE principal_id=?1 AND method='projects.planCopy' AND idempotency_key=?2",
-            params![owner.as_str(), draft.plan_idempotency_key.as_str()],
+            params![owner.as_str(), key.as_str()],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         )
         .optional()
@@ -38,18 +37,29 @@ pub(super) fn create_plan(
         if stored != fingerprint {
             return Err(error(M7CopyErrorCode::IdempotencyConflict));
         }
-        let mut outcome: ProjectCopyPlanOutcome = if owner.as_str().starts_with("mcp:") {
-            let plan_id = serde_json::from_str(&response).map_err(|_| internal())?;
-            ProjectCopyPlanOutcome {
-                plan: load_plan(&transaction, owner, plan_id)?,
-                replayed: true,
-            }
-        } else {
-            serde_json::from_str(&response).map_err(|_| internal())?
-        };
-        outcome.replayed = true;
-        transaction.commit().map_err(failure)?;
-        return Ok(outcome);
+        let id = serde_json::from_str(&response).map_err(|_| internal())?;
+        return Ok(Some(ProjectCopyPlanOutcome {
+            plan: load_plan(db, owner, id)?,
+            replayed: true,
+        }));
+    }
+    Ok(None)
+}
+
+pub(super) fn create_plan(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    draft: ProjectCopyPlanDraft,
+    fingerprint: &str,
+) -> Result<ProjectCopyPlanOutcome, M7CopyError> {
+    let transaction = begin(connection)?;
+    if let Some(previous) = replay_plan(
+        &transaction,
+        owner,
+        fingerprint,
+        &draft.plan_idempotency_key,
+    )? {
+        return Ok(previous);
     }
     transaction
         .execute(
@@ -99,11 +109,7 @@ pub(super) fn create_plan(
         plan,
         replayed: false,
     };
-    let replay = if owner.as_str().starts_with("mcp:") {
-        json(&draft.plan_id)?
-    } else {
-        json(&outcome)?
-    };
+    let replay = json(&draft.plan_id)?;
     transaction
         .execute(
             "INSERT INTO idempotency_records (
@@ -899,16 +905,6 @@ fn phase_at_or_after_intent(phase: ProjectCopyPhase) -> bool {
             | ProjectCopyPhase::CleanupComplete
             | ProjectCopyPhase::RecoveryRequired
     )
-}
-
-fn plan_request_fingerprint(draft: &ProjectCopyPlanDraft) -> Result<String, M7CopyError> {
-    json(&serde_json::json!({
-        "sourceProjectId": draft.source_project.project_id,
-        "sourceRevision": draft.source_project.revision,
-        "targetParentIdentity": draft.target_parent_identity,
-        "targetLeaf": draft.target_leaf,
-        "version": 1
-    }))
 }
 
 fn apply_request_fingerprint(

@@ -21,6 +21,7 @@ const TEMPLATE_CONTRACT: &str = include_str!("../../../specs/mcp/template-edit-v
 mod environment;
 mod extensions;
 mod packages;
+mod project_catalog;
 mod repositories;
 mod workflows;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
@@ -30,6 +31,8 @@ static DIAGNOSTICS: AtomicU64 = AtomicU64::new(1);
 pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> {
     let source = if rpc::mcp_extension_management_capability(name).is_some() {
         include_str!("../../../specs/mcp/extensions-v1.schema.json")
+    } else if rpc::mcp_project_catalog_capabilities(name).is_some() {
+        include_str!("../../../specs/mcp/project-catalog-v1.schema.json")
     } else if packages::recognized(name) {
         PACKAGE_CONTRACT
     } else if rpc::mcp_environment_tool_capability(name) == Some(rpc::CAPABILITY_DESKTOP_ACTIONS_V1)
@@ -91,6 +94,7 @@ pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> 
             "readOnlyHint":read_only,"destructiveHint":false,"idempotentHint":read_only,"openWorldHint":false,
         }));
     }
+    entry.remove("x-alcomd-method");
     for schema in ["inputSchema", "outputSchema"] {
         let value = entry.get_mut(schema).ok_or_else(internal_protocol)?;
         *value = rpc::mcp_tool_schema(value, &contract);
@@ -134,6 +138,8 @@ fn cursor_binding<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Strin
 struct List {
     cursor: Option<Cursor>,
     limit: Option<u32>,
+    view: Option<rpc::ProjectListView>,
+    expected_view_sequence: Option<u64>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -248,6 +254,9 @@ fn parse(params: CallToolRequestParams) -> Result<Input, ErrorData> {
     let valid = match &input {
         Input::List(p) => {
             p.limit.is_none_or(|v| (1..=1000).contains(&v))
+                && p.expected_view_sequence.is_some() == (p.view.is_some() && p.cursor.is_some())
+                && p.expected_view_sequence
+                    .is_none_or(|value| value <= MAX_SAFE)
                 && p.cursor
                     .as_ref()
                     .is_none_or(|c| c.registered_at_ms <= MAX_SAFE && canonical_id(&c.project_id))
@@ -358,50 +367,19 @@ fn snake(value: Value) -> Value {
         value => value,
     }
 }
-fn project(value: rpc::ProjectSnapshot, detail: bool) -> Result<Value, Failure> {
-    let id = value
+fn project(value: rpc::ProjectSnapshot) -> Result<Value, Failure> {
+    if value
         .project_id
-        .filter(|s| canonical_id(s))
-        .ok_or(Failure::InvalidCore)?;
-    let rev = value
-        .revision
-        .filter(|v| revision(*v))
-        .ok_or(Failure::InvalidCore)?;
-    let state = value.directory_state.ok_or(Failure::InvalidCore)?;
-    let mut output = json!({
-        "project_id": id,
-        "root_path": value.root_path,
-        "revision": rev,
-        "project_type": value.project_type,
-        "unity_version": value.unity_version,
-        "directory_state": state
-    });
-    if let Some(name) = value.display_name {
-        output["display_name"] = json!(name);
+        .as_deref()
+        .is_none_or(|id| !canonical_id(id))
+        || value.revision.is_none_or(|value| !revision(value))
+        || value.directory_state.is_none()
+    {
+        return Err(Failure::InvalidCore);
     }
-    if detail {
-        output["vpm_manifest"] = json!(value.vpm_manifest);
-        output["upm_manifest"] = json!(value.upm_manifest);
-        output["direct_dependencies"] = snake(json!(value.direct_dependencies));
-        output["locked_dependencies"] = snake(json!(value.locked_dependencies));
-        output["issues"] = Value::Array(
-            value
-                .issues
-                .into_iter()
-                .map(|issue| {
-                    let mut issue_value = json!({"code":issue.code,"component":issue.component});
-                    if let Some(line) = issue.line {
-                        issue_value["line"] = json!(line);
-                    }
-                    if let Some(column) = issue.column {
-                        issue_value["column"] = json!(column);
-                    }
-                    issue_value
-                })
-                .collect(),
-        );
-    }
-    Ok(output)
+    serde_json::to_value(value)
+        .map(snake)
+        .map_err(|_| Failure::InvalidCore)
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -738,6 +716,15 @@ pub async fn execute(
         }
         return extensions::execute(client, params).await;
     }
+    if let Some(required) = rpc::mcp_project_catalog_capabilities(params.name.as_ref()) {
+        if !required
+            .iter()
+            .any(|capability| client.supports_capability(capability))
+        {
+            return Err(super::unsupported_method());
+        }
+        return project_catalog::execute(client, params).await;
+    }
     if environment::recognized(params.name.as_ref()) {
         if rpc::mcp_environment_tool_capability(params.name.as_ref())
             .is_some_and(|capability| !client.supports_capability(capability))
@@ -771,13 +758,17 @@ async fn execute_builtin(
     let result:Result<(Value,String,bool),Failure>=async {
         match input {
             Input::List(p) => {
-                let page=client.projects_list(p.cursor.map(|c|rpc::ProjectRegistryCursor{registered_at_ms:c.registered_at_ms,id:c.project_id,authorization_binding:c.authorization_binding}),p.limit).await.map_err(read)?;
-                let items=page.projects.into_iter().map(|p|project(p,false)).collect::<Result<Vec<_>,_>>()?;
+                let page=client.projects_list_with_view(rpc::ProjectsListParams {
+                    cursor:p.cursor.map(|c|rpc::ProjectRegistryCursor{registered_at_ms:c.registered_at_ms,id:c.project_id,authorization_binding:c.authorization_binding}),
+                    limit:p.limit,view:p.view,expected_view_sequence:p.expected_view_sequence,
+                }).await.map_err(read)?;
+                let items=page.projects.into_iter().map(project).collect::<Result<Vec<_>,_>>()?;
                 let mut data=json!({"projects":items});
+                if let Some(sequence)=page.view_sequence {data["view_sequence"]=json!(sequence);}
                 if let Some(c)=page.next_cursor {let mut cursor=json!({"registered_at_ms":c.registered_at_ms,"project_id":c.id});if let Some(binding)=c.authorization_binding{cursor["authorization_binding"]=json!(binding);}data["next_cursor"]=cursor;}
                 Ok((data,"Authorized registered projects.".into(),false))
             }
-            Input::Project(p) => Ok((project(client.project_get(p.project_id).await.map_err(read)?.project,true)?,"Registered package snapshot; planning rechecks current project files.".into(),false)),
+            Input::Project(p) => Ok((project(client.project_get(p.project_id).await.map_err(read)?.project)?,"Registered package snapshot; planning rechecks current project files.".into(),false)),
             Input::Plan(p) => {
                 let plan=client.package_plan_remove(rpc::PackagePlanRemoveParams{project_id:p.project_id,expected_revision:p.expected_revision,package_id:p.package_id}).await.map_err(write)?;
                 if plan.action!=rpc::PackagePlanAction::Remove || plan.change_set.mutations.iter().any(|m|m.kind!=rpc::PackageMutationKind::Remove || m.source.is_some()) {return Err(Failure::InvalidCore);}

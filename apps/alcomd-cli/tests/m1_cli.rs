@@ -314,6 +314,7 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
             .join("ProjectSettings/ProjectVersion.txt")
             .is_file()
     );
+    project_catalog_parity(&runtime, &project_parent, created_id);
     std::fs::remove_dir_all(&project_parent).expect("remove owned project fixture directory");
 
     let confirmation_runtime = runtime.clone();
@@ -368,6 +369,137 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     if let Some(runtime) = runtime {
         let _ = std::fs::remove_dir_all(runtime);
     }
+}
+
+fn project_catalog_parity(runtime: &Option<PathBuf>, root: &std::path::Path, project_id: &str) {
+    let run = |args: &[&str]| -> serde_json::Value {
+        let result = run_group_cli(runtime.clone(), args);
+        assert!(
+            result.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&result.stdout).expect("CLI JSON")["result"]
+            .clone()
+    };
+    let initial = run(&["project", "get", project_id]);
+    let initial_revision = initial["project"]["revision"].to_string();
+    let favorite = run(&[
+        "project",
+        "set-favorite",
+        project_id,
+        "true",
+        "--expected-revision",
+        &initial_revision,
+        "--idempotency-key",
+        "catalog-favorite",
+    ]);
+    assert_eq!(favorite["project"]["favorite"], true);
+    let view = r#"{"search":"CLI Project","sort":"name","descending":false}"#;
+    let page = run(&["project", "list", "--view", view, "--limit", "1"]);
+    assert_eq!(page["projects"][0]["projectId"], project_id);
+    assert!(page["viewSequence"].is_u64());
+    let source = root.join("Source");
+    std::fs::create_dir(&source).expect("owned local package");
+    std::fs::write(
+        source.join("package.json"),
+        r#"{"name":"com.example.parity","version":"1.0.0"}"#,
+    )
+    .expect("write local package manifest");
+    let enroll = run(&[
+        "package",
+        "user-package",
+        "enroll",
+        source.to_str().expect("fixture path"),
+        "--idempotency-key",
+        "catalog-enroll",
+    ]);
+    let user = &enroll["userPackage"];
+    let id = user["userPackageId"]
+        .as_str()
+        .expect("registered package ID");
+    assert_eq!(
+        run(&["package", "user-package", "get", id])["userPackage"],
+        *user
+    );
+    assert_eq!(
+        run(&["package", "user-package", "list"])["userPackages"][0],
+        *user
+    );
+    let revision = favorite["project"]["revision"].to_string();
+    let page = run(&[
+        "package",
+        "candidates",
+        project_id,
+        "--expected-revision",
+        &revision,
+        "--view",
+        r#"{"kind":"summary","packageIds":["com.example.parity"]}"#,
+    ]);
+    assert_eq!(
+        page["items"][0]["recommended"]["candidate"]["version"], "1.0.0",
+        "{page}"
+    );
+    let intent = r#"{"kind":"install","packageId":"com.example.parity"}"#;
+    let plan = run(&[
+        "package",
+        "bulk",
+        project_id,
+        "--expected-revision",
+        &revision,
+        "--intent",
+        intent,
+        "--dry-run",
+        "--yes",
+    ]);
+    let plan_id = plan["planId"].as_str().expect("reviewed plan");
+    assert_eq!(run(&["plan", "get", "package", plan_id])["plan"], plan);
+    let applied = run(&[
+        "package",
+        "apply-plan",
+        plan_id,
+        "--expected-revision",
+        &revision,
+        "--idempotency-key",
+        "catalog-apply",
+        "--yes",
+    ]);
+    assert_eq!(applied["state"], "succeeded", "{applied}");
+    let next_revision = run(&["project", "get", project_id])["project"]["revision"].to_string();
+    let reinstall = run(&[
+        "package",
+        "reinstall",
+        project_id,
+        "--expected-revision",
+        &next_revision,
+        "--package-id",
+        "com.example.parity",
+        "--dry-run",
+    ]);
+    assert_eq!(reinstall["action"], "reinstall");
+    let refreshed = run(&[
+        "package",
+        "user-package",
+        "refresh",
+        id,
+        "--expected-revision",
+        &user["revision"].to_string(),
+        "--idempotency-key",
+        "catalog-refresh",
+    ]);
+    let removed = run(&[
+        "package",
+        "user-package",
+        "remove",
+        id,
+        "--expected-revision",
+        &refreshed["userPackage"]["revision"].to_string(),
+        "--idempotency-key",
+        "catalog-remove",
+        "--yes",
+    ]);
+    assert_eq!(removed["removed"], true);
+    assert!(source.is_dir());
 }
 
 fn run_confirmation_required_cli(runtime: Option<PathBuf>) -> std::process::Output {

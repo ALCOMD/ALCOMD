@@ -26,10 +26,12 @@ async fn frozen_sdk_template_lifecycle_replays_removal_after_recreation() {
         .await
         .expect("test owner");
     let project = owner
-        .project_register(
-            project_path.to_string_lossy().into_owned(),
-            "template-lifecycle-project".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: project_path.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "template-lifecycle-project".into(),
+        })
         .await
         .expect("registered source")
         .project;
@@ -266,10 +268,12 @@ async fn frozen_sdk_project_inventory_and_template_edit_share_core() {
         .await
         .expect("isolated project assets fixture");
     let registered = owner
-        .project_register(
-            project_path.to_string_lossy().into_owned(),
-            "assets-register".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: project_path.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "assets-register".into(),
+        })
         .await
         .expect("isolated project assets fixture");
     let registered = serde_json::to_value(registered).expect("isolated project assets fixture");

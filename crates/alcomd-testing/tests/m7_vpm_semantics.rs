@@ -186,6 +186,10 @@ async fn fixture(
         .register_project(
             &access,
             root.to_string_lossy().into_owned(),
+            alcomd_platform::resolve_plain_storage_directory(&root)
+                .expect("fixture directory identity")
+                .1,
+            r#"{"fixture":true}"#.into(),
             key("register-project"),
         )
         .await

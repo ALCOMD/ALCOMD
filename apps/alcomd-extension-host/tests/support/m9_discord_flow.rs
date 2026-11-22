@@ -106,10 +106,12 @@ async fn discord_publishes_and_clears_generic_activity_for_real_unity() {
         )
         .expect("fixture Unity version");
         client
-            .project_register(
-                project.to_str().expect("project path").into(),
-                format!("m9-live-{name}"),
-            )
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute {
+                    path: project.to_str().expect("project path").into(),
+                },
+                idempotency_key: format!("m9-live-{name}"),
+            })
             .await
             .expect("register synthetic Unity project");
         projects.push(project);
