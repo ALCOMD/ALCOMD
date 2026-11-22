@@ -831,10 +831,11 @@ async fn package_removal_flow(http: bool) {
     let core = CoreConfiguration::new();
     let ipc = core.ipc.clone();
     let config = core.client.clone();
+    let (stop_core, core_stopped) = tokio::sync::oneshot::channel();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc.clone(),
         DataConfig::isolated(data_root.clone()),
-        std::future::pending(),
+        async { core_stopped.await.expect("restart requested") },
     )
     .await
     .expect("exclusive real Core bind");
@@ -1208,8 +1209,11 @@ async fn package_removal_flow(http: bool) {
     stop(reconnected).await;
     stop(sb).await;
     drop(owner);
-    daemon.abort();
-    let _ = daemon.await;
+    stop_core.send(()).expect("request Core shutdown");
+    daemon
+        .await
+        .expect("join Core")
+        .expect("complete Core shutdown");
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc,
         DataConfig::isolated(data_root.clone()),
