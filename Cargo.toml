@@ -104,3 +104,7 @@ unused_must_use = "deny"
 dbg_macro = "deny"
 todo = "warn"
 unwrap_used = "warn"
+
+# The development Host compiles signed components under the same deadline as release builds.
+[profile.dev.package.cranelift-codegen]
+opt-level = 1

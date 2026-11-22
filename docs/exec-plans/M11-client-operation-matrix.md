@@ -49,7 +49,7 @@
 | `extensions.ui.close` | 已提供 · 离开扩展页面或关闭视图后释放原会话 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
 | `extensions.ui.dispatch` | 已提供 · 在扩展视图内操作控件，发送会话、快照修订和事件序号 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
 | `extensions.ui.open` | 已提供 · 从导航或扩展页打开界面并取得会话 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
-| `extensions.ui.refresh` | 缺少入口 · 桥接层声明了刷新，实际视图只打开、分派和关闭；没有刷新调用点 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
+| `extensions.ui.refresh` | 已提供 · [扩展视图刷新按钮](../../apps/alcomd-gui/src/App.tsx)传入当前会话 ID 与快照修订；[浏览器回归](../../apps/alcomd-gui/tests/browser/m7-h4-portable.spec.ts)连续刷新并核对两次实际请求 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
 | `logs.read` | 已提供 · 日志路由按条件查询并续页 | 缺少入口 · CLI 没有读取 Core 操作日志的子命令 | 缺少入口 · 工具目录没有读取 Core 操作日志的工具 |
 | `operations.cancel` | 已提供 · 任务面板及创建项目进度窗口取消当前任务 | 已提供 · operation cancel | 已提供 · alcomd_cancel_operation；自己的任务、预期修订和幂等键 |
 | `operations.get` | 已提供 · 任务条目或等待操作完成时按 ID 查询 | 已提供 · operation get；follow 轮询同一任务 | 部分可达 · alcomd_get_operation；返回任务状态和修订，部分任务不返回类型专属结果 |
