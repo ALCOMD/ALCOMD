@@ -282,15 +282,7 @@ async fn http_identity_and_admission(
             .to_bytes();
         let text = std::str::from_utf8(&bytes).expect("UTF-8 response");
         assert!(!text.contains(a) && !text.contains(b));
-        let value: Value = serde_json::from_str(text).unwrap_or_else(|_| {
-            serde_json::from_str(
-                text.lines()
-                    .find_map(|v| v.strip_prefix("data:"))
-                    .expect("SSE data")
-                    .trim(),
-            )
-            .expect("SSE JSON")
-        });
+        let value = http_rpc_result(text);
         assert_eq!(value["id"], 7);
         let operations = value["result"]["structuredContent"]["data"]["operations"]
             .as_array()
@@ -503,6 +495,13 @@ async fn http_identity_and_admission(
     http_request_limits(url, a).await;
 }
 
+fn http_rpc_result(text: &str) -> Value {
+    serde_json::from_str(text).unwrap_or_else(|_| {
+        let data = text.lines().find_map(|line| line.strip_prefix("data:"));
+        serde_json::from_str(data.expect("SSE data").trim()).expect("SSE JSON")
+    })
+}
+
 async fn http_request_limits(url: &str, secret: &str) {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
     let authority = url
@@ -607,27 +606,37 @@ async fn http_request_limits(url: &str, secret: &str) {
 
     let exact = json!({"jsonrpc":"2.0","id":19,"method":"tools/list","params":{"_meta":{
         "io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}).to_string();
-    let mut exact = exact.into_bytes();
-    exact.resize(4 * 1024 * 1024, b' ');
-    let response = client
+    let request = client
         .post(url)
         .bearer_auth(secret)
         .header("Accept", "application/json,text/event-stream")
         .header("Content-Type", "application/json")
         .header("MCP-Protocol-Version", "2026-07-28")
-        .header("Mcp-Method", "tools/list")
+        .header("Mcp-Method", "tools/list");
+    let baseline = request
+        .try_clone()
+        .expect("clone request headers")
+        .body(exact.clone())
+        .send()
+        .await
+        .expect("ordinary catalog request");
+    assert_eq!(baseline.status(), 200);
+    let baseline = http_rpc_result(&baseline.text().await.expect("ordinary catalog response"));
+    let mut exact = exact.into_bytes();
+    exact.resize(4 * 1024 * 1024, b' ');
+    let response = request
         .body(exact)
         .send()
         .await
         .expect("exact maximum request");
     assert_eq!(response.status(), 200, "4 MiB valid JSON remains accepted");
-    assert!(
-        response
-            .text()
-            .await
-            .expect("maximum request response")
-            .contains("alcomd_get_project")
-    );
+    let page = http_rpc_result(&response.text().await.expect("maximum request response"));
+    assert_eq!(page["id"], 19);
+    let tools = page["result"]["tools"]
+        .as_array()
+        .expect("tool catalog page");
+    assert!(!tools.is_empty());
+    assert_eq!(page["result"]["tools"], baseline["result"]["tools"]);
 
     let mut slow = BufReader::new(
         tokio::net::TcpStream::connect(authority)
