@@ -50,9 +50,17 @@ async fn resolve(
     directory: PathBuf,
     leaf: String,
 ) -> Result<app::ProjectDestination, rpc::RpcError> {
+    resolve_directory(directory, leaf)
+        .await?
+        .map_err(|_| rpc::RpcError::permission_denied())
+}
+
+async fn resolve_directory(
+    directory: PathBuf,
+    leaf: String,
+) -> Result<std::io::Result<app::ProjectDestination>, rpc::RpcError> {
     tokio::task::spawn_blocking(move || {
-        let (parent, identity) = alcomd_platform::resolve_plain_project_directory(&directory)
-            .map_err(|_| rpc::RpcError::permission_denied())?;
+        let (parent, identity) = alcomd_platform::resolve_plain_project_directory(&directory)?;
         Ok(app::ProjectDestination {
             parent,
             identity,
@@ -60,7 +68,28 @@ async fn resolve(
         })
     })
     .await
-    .map_err(|_| rpc::RpcError::store_unavailable())?
+    .map_err(|_| rpc::RpcError::store_unavailable())
+}
+
+async fn inspect_registration_directory(
+    directory: PathBuf,
+) -> Result<app::ProjectDestination, rpc::RpcError> {
+    let path = directory.to_string_lossy().into_owned();
+    match resolve_directory(directory, String::new()).await? {
+        Ok(destination) => Ok(destination),
+        Err(cause) => {
+            let details = app::operation_log_error(&cause, Some(&path));
+            app::log_external_fact(
+                "projects.register",
+                "inspect_project",
+                app::LogOutcome::Failed,
+                Some(app::log_path("project", path)),
+                Some(details),
+            )
+            .await;
+            Err(rpc::RpcError::permission_denied())
+        }
+    }
 }
 
 fn destination_input(destination: &app::ProjectDestination) -> String {
@@ -73,56 +102,58 @@ pub(super) async fn dispatch(
     apps: &Applications,
     access: &app::AccessContext,
 ) -> DispatchAction {
-    let capability = match request.method.as_str() {
-        rpc::METHOD_PROJECTS_REGISTER => rpc::CAPABILITY_PROJECTS_REGISTRY_V1,
+    match request.method.as_str() {
+        rpc::METHOD_PROJECTS_REGISTER => {
+            dispatch_register(request, state, &apps.m3, access, default_directory(apps)).await
+        }
         rpc::METHOD_PROJECTS_CREATE => {
-            return dispatch_create(
+            dispatch_create(
                 request,
                 state,
                 &apps.project_create,
                 access,
                 default_directory(apps),
             )
-            .await;
-        }
-        rpc::METHOD_PROJECTS_PLAN_COPY => rpc::CAPABILITY_PROJECTS_COPY_V1,
-        _ => return error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
-    };
-    if let Some(error) = super::require_capability(&request.id, state, capability) {
-        return error;
-    }
-    let id = request.id;
-    match request.method.as_str() {
-        rpc::METHOD_PROJECTS_REGISTER => {
-            let Ok(params) = serde_json::from_value(request.params) else {
-                return invalid(id);
-            };
-            register(id, apps, access, params).await
+            .await
         }
         rpc::METHOD_PROJECTS_PLAN_COPY => {
+            let id = request.id;
+            if let Some(error) =
+                super::require_capability(&id, state, rpc::CAPABILITY_PROJECTS_COPY_V1)
+            {
+                return error;
+            }
             let Ok(params) = serde_json::from_value(request.params) else {
                 return invalid(id);
             };
             plan_copy(id, apps, access, params).await
         }
-        _ => unreachable!(),
+        _ => error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
     }
 }
 
-async fn register(
-    id: String,
-    apps: &Applications,
+pub(super) async fn dispatch_register(
+    request: rpc::RequestEnvelope,
+    state: &ConnectionState,
+    registry: &super::M3ReadApplication,
     access: &app::AccessContext,
-    params: rpc::ProjectRegisterParams,
+    default_parent: impl Future<Output = Result<PathBuf, rpc::RpcError>>,
 ) -> DispatchAction {
+    let id = request.id;
+    if let Some(error) = super::require_capability(&id, state, rpc::CAPABILITY_PROJECTS_REGISTRY_V1)
+    {
+        return error;
+    }
+    let Ok(params) = serde_json::from_value::<rpc::ProjectRegisterParams>(request.params) else {
+        return invalid(id);
+    };
     let Ok(key) = app::IdempotencyKey::parse(params.idempotency_key.clone()) else {
         return invalid(id);
     };
     let Ok(fingerprint) = request_fingerprint(&params) else {
         return invalid(id);
     };
-    match apps
-        .m3
+    match registry
         .replay_project_registration(access, fingerprint.clone(), key.clone())
         .await
     {
@@ -135,14 +166,13 @@ async fn register(
             if relative_path.len() > 4096 || !relative_path.split(['/', '\\']).all(ordinary_leaf) {
                 return invalid(id);
             }
-            let directories = match apps.official_gui.effective_directories().await {
-                Ok(dirs) => dirs,
-                Err(_) => return error_action(Some(id), rpc::RpcError::store_unavailable(), false),
+            let root = match default_parent.await {
+                Ok(root) => root,
+                Err(error) => return error_action(Some(id), error, false),
             };
             let relative: PathBuf = relative_path.split(['/', '\\']).collect();
-            let root = PathBuf::from(directories.project_directory);
-            match resolve(root, String::new()).await {
-                Ok(base) => resolve(base.parent.join(relative), String::new())
+            match inspect_registration_directory(root).await {
+                Ok(base) => inspect_registration_directory(base.parent.join(relative))
                     .await
                     .and_then(|value| {
                         value
@@ -159,7 +189,7 @@ async fn register(
                 Ok(path) => path,
                 Err(error) => return error_action(Some(id), error, false),
             };
-            resolve(path, String::new()).await
+            inspect_registration_directory(path).await
         }
     };
     let destination = match resolved {
@@ -169,7 +199,7 @@ async fn register(
     let path = destination_input(&destination);
     registration_action(
         id,
-        apps.m3
+        registry
             .register_project(access, path, destination.identity, fingerprint, key)
             .await,
     )

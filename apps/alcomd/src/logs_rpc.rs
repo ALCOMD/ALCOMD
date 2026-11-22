@@ -154,7 +154,13 @@ mod tests {
                         app::with_log_caller(
                             store.clone(),
                             &access,
-                            crate::m3_rpc::dispatch(request, &state, &registry, &access),
+                            crate::project_paths_rpc::dispatch_register(
+                                request,
+                                &state,
+                                &registry,
+                                &access,
+                                std::future::ready(Err(rpc::RpcError::store_unavailable())),
+                            ),
                         )
                         .await
                     }
@@ -235,7 +241,7 @@ mod tests {
                 &mut cli,
                 rpc::METHOD_PROJECTS_REGISTER,
                 json!({
-                    "path": path,
+                    "source": { "kind": "absolute", "path": path },
                     "idempotencyKey": "private-log-project-failure",
                 }),
             )
