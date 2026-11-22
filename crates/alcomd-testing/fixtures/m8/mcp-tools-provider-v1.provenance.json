@@ -6,18 +6,18 @@
     "profile": "release",
     "encoder": "wit-component 0.254.2 via cargo xtask component",
     "inputs": {
-        "extensions/examples/mcp-tools-provider/backend/src/lib.rs": "c7c9a3f34b828e317f5bd75bea0e2806912bb2e37dcd28bcf34870e5b891199a",
+        "extensions/examples/mcp-tools-provider/backend/src/lib.rs": "463e97f4c438bb3d3034e78d5aabcebb1f5ee9452d3b21df04f882785fa64fa0",
         "extensions/examples/mcp-tools-provider/backend/Cargo.toml": "13c491bf6ec77b2f01e7485696080244f02f1bb6df69f66cbc24271d0ef65fe8",
         "extensions/examples/mcp-tools-provider/backend/Cargo.lock": "171aaec5c83fa8aba3e76de3705702c3cfd87dea11c8c14df551134f551abf5a",
-        "specs/extensions/wit/mcp-tools-v1/world.wit": "a33ea3e4ed5b3a5bdf3389085bf1957dfa57e14f20b74f93e9185fb400a8de57",
+        "specs/extensions/wit/mcp-tools-v1/world.wit": "f09a9df732f74f3919a1b7f7a258ebb8f1da8d207618b262aa80e3ee220bf19c",
         "specs/extensions/wit/mcp-tools-v1/deps/extension/guest-lifecycle.wit": "78b4e7fb822a560c464d24f6e5ef31901a28ad059202ffe711b89b51281577a1",
         "specs/extensions/wit/mcp-tools-v1/deps/extension/guest-ui.wit": "82157011b38f03125ba3ff44a253df6c28b5c50b543882ad5f56898bbd5dbd99",
         "specs/extensions/wit/mcp-tools-v1/deps/extension/host-data.wit": "2f70a251ae30d1d463faab2dee9e6baa08b277ab87d6efa4e65761ba914d7347",
         "specs/extensions/wit/mcp-tools-v1/deps/extension/host-projects.wit": "aa7fd7d38f2af28ca3606d7f70471586b134abb5a76dd4f82154bebd31a4dacb",
         "specs/extensions/wit/mcp-tools-v1/deps/extension/types.wit": "4fe1c69e2779b043f2f6ca81ca836e1e8f4132fa000f38cac256e03e9d2147bd",
-        "specs/extensions/wit/mcp-tools-v1/deps/extension/world.wit": "4a4bea28c4b3e4f4a79da773f8fc1157423b3fc4a6bda6ec2c3936cb2dbda7cc",
+        "specs/extensions/wit/mcp-tools-v1/deps/extension/world.wit": "501cd19062d5b98643c62d39f135e2e2786f93d6e535ee91af0a3e6f97d0ced4",
         "rust-toolchain.toml": "8e390d6a0838315f972690f46ef8bae8b7ecc9ee6c1ed70140ef852869c2482e",
-        "specs/extensions/wit/cli-commands-v1/world.wit": "938c67088bd919dc43a276965c42fe9eed4cd8827f52b856e575e6b077c826fc",
-        "specs/extensions/wit/mcp-tools-v1/deps/extension/host-operations.wit": "acc68c7fbc101eee9cc17e913846d77abe47985b63700a65eccd4922ddc36a4e"
+        "specs/extensions/wit/cli-commands-v1/world.wit": "010869dda065e1fab714449e083d107d55aaf38d41126ae3cfe533cb5501d299",
+        "specs/extensions/wit/mcp-tools-v1/deps/extension/host-operations.wit": "af4a5fa639b9a851f9cc4f7c74c3be3025193ea372248bea52b0020689259a03"
     }
 }
