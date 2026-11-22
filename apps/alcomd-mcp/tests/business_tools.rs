@@ -270,6 +270,7 @@ async fn http_identity_and_admission(
                 serde_json::to_vec(&operation_request).expect("request JSON"),
             )))
             .expect("HTTP request");
+        sender.ready().await.expect("same TCP connection ready");
         let response = sender
             .send_request(request)
             .await
