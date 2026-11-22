@@ -9,7 +9,7 @@
     "inputs": {
         "crates/alcomd-testing/fixtures/m8/management-guest-source/Cargo.lock": "fea8ce4bdd4cfe7a857431dee969d5c4e92df1d4b9a7c7490bb5f48b37de1b24",
         "crates/alcomd-testing/fixtures/m8/management-guest-source/Cargo.toml": "cc0df76a09bb4d3ef342cbf37639d923068ee8c1ab75062fb321c9c647af956b",
-        "crates/alcomd-testing/fixtures/m8/management-guest-source/src/lib.rs": "5c1365ea4540ad2d913729621262952ab19e8c2ea4d58bb0280a7411d18c7f21",
+        "crates/alcomd-testing/fixtures/m8/management-guest-source/src/lib.rs": "096b9bb1bfe081df495422e3fd4b554061747efcefab9611208fc448e1cb1285",
         "rust-toolchain.toml": "8e390d6a0838315f972690f46ef8bae8b7ecc9ee6c1ed70140ef852869c2482e",
         "specs/extensions/wit/mcp-runtime-v1/deps/extension/guest-lifecycle.wit": "78b4e7fb822a560c464d24f6e5ef31901a28ad059202ffe711b89b51281577a1",
         "specs/extensions/wit/mcp-runtime-v1/deps/extension/guest-ui.wit": "82157011b38f03125ba3ff44a253df6c28b5c50b543882ad5f56898bbd5dbd99",
