@@ -4,9 +4,9 @@
 
 ## 当前阶段
 
-M11 正在实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。设置页「客户端」的安装发现及扩展 CLI 声明属于新增能力。
+M11 正在实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 
-首发合同清单涵盖 122 个 RPC、43 项能力和 34 个内建 MCP 工具，原生 SDK 提供 93 个方法。手动创建的模板从选定的内置或用户模板继承内容，成品独立使用。v3 派生模板迁移只生成 `2022.3.22f1` 的版本。各端入口见[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)，合同与验收范围见[当前 ExecPlan](exec-plans/M11-first-release-contracts.md)，最终候选和托管检查见 [PR #10](https://github.com/ALCOMD/ALCOMD/pull/10)。
+首发能力与服务方法见[合同清单](../specs/first-release-contracts.json)，原生 SDK 的 116 个方法见[方法目录](../specs/rpc/native-sdk-v1.methods.json)。手动创建的模板从选定的内置或用户模板继承内容，成品独立使用。v3 派生模板迁移只生成 `2022.3.22f1` 的版本。各端入口见[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)，合同与验收范围见[当前 ExecPlan](exec-plans/M11-first-release-contracts.md)，最终候选和托管检查见 [PR #10](https://github.com/ALCOMD/ALCOMD/pull/10)。
 
 **M11 实施中。** 普通 ZIP 和 Core 主机绝对路径已接通。首发 State1 和 Config1 已通过 Windows 隔离测试，涵盖正常重开、结构不符时保全文件以及设置恢复。Windows 已通过绝对路径 IPC、MCP HTTP/OAuth、Core 重开后的配置和项目对账，以及普通 ZIP 的定向验证。隔离签名 bridge 已执行暂存和回滚，真实 3.4.0 样本和跨平台验收待完成。[M11 实施计划](exec-plans/M11-v3-migration-and-zip.md)
 
