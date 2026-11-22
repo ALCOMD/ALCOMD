@@ -524,7 +524,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
         serde_json::to_string(&page.snapshot.document).expect("real runtime observation fixture");
     assert!(!document.contains("\"actionId\":\"activity\""));
     assert!(!document.contains(&ids[0]));
-    assert!(!document.contains("Core 连接 ·"));
+    assert!(!document.contains("connections="));
     let mut revision = owner
         .extension_permissions_list(alcomd_protocol::ExtensionPermissionsListParams {
             extension_id: extension.extension_id.clone(),
@@ -598,8 +598,8 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
                 .await
                 .expect("real runtime observation fixture");
             let denied = String::from_utf8(denied).expect("real runtime observation fixture");
-            assert!(!denied.contains("Core 连接 ·"));
-            assert!(!denied.contains("Core 调用 ·"));
+            assert!(!denied.contains("connections="));
+            assert!(!denied.contains("requests="));
             let partial = daemon
                 .extension_activity_with_access(
                     narrowed(vec![
@@ -613,7 +613,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
                 .expect("real runtime observation fixture");
             let partial = String::from_utf8(partial).expect("real runtime observation fixture");
             assert!(partial.contains("connections=2"), "{partial}");
-            assert!(!partial.contains("Core 调用 ·"));
+            assert!(!partial.contains("requests="));
             dispatch(
                 &mut owner,
                 &mut page,
@@ -660,7 +660,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
             dispatch(&mut owner, &mut page, &mut sequence, activate("activity")).await;
             let document =
                 serde_json::to_string(&page.document).expect("real runtime observation fixture");
-            assert!(!document.contains("Core 连接 ·"));
+            assert!(!document.contains("connections="));
             assert!(document.contains("requests=0"));
         } else {
             revision = owner
@@ -688,7 +688,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
             let document =
                 serde_json::to_string(&page.document).expect("real runtime observation fixture");
             assert!(document.contains("connections=2"), "{document}");
-            assert!(!document.contains("Core 调用 ·"));
+            assert!(!document.contains("requests="));
         }
     }
     let revision = owner
@@ -713,7 +713,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
     assert!(
         !serde_json::to_string(&page.snapshot.document)
             .expect("real runtime observation fixture")
-            .contains("Core 调用 ·")
+            .contains("requests=")
     );
     assert!(
         !serde_json::to_string(&page.snapshot.document)
@@ -789,8 +789,8 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
     let observed = serde_json::to_string(&page.document).expect("document");
     assert!(observed.contains("streams=1"), "{observed}");
     assert!(observed.contains("unattributed"));
-    assert!(!observed.contains("Core 调用 ·"));
-    assert!(!observed.contains("Core 连接 ·"));
+    assert!(!observed.contains("requests="));
+    assert!(!observed.contains("connections="));
     owner
         .extension_revoke_grant(ExtensionGrantParams {
             extension_id: extension.extension_id.clone(),
