@@ -636,6 +636,21 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         .await
         .expect("valid isolated Provider fixture");
     let stale_args = recovery_args.expect("previously accepted call");
+    let mut authenticated =
+        AlcomdClient::connect(core.client.clone().with_mcp_credential(secret_a.clone()))
+            .await
+            .expect("connect as the original caller");
+    let replay = authenticated
+        .extension_mcp_tools_call(alcomd_protocol::ExtensionMcpToolsCallParams {
+            name: public("loop_after_apply"),
+            arguments: stale_args.clone(),
+        })
+        .await;
+    assert!(
+        matches!(replay, Err(alcomd_client::ClientError::Remote(error)) if error.code == "permission_denied"),
+        "Core must withhold a disabled provider's receipt from the original caller"
+    );
+    drop(authenticated);
     assert!(
         sa.call_tool_once(
             CallToolRequestParams::new(public("loop_after_apply"))

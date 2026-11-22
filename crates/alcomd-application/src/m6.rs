@@ -980,8 +980,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         self.packages.inspect(source_kind, path).await
     }
 
-    /// Schedules the ordinary install Operation for a verified distribution
-    /// input. Native clients cannot request this source through RPC.
+    /// Lists the installations visible to the authenticated caller.
     pub async fn list(
         &self,
         access: &AccessContext,
