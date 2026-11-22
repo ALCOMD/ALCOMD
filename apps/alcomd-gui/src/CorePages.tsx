@@ -2034,7 +2034,7 @@ function RepositoryTable({ client, onChanged, repositories, orderFingerprint, se
                 };
             })}
         />}
-        {selected === undefined || selectedId === undefined ? null : <RepositoryBrowser client={client} repository={selected} onChanged={onChanged}
+        {selected === undefined || selectedId === undefined ? null : <RepositoryBrowser key={selectedId} client={client} repository={selected} onChanged={onChanged}
             dialog={{ title: repositoryDisplayName(t, selected, t("Repository packages")), onClose: () => setSelectedId(undefined) }} />}
     </>;
 }
@@ -2055,17 +2055,17 @@ function RepositoryBrowser({ client, repository, onChanged, initial, dialog }: {
     const display = usePackageDisplaySettings(client, settings, () => void readSettings(), onChanged);
     const [generation, setGeneration] = useState(0);
     const selectedPackage = useRef<string | undefined>(undefined);
+    const visibleCount = useRef(0);
     const repositoryId = repository.repositoryId;
     const load = useCallback(async () => {
         if (repositoryId === undefined) throw { code: "repository_not_registered" };
         const selected = selectedPackage.current;
         const first = await client.repositoryPackages(repositoryId);
-        if (selected === undefined) return first;
         const packages = [...first.packages];
         let cursor = first.nextCursor;
-        // Refresh a displayed detail atomically through its package boundary.
+        // Keep the already displayed window when a later Core event refreshes the list.
         // Package IDs are ASCII identities ordered by Core; no version solving occurs here.
-        while (cursor !== undefined && cursor.packageId <= selected) {
+        while (cursor !== undefined && (packages.length < visibleCount.current || (selected !== undefined && cursor.packageId <= selected))) {
             const next = await client.repositoryPackages(repositoryId, cursor);
             packages.push(...next.packages);
             cursor = next.nextCursor;
@@ -2080,7 +2080,7 @@ function RepositoryBrowser({ client, repository, onChanged, initial, dialog }: {
             <RepositoryPackageCatalog client={client} repositoryId={repositoryId} initial={catalog}
                 visibility={{ groups: display.snapshot?.settings.packages.hiddenRepositoryPackages, busy: display.busy,
                     save: (hiddenRepositoryPackages) => void display.save({ hiddenRepositoryPackages }) }}
-                onSelect={(id) => { selectedPackage.current = id; }} />
+                onVisibleCount={(count) => { visibleCount.current = count; }} onSelect={(id) => { selectedPackage.current = id; }} />
         </>}</ResourcePage>;
     if (dialog) return <Dialog wide open title={dialog.title} headlineActions={refresh} actions={<DialogCloseButton variant="text">{t("Close")}</DialogCloseButton>} onClose={dialog.onClose}>
         {content}
@@ -2227,7 +2227,7 @@ export function RepositoryDetailPage({ client, navigate, repositoryId }: PagePro
             <Detail label={t("Revision")} value={String(detail.repository.revision ?? "—")} />
             <Detail label={t("Issues")} value={String(detail.repository.issues.length)} />
         </dl>
-        <LocalPageReadContext.Provider value={true}><RepositoryBrowser client={client} repository={detail.repository} onChanged={refresh} initial={catalog} /></LocalPageReadContext.Provider>
+        <LocalPageReadContext.Provider value={true}><RepositoryBrowser key={detail.repository.repositoryId} client={client} repository={detail.repository} onChanged={refresh} initial={catalog} /></LocalPageReadContext.Provider>
         <ActionDisclosure title={t("Manage repository")}><RepositoryActions client={client} onChanged={refresh} repository={detail.repository} /></ActionDisclosure>
     </>}</UtilityWorkspace>;
 }

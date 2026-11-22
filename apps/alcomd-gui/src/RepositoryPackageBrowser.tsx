@@ -58,25 +58,27 @@ interface CatalogFocus {
     returnTo?: string;
 }
 
-export function RepositoryPackageCatalog({ client, repositoryId, initial, onSelect, visibility }: { client: GuiRpcClient; repositoryId: string; initial: RepositoryPackagesResult; onSelect(id: string | undefined): void; visibility: PackageVisibility }) {
+export function RepositoryPackageCatalog({ client, repositoryId, initial, onSelect, onVisibleCount, visibility }: { client: GuiRpcClient; repositoryId: string; initial: RepositoryPackagesResult; onSelect(id: string | undefined): void; onVisibleCount(count: number): void; visibility: PackageVisibility }) {
     const [selectedId, setSelectedId] = useState<string>();
     const [version, setVersion] = useState<string>();
     const focusState = useRef<CatalogFocus>({ origins: new Map() });
     const select = (id: string | undefined) => { setSelectedId(id); setVersion(undefined); onSelect(id); };
     return <PagedItems initialItems={initial.packages} initialCursor={initial.nextCursor} showPagination={selectedId === undefined}
         loadMore={async (cursor) => { const result = await client.repositoryPackages(repositoryId, cursor); return { items: result.packages, nextCursor: result.nextCursor }; }}>
-        {(items, pagination) => <CatalogContents client={client} repositoryId={repositoryId} visibility={visibility} focusState={focusState.current} items={items} selectedId={selectedId} select={select} version={version} setVersion={setVersion} pagination={pagination} />}
+        {(items, pagination) => <CatalogContents client={client} repositoryId={repositoryId} visibility={visibility} focusState={focusState.current} items={items} selectedId={selectedId} select={select} onVisibleCount={onVisibleCount} version={version} setVersion={setVersion} pagination={pagination} />}
     </PagedItems>;
 }
 
-function CatalogContents({ client, items, selectedId, select, pagination, version, setVersion, repositoryId, visibility, focusState }: {
+function CatalogContents({ client, items, selectedId, select, pagination, version, setVersion, repositoryId, visibility, focusState, onVisibleCount }: {
     repositoryId: string; visibility: PackageVisibility; focusState: CatalogFocus;
     client: GuiRpcClient; items: RepositoryPackageVersion[]; selectedId?: string; select(id: string | undefined): void;
+    onVisibleCount(count: number): void;
     pagination: { cursor?: PackageCursor; loading: boolean; error?: RpcError; next(): Promise<void> };
     version?: string; setVersion(version: string): void;
 }) {
     const { t } = useTranslation();
     const heading = useRef<HTMLHeadingElement>(null);
+    useLayoutEffect(() => onVisibleCount(items.length), [items.length, onVisibleCount]);
     const toggle = (id: string, name: string, labelHidden = false) => {
         const groups = visibility.groups;
         const group = groups?.find((item) => item.repositoryId === repositoryId);
