@@ -9,10 +9,14 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+mod client_registry;
 mod events;
 mod m7;
 mod m7_candidates;
 mod m8_mcp;
+pub use client_registry::*;
+mod desktop;
+pub use desktop::*;
 mod m8_oauth;
 mod m8_packages;
 mod m8_project_assets;

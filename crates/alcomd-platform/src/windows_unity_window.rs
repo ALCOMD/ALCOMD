@@ -625,6 +625,20 @@ pub fn focus_unity_window(root: &Path) -> io::Result<UnityWindowFocus> {
     }
 }
 
+pub(super) fn interactive_desktop_available() -> bool {
+    use windows_sys::Win32::System::StationsAndDesktops::{
+        CloseDesktop, DESKTOP_READOBJECTS, OpenInputDesktop,
+    };
+    // SAFETY: this call takes scalar arguments and returns an owned desktop handle on success.
+    let desktop = unsafe { OpenInputDesktop(0, 0, DESKTOP_READOBJECTS) };
+    if desktop.is_null() {
+        return false;
+    }
+    // SAFETY: this handle belongs to the successful call above and is closed exactly once.
+    unsafe { CloseDesktop(desktop) };
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

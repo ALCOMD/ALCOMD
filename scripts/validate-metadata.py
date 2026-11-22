@@ -767,6 +767,7 @@ def main() -> int:
             "Win32_System_Pipes",
             "Win32_System_Registry",
             "Win32_System_RemoteDesktop",
+            "Win32_System_StationsAndDesktops",
             "Win32_System_Threading",
             "Win32_UI_Shell",
             "Win32_UI_Accessibility",

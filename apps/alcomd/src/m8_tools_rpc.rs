@@ -60,10 +60,8 @@ fn builtin() -> Result<Vec<Entry>, E> {
                 "alcomd_cancel_operation" => O::OperationCancel,
                 _ => return Err(E::Unavailable),
             };
-            let mut input = item["inputSchema"].clone();
-            input["$defs"] = root["$defs"].clone();
-            let mut output = item["outputSchema"].clone();
-            output["$defs"] = root["$defs"].clone();
+            let input = rpc::mcp_tool_schema(&item["inputSchema"], &root);
+            let output = rpc::mcp_tool_schema(&item["outputSchema"], &root);
             Ok(Entry {
                 descriptor: app::ToolDescriptor {
                     name: name.into(),
@@ -95,11 +93,7 @@ fn append_builtin_tools(entries: &mut Vec<Entry>, contract: &str) -> Result<(), 
             "apply" => app::ToolOperation::ApplyPlan.effect(),
             _ => return Err(E::Unavailable),
         };
-        let schema_field = |key: &str| {
-            let mut value = entry[key].clone();
-            value["$defs"] = schema["$defs"].clone();
-            value
-        };
+        let schema_field = |key: &str| rpc::mcp_tool_schema(&entry[key], &schema);
         entries.push(Entry {
             descriptor: app::ToolDescriptor {
                 name: field("name")?,
@@ -121,6 +115,18 @@ fn append_builtin_tools(entries: &mut Vec<Entry>, contract: &str) -> Result<(), 
 
 fn builtin_entries(capabilities: &HashSet<String>) -> Result<Vec<Entry>, E> {
     let mut entries = builtin()?;
+    append_builtin_tools(
+        &mut entries,
+        include_str!("../../../specs/mcp/ai-clients-v1.schema.json"),
+    )?;
+    append_builtin_tools(
+        &mut entries,
+        include_str!("../../../specs/mcp/client-registry-v1.schema.json"),
+    )?;
+    append_builtin_tools(
+        &mut entries,
+        include_str!("../../../specs/mcp/desktop-actions-v1.schema.json"),
+    )?;
     append_builtin_tools(
         &mut entries,
         include_str!("../../../specs/mcp/environment-v1.schema.json"),

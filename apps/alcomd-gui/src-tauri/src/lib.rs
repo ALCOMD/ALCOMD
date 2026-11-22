@@ -7,8 +7,10 @@ use alcomd_protocol::{
 use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+mod ai_clients;
 mod desktop_links;
 mod events;
+mod native_clients;
 mod picker_location;
 mod repository_links;
 mod rpc_clients;
@@ -220,28 +222,31 @@ async fn gui_project_get(
 #[tauri::command]
 async fn gui_open_project_directory(
     state: State<'_, GuiClientState>,
-    project_id: String,
+    params: alcomd_protocol::DesktopOpenProjectDirectoryParams,
 ) -> Result<(), RpcError> {
-    let project = {
-        let mut client = state.reads.lock().await;
-        connect_if_needed(&mut client).await?;
-        let result = match client.as_mut() {
-            Some(client) => client.project_get(project_id).await,
-            None => return Err(daemon_unavailable()),
-        };
-        finish_call(&mut client, result)?.project
-    };
-
-    let root = validated_registered_project_root(&project.root_path)?;
-    let path = alcomd_platform::external_filesystem_path(&root);
-    open::that(path.as_os_str()).map_err(|_| RpcError::extension("project_directory_open_failed"))
+    let mut connection = state.work.lock().await;
+    connect_if_needed(&mut connection).await?;
+    let result = connection
+        .as_mut()
+        .ok_or_else(daemon_unavailable)?
+        .desktop_open_project_directory(params)
+        .await;
+    finish_call(&mut connection, result).map(|_| ())
 }
 
-/// Closed UI adapter: no caller-supplied URL, executable path or arguments.
 #[tauri::command]
-async fn gui_open_unity_hub_download() -> Result<(), RpcError> {
-    open::that("https://unity.com/download")
-        .map_err(|_| RpcError::extension("unity_hub_download_open_failed"))
+async fn gui_open_unity_hub_download(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::DesktopOpenUnityHubDownloadParams,
+) -> Result<(), RpcError> {
+    let mut connection = state.work.lock().await;
+    connect_if_needed(&mut connection).await?;
+    let result = connection
+        .as_mut()
+        .ok_or_else(daemon_unavailable)?
+        .desktop_open_unity_hub_download(params)
+        .await;
+    finish_call(&mut connection, result).map(|_| ())
 }
 
 #[tauri::command]
@@ -626,6 +631,7 @@ async fn gui_project_apply_unity_migration(
     finish_call(&mut client, result)
 }
 
+#[cfg(any(windows, test))]
 fn validated_registered_project_root(root_path: &str) -> Result<std::path::PathBuf, RpcError> {
     let registered = std::path::Path::new(root_path);
     if !registered.is_absolute() {
@@ -1787,6 +1793,24 @@ pub fn run() {
             gui_operation_get,
             gui_operation_cancel,
             gui_settings_get,
+            ai_clients::gui_oauth_registrations_list,
+            ai_clients::gui_oauth_registration_set,
+            ai_clients::gui_oauth_registration_revoke,
+            ai_clients::gui_oauth_request_get,
+            ai_clients::gui_oauth_request_decide,
+            ai_clients::gui_mcp_client_request_create,
+            ai_clients::gui_mcp_client_request_get,
+            ai_clients::gui_mcp_client_request_list,
+            ai_clients::gui_mcp_client_request_decide,
+            ai_clients::gui_mcp_runtime_snapshot,
+            ai_clients::gui_mcp_transport_snapshot,
+            ai_clients::gui_mcp_clients_list,
+            ai_clients::gui_mcp_client_create,
+            ai_clients::gui_mcp_client_issue_credential,
+            ai_clients::gui_mcp_client_revoke,
+            native_clients::gui_clients_list,
+            native_clients::gui_client_instances_list,
+            native_clients::gui_clients_disconnect,
             gui_settings_update,
             events::gui_events_start,
             events::gui_events_ack,

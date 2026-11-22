@@ -633,12 +633,21 @@ async fn flow(http: bool) {
         .mcp_tools_catalog(Default::default())
         .await
         .expect("published real catalog");
-    assert!(
-        initial
-            .tools
-            .iter()
-            .any(|tool| tool.name == "alcomd_get_project")
-    );
+    let mut tools = initial.tools;
+    let mut cursor = initial.next_cursor;
+    while cursor.is_some() {
+        let page = ca
+            .mcp_tools_catalog(alcomd_protocol::McpToolsCatalogParams {
+                cursor,
+                ..Default::default()
+            })
+            .await
+            .expect("next catalog page");
+        assert_eq!(page.catalog_fingerprint, initial.catalog_fingerprint);
+        tools.extend(page.tools);
+        cursor = page.next_cursor;
+    }
+    assert!(tools.iter().any(|tool| tool.name == "alcomd_get_project"));
     assert_eq!(initial.catalog_fingerprint.len(), 64);
     assert!(
         sa.listen(SubscriptionFilter::builder().prompts_list_changed().build())

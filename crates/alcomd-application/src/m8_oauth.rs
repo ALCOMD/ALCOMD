@@ -176,6 +176,7 @@ pub trait OAuthStore: McpIdentityStore {
     ) -> impl Future<Output = Result<OAuthRegistrationState, OAuthError>> + Send;
     fn oauth_registrations(
         &self,
+        caller: PrincipalId,
         input: OAuthPageParams,
     ) -> impl Future<Output = Result<OAuthRegistrationPage, OAuthError>> + Send;
     fn oauth_set_registration(
@@ -287,7 +288,7 @@ fn hash(secret: &str) -> [u8; 32] {
     mcp_credential_hash(secret)
 }
 fn owner(access: &AccessContext, write: bool) -> Result<(), OAuthError> {
-    if !access.is_interactive_client() {
+    if !access.is_interactive_client() || (write && !access.is_local_owner()) {
         return Err(OAuthError::Denied);
     }
     access
@@ -487,7 +488,9 @@ impl<S: OAuthStore> OAuthApplication<S> {
         input: OAuthPageParams,
     ) -> Result<OAuthRegistrationPage, OAuthError> {
         owner(access, false)?;
-        self.store.oauth_registrations(input).await
+        self.store
+            .oauth_registrations(access.principal().clone(), input)
+            .await
     }
     pub async fn begin(
         &self,
@@ -585,6 +588,9 @@ impl<S: OAuthStore> OAuthApplication<S> {
             .store
             .oauth_registration(p.input.oauth_client_id.clone())
             .await?;
+        if access.is_mcp_client() && access.principal() != &current.client.principal_id {
+            return Err(OAuthError::Denied);
+        }
         let fp = review(p, &current)?;
         Ok(OAuthRequestReview {
             request_id: p.id.clone(),

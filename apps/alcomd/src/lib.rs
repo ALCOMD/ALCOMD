@@ -54,6 +54,10 @@ fn preflight_data_layout(database: &Path) -> io::Result<()> {
             if entry.file_name() == "config" {
                 continue;
             }
+            if entry.file_name() == alcomd_platform::client_installation::DIRECTORY {
+                alcomd_platform::resolve_plain_storage_directory(&entry.path())?;
+                continue;
+            }
             if entry.path() == registration
                 && alcomd_platform::registered_core_executable(&data)?.is_some()
             {
@@ -77,6 +81,8 @@ fn preflight_data_layout(database: &Path) -> io::Result<()> {
 }
 
 mod builtin_repositories;
+mod client_registry_rpc;
+mod desktop_rpc;
 mod events_rpc;
 mod hub_platform;
 mod idle_shutdown;
@@ -172,6 +178,10 @@ type UnityMigrationApplication = UnityMigrationService<
 >;
 
 struct Applications {
+    #[cfg(feature = "test-kill-gates")]
+    desktop_driver: std::sync::OnceLock<Arc<test_support::ObservedDesktop>>,
+    client_registry: alcomd_application::ClientRegistry,
+    client_installation_data: DataConfig,
     locks: Arc<ResourceLockCoordinator>,
     tools_cursor_key: [u8; 32],
     mcp_runtime: alcomd_application::McpRuntimeObservations,
@@ -474,6 +484,10 @@ async fn initialize_daemon_with_adapters(
         .await
         .map_err(|_| BindError::Io(io::Error::other("Tool recovery failed")))?;
     let applications = Arc::new(Applications {
+        #[cfg(feature = "test-kill-gates")]
+        desktop_driver: std::sync::OnceLock::new(),
+        client_registry: alcomd_application::ClientRegistry::default(),
+        client_installation_data: data,
         locks: Arc::clone(&locks),
         tools_cursor_key: oauth_cursor_key,
         mcp_runtime: alcomd_application::McpRuntimeObservations::new(),
@@ -570,7 +584,7 @@ where
         tokio::select! {
             biased;
             () = &mut shutdown => break,
-            result = listener.accept() => {
+            result = listener.accept(), if connections.len() < alcomd_application::CLIENT_CONNECTION_LIMIT => {
                 let stream = result?;
                 let applications = Arc::clone(&applications);
                 connections.spawn(async move {
@@ -685,9 +699,16 @@ async fn serve_connection(
         capabilities: HashSet::new(),
     };
     let mut observed_connection = None;
+    let (close, mut closing) = tokio::sync::watch::channel(false);
+    let peer_pid = alcomd_platform::client_peer::peer_pid(&stream);
     let result = async {
         loop {
-            let payload = match read_frame(&mut stream).await? {
+            let received = tokio::select! {
+                biased;
+                _ = closing.changed() => return Ok(()),
+                received = read_frame(&mut stream) => received?,
+            };
+            let payload = match received {
                 Some(payload) => payload,
                 None => return Ok(()),
             };
@@ -711,6 +732,7 @@ async fn serve_connection(
                 // invocation's authority; the detached finalizer preserves accepted work.
                 let mut probe=[0u8;1];
                 tokio::select! {
+                    _ = closing.changed() => return Ok(()),
                     action=Box::pin(dispatch_payload(&payload,&state,&applications))=>action,
                     closed=tokio::io::AsyncReadExt::read(&mut stream,&mut probe)=>{closed?;return Ok(());}
                 }
@@ -770,18 +792,6 @@ async fn serve_connection(
                     return Ok(());
                 }
             }
-            if action.event_subscription.is_some() {
-                tokio::time::timeout(
-                    std::time::Duration::from_secs(5),
-                    write_json_frame(&mut stream, &action.response),
-                )
-                .await
-                .map_err(|_| {
-                    io::Error::new(io::ErrorKind::TimedOut, "subscription ready timed out")
-                })??;
-            } else {
-                write_json_frame(&mut stream, &action.response).await?;
-            }
             if let Some(client_id) = action.authenticated_mcp_client {
                 observed_connection = Some(applications.mcp_runtime.connect(
                     state.connection_id.clone(), client_id, current_time_ms().unwrap_or(0)));
@@ -794,12 +804,37 @@ async fn serve_connection(
                 state.handshake_complete = true;
                 state.capabilities = capabilities;
                 state.client_instance_id = action.client_instance_id;
-                if let Some(actor) = action.actor {
-                    state.actor = actor;
+                if let Some(reported) = action.reported {
+                    let data = applications.client_installation_data.clone();
+                    let (peer,actor) = tokio::task::spawn_blocking(move || {
+                        let peer = alcomd_platform::client_peer::observe(peer_pid);
+                        let actor = client_registry_rpc::official_actor(&data,&peer);
+                        (peer,actor)
+                    }).await.map_err(io::Error::other)?;
+                    state.actor = if state.mcp_hash.is_some() { "MCP".into() } else { actor.into() };
+                    applications.client_registry.connect(peer.process.map(client_registry_rpc::process),peer.bridge_parent.map(client_registry_rpc::process),
+                        alcomd_application::RegistryConnection { connection_id:state.connection_id.clone(), connected_at_ms:current_time_ms().map_err(io::Error::other)?,
+                            reported:alcomd_application::RegistryReported { name:reported.name, version:reported.version,instance_id:reported.instance_id } },close.clone());
                 }
             }
+            if action.event_subscription.is_some() {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    write_json_frame(&mut stream, &action.response),
+                )
+                .await
+                .map_err(|_| {
+                    io::Error::new(io::ErrorKind::TimedOut, "subscription ready timed out")
+                })??;
+            } else {
+                write_json_frame(&mut stream, &action.response).await?;
+            }
             if let Some(subscription) = action.event_subscription {
-                return events_rpc::serve(&mut stream, subscription).await;
+                return tokio::select! {
+                    biased;
+                    _ = closing.changed() => Ok(()),
+                    result = events_rpc::serve(&mut stream, subscription) => result,
+                };
             }
             if action.close_after_response {
                 return Ok(());
@@ -807,6 +842,7 @@ async fn serve_connection(
         }
     }
     .await;
+    applications.client_registry.closed(&state.connection_id);
     drop(observed_connection);
     applications.mcp_transport.forget(&state.connection_id);
     applications
@@ -829,7 +865,7 @@ struct DispatchAction {
     response: Value,
     complete_handshake: Option<HashSet<String>>,
     client_instance_id: Option<String>,
-    actor: Option<String>,
+    reported: Option<alcomd_protocol::ClientInfo>,
     close_after_response: bool,
     event_subscription: Option<alcomd_application::EventSubscription<StateStoreHandle>>,
 }
@@ -945,6 +981,12 @@ async fn dispatch_authenticated(
     }
     if request.method.starts_with("mcp.transport.") {
         return m8_transport_rpc::dispatch(request, state, applications, access);
+    }
+    if request.method.starts_with("clients.") {
+        return client_registry_rpc::dispatch(request, state, applications, access).await;
+    }
+    if request.method.starts_with("desktop.") {
+        return desktop_rpc::dispatch(request, state, applications, access).await;
     }
     if request.method == alcomd_protocol::METHOD_MCP_RUNTIME_SNAPSHOT {
         return m8_runtime_rpc::dispatch(request, state, applications, access);
@@ -1105,6 +1147,8 @@ async fn dispatch_hello(
             None
         };
     let supported = [
+        alcomd_protocol::CAPABILITY_CLIENTS_REGISTRY_V1,
+        alcomd_protocol::CAPABILITY_DESKTOP_ACTIONS_V1,
         alcomd_protocol::CAPABILITY_MCP_RUNTIME_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
         alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1,
@@ -1149,15 +1193,7 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_READ_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_UI_PORTABLE_V1,
     ];
-    let client_instance_id = hello.client.instance_id;
-    let actor = match hello.client.name.as_str() {
-        "alcomd-gui" => "GUI".to_owned(),
-        "alcomd-cli" => "CLI".to_owned(),
-        "alcomd-mcp" => "MCP".to_owned(),
-        "alcomd-api" => "Local API".to_owned(),
-        // The actual transport remains known even without a named official entry point.
-        _ => "Local IPC".to_owned(),
-    };
+    let client_instance_id = hello.client.instance_id.clone();
     let capabilities = hello
         .capabilities
         .into_iter()
@@ -1183,11 +1219,7 @@ async fn dispatch_hello(
     action.oauth_endpoint = oauth_endpoint;
     action.transport_observer = transport_observer;
     action.oauth_resource = oauth_resource;
-    action.actor = Some(if mcp_hash.is_some() {
-        "MCP".into()
-    } else {
-        actor
-    });
+    action.reported = Some(hello.client);
     action
 }
 
@@ -1680,7 +1712,7 @@ fn success_action<T: serde::Serialize>(
         response,
         complete_handshake: handshake,
         client_instance_id: None,
-        actor: None,
+        reported: None,
         close_after_response: false,
         event_subscription: None,
     }
@@ -1698,7 +1730,7 @@ fn error_action(id: Option<String>, error: RpcError, close: bool) -> DispatchAct
         response,
         complete_handshake: None,
         client_instance_id: None,
-        actor: None,
+        reported: None,
         close_after_response: close,
         event_subscription: None,
     }

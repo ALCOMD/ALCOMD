@@ -86,6 +86,7 @@ fn state1_initializes_and_reopens_preserving_current_rows_and_sequence() {
             "extensions",
             "idempotency_records",
             "mcp_client_credentials",
+            "mcp_client_requests",
             "mcp_clients",
             "mcp_oauth_registrations",
             "mcp_oauth_tokens",

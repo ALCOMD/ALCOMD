@@ -88,8 +88,16 @@ async fn registration_mutations_bind_idempotency_and_revocation_to_the_authentic
             service.set_registration(&access, request.clone(), entropy(4), 102),
         )
     };
-    let original = set().await.expect("MCP administrator");
-    let replay = set().await.expect("same caller and key");
+    assert!(matches!(set().await, Err(OAuthError::Denied)));
+    let owner = AccessContext::local_owner();
+    let original = service
+        .set_registration(&owner, request.clone(), entropy(4), 102)
+        .await
+        .expect("owner registers client");
+    let replay = service
+        .set_registration(&owner, request.clone(), entropy(5), 103)
+        .await
+        .expect("same owner and key");
     assert_eq!(
         replay.registration.oauth_client_id,
         original.registration.oauth_client_id
@@ -98,7 +106,10 @@ async fn registration_mutations_bind_idempotency_and_revocation_to_the_authentic
         service
             .set_registration(
                 &AccessContext::local_owner(),
-                request.clone(),
+                OAuthRegistrationSetParams {
+                    idempotency_key: "new-registration".into(),
+                    ..request.clone()
+                },
                 entropy(5),
                 103
             )

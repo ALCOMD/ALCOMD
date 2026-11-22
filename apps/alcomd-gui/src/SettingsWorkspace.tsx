@@ -20,6 +20,8 @@ import { ThemeControls, themePreferences } from "./ThemeControls";
 import { displayPath } from "./display-path";
 import { unityInstallationSourceLabel } from "./unity-installation-source";
 import { UnityDefaultArgumentsSettings } from "./UnityDefaultArgumentsSettings";
+import { NativeClientsSettings } from "./NativeClientsSettings";
+import { AiClientsSettings } from "./AiClientsSettings";
 import { backupCompressionOptions } from "./backup-compression";
 import { SettingsResetBoundary, SettingsResetButton, isSettingsResetTrigger, useSettingsResetPending } from "./SettingsResetButton";
 import { useCoreEvents, useCoreInvalidation } from "./core-events-ui";
@@ -31,7 +33,7 @@ interface SettingsWorkspaceProps {
     onApplied(value: SettingsGetResult): void;
 }
 
-type SettingsCategory = "general" | "unity" | "appearance";
+type SettingsCategory = "general" | "unity" | "appearance" | "clients";
 
 export function SettingsWorkspace({ client, settingsWriter, onApplied }: SettingsWorkspaceProps) {
     const { t } = useTranslation();
@@ -54,7 +56,8 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied }: Setting
                     options={[
                         { value: "general", label: t("General") },
                         { value: "unity", label: "Unity" },
-                        { value: "appearance", label: t("Appearance") }
+                        { value: "appearance", label: t("Appearance") },
+                        { value: "clients", label: t("Clients") }
                     ]} />
             </nav>
         }>
@@ -63,6 +66,7 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied }: Setting
                 const accepted = saving.accepted ?? snapshot;
                 return (
                 <div className="settings-workspace">
+                    {category === "clients" ? <><NativeClientsSettings client={client} /><AiClientsSettings client={client} /></> : null}
                     {isTauri() ? <VccLinkRegistration hidden={category !== "general"}
                         enabled={settings.integrations.handleVccLinks}
                         disabled={saving.saving || saving.failed}
@@ -320,6 +324,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
     acceptedRef.current = accepted;
     const manageUnity = useCapability(capabilities.unityManage);
     const canOpenHub = useCapability(capabilities.unityHubOpen);
+    const canDownload = useCapability(capabilities.desktopActions);
     const [busy, setBusy] = useState(false);
     const [invalid, setInvalid] = useState(false);
     const [pending, setPending] = useState<UnityHubIntent>();
@@ -414,13 +419,13 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
     const download = accepted.settings.unity.hubPath === null && location.status === "not_found";
     const usable = location.status === "available" && location.targetToken !== null;
     const openLabel = download ? t("Download Unity Hub") : t("Open Unity Hub");
-    const openDisabledReason = !canOpenHub ? t("Opening Unity Hub is unavailable on this connection.")
+    const openDisabledReason = !canOpenHub || (download && !canDownload) ? t("Opening Unity Hub is unavailable on this connection.")
         : !usable && !download ? t("Choose a usable Unity Hub path or use Auto detect before opening it.")
             : edit.current.dirty ? t("Finish or cancel the path edit before continuing.")
                 : pending !== undefined || state.failed ? t("Resolve the settings save error before continuing.")
                     : busy || state.saving ? t("Another settings action is in progress.") : undefined;
     const openHub = async () => {
-        if (!active.current || guard.current || !canOpenHub || (!usable && !download) || edit.current.dirty || pending !== undefined || state.saving || state.failed) return;
+        if (!active.current || guard.current || !canOpenHub || (!usable && !(download && canDownload)) || edit.current.dirty || pending !== undefined || state.saving || state.failed) return;
         guard.current = true;
         const request = generation.current;
         setBusy(true);
@@ -443,7 +448,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
         <SettingsSection title={t("Unity Hub Path")} sectionRef={group}
             actions={<div className="action-row">
                 <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void run({ kind: invalid && pending?.origin === "auto" ? "retry" : "auto" })} type="button" variant="tonal">{t(invalid && pending?.origin === "auto" ? "Retry" : "Auto detect")}</Button>
-                <Button disabled={!canOpenHub || (!usable && !download)} softDisabled={busy || state.saving || state.failed || edit.current.dirty || pending !== undefined}
+                <Button disabled={!canOpenHub || (!usable && !(download && canDownload))} softDisabled={busy || state.saving || state.failed || edit.current.dirty || pending !== undefined}
                     aria-describedby={openDisabledReason === undefined ? undefined : "settings-unity-hub-open-reason"} title={openDisabledReason}
                     widthLabels={[t("Open Unity Hub"), t("Download Unity Hub")]} onClick={() => void openHub()} type="button">{openLabel}</Button>
             </div>}

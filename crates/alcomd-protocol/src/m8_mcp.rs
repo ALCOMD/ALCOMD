@@ -127,3 +127,152 @@ pub(crate) fn deserialize_authentication<'de, D: serde::Deserializer<'de>>(
 ) -> Result<Option<McpAuthentication>, D::Error> {
     McpAuthentication::deserialize(deserializer).map(Some)
 }
+
+pub const METHOD_MCP_CLIENT_REQUESTS_CREATE: &str = "mcp.clients.requests.create";
+pub const METHOD_MCP_CLIENT_REQUESTS_GET: &str = "mcp.clients.requests.get";
+pub const METHOD_MCP_CLIENT_REQUESTS_LIST: &str = "mcp.clients.requests.list";
+pub const METHOD_MCP_CLIENT_REQUESTS_DECIDE: &str = "mcp.clients.requests.decide";
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum ClientManagementAction {
+    CreateClient {
+        display_name: String,
+    },
+    IssueCredential {
+        client_id: String,
+        expected_revision: u64,
+    },
+    RevokeClient {
+        client_id: String,
+        expected_revision: u64,
+    },
+    SetOAuthRegistration {
+        client_id: String,
+        issuer: String,
+        resource: String,
+        redirect_uris: Vec<String>,
+        confidential: bool,
+        allow_refresh: bool,
+        expected_revision: u64,
+    },
+    RevokeOAuthRegistration {
+        oauth_client_id: String,
+        expected_revision: u64,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ClientRequestStatus {
+    Pending,
+    Approved,
+    Denied,
+    Expired,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ClientManagementReview {
+    pub request_id: String,
+    pub requester: String,
+    pub action: ClientManagementAction,
+    pub status: ClientRequestStatus,
+    pub expires_at_ms: u64,
+    pub fingerprint: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ClientManagementDecision {
+    pub request: ClientManagementReview,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_secret: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ClientRequestPage {
+    pub items: Vec<ClientManagementReview>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct McpClientRequestCreateParams {
+    pub action: ClientManagementAction,
+    pub idempotency_key: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct McpClientRequestGetParams {
+    pub request_id: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct McpClientRequestDecideParams {
+    pub request_id: String,
+    pub approve: bool,
+    pub expected_fingerprint: String,
+    pub idempotency_key: String,
+}
+
+/// Copy the definitions reachable from one advertised tool schema so a catalogue
+/// page stays bounded as independently published tools are added.
+pub fn mcp_tool_schema(
+    schema: &serde_json::Value,
+    contract: &serde_json::Value,
+) -> serde_json::Value {
+    use serde_json::Value;
+    fn references(value: &Value, pending: &mut Vec<String>) {
+        match value {
+            Value::Object(object) => {
+                if let Some(path) = object
+                    .get("$ref")
+                    .and_then(Value::as_str)
+                    .and_then(|reference| reference.strip_prefix("#/$defs/"))
+                {
+                    let key = path.split('/').next().unwrap_or_default();
+                    pending.push(key.replace("~1", "/").replace("~0", "~"));
+                }
+                for child in object.values() {
+                    references(child, pending);
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    references(value, pending);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut bound = schema.clone();
+    let embedded = bound
+        .as_object_mut()
+        .and_then(|object| object.remove("$defs"));
+    let definitions = embedded.as_ref().unwrap_or(&contract["$defs"]);
+    let mut selected = serde_json::Map::new();
+    let mut pending = Vec::new();
+    references(&bound, &mut pending);
+    while let Some(key) = pending.pop() {
+        if selected.contains_key(&key) {
+            continue;
+        }
+        if let Some(child) = definitions.get(&key) {
+            references(child, &mut pending);
+            selected.insert(key, child.clone());
+        }
+    }
+    if !selected.is_empty() {
+        bound["$defs"] = Value::Object(selected);
+    }
+    bound
+}

@@ -577,6 +577,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     const current = useActionScope(client);
     const [removalFailure, setRemovalFailure] = useState<{ message: string; error?: RpcError }>();
     const canReadProjects = useCapability(capabilities.projectsRead);
+    const canUseDesktop = useCapability(capabilities.desktopActions);
     const canManageProjects = useCapability(capabilities.projectsRegistry);
     const canCopyProjects = useCapability(capabilities.projectsCopy);
     const canDeleteProjects = useCapability(capabilities.projectsDelete);
@@ -703,7 +704,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
 
     const menuItems = <>
         {workspace ? <MenuItem disabled={!canManageUnity} label={t("Edit launch arguments")} onClick={() => setArgumentsOpen(true)} title={capabilityUnavailableTitle(canManageUnity, capabilities.unityManage, t)} /> : null}
-        <MenuItem disabled={!canReadProjects || openingDirectory} label={t("Open Project Directory")} onClick={() => void openDirectory()} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead, t)} />
+        <MenuItem disabled={!canReadProjects || !canUseDesktop || openingDirectory} label={t("Open Project Directory")} onClick={() => void openDirectory()} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead, t) ?? capabilityUnavailableTitle(canUseDesktop, capabilities.desktopActions, t)} />
         <MenuItem disabled={!canCopyProjects || revision === undefined} label={t("Copy Project")} onClick={beginCopy} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy, t)} />
         {workspace ? <>
             <MenuItem disabled={!canCreateBackups} label={t("Backups")} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canCreateBackups, capabilities.backupsCreate, t)} />

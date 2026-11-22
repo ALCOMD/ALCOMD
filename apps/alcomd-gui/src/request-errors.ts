@@ -25,6 +25,16 @@ export function requestErrorMessage(code: string): string {
             return "Some information is missing or invalid. Check the inputs before submitting again.";
         case "daemon_unavailable":
             return "Core is unavailable. Reconnect and check any submitted task before repeating a change.";
+        case "desktop_unavailable":
+            return "The Core machine has no available desktop for this action.";
+        case "desktop_result_unknown":
+            return "Core could not confirm the desktop action. Check the desktop before requesting it again.";
+        case "project_directory_open_failed":
+        case "project_directory_missing":
+        case "project_directory_not_directory":
+            return "Core could not open the registered project directory.";
+        case "unity_hub_download_open_failed":
+            return "Core could not open the Unity download page in its default browser.";
         case "internal_error":
             return "The result could not be confirmed because of an internal error. Check Tasks before repeating a change.";
         case "permission_denied":
@@ -49,6 +59,9 @@ export function requestErrorMessage(code: string): string {
             return "This app, Core, or data version is not compatible with this action. Use matching versions.";
         case "operation_not_found":
             return "This task is unavailable or no longer visible. Refresh the task list.";
+        case "client_registry_not_found":
+        case "client_registry_stale":
+            return "The client list changed. Refresh it and select the current target.";
         case "operation_not_cancellable":
             return "This task can no longer be cancelled. Refresh to see its current result.";
         case "path_encoding_unsupported":

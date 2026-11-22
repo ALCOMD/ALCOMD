@@ -715,7 +715,8 @@ CREATE TABLE operations (
         'backups.create', 'backups.restore',
         'extensions.install', 'extensions.uninstall',
         'projects.create', 'projects.copy', 'projects.delete-directory', 'projects.unity-migration',
-        'projectTemplates.save', 'projectTemplates.export'
+        'projectTemplates.save', 'projectTemplates.export',
+        'desktop.focusProjectUnity', 'desktop.openProjectDirectory', 'desktop.openUnityHubDownload'
     )),
     state TEXT NOT NULL CHECK (state IN (
         'queued', 'planning', 'waiting_for_input', 'running', 'cancelling',
@@ -748,6 +749,23 @@ CREATE TABLE mcp_clients (
     created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
     revoked_at_ms INTEGER CHECK (revoked_at_ms >= created_at_ms)
 ) STRICT;
+
+CREATE TABLE mcp_client_requests (
+    request_id TEXT PRIMARY KEY NOT NULL CHECK(length(request_id)=36),
+    requester TEXT NOT NULL CHECK(length(requester) BETWEEN 1 AND 128),
+    action_json TEXT NOT NULL CHECK(json_valid(action_json) AND length(action_json)<=65536),
+    fingerprint TEXT NOT NULL CHECK(length(fingerprint)=64),
+    created_at_ms INTEGER NOT NULL CHECK(created_at_ms>=0),
+    expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms>created_at_ms),
+    status TEXT NOT NULL CHECK(status IN ('pending','approved','denied')),
+    decided_by TEXT,
+    decided_at_ms INTEGER,
+    CHECK((status='pending' AND decided_by IS NULL AND decided_at_ms IS NULL)
+        OR (status<>'pending' AND decided_by IS NOT NULL AND decided_at_ms IS NOT NULL
+        AND decided_at_ms>=created_at_ms AND decided_at_ms<expires_at_ms))
+) STRICT;
+CREATE INDEX mcp_client_requests_expiry ON mcp_client_requests(status,expires_at_ms);
+CREATE INDEX mcp_client_requests_actor ON mcp_client_requests(requester,created_at_ms,request_id);
 
 CREATE TABLE mcp_client_credentials (
     credential_id TEXT PRIMARY KEY CHECK (length(credential_id) = 36),

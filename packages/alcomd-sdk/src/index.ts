@@ -102,3 +102,4 @@ export * from "./extension-sources.js";
 
 export type * from "./core-models.js";
 export { SDK_METHODS, type NativeRpcMethods, type BackupCreateParams, type BackupRestoreParams } from "./sdk-methods.js";
+export type { ClientInstanceSummary, ClientProgramSummary } from "./client-registry.js";

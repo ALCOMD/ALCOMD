@@ -3,7 +3,7 @@
 use std::io;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use alcomd_platform::{DataConfig, IpcConfig, IpcStream};
@@ -33,7 +33,7 @@ pub use m8_oauth::OAuthRejection;
 const START_TIMEOUT: Duration = Duration::from_secs(5);
 const RETRY_INTERVAL: Duration = Duration::from_millis(50);
 const MCP_CREDENTIAL_ENVIRONMENT_KEY: &str = "ALCOMD_MCP_CLIENT_CREDENTIAL";
-static INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+static REPORTED_PROCESS_INSTANCE: OnceLock<String> = OnceLock::new();
 
 /// Client connection settings.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -246,6 +246,38 @@ impl AlcomdClient {
             .await
     }
 
+    pub async fn mcp_client_request_create(
+        &mut self,
+        params: alcomd_protocol::McpClientRequestCreateParams,
+    ) -> Result<alcomd_protocol::ClientManagementReview, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_CLIENT_REQUESTS_CREATE, params)
+            .await
+    }
+
+    pub async fn mcp_client_request_get(
+        &mut self,
+        params: alcomd_protocol::McpClientRequestGetParams,
+    ) -> Result<alcomd_protocol::ClientManagementReview, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_CLIENT_REQUESTS_GET, params)
+            .await
+    }
+
+    pub async fn mcp_client_request_list(
+        &mut self,
+        params: alcomd_protocol::McpClientsListParams,
+    ) -> Result<alcomd_protocol::ClientRequestPage, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_CLIENT_REQUESTS_LIST, params)
+            .await
+    }
+
+    pub async fn mcp_client_request_decide(
+        &mut self,
+        params: alcomd_protocol::McpClientRequestDecideParams,
+    ) -> Result<alcomd_protocol::ClientManagementDecision, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_CLIENT_REQUESTS_DECIDE, params)
+            .await
+    }
+
     pub async fn mcp_clients_list(
         &mut self,
         params: alcomd_protocol::McpClientsListParams,
@@ -253,6 +285,58 @@ impl AlcomdClient {
         self.call(alcomd_protocol::METHOD_MCP_CLIENTS_LIST, params)
             .await
     }
+    pub async fn clients_list(
+        &mut self,
+        params: alcomd_protocol::ClientsListParams,
+    ) -> Result<alcomd_protocol::ClientsListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_CLIENTS_LIST, params)
+            .await
+    }
+    pub async fn client_instances_list(
+        &mut self,
+        params: alcomd_protocol::ClientInstancesListParams,
+    ) -> Result<alcomd_protocol::ClientInstancesListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_CLIENT_INSTANCES_LIST, params)
+            .await
+    }
+    pub async fn clients_disconnect(
+        &mut self,
+        params: alcomd_protocol::ClientsDisconnectParams,
+    ) -> Result<alcomd_protocol::ClientsDisconnectResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_CLIENTS_DISCONNECT, params)
+            .await
+    }
+
+    pub async fn desktop_focus_project_unity(
+        &mut self,
+        params: alcomd_protocol::DesktopFocusProjectUnityParams,
+    ) -> Result<alcomd_protocol::DesktopActionResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_DESKTOP_FOCUS_PROJECT_UNITY, params)
+            .await
+    }
+
+    pub async fn desktop_open_project_directory(
+        &mut self,
+        params: alcomd_protocol::DesktopOpenProjectDirectoryParams,
+    ) -> Result<alcomd_protocol::DesktopActionResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_DESKTOP_OPEN_PROJECT_DIRECTORY,
+            params,
+        )
+        .await
+    }
+
+    pub async fn desktop_open_unity_hub_download(
+        &mut self,
+        params: alcomd_protocol::DesktopOpenUnityHubDownloadParams,
+    ) -> Result<alcomd_protocol::DesktopActionResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_DESKTOP_OPEN_UNITY_HUB_DOWNLOAD,
+            params,
+        )
+        .await
+    }
+
     pub async fn mcp_client_create(
         &mut self,
         params: alcomd_protocol::McpClientsCreateParams,
@@ -281,14 +365,19 @@ impl AlcomdClient {
         client_name: &str,
         authentication: Option<alcomd_protocol::McpAuthentication>,
     ) -> Result<(), ClientError> {
-        let sequence = INSTANCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let reported_instance = REPORTED_PROCESS_INSTANCE.get_or_init(|| {
+            let started = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default();
+            format!("{}-{}", std::process::id(), started.as_nanos())
+        });
         let params = HelloParams {
             authentication,
             rpc_version: RPC_VERSION,
             client: ClientInfo {
                 name: client_name.to_owned(),
                 version: env!("CARGO_PKG_VERSION").to_owned(),
-                instance_id: format!("{}-{sequence}", std::process::id()),
+                instance_id: reported_instance.clone(),
             },
             capabilities: vec![
                 alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1.to_owned(),
@@ -302,6 +391,8 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_CLIENTS_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_CLIENTS_REGISTRY_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_DESKTOP_ACTIONS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_RUNTIME_READ_V1.to_owned(),
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
                 CAPABILITY_OPERATIONS_V1.to_owned(),
@@ -1676,7 +1767,9 @@ mod connection_reuse_tests {
 
     #[cfg(windows)]
     async fn pair() -> (IpcStream, IpcStream) {
+        use std::sync::atomic::{AtomicU64, Ordering};
         use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
+        static INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
         let sequence = INSTANCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let pipe = format!(
             r"\\.\pipe\alcomd-client-reuse-test-{}-{sequence}",
