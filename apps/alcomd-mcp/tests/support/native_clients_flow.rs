@@ -10,12 +10,12 @@ async fn registered_ai_lists_native_instances_and_disconnects_one_real_socket() 
         .expect("workspace root")
         .join("target/m8-business-tests")
         .join(uuid::Uuid::new_v4().to_string());
-    let data = root.join("data");
-    std::fs::create_dir_all(&data).expect("create isolated Core data directory");
+    let data_root = root.join("data");
+    std::fs::create_dir_all(&data_root).expect("create isolated Core data directory");
     let (shutdown, stopped) = tokio::sync::oneshot::channel();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         core.ipc.clone(),
-        DataConfig::isolated(data),
+        DataConfig::isolated(data_root),
         async {
             let _ = stopped.await;
         },
