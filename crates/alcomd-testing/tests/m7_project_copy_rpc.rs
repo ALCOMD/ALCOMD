@@ -233,7 +233,11 @@ async fn project_copy_plan_expiry_and_all_writer_states_are_fail_closed() {
     let plan_id = draft.plan_id;
     let expires_at = draft.expires_at_ms;
     store
-        .create_project_copy_plan(PrincipalId::local_owner(), draft, "fixture-request".into())
+        .create_project_copy_plan(
+            PrincipalId::local_owner(),
+            draft,
+            r#"{"fixture":true}"#.into(),
+        )
         .await
         .expect("persist expiry fixture");
     let expired = store
