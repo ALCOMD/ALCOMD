@@ -709,8 +709,9 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
             .is_empty()
     );
     let first_operation = completed_state_check(&mut client, "m7-official-state-check").await;
-    completed_state_check(&mut client, "m7-official-state-check-second").await;
-    completed_state_check(&mut client, "m7-official-state-check-third").await;
+    let second_operation =
+        completed_state_check(&mut client, "m7-official-state-check-second").await;
+    let third_operation = completed_state_check(&mut client, "m7-official-state-check-third").await;
     let replay = client
         .state_check("m7-official-state-check".to_owned())
         .await
@@ -720,13 +721,21 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         .operations_list(None, Some(100), false)
         .await
         .expect("authoritative tasks remain readable");
-    assert_eq!(tasks.operations.len(), 3);
-    assert!(
-        tasks
+    assert_eq!(
+        tasks.operations.len(),
+        operations_before.operations.len() + 3
+    );
+    for id in [first_operation, second_operation, third_operation] {
+        let check = tasks
             .operations
             .iter()
-            .all(|operation| operation.state == alcomd_protocol::OperationState::Succeeded)
-    );
+            .find(|operation| operation.operation_id == id)
+            .expect("each accepted state check is listed");
+        assert_eq!(check.state, alcomd_protocol::OperationState::Succeeded);
+    }
+    for previous in &operations_before.operations {
+        assert!(tasks.operations.contains(previous), "earlier task changed");
+    }
     let serialized = serde_json::to_string(&tasks).expect("public tasks");
     for forbidden in [
         "Authorization",
