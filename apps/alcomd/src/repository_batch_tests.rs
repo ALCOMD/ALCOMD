@@ -194,7 +194,11 @@ async fn repository_register_reuses_only_its_own_remote_preview() {
     };
     let first = connection("preview");
     let second = connection("other");
-    for (index, registration) in [(1, &first), (2, &second)] {
+    let other_owner = AccessContext::new(
+        alcomd_application::PrincipalId::parse("test:other-owner").expect("fixture principal"),
+        [Permission::RepositoriesRead, Permission::RepositoriesManage],
+    );
+    for index in 1..=2 {
         let url = format!("http://{address}/{index}");
         let preview = m3_rpc::dispatch(
             RequestEnvelope {
@@ -209,31 +213,33 @@ async fn repository_register_reuses_only_its_own_remote_preview() {
         .await;
         let source = preview.response["result"]["repository"]["source"].clone();
         assert_eq!(source, json!({"kind":"remote","url":url}));
-        assert_eq!(counters.requests.load(Ordering::SeqCst), index);
-        let source = if index == 1 {
-            json!({"kind":"remote","url":format!("{url}#same-source")})
-        } else {
-            source
+        let after_inspection = 2 * index - 1;
+        assert_eq!(counters.requests.load(Ordering::SeqCst), after_inspection);
+        let preview_id = preview.response["result"]["previewId"]
+            .as_str()
+            .expect("available registration preview");
+        let register = || RequestEnvelope {
+            id: format!("register-{index}"),
+            method: rpc::METHOD_REPOSITORIES_REGISTER.to_owned(),
+            params: json!({"previewId":preview_id,"idempotencyKey":format!("register-{index}")}),
         };
-        let registered = m3_rpc::dispatch(
-            RequestEnvelope {
-                id: format!("register-{index}"),
-                method: rpc::METHOD_REPOSITORIES_REGISTER.to_owned(),
-                params: json!({"source":source,"idempotencyKey":format!("register-{index}")}),
-            },
-            registration,
-            &registry,
-            &access,
-        )
-        .await;
+        let denied = m3_rpc::dispatch(register(), &second, &registry, &other_owner).await;
+        assert_eq!(denied.response["error"]["code"], "revision_conflict");
+        assert_eq!(counters.requests.load(Ordering::SeqCst), after_inspection);
+        let registered = m3_rpc::dispatch(register(), &second, &registry, &access).await;
         assert_eq!(
             registered.response["result"]["repository"]["declaredId"],
             format!("example.{index}")
         );
+        assert_eq!(registered.response["result"]["replayed"], false);
+        assert_eq!(counters.requests.load(Ordering::SeqCst), 2 * index);
+        let replay = m3_rpc::dispatch(register(), &first, &registry, &access).await;
+        assert_eq!(replay.response["result"]["replayed"], true);
         assert_eq!(
-            counters.requests.load(Ordering::SeqCst),
-            if index == 1 { 1 } else { 3 }
+            replay.response["result"]["repository"],
+            registered.response["result"]["repository"]
         );
+        assert_eq!(counters.requests.load(Ordering::SeqCst), 2 * index);
         if index == 1 {
             let repository = &registered.response["result"]["repository"];
             let rename = |display_name: &str| RequestEnvelope {
@@ -258,7 +264,7 @@ async fn repository_register_reuses_only_its_own_remote_preview() {
             assert_eq!(renamed["displayName"], "社区软件包");
             assert_eq!(renamed["name"], repository["name"]);
             assert_eq!(renamed["source"], repository["source"]);
-            assert_eq!(counters.requests.load(Ordering::SeqCst), 1);
+            assert_eq!(counters.requests.load(Ordering::SeqCst), 2);
         }
     }
     let catalogue = store
