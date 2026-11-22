@@ -48,7 +48,10 @@ pub struct McpIdentityWriteResult {
 }
 
 pub trait McpIdentityStore: Clone + Send + Sync + 'static {
-    fn mcp_clients(&self) -> impl Future<Output = Result<Vec<McpClient>, McpIdentityError>> + Send;
+    fn mcp_clients(
+        &self,
+        actor: PrincipalId,
+    ) -> impl Future<Output = Result<Vec<McpClient>, McpIdentityError>> + Send;
     fn mcp_authenticate(
         &self,
         hash: [u8; 32],
@@ -99,7 +102,7 @@ impl<S: McpIdentityStore> McpIdentityApplication<S> {
         if !(1..=1000).contains(&limit) {
             return Err(McpIdentityError::InvalidInput);
         }
-        let all = self.store.mcp_clients().await?;
+        let all = self.store.mcp_clients(access.principal().clone()).await?;
         let bytes = serde_json::to_vec(&(access.principal(), &all))
             .map_err(|_| McpIdentityError::Unavailable)?;
         let fingerprint = Sha256::digest(bytes)
@@ -154,7 +157,7 @@ impl<S: McpIdentityStore> McpIdentityApplication<S> {
         access
             .require(Permission::McpClientsManage)
             .map_err(|_| McpIdentityError::PermissionDenied)?;
-        if matches!(&command, McpIdentityWrite::Issue { .. }) && !access.is_interactive_client() {
+        if !access.is_local_owner() {
             return Err(McpIdentityError::PermissionDenied);
         }
         if crate::IdempotencyKey::parse(key.clone()).is_err() || now > i64::MAX as u64 {

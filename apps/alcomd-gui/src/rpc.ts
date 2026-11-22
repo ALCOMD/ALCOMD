@@ -1,6 +1,7 @@
 import type { BackupCreateParams, BackupRestoreParams } from "@alcomd/sdk";
 import type { ProjectsCreateParams, ProjectsCreateResult, ProjectTemplatesExportParams, ProjectTemplatesExportResult, ProjectTemplatesListResult, ProjectTemplatesSaveParams, ProjectTemplatesSaveResult, ProjectTemplatesRemoveParams, ProjectTemplatesRemoveResult } from "@alcomd/sdk";
 import type { LogsReadParams, LogsReadResult } from "@alcomd/sdk";
+import type { NativeRpcMethods } from "@alcomd/sdk";
 import type { ProjectInventoryParams, ProjectInventoryResult, ProjectTemplateEditParams, ProjectTemplateGetParams, ProjectTemplateGetResult } from "@alcomd/sdk";
 import type { ProjectCandidateRequest, ProjectCandidatePage, ExtensionResult, ExtensionPermissionsListResult, ExtensionUiCloseParams, ExtensionUiCloseResult, ExtensionUiDispatchParams, ExtensionUiDispatchResult, ExtensionUiOpenParams, ExtensionUiOpenResult, ExtensionUiRefreshParams, ExtensionUiSnapshotResult, RpcError } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
@@ -17,6 +18,24 @@ export type FileDrag = { type: "leave" } | { type: "hover"; x: number; y: number
 export type NativeFileKind = "backupZip" | "backupZipDestination" | "repositoryManifest" | "unityEditor" | "extensionPackage" | "templateAttachment";
 
 export interface GuiRpcClient {
+    aiTransportSnapshot(params: NativeRpcMethods["mcp.transport.snapshot"]["params"]): Promise<NativeRpcMethods["mcp.transport.snapshot"]["result"]>;
+    aiRuntimeSnapshot(params: NativeRpcMethods["mcp.runtime.snapshot"]["params"]): Promise<NativeRpcMethods["mcp.runtime.snapshot"]["result"]>;
+    aiRequestDecide(params: NativeRpcMethods["mcp.clients.requests.decide"]["params"]): Promise<NativeRpcMethods["mcp.clients.requests.decide"]["result"]>;
+    aiRequestList(params: NativeRpcMethods["mcp.clients.requests.list"]["params"]): Promise<NativeRpcMethods["mcp.clients.requests.list"]["result"]>;
+    aiRequestGet(params: NativeRpcMethods["mcp.clients.requests.get"]["params"]): Promise<NativeRpcMethods["mcp.clients.requests.get"]["result"]>;
+    aiRequestCreate(params: NativeRpcMethods["mcp.clients.requests.create"]["params"]): Promise<NativeRpcMethods["mcp.clients.requests.create"]["result"]>;
+    aiOAuthRequestDecide(params: NativeRpcMethods["mcp.oauth.requests.decide"]["params"]): Promise<NativeRpcMethods["mcp.oauth.requests.decide"]["result"]>;
+    aiOAuthRequestGet(params: NativeRpcMethods["mcp.oauth.requests.get"]["params"]): Promise<NativeRpcMethods["mcp.oauth.requests.get"]["result"]>;
+    aiOAuthRevoke(params: NativeRpcMethods["mcp.oauth.registrations.revoke"]["params"]): Promise<NativeRpcMethods["mcp.oauth.registrations.revoke"]["result"]>;
+    aiOAuthSet(params: NativeRpcMethods["mcp.oauth.registrations.set"]["params"]): Promise<NativeRpcMethods["mcp.oauth.registrations.set"]["result"]>;
+    aiOAuthList(params: NativeRpcMethods["mcp.oauth.registrations.list"]["params"]): Promise<NativeRpcMethods["mcp.oauth.registrations.list"]["result"]>;
+    aiClientRevoke(params: NativeRpcMethods["mcp.clients.revoke"]["params"]): Promise<NativeRpcMethods["mcp.clients.revoke"]["result"]>;
+    aiClientIssueCredential(params: NativeRpcMethods["mcp.clients.issueCredential"]["params"]): Promise<NativeRpcMethods["mcp.clients.issueCredential"]["result"]>;
+    aiClientCreate(params: NativeRpcMethods["mcp.clients.create"]["params"]): Promise<NativeRpcMethods["mcp.clients.create"]["result"]>;
+    aiClientsList(params: NativeRpcMethods["mcp.clients.list"]["params"]): Promise<NativeRpcMethods["mcp.clients.list"]["result"]>;
+    clientsList(params: NativeRpcMethods["clients.list"]["params"]): Promise<NativeRpcMethods["clients.list"]["result"]>;
+    clientInstancesList(params: NativeRpcMethods["clients.instances.list"]["params"]): Promise<NativeRpcMethods["clients.instances.list"]["result"]>;
+    clientsDisconnect(params: NativeRpcMethods["clients.disconnect"]["params"]): Promise<NativeRpcMethods["clients.disconnect"]["result"]>;
     readonly unityWindows?: GuiUnityWindows;
     subscribeEvents(request: GuiEventsRequest, receive: (message: GuiEventMessage) => void): Promise<GuiEventSubscription>;
     packageQueryProjectCandidates(params: ProjectCandidateRequest): Promise<ProjectCandidatePage>;
@@ -121,6 +140,60 @@ export interface GuiRpcClient {
 }
 
 class TauriGuiRpcClient implements GuiRpcClient {
+    aiTransportSnapshot(params: NativeRpcMethods["mcp.transport.snapshot"]["params"]): Promise<NativeRpcMethods["mcp.transport.snapshot"]["result"]> {
+        return invokeTyped("gui_mcp_transport_snapshot", { params });
+    }
+    aiRuntimeSnapshot(params: NativeRpcMethods["mcp.runtime.snapshot"]["params"]): Promise<NativeRpcMethods["mcp.runtime.snapshot"]["result"]> {
+        return invokeTyped("gui_mcp_runtime_snapshot", { params });
+    }
+    aiRequestDecide(params: NativeRpcMethods["mcp.clients.requests.decide"]["params"]): Promise<NativeRpcMethods["mcp.clients.requests.decide"]["result"]> {
+        return invokeTyped("gui_mcp_client_request_decide", { params });
+    }
+    aiRequestList(params: NativeRpcMethods["mcp.clients.requests.list"]["params"]): Promise<NativeRpcMethods["mcp.clients.requests.list"]["result"]> {
+        return invokeTyped("gui_mcp_client_request_list", { params });
+    }
+    aiRequestGet(params: NativeRpcMethods["mcp.clients.requests.get"]["params"]): Promise<NativeRpcMethods["mcp.clients.requests.get"]["result"]> {
+        return invokeTyped("gui_mcp_client_request_get", { params });
+    }
+    aiRequestCreate(params: NativeRpcMethods["mcp.clients.requests.create"]["params"]): Promise<NativeRpcMethods["mcp.clients.requests.create"]["result"]> {
+        return invokeTyped("gui_mcp_client_request_create", { params });
+    }
+    aiOAuthRequestDecide(params: NativeRpcMethods["mcp.oauth.requests.decide"]["params"]): Promise<NativeRpcMethods["mcp.oauth.requests.decide"]["result"]> {
+        return invokeTyped("gui_oauth_request_decide", { params });
+    }
+    aiOAuthRequestGet(params: NativeRpcMethods["mcp.oauth.requests.get"]["params"]): Promise<NativeRpcMethods["mcp.oauth.requests.get"]["result"]> {
+        return invokeTyped("gui_oauth_request_get", { params });
+    }
+    aiOAuthRevoke(params: NativeRpcMethods["mcp.oauth.registrations.revoke"]["params"]): Promise<NativeRpcMethods["mcp.oauth.registrations.revoke"]["result"]> {
+        return invokeTyped("gui_oauth_registration_revoke", { params });
+    }
+    aiOAuthSet(params: NativeRpcMethods["mcp.oauth.registrations.set"]["params"]): Promise<NativeRpcMethods["mcp.oauth.registrations.set"]["result"]> {
+        return invokeTyped("gui_oauth_registration_set", { params });
+    }
+    aiOAuthList(params: NativeRpcMethods["mcp.oauth.registrations.list"]["params"]): Promise<NativeRpcMethods["mcp.oauth.registrations.list"]["result"]> {
+        return invokeTyped("gui_oauth_registrations_list", { params });
+    }
+    aiClientRevoke(params: NativeRpcMethods["mcp.clients.revoke"]["params"]): Promise<NativeRpcMethods["mcp.clients.revoke"]["result"]> {
+        return invokeTyped("gui_mcp_client_revoke", { params });
+    }
+    aiClientIssueCredential(params: NativeRpcMethods["mcp.clients.issueCredential"]["params"]): Promise<NativeRpcMethods["mcp.clients.issueCredential"]["result"]> {
+        return invokeTyped("gui_mcp_client_issue_credential", { params });
+    }
+    aiClientCreate(params: NativeRpcMethods["mcp.clients.create"]["params"]): Promise<NativeRpcMethods["mcp.clients.create"]["result"]> {
+        return invokeTyped("gui_mcp_client_create", { params });
+    }
+    aiClientsList(params: NativeRpcMethods["mcp.clients.list"]["params"]): Promise<NativeRpcMethods["mcp.clients.list"]["result"]> {
+        return invokeTyped("gui_mcp_clients_list", { params });
+    }
+    clientsList(params: NativeRpcMethods["clients.list"]["params"]): Promise<NativeRpcMethods["clients.list"]["result"]> {
+        return invokeTyped("gui_clients_list", { params });
+    }
+    clientInstancesList(params: NativeRpcMethods["clients.instances.list"]["params"]): Promise<NativeRpcMethods["clients.instances.list"]["result"]> {
+        return invokeTyped("gui_client_instances_list", { params });
+    }
+    clientsDisconnect(params: NativeRpcMethods["clients.disconnect"]["params"]): Promise<NativeRpcMethods["clients.disconnect"]["result"]> {
+        return invokeTyped("gui_clients_disconnect", { params });
+    }
     selectFile(kind: NativeFileKind, currentPath?: string): Promise<string | undefined> {
         return invokeTyped<string | null>("gui_select_file", { kind, currentPath: currentPath ?? null }).then((path) => path ?? undefined);
     }
@@ -139,7 +212,7 @@ class TauriGuiRpcClient implements GuiRpcClient {
         start: (token, targets) => invokeTyped<UnityWindowSnapshot>("gui_unity_windows_start", { token, targets }),
         next: (token, after) => invokeTyped<UnityWindowSnapshot>("gui_unity_windows_next", { token, after }),
         stop: (token) => invokeTyped<void>("gui_unity_windows_stop", { token }),
-        focus: (projectId, revision) => invokeTyped<void>("gui_focus_project_unity", { projectId, revision })
+        focus: (projectId, expectedRevision) => invokeTyped<void>("gui_focus_project_unity", { params: { projectId, expectedRevision, idempotencyKey: crypto.randomUUID() } })
     };
 
     async subscribeEvents(request: GuiEventsRequest, receive: (message: GuiEventMessage) => void): Promise<GuiEventSubscription> {
@@ -225,7 +298,7 @@ class TauriGuiRpcClient implements GuiRpcClient {
     }
 
     openProjectDirectory(projectId: string): Promise<void> {
-        return invokeTyped("gui_open_project_directory", { projectId });
+        return invokeTyped("gui_open_project_directory", { params: { projectId, idempotencyKey: crypto.randomUUID() } });
     }
 
     selectDirectory(currentPath?: string): Promise<string | undefined> {
@@ -241,7 +314,7 @@ class TauriGuiRpcClient implements GuiRpcClient {
     }
 
     openUnityHubDownload(): Promise<void> {
-        return invokeTyped("gui_open_unity_hub_download", {});
+        return invokeTyped("gui_open_unity_hub_download", { params: { idempotencyKey: crypto.randomUUID() } });
     }
 
     projectRegister(path: string, idempotencyKey: string): Promise<ProjectWriteResult> {

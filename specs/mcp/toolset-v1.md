@@ -188,3 +188,7 @@ Windows x64 具名版本在隔离配置实测 HTTP、STDIO 均发出 `2025-11-25
 创建可以使用手工定义、已登记项目或已有模板文件。创建和导出返回同一 Core
 任务。移除返回模板 ID 与移除修订，重放原请求返回同一结果，保留后来重建的模板。
 工具字段见[项目包 Schema](project-inventory-v1.schema.json)和[模板 Schema](template-edit-v1.schema.json)。
+
+三个原生客户端工具使用 `clients.registry.v1`，参数和返回值见[安装与连接工具定义](client-registry-v1.schema.json)。`alcomd_list_clients` 读取已安装及活跃程序，`alcomd_list_client_instances` 读取指定程序的实例/连接，`alcomd_disconnect_client` 按已确认的 Core 实例、目标及原幂等键断开。AI 凭据仍由 Core 验证和撤销。
+
+桌面工具使用 `desktop.actions.v1`。三项请求分别接收已登记的项目、项目修订或固定 Unity 下载页操作；调用者传入本次操作的幂等键。Core 在其本机桌面执行。相同请求的回执未知时，原参数和原键可用于取回结果。[桌面工具字段](desktop-actions-v1.schema.json)

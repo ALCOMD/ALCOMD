@@ -6,7 +6,7 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
         await page.setViewportSize({ width: 1280, height: 800 });
         await page.goto("/browser-harness.html?route=/settings&state=ready");
         let navigation = page.locator(".resource-navigation");
-        await expect(navigation.getByRole("button")).toHaveCount(3);
+        await expect(navigation.getByRole("button")).toHaveCount(4);
         if (locale !== "en-US") {
             await navigation.getByRole("button").nth(2).click();
             await page.locator("#settings-locale").evaluate((element, value) => {
@@ -18,14 +18,14 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
         }
         const t = createTranslator(locale);
         navigation = page.getByRole("navigation", { name: t("Settings sections"), exact: true });
-        const labels = [t("General"), "Unity", t("Appearance")];
+        const labels = [t("General"), "Unity", t("Appearance"), t("Clients")];
         await expect(navigation.getByRole("button")).toHaveText(labels);
         await expect(navigation.locator(".os-scrollbar")).toHaveCount(0);
         await expect(navigation).toHaveCSS("overflow", "visible");
         const writes = await page.evaluate(() => window.settingsRequests.length);
         const path = page.locator("#settings-projectDirectory");
         const original = await path.elementHandle();
-        const regions = [[t("Projects"), t("Backups"), t("Network")], [t("Unity Hub Path"), t("Unity installations"), t("Default Unity launch arguments")], [t("Appearance"), t("Window"), t("Theme")]];
+        const regions = [[t("Projects"), t("Backups"), t("Network")], [t("Unity Hub Path"), t("Unity installations"), t("Default Unity launch arguments")], [t("Appearance"), t("Window"), t("Theme")], [t("Client programs"), t("AI clients")]];
         await expect(page.getByRole("region", { name: t("Packages"), exact: true, includeHidden: true })).toHaveCount(0);
         for (let index = 0; index < labels.length; index++) {
             await navigation.getByRole("button").nth(index).click();

@@ -101,6 +101,7 @@ mod tests {
 
     async fn open_private_connection(
         store: StateStoreHandle,
+        data: alcomd_platform::DataConfig,
         entry_point: &str,
         capabilities: &[&str],
     ) -> (IpcStream, tokio::task::JoinHandle<()>) {
@@ -119,6 +120,16 @@ mod tests {
                 alcomd_vpm::VpmReader::new().expect("real project reader"),
             );
             let mut stream = IpcStream::Server(server);
+            let peer = alcomd_platform::client_peer::observe(
+                alcomd_platform::client_peer::peer_pid(&stream),
+            );
+            assert_eq!(
+                peer.process
+                    .as_ref()
+                    .expect("kernel-attributed test process")
+                    .pid,
+                std::process::id()
+            );
             let mut state = ConnectionState {
                 mcp_hash: None,
                 oauth_endpoint: false,
@@ -158,7 +169,9 @@ mod tests {
                     state.handshake_complete = true;
                     state.capabilities = capabilities;
                     state.client_instance_id = action.client_instance_id;
-                    state.actor = action.actor.expect("hello entry point");
+                    assert!(action.reported.is_some());
+                    state.actor =
+                        crate::client_registry_rpc::official_actor(&data, &peer).to_owned();
                 }
                 write_json_frame(&mut stream, &action.response)
                     .await
@@ -213,6 +226,7 @@ mod tests {
             let path = missing.to_str().expect("fixture path");
             let (mut cli, cli_server) = open_private_connection(
                 store.clone(),
+                alcomd_platform::DataConfig::isolated(root.clone()),
                 "alcomd-cli",
                 &[rpc::CAPABILITY_PROJECTS_REGISTRY_V1],
             )
@@ -233,6 +247,7 @@ mod tests {
 
             let (mut gui, gui_server) = open_private_connection(
                 store.clone(),
+                alcomd_platform::DataConfig::isolated(root.clone()),
                 "alcomd-gui",
                 &[rpc::CAPABILITY_LOGS_READ_V1],
             )
@@ -240,15 +255,15 @@ mod tests {
             let response = exchange(
                 &mut gui,
                 rpc::METHOD_LOGS_READ,
-                json!({"filter": {"search": "不存在的项目", "actor": "CLI", "outcome": "failed", "type": "write"}}),
+                json!({"filter": {"search": "不存在的项目", "actor": "Local IPC", "outcome": "failed", "type": "write"}}),
             )
             .await;
             let page: rpc::LogsReadResult =
                 serde_json::from_value(response["result"].clone()).expect("typed logs.read result");
             assert_eq!(page.entries.len(), 1);
-            assert_eq!(page.actors, ["CLI"]);
+            assert_eq!(page.actors, ["Local IPC"]);
             let entry = &page.entries[0];
-            assert_eq!(entry.actor, "CLI");
+            assert_eq!(entry.actor, "Local IPC", "both advertised official names were claims by the same unregistered test executable");
             assert_eq!(entry.step, "inspect_project");
             assert_eq!(entry.outcome, rpc::LogOutcome::Failed);
             assert_eq!(

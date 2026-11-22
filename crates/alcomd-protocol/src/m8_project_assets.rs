@@ -5,6 +5,21 @@ pub const CAPABILITY_PROJECT_INVENTORY_V1: &str = "packages.project-inventory.v1
 pub const CAPABILITY_TEMPLATE_EDIT_V1: &str = "project-templates.edit.v1";
 pub fn mcp_environment_tool_capability(name: &str) -> Option<&'static str> {
     Some(match name {
+        "alcomd_focus_project_unity"
+        | "alcomd_open_project_directory"
+        | "alcomd_open_unity_hub_download" => crate::CAPABILITY_DESKTOP_ACTIONS_V1,
+        "alcomd_get_mcp_runtime_snapshot" => crate::CAPABILITY_MCP_RUNTIME_READ_V1,
+        "alcomd_get_mcp_transport_snapshot" => crate::CAPABILITY_MCP_TRANSPORT_READ_V1,
+        "alcomd_list_ai_clients"
+        | "alcomd_request_client_change"
+        | "alcomd_get_client_change_request"
+        | "alcomd_list_client_change_requests" => crate::CAPABILITY_MCP_CLIENTS_V1,
+        "alcomd_list_oauth_registrations" | "alcomd_get_oauth_request" => {
+            crate::CAPABILITY_MCP_OAUTH_V1
+        }
+        "alcomd_list_clients" | "alcomd_list_client_instances" | "alcomd_disconnect_client" => {
+            crate::CAPABILITY_CLIENTS_REGISTRY_V1
+        }
         "alcomd_list_unity_installations" | "alcomd_get_project_launch_config" => {
             crate::CAPABILITY_UNITY_READ_V1
         }

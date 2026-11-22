@@ -1,3 +1,4 @@
+mod client_requests;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
@@ -125,6 +126,16 @@ impl PackageSourceOptions {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Request an action on the Core machine's interactive desktop.
+    Desktop {
+        #[command(subcommand)]
+        command: DesktopCommand,
+    },
+    /// Inspect installed programs and their current Core connections.
+    Client {
+        #[command(subcommand)]
+        command: NativeClientCommand,
+    },
     /// Manage authenticated MCP connections.
     Mcp {
         #[command(subcommand)]
@@ -185,7 +196,74 @@ enum SystemCommand {
 }
 
 #[derive(Debug, Subcommand)]
+enum DesktopCommand {
+    FocusProjectUnity {
+        project_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    OpenProjectDirectory {
+        project_id: String,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    OpenUnityHubDownload {
+        #[arg(long)]
+        idempotency_key: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum NativeClientCommand {
+    /// List installed programs including those that have never connected.
+    List {
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Show the live instances and connections of one program.
+    Instances {
+        program_key: String,
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Disconnect the indicated connection or the current connections of an instance.
+    Disconnect {
+        #[arg(value_enum)]
+        kind: DisconnectKind,
+        id: String,
+        #[arg(long)]
+        core_instance_id: String,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum DisconnectKind {
+    Connection,
+    Instance,
+}
+
+#[derive(Debug, Subcommand)]
 enum McpCommand {
+    Transport {
+        #[arg(long)]
+        client_id: Option<String>,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    Runtime {
+        #[arg(long)]
+        client_id: Option<String>,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
     Oauth {
         #[command(subcommand)]
         command: m8_oauth::OAuthCommand,
@@ -199,6 +277,25 @@ enum McpCommand {
 
 #[derive(Debug, Subcommand)]
 enum McpClientCommand {
+    /// Register an AI client with Core.
+    Create {
+        display_name: String,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    /// Revoke an AI client's access.
+    Revoke {
+        client_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    /// Submit, inspect or decide a client management request.
+    Request {
+        #[command(subcommand)]
+        command: client_requests::Command,
+    },
     /// List non-secret client records.
     List {
         #[arg(long)]
@@ -721,6 +818,9 @@ async fn main() -> ExitCode {
             Command::Mcp {
                 command: McpCommand::Client {
                     command: McpClientCommand::IssueCredential { .. }
+                        | McpClientCommand::Request {
+                            command: client_requests::Command::Approve { .. }
+                        }
                 }
             }
         );
@@ -833,19 +933,55 @@ async fn execute(
     validate_mcp_output(&command, options, io::stdout().is_terminal())?;
     let mut client = alcomd_client::AlcomdClient::connect(config).await?;
     let value = match command {
+        Command::Desktop {command} => {
+            match command {
+                DesktopCommand::FocusProjectUnity{project_id,expected_revision,idempotency_key} =>
+                    serde_json::to_value(client.desktop_focus_project_unity(alcomd_protocol::DesktopFocusProjectUnityParams{project_id,expected_revision,idempotency_key}).await?),
+                DesktopCommand::OpenProjectDirectory{project_id,idempotency_key} =>
+                    serde_json::to_value(client.desktop_open_project_directory(alcomd_protocol::DesktopOpenProjectDirectoryParams{project_id,idempotency_key}).await?),
+                DesktopCommand::OpenUnityHubDownload{idempotency_key} =>
+                    serde_json::to_value(client.desktop_open_unity_hub_download(alcomd_protocol::DesktopOpenUnityHubDownloadParams{idempotency_key}).await?),
+            }
+        }
+        Command::Client { command } => match command {
+            NativeClientCommand::List {cursor,limit} => serde_json::to_value(client.clients_list(alcomd_protocol::ClientsListParams {cursor,limit}).await?),
+            NativeClientCommand::Instances {program_key,cursor,limit} => serde_json::to_value(client.client_instances_list(alcomd_protocol::ClientInstancesListParams {program_key,cursor,limit}).await?),
+            NativeClientCommand::Disconnect {kind,id,core_instance_id,idempotency_key} => {
+                if !options.yes && matches!(options.output_mode, OutputMode::Human) {
+                    eprintln!("Disconnect {kind:?} {} on Core {}.", id.escape_debug(), core_instance_id.escape_debug());
+                }
+                confirm_high_impact(options)?;
+                let target = match kind {
+                    DisconnectKind::Connection => alcomd_protocol::ClientDisconnectTarget::Connection { id },
+                    DisconnectKind::Instance => alcomd_protocol::ClientDisconnectTarget::Instance { id },
+                };
+                serde_json::to_value(client.clients_disconnect(alcomd_protocol::ClientsDisconnectParams {expected_core_instance_id:core_instance_id,target,idempotency_key}).await?)
+            }
+        },
+        Command::Mcp {command:McpCommand::Runtime {client_id,limit}} => serde_json::to_value(client.mcp_runtime_snapshot(alcomd_protocol::McpRuntimeSnapshotParams {client_id,limit}).await?),
+        Command::Mcp {command:McpCommand::Transport {client_id,limit}} => serde_json::to_value(client.mcp_transport_snapshot(alcomd_protocol::McpTransportQuery {client_id,limit}).await?),
         Command::Mcp{command:McpCommand::Oauth{command}}=>return m8_oauth::execute(&mut client,command,options).await,
         Command::Mcp { command: McpCommand::Client { command } } => match command {
+            McpClientCommand::Request { command } => return client_requests::execute(&mut client,command,options).await,
+            McpClientCommand::Create {display_name,idempotency_key} => {
+                eprintln!("Register AI client {}.", display_name.escape_debug());
+                confirm_high_impact(options)?;
+                serde_json::to_value(client.mcp_client_create(alcomd_protocol::McpClientsCreateParams { display_name,idempotency_key }).await?)
+            }
+            McpClientCommand::Revoke {client_id,expected_revision,idempotency_key} => {
+                if !options.yes {
+                    let record = client_requests::lookup(&mut client,&client_id).await?;
+                    eprintln!("Permanently revoke {} ({}) at revision {expected_revision}.",record.display_name.escape_debug(),record.client_id);
+                }
+                confirm_high_impact(options)?;
+                serde_json::to_value(client.mcp_client_revoke(alcomd_protocol::McpClientMutationParams { client_id,expected_revision,idempotency_key }).await?)
+            }
             McpClientCommand::List { cursor, limit } => serde_json::to_value(client.mcp_clients_list(alcomd_protocol::McpClientsListParams { cursor, limit }).await?),
             McpClientCommand::IssueCredential { client_id, expected_revision, idempotency_key, .. } => {
-                let mut cursor = None;
-                let record = loop {
-                    let page = client.mcp_clients_list(alcomd_protocol::McpClientsListParams { cursor, limit: Some(64) }).await?;
-                    if let Some(record) = page.items.into_iter().find(|record|record.client_id == client_id) { break record; }
-                    cursor = page.next_cursor;
-                    if cursor.is_none() { return Err(CliError::Usage("MCP client was not found")); }
-                };
-                if record.revision != expected_revision || record.revoked_at_ms.is_some() { return Err(CliError::Usage("MCP client changed or was revoked; list current records before issuing")); }
-                eprintln!("Issue credential for {} ({}). The previous credential becomes invalid immediately.", record.display_name.escape_debug(), record.client_id);
+                if !options.yes {
+                    let record = client_requests::lookup(&mut client, &client_id).await?;
+                    eprintln!("Issue credential for {} ({}) at revision {expected_revision}. The previous credential becomes invalid immediately.", record.display_name.escape_debug(), record.client_id);
+                }
                 confirm_high_impact(options)?;
                 let issued = client.mcp_client_issue_credential(alcomd_protocol::McpClientMutationParams { client_id, expected_revision, idempotency_key }).await.map_err(|error| match error {
                     alcomd_client::ClientError::Remote(ref remote) if matches!(remote.code.as_str(), "store_unavailable" | "internal_error" | "daemon_unavailable") => CliError::CredentialOutcomeUnknown,
@@ -1608,12 +1744,31 @@ async fn execute(
 impl Command {
     fn name(&self) -> &'static str {
         match self {
+            Self::Desktop { command } => match command {
+                DesktopCommand::FocusProjectUnity { .. } => "desktop focus-project-unity",
+                DesktopCommand::OpenProjectDirectory { .. } => "desktop open-project-directory",
+                DesktopCommand::OpenUnityHubDownload { .. } => "desktop open-unity-hub-download",
+            },
+            Self::Client { command } => match command {
+                NativeClientCommand::List { .. } => "client list",
+                NativeClientCommand::Instances { .. } => "client instances",
+                NativeClientCommand::Disconnect { .. } => "client disconnect",
+            },
+            Self::Mcp {
+                command: McpCommand::Runtime { .. },
+            } => "mcp runtime",
+            Self::Mcp {
+                command: McpCommand::Transport { .. },
+            } => "mcp transport",
             Self::Mcp {
                 command: McpCommand::Oauth { command },
             } => m8_oauth::name(command),
             Self::Mcp {
                 command: McpCommand::Client { command },
             } => match command {
+                McpClientCommand::Create { .. } => "mcp client create",
+                McpClientCommand::Revoke { .. } => "mcp client revoke",
+                McpClientCommand::Request { command } => command.name(),
                 McpClientCommand::List { .. } => "mcp client list",
                 McpClientCommand::IssueCredential { .. } => "mcp client issue-credential",
             },

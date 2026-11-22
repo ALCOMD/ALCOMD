@@ -39,6 +39,9 @@ pub(super) async fn dispatch(
     if let Some(action) = require_capability(&request.id, state, CAPABILITY_MCP_CLIENTS_V1) {
         return action;
     }
+    if request.method.starts_with("mcp.clients.requests.") {
+        return dispatch_management_request(request, store, access).await;
+    }
     let service = McpIdentityApplication::new(store.clone());
     let request_id = request.id.clone();
     let outcome = async {
@@ -112,6 +115,63 @@ pub(super) async fn dispatch(
     }
 }
 
+async fn dispatch_management_request(
+    request: RequestEnvelope,
+    store: &StateStoreHandle,
+    access: &AccessContext,
+) -> DispatchAction {
+    use alcomd_application::{ClientRequestApplication, OAuthError};
+    let service = ClientRequestApplication(store);
+    let id = request.id.clone();
+    let result = async {
+        let now = current_time_ms().map_err(|_| OAuthError::Unavailable)?;
+        match request.method.as_str() {
+            METHOD_MCP_CLIENT_REQUESTS_CREATE => {
+                let p: McpClientRequestCreateParams =
+                    serde_json::from_value(request.params).map_err(|_| OAuthError::InvalidInput)?;
+                let action = serde_json::from_value(
+                    serde_json::to_value(p.action).map_err(|_| OAuthError::InvalidInput)?,
+                )
+                .map_err(|_| OAuthError::InvalidInput)?;
+                serde_json::to_value(
+                    service
+                        .create(access, action, p.idempotency_key, now)
+                        .await?,
+                )
+            }
+            METHOD_MCP_CLIENT_REQUESTS_GET => {
+                let p: McpClientRequestGetParams =
+                    serde_json::from_value(request.params).map_err(|_| OAuthError::InvalidInput)?;
+                let id = McpClientId::parse(&p.request_id).map_err(|_| OAuthError::InvalidInput)?;
+                serde_json::to_value(service.get(access, id, now).await?)
+            }
+            METHOD_MCP_CLIENT_REQUESTS_LIST => {
+                let p =
+                    serde_json::from_value(request.params).map_err(|_| OAuthError::InvalidInput)?;
+                serde_json::to_value(service.list(access, p, now).await?)
+            }
+            METHOD_MCP_CLIENT_REQUESTS_DECIDE => {
+                let p =
+                    serde_json::from_value(request.params).map_err(|_| OAuthError::InvalidInput)?;
+                let mut entropy = [0u8; 32];
+                getrandom::fill(&mut entropy).map_err(|_| OAuthError::Unavailable)?;
+                serde_json::to_value(
+                    service
+                        .decide(access, p, alcomd_application::oauth_hex(&entropy), now)
+                        .await?,
+                )
+            }
+            _ => return Err(OAuthError::InvalidInput),
+        }
+        .map_err(|_| OAuthError::Unavailable)
+    }
+    .await;
+    match result {
+        Ok(value) => success_action(id, value, None),
+        Err(error) => crate::m8_oauth_rpc::error(id, error, false),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,7 +206,13 @@ mod tests {
             no_capability.response["error"]["code"],
             "capability_required"
         );
-        assert!(store.mcp_clients().await.expect("no mutation").is_empty());
+        assert!(
+            store
+                .mcp_clients(PrincipalId::local_owner())
+                .await
+                .expect("no mutation")
+                .is_empty()
+        );
         state.capabilities.insert(CAPABILITY_MCP_CLIENTS_V1.into());
         let unprivileged = AccessContext::new(
             PrincipalId::parse("test:unprivileged").expect("principal"),
@@ -156,7 +222,7 @@ mod tests {
         assert_eq!(denied.response["error"]["code"], "permission_denied");
         assert!(
             store
-                .mcp_clients()
+                .mcp_clients(PrincipalId::local_owner())
                 .await
                 .expect("still no mutation")
                 .is_empty()
@@ -165,7 +231,7 @@ mod tests {
         assert!(accepted.response.get("result").is_some());
         assert_eq!(
             store
-                .mcp_clients()
+                .mcp_clients(PrincipalId::local_owner())
                 .await
                 .expect("one authorized mutation")
                 .len(),

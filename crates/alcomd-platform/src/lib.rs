@@ -6,8 +6,11 @@
 
 use std::path::PathBuf;
 
+pub mod client_installation;
+pub mod client_peer;
 mod core_installation;
 mod credential_vault;
+pub mod desktop;
 mod external_path;
 mod process;
 mod project_delete;

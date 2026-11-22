@@ -48,7 +48,51 @@ pub struct TestDaemon {
     applications: Arc<super::Applications>,
 }
 
+/// Records calls from the real Core desktop use case without opening a system application.
+#[derive(Debug, Default)]
+pub struct ObservedDesktop {
+    pub calls: std::sync::Mutex<Vec<(String, Option<PathBuf>)>>,
+}
+
+impl alcomd_platform::desktop::DesktopDriver for ObservedDesktop {
+    fn open_unity_download(&self) -> Result<(), alcomd_platform::desktop::DesktopError> {
+        self.calls
+            .lock()
+            .expect("desktop recorder lock")
+            .push(("download".into(), None));
+        Ok(())
+    }
+
+    fn open_directory(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<(), alcomd_platform::desktop::DesktopError> {
+        self.calls
+            .lock()
+            .expect("desktop recorder lock")
+            .push(("directory".into(), Some(path.to_owned())));
+        Ok(())
+    }
+
+    fn focus_unity(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<(), alcomd_platform::desktop::DesktopError> {
+        self.calls
+            .lock()
+            .expect("desktop recorder lock")
+            .push(("focus".into(), Some(path.to_owned())));
+        Ok(())
+    }
+}
+
 impl TestDaemon {
+    pub fn observe_desktop(&self) -> Arc<ObservedDesktop> {
+        self.applications
+            .desktop_driver
+            .get_or_init(Default::default)
+            .clone()
+    }
     /// Exercises the existing application/real Host path with a deliberately narrowed UI caller.
     /// Native owner IPC has full authority; this is only a test-context constructor, not an authentication branch.
     pub async fn extension_activity_with_access(

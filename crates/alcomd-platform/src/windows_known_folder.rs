@@ -102,6 +102,10 @@ pub(super) fn local_app_data_directory() -> io::Result<PathBuf> {
     known_folder_path(&FOLDERID_LocalAppData, 0)
 }
 
+pub(crate) fn program_data_directory() -> io::Result<PathBuf> {
+    known_folder_path(&windows_sys::Win32::UI::Shell::FOLDERID_ProgramData, 0)
+}
+
 pub(super) fn user_profile_directory() -> io::Result<PathBuf> {
     // Resolve the user profile directly, independently of redirected Documents.
     // Existence and write access are checked at the Core operation boundary.

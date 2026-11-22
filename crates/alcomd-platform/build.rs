@@ -7,6 +7,10 @@ fn main() {
     let mut section = "";
     let mut directory = None;
     let mut daemon = None;
+    let mut bundle = None;
+    let mut gui = None;
+    let mut cli = None;
+    let mut mcp = None;
     for line in text.lines().map(str::trim) {
         if line.starts_with('[') {
             section = line;
@@ -18,6 +22,10 @@ fn main() {
         let field = match (section, key.trim()) {
             ("[identity]", "data_directory") => &mut directory,
             ("[binaries]", "daemon") => &mut daemon,
+            ("[identity]", "bundle_identifier") => &mut bundle,
+            ("[binaries]", "gui") => &mut gui,
+            ("[binaries]", "cli") => &mut cli,
+            ("[binaries]", "mcp") => &mut mcp,
             _ => continue,
         };
         assert!(field.is_none(), "duplicate product metadata key");
@@ -28,9 +36,9 @@ fn main() {
             .expect("quoted product path component");
         assert!(
             !value.is_empty()
-                && value
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')),
+                && value.bytes().all(|byte| byte.is_ascii_alphanumeric()
+                    || matches!(byte, b'-' | b'_')
+                    || key.trim() == "bundle_identifier" && byte == b'.'),
             "product path component must be a plain name"
         );
         *field = Some(value);
@@ -43,4 +51,15 @@ fn main() {
         "cargo:rustc-env=ALCOMD_DAEMON_NAME={}",
         daemon.expect("product binaries.daemon")
     );
+    for (key, value) in [
+        ("BUNDLE_ID", bundle),
+        ("GUI_NAME", gui),
+        ("CLI_NAME", cli),
+        ("MCP_NAME", mcp),
+    ] {
+        println!(
+            "cargo:rustc-env=ALCOMD_{key}={}",
+            value.expect("product client identity")
+        );
+    }
 }

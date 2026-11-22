@@ -282,7 +282,7 @@ test("Settings uses shared sections and Logs uses the Core operation log with Ma
     await navigationItem(page, "Settings").click();
     await expectHeading(page, "Settings");
     const sections = page.getByRole("navigation", { name: "Settings sections", exact: true });
-    await expect(sections.getByRole("button")).toHaveText(["General", "Unity", "Appearance"]);
+    await expect(sections.getByRole("button")).toHaveText(["General", "Unity", "Appearance", "Clients"]);
     await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Projects", "Backups", "Network"]);
     await expect(page.getByRole("region", { name: "Packages", exact: true, includeHidden: true })).toHaveCount(0);
     await expect(page.getByRole("region", { name: "System information", exact: true })).toHaveCount(0);

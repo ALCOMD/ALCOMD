@@ -1,0 +1,229 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/mcp/desktop-actions-v1.json",
+    "title": "Core-hosted desktop actions",
+    "$defs": {
+        "toolError": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "message": {
+                    "type": "string",
+                    "maxLength": 1024
+                },
+                "retryable": {
+                    "type": "boolean"
+                },
+                "diagnostic_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "subreason": {
+                            "type": "string",
+                            "maxLength": 128
+                        }
+                    },
+                    "required": [
+                        "subreason"
+                    ]
+                }
+            },
+            "required": [
+                "code",
+                "message",
+                "retryable"
+            ]
+        }
+    },
+    "x-alcomd-tools": [
+        {
+            "name": "alcomd_focus_project_unity",
+            "title": "Focus the registered project’s running Unity window",
+            "description": "Focus the registered project’s running Unity window. This acts on the Core machine. Reuse the exact parameters and idempotency key after losing a response.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "project_id",
+                    "expected_revision",
+                    "idempotency_key"
+                ],
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "expected_revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    },
+                    "idempotency_key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[\\u0000-\\u007f]+$"
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "outcome"
+                        ],
+                        "properties": {
+                            "outcome": {
+                                "const": "focused"
+                            }
+                        }
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_open_project_directory",
+            "title": "Open the registered project directory in the file manager",
+            "description": "Open the registered project directory in the file manager. This acts on the Core machine. Reuse the exact parameters and idempotency key after losing a response.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "project_id",
+                    "idempotency_key"
+                ],
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "idempotency_key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[\\u0000-\\u007f]+$"
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "outcome"
+                        ],
+                        "properties": {
+                            "outcome": {
+                                "const": "requested"
+                            }
+                        }
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_open_unity_hub_download",
+            "title": "Open the official Unity download page in the default browser",
+            "description": "Open the official Unity download page in the default browser. This acts on the Core machine. Reuse the exact parameters and idempotency key after losing a response.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "idempotency_key"
+                ],
+                "properties": {
+                    "idempotency_key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[\\u0000-\\u007f]+$"
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "outcome"
+                        ],
+                        "properties": {
+                            "outcome": {
+                                "const": "requested"
+                            }
+                        }
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": []
+        }
+    ]
+}

@@ -8,6 +8,12 @@
     ],
     "capabilityErrorCode": "capability_required",
     "errorProfiles": {
+        "aiClients": [
+            "idempotency_conflict",
+            "permission_denied",
+            "revision_conflict",
+            "store_unavailable"
+        ],
         "backup": [
             "backup_archive_limit_exceeded",
             "backup_integrity_mismatch",
@@ -27,6 +33,29 @@
             "revision_conflict",
             "store_unavailable",
             "unity_project_running"
+        ],
+        "clientRegistry": [
+            "client_registry_not_found",
+            "client_registry_stale",
+            "idempotency_conflict",
+            "permission_denied",
+            "store_unavailable"
+        ],
+        "desktop": [
+            "desktop_result_unknown",
+            "desktop_unavailable",
+            "idempotency_conflict",
+            "permission_denied",
+            "project_directory_missing",
+            "project_directory_not_directory",
+            "project_directory_open_failed",
+            "project_not_found",
+            "resource_revision_conflict",
+            "store_unavailable",
+            "unity_hub_download_open_failed",
+            "unity_window_focus_failed",
+            "unity_window_focus_rejected",
+            "unity_window_not_found"
         ],
         "extension": [
             "extension_already_installed",
@@ -333,6 +362,90 @@
                 "backup"
             ]
         },
+        "clients.disconnect": {
+            "kind": "write",
+            "capabilities": [
+                "clients.registry.v1"
+            ],
+            "rustMethod": "clients_disconnect",
+            "requestType": "ClientsDisconnectParams",
+            "resultType": "ClientsDisconnectResult",
+            "requestSchema": "client-registry-v1.schema.json#/$defs/clientsDisconnectParams",
+            "resultSchema": "client-registry-v1.schema.json#/$defs/clientsDisconnectResult",
+            "errorProfiles": [
+                "clientRegistry"
+            ]
+        },
+        "clients.instances.list": {
+            "kind": "read",
+            "capabilities": [
+                "clients.registry.v1"
+            ],
+            "rustMethod": "client_instances_list",
+            "requestType": "ClientInstancesListParams",
+            "resultType": "ClientInstancesListResult",
+            "requestSchema": "client-registry-v1.schema.json#/$defs/clientInstancesListParams",
+            "resultSchema": "client-registry-v1.schema.json#/$defs/clientInstancesListResult",
+            "errorProfiles": [
+                "clientRegistry"
+            ]
+        },
+        "clients.list": {
+            "kind": "read",
+            "capabilities": [
+                "clients.registry.v1"
+            ],
+            "rustMethod": "clients_list",
+            "requestType": "ClientsListParams",
+            "resultType": "ClientsListResult",
+            "requestSchema": "client-registry-v1.schema.json#/$defs/clientsListParams",
+            "resultSchema": "client-registry-v1.schema.json#/$defs/clientsListResult",
+            "errorProfiles": [
+                "clientRegistry"
+            ]
+        },
+        "desktop.focusProjectUnity": {
+            "kind": "write",
+            "capabilities": [
+                "desktop.actions.v1"
+            ],
+            "rustMethod": "desktop_focus_project_unity",
+            "requestType": "DesktopFocusProjectUnityParams",
+            "resultType": "DesktopActionResult",
+            "requestSchema": "desktop-actions-v1.schema.json#/$defs/desktopFocusProjectUnityParams",
+            "resultSchema": "desktop-actions-v1.schema.json#/$defs/desktopFocusedResult",
+            "errorProfiles": [
+                "desktop"
+            ]
+        },
+        "desktop.openProjectDirectory": {
+            "kind": "write",
+            "capabilities": [
+                "desktop.actions.v1"
+            ],
+            "rustMethod": "desktop_open_project_directory",
+            "requestType": "DesktopOpenProjectDirectoryParams",
+            "resultType": "DesktopActionResult",
+            "requestSchema": "desktop-actions-v1.schema.json#/$defs/desktopOpenProjectDirectoryParams",
+            "resultSchema": "desktop-actions-v1.schema.json#/$defs/desktopRequestedResult",
+            "errorProfiles": [
+                "desktop"
+            ]
+        },
+        "desktop.openUnityHubDownload": {
+            "kind": "write",
+            "capabilities": [
+                "desktop.actions.v1"
+            ],
+            "rustMethod": "desktop_open_unity_hub_download",
+            "requestType": "DesktopOpenUnityHubDownloadParams",
+            "resultType": "DesktopActionResult",
+            "requestSchema": "desktop-actions-v1.schema.json#/$defs/desktopOpenUnityHubDownloadParams",
+            "resultSchema": "desktop-actions-v1.schema.json#/$defs/desktopRequestedResult",
+            "errorProfiles": [
+                "desktop"
+            ]
+        },
         "events.list": {
             "kind": "read",
             "capabilities": [
@@ -609,6 +722,216 @@
             "resultSchema": "m7-operation-logs.schema.json#/$defs/result",
             "errorProfiles": [
                 "storeRead"
+            ]
+        },
+        "mcp.clients.create": {
+            "kind": "write",
+            "capabilities": [
+                "mcp.clients.v1"
+            ],
+            "rustMethod": "mcp_client_create",
+            "requestType": "McpClientsCreateParams",
+            "resultType": "McpClientRecord",
+            "requestSchema": "m8-mcp-clients-v1.schema.json#/$defs/createParams",
+            "resultSchema": "m8-mcp-clients-v1.schema.json#/$defs/record",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.clients.issueCredential": {
+            "kind": "write",
+            "capabilities": [
+                "mcp.clients.v1"
+            ],
+            "rustMethod": "mcp_client_issue_credential",
+            "requestType": "McpClientMutationParams",
+            "resultType": "McpClientCredentialResult",
+            "requestSchema": "m8-mcp-clients-v1.schema.json#/$defs/mutationParams",
+            "resultSchema": "m8-mcp-clients-v1.schema.json#/$defs/credentialResult",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.clients.list": {
+            "kind": "read",
+            "capabilities": [
+                "mcp.clients.v1"
+            ],
+            "rustMethod": "mcp_clients_list",
+            "requestType": "McpClientsListParams",
+            "resultType": "McpClientsListResult",
+            "requestSchema": "m8-mcp-clients-v1.schema.json#/$defs/listParams",
+            "resultSchema": "m8-mcp-clients-v1.schema.json#/$defs/listResult",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.clients.requests.create": {
+            "kind": "write",
+            "capabilities": [
+                "mcp.clients.v1"
+            ],
+            "rustMethod": "mcp_client_request_create",
+            "requestType": "McpClientRequestCreateParams",
+            "resultType": "ClientManagementReview",
+            "requestSchema": "m8-mcp-clients-v1.schema.json#/$defs/requestCreateParams",
+            "resultSchema": "m8-mcp-clients-v1.schema.json#/$defs/managementReview",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.clients.requests.decide": {
+            "kind": "write",
+            "capabilities": [
+                "mcp.clients.v1"
+            ],
+            "rustMethod": "mcp_client_request_decide",
+            "requestType": "McpClientRequestDecideParams",
+            "resultType": "ClientManagementDecision",
+            "requestSchema": "m8-mcp-clients-v1.schema.json#/$defs/requestDecideParams",
+            "resultSchema": "m8-mcp-clients-v1.schema.json#/$defs/requestDecision",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.clients.requests.get": {
+            "kind": "read",
+            "capabilities": [
+                "mcp.clients.v1"
+            ],
+            "rustMethod": "mcp_client_request_get",
+            "requestType": "McpClientRequestGetParams",
+            "resultType": "ClientManagementReview",
+            "requestSchema": "m8-mcp-clients-v1.schema.json#/$defs/requestGetParams",
+            "resultSchema": "m8-mcp-clients-v1.schema.json#/$defs/managementReview",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.clients.requests.list": {
+            "kind": "read",
+            "capabilities": [
+                "mcp.clients.v1"
+            ],
+            "rustMethod": "mcp_client_request_list",
+            "requestType": "McpClientsListParams",
+            "resultType": "ClientRequestPage",
+            "requestSchema": "m8-mcp-clients-v1.schema.json#/$defs/listParams",
+            "resultSchema": "m8-mcp-clients-v1.schema.json#/$defs/requestPage",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.clients.revoke": {
+            "kind": "write",
+            "capabilities": [
+                "mcp.clients.v1"
+            ],
+            "rustMethod": "mcp_client_revoke",
+            "requestType": "McpClientMutationParams",
+            "resultType": "McpClientRecord",
+            "requestSchema": "m8-mcp-clients-v1.schema.json#/$defs/mutationParams",
+            "resultSchema": "m8-mcp-clients-v1.schema.json#/$defs/record",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.oauth.registrations.list": {
+            "kind": "read",
+            "capabilities": [
+                "mcp.oauth.v1"
+            ],
+            "rustMethod": "oauth_registrations_list",
+            "requestType": "McpOAuthPageParams",
+            "resultType": "McpOAuthRegistrationPage",
+            "requestSchema": "m8-mcp-oauth-v1.schema.json#/$defs/PageParams",
+            "resultSchema": "m8-mcp-oauth-v1.schema.json#/$defs/RegistrationPage",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.oauth.registrations.revoke": {
+            "kind": "write",
+            "capabilities": [
+                "mcp.oauth.v1"
+            ],
+            "rustMethod": "oauth_registration_revoke",
+            "requestType": "McpOAuthRegistrationRevokeParams",
+            "resultType": "McpOAuthRegistration",
+            "requestSchema": "m8-mcp-oauth-v1.schema.json#/$defs/RegistrationRevokeParams",
+            "resultSchema": "m8-mcp-oauth-v1.schema.json#/$defs/Registration",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.oauth.registrations.set": {
+            "kind": "write",
+            "capabilities": [
+                "mcp.oauth.v1"
+            ],
+            "rustMethod": "oauth_registration_set",
+            "requestType": "McpOAuthRegistrationSetParams",
+            "resultType": "McpOAuthRegistrationResult",
+            "requestSchema": "m8-mcp-oauth-v1.schema.json#/$defs/RegistrationSetParams",
+            "resultSchema": "m8-mcp-oauth-v1.schema.json#/$defs/RegistrationResult",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.oauth.requests.decide": {
+            "kind": "write",
+            "capabilities": [
+                "mcp.oauth.v1"
+            ],
+            "rustMethod": "oauth_request_decide",
+            "requestType": "McpOAuthRequestDecideParams",
+            "resultType": "McpOAuthRequestDecision",
+            "requestSchema": "m8-mcp-oauth-v1.schema.json#/$defs/RequestDecideParams",
+            "resultSchema": "m8-mcp-oauth-v1.schema.json#/$defs/RequestDecision",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.oauth.requests.get": {
+            "kind": "read",
+            "capabilities": [
+                "mcp.oauth.v1"
+            ],
+            "rustMethod": "oauth_request_get",
+            "requestType": "McpOAuthRequestGetParams",
+            "resultType": "McpOAuthRequestReview",
+            "requestSchema": "m8-mcp-oauth-v1.schema.json#/$defs/RequestGetParams",
+            "resultSchema": "m8-mcp-oauth-v1.schema.json#/$defs/RequestReview",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.runtime.snapshot": {
+            "kind": "read",
+            "capabilities": [
+                "mcp.runtime.read.v1"
+            ],
+            "rustMethod": "mcp_runtime_snapshot",
+            "requestType": "McpRuntimeSnapshotParams",
+            "resultType": "McpRuntimeSnapshotResult",
+            "requestSchema": "m8-mcp-runtime-v1.schema.json#/$defs/params",
+            "resultSchema": "m8-mcp-runtime-v1.schema.json#/$defs/snapshot",
+            "errorProfiles": [
+                "aiClients"
+            ]
+        },
+        "mcp.transport.snapshot": {
+            "kind": "read",
+            "capabilities": [
+                "mcp.transport.read.v1"
+            ],
+            "rustMethod": "mcp_transport_snapshot",
+            "requestType": "McpTransportQuery",
+            "resultType": "McpTransportSnapshot",
+            "requestSchema": "m8-mcp-transport-v1.schema.json#/$defs/query",
+            "resultSchema": "m8-mcp-transport-v1.schema.json#/$defs/snapshot",
+            "errorProfiles": [
+                "aiClients"
             ]
         },
         "operations.cancel": {

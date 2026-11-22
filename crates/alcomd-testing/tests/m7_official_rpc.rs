@@ -18,6 +18,165 @@ use uuid::Uuid;
 static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn client_registry_lists_before_first_launch_and_disconnects_only_the_selected_socket() {
+    use alcomd_platform::client_installation::{
+        self, ClientInstallation, ClientKind, InstallScope,
+    };
+    use alcomd_protocol::{
+        ClientDisconnectTarget, ClientInstancesListParams, ClientsDisconnectParams,
+        ClientsListParams,
+    };
+    let _serial = RPC_TEST_LOCK.lock().await;
+    #[cfg(windows)]
+    let fixture = TestDirectory::under(
+        alcomd_platform::local_app_data_directory()
+            .expect("native profile for protected install records"),
+    );
+    #[cfg(unix)]
+    let fixture = TestDirectory::new();
+    let data = DataConfig::isolated(fixture.path().join("data"));
+    let runtime = fixture.path().join("runtime");
+    fs::create_dir(&runtime).expect("runtime");
+    let executable = fixture
+        .path()
+        .join(format!("independent-gui{}", std::env::consts::EXE_SUFFIX));
+    fs::write(&executable, b"independent installed image; never launched").expect("stage image");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
+            .expect("executable image");
+    }
+    let mut manifest = ClientInstallation {
+        schema: 1,
+        program_id: "org.example.gui".into(),
+        kind: ClientKind::Gui,
+        display_name: "Independent GUI".into(),
+        product_version: "1.0".into(),
+        install_root: fixture.path().into(),
+        executable: PathBuf::from(executable.file_name().expect("image name")),
+    };
+    client_installation::publish(&data, InstallScope::User, &manifest, None)
+        .expect("installer before first Core start");
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        data.clone(),
+        wait_for_shutdown(shutdown.clone()),
+    )
+    .await
+    .expect("start Core");
+    let mut owner = connect_with_retry(config.clone().with_client_name("owner")).await;
+    let desktop = daemon.observe_desktop();
+    for _ in 0..2 {
+        let rec = owner
+            .desktop_open_unity_hub_download(alcomd_protocol::DesktopOpenUnityHubDownloadParams {
+                idempotency_key: "sdk-download".into(),
+            })
+            .await
+            .expect("SDK desktop receipt");
+        assert_eq!(
+            rec.outcome,
+            alcomd_protocol::DesktopActionOutcome::Requested
+        );
+    }
+    assert_eq!(
+        desktop
+            .calls
+            .lock()
+            .expect("SDK desktop receipt")
+            .as_slice(),
+        [("download".to_owned(), None)]
+    );
+    let mut other = connect_with_retry(config.clone().with_client_name("org.example.gui")).await;
+    other.system_status().await.expect("peer is ready");
+    let list = owner
+        .clients_list(ClientsListParams::default())
+        .await
+        .expect("native catalogue");
+    let offline = list
+        .items
+        .iter()
+        .find(|v| v.program_id.as_deref() == Some("org.example.gui"))
+        .expect("installed before launch");
+    assert_eq!(
+        offline.active_connection_count, 0,
+        "hello name cannot claim an installed program"
+    );
+    assert_eq!(offline.installations[0].product_version, "1.0");
+    let active = list
+        .items
+        .iter()
+        .find(|v| v.active_connection_count == 2)
+        .expect("two connections from the same verified process");
+    assert_eq!(active.active_instance_count, 1);
+    let connections = owner
+        .client_instances_list(ClientInstancesListParams {
+            program_key: active.program_key.clone(),
+            cursor: None,
+            limit: None,
+        })
+        .await
+        .expect("instances");
+    let connection = connections.items[0]
+        .connections
+        .iter()
+        .find(|c| c.reported.name == "org.example.gui")
+        .expect("actual peer");
+    let request = ClientsDisconnectParams {
+        expected_core_instance_id: list.core_instance_id.clone(),
+        target: ClientDisconnectTarget::Connection {
+            id: connection.connection_id.clone(),
+        },
+        idempotency_key: "disconnect-from-owner".into(),
+    };
+    let receipt = owner
+        .clients_disconnect(request.clone())
+        .await
+        .expect("disconnect");
+    assert_eq!(
+        receipt.disconnected_connection_ids,
+        [connection.connection_id.as_str()]
+    );
+    assert_eq!(
+        owner
+            .clients_disconnect(request)
+            .await
+            .expect("same receipt")
+            .disconnected_connection_ids,
+        receipt.disconnected_connection_ids
+    );
+    assert!(other.system_status().await.is_err());
+    assert!(owner.system_status().await.is_ok());
+    let mut reopened = connect_with_retry(config.with_client_name("org.example.gui")).await;
+    assert!(reopened.system_status().await.is_ok());
+    let old = manifest.clone();
+    manifest.product_version = "1.1".into();
+    client_installation::publish(&data, InstallScope::User, &manifest, None)
+        .expect("atomic upgrade");
+    assert!(
+        !client_installation::unpublish(&data, InstallScope::User, &old)
+            .expect("outdated uninstall")
+    );
+    assert!(
+        client_installation::unpublish(&data, InstallScope::User, &manifest).expect("uninstall")
+    );
+    assert!(
+        !owner
+            .clients_list(ClientsListParams::default())
+            .await
+            .expect("reread")
+            .items
+            .iter()
+            .any(|v| v.program_id.as_deref() == Some("org.example.gui"))
+    );
+    drop((owner, other, reopened));
+    shutdown.store(true, Ordering::Relaxed);
+    daemon.await.expect("join").expect("shutdown");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn official_settings_round_trip_preserves_business_errors_without_removed_history_apis() {
     let _serial = RPC_TEST_LOCK.lock().await;
     let fixture = TestDirectory::new();
@@ -896,6 +1055,10 @@ impl TestDirectory {
         let base = PathBuf::from("/private/tmp");
         #[cfg(not(target_os = "macos"))]
         let base = std::env::temp_dir();
+        Self::under(base)
+    }
+
+    fn under(base: PathBuf) -> Self {
         let path = base.join(format!("alcomd-m7-official-{}", Uuid::new_v4()));
         fs::create_dir(&path).expect("create test directory");
         Self(path)

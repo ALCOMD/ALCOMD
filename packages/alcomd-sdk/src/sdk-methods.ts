@@ -1,9 +1,31 @@
+import type * as Observers from "./ai-observers.js";
 import type * as Types from "./index.js";
+import type { ClientInstanceSummary, ClientProgramSummary } from "./client-registry.js";
+
+export interface AiClient {
+    clientId: string;
+    principalId: string;
+    displayName: string;
+    revision: number;
+    createdAtMs: number;
+    revokedAtMs: number | null;
+}
+export type ClientManagementAction = { kind: "createClient"; displayName: string } | { kind: "issueCredential"; clientId: string; expectedRevision: number } | { kind: "revokeClient"; clientId: string; expectedRevision: number } | { kind: "setOAuthRegistration"; clientId: string; issuer: string; resource: string; redirectUris: Array<string>; confidential: boolean; allowRefresh: boolean; expectedRevision: number } | { kind: "revokeOAuthRegistration"; oauthClientId: string; expectedRevision: number };
+export type ClientManagementReview = { requestId: string; requester: string; action: ClientManagementAction; status: "pending" | "approved" | "denied" | "expired"; expiresAtMs: number; fingerprint: string };
+type OAuthRegistration = { oauthClientId: string; clientId: string; issuer: string; resource: string; redirectUris: Array<string>; confidential: boolean; allowRefresh: boolean; revision: number; createdAtMs: number; revokedAtMs?: number | null };
+type AiPage = { cursor?: string; limit?: number };
+type AiMutation = { clientId: string; expectedRevision: number; idempotencyKey: string };
 
 /** Execution semantics for supported native RPC methods. */
 export const SDK_METHODS = {
     "backups.create": "write",
     "backups.restore": "write",
+    "clients.disconnect": "write",
+    "clients.instances.list": "read",
+    "clients.list": "read",
+    "desktop.focusProjectUnity": "write",
+    "desktop.openProjectDirectory": "write",
+    "desktop.openUnityHubDownload": "write",
     "events.list": "read",
     "events.subscribe": "stream",
     "extensions.applyInstall": "write",
@@ -24,6 +46,21 @@ export const SDK_METHODS = {
     "extensions.ui.open": "write",
     "extensions.ui.refresh": "write",
     "logs.read": "read",
+    "mcp.clients.create": "write",
+    "mcp.clients.issueCredential": "write",
+    "mcp.clients.list": "read",
+    "mcp.clients.requests.create": "write",
+    "mcp.clients.requests.decide": "write",
+    "mcp.clients.requests.get": "read",
+    "mcp.clients.requests.list": "read",
+    "mcp.clients.revoke": "write",
+    "mcp.oauth.registrations.list": "read",
+    "mcp.oauth.registrations.revoke": "write",
+    "mcp.oauth.registrations.set": "write",
+    "mcp.oauth.requests.decide": "write",
+    "mcp.oauth.requests.get": "read",
+    "mcp.runtime.snapshot": "read",
+    "mcp.transport.snapshot": "read",
     "operations.cancel": "write",
     "operations.get": "read",
     "operations.list": "read",
@@ -201,6 +238,12 @@ type NativeRepositoriesListResult = Omit<Types.RepositoriesListResult, "reposito
 export interface NativeRpcMethods {
     "backups.create": { params: BackupCreateParams; result: Types.OperationAccepted };
     "backups.restore": { params: BackupRestoreParams; result: Types.OperationAccepted };
+    "clients.disconnect": { params: { expectedCoreInstanceId: string; target: { kind: "connection" | "instance"; id: string }; idempotencyKey: string }; result: { disconnectedConnectionIds: string[] } };
+    "clients.instances.list": { params: { programKey: string; cursor?: string; limit?: number }; result: { coreInstanceId: string; items: ClientInstanceSummary[]; nextCursor?: string } };
+    "clients.list": { params: { cursor?: string; limit?: number }; result: { coreInstanceId: string; items: ClientProgramSummary[]; nextCursor?: string; coverageIncomplete: boolean } };
+    "desktop.focusProjectUnity": { params: { projectId: string; expectedRevision: number; idempotencyKey: string }; result: { outcome: "focused" } };
+    "desktop.openProjectDirectory": { params: { projectId: string; idempotencyKey: string }; result: { outcome: "requested" } };
+    "desktop.openUnityHubDownload": { params: { idempotencyKey: string }; result: { outcome: "requested" } };
     "events.list": { params: EventsListParams; result: EventsListResult };
     "events.subscribe": { params: Types.EventsSubscribeParams; result: Types.EventsSubscribeResult };
     "extensions.applyInstall": { params: ExtensionInstallApplyParams; result: Types.ExtensionOperationResult };
@@ -221,6 +264,21 @@ export interface NativeRpcMethods {
     "extensions.ui.open": { params: Types.ExtensionUiOpenParams; result: Types.ExtensionUiOpenResult };
     "extensions.ui.refresh": { params: Types.ExtensionUiRefreshParams; result: Types.ExtensionUiSnapshotResult };
     "logs.read": { params: Types.LogsReadParams; result: Types.LogsReadResult };
+    "mcp.clients.create": { params: { displayName: string; idempotencyKey: string }; result: AiClient };
+    "mcp.clients.issueCredential": { params: AiMutation; result: {clientId: string; credentialId: string; revision: number; credential: string} };
+    "mcp.clients.list": { params: AiPage; result: { items: AiClient[]; nextCursor: string | null } };
+    "mcp.clients.requests.create": { params: { action: ClientManagementAction; idempotencyKey: string }; result: ClientManagementReview };
+    "mcp.clients.requests.decide": { params: { requestId: string; approve: boolean; expectedFingerprint: string; idempotencyKey: string }; result: { request: ClientManagementReview; credential?: string; clientSecret?: string } };
+    "mcp.clients.requests.get": { params: { requestId: string }; result: ClientManagementReview };
+    "mcp.clients.requests.list": { params: { cursor?: string | null; limit?: number | null }; result: { items: Array<ClientManagementReview>; nextCursor: string | null } };
+    "mcp.clients.revoke": { params: AiMutation; result: AiClient };
+    "mcp.oauth.registrations.list": { params: { cursor?: string | null; limit?: number | null }; result: { items: Array<OAuthRegistration>; nextCursor?: string | null } };
+    "mcp.oauth.registrations.revoke": { params: { oauthClientId: string; expectedRevision: number; idempotencyKey: string }; result: { oauthClientId: string; clientId: string; issuer: string; resource: string; redirectUris: Array<string>; confidential: boolean; allowRefresh: boolean; revision: number; createdAtMs: number; revokedAtMs?: number | null } };
+    "mcp.oauth.registrations.set": { params: { clientId: string; issuer: string; resource: string; redirectUris: Array<string>; confidential: boolean; allowRefresh: boolean; expectedRevision: number; idempotencyKey: string }; result: { registration: OAuthRegistration; clientSecret?: string | null } };
+    "mcp.oauth.requests.decide": { params: { requestId: string; approve: boolean; expectedFingerprint: string; idempotencyKey: string }; result: { requestId: string; status: "pending" | "denied" | "expired" | "approved" | "consumed" } };
+    "mcp.oauth.requests.get": { params: { requestId: string }; result: { requestId: string; oauthClientId: string; clientId: string; displayName: string; issuer: string; resource: string; redirectUri: string; scopes: ["mcp"]; approvalFingerprint: string; status: "pending" | "denied" | "expired" | "approved" | "consumed"; expiresAtMs: number } };
+    "mcp.runtime.snapshot": { params: Observers.RuntimeParams; result: Observers.RuntimeSnapshot };
+    "mcp.transport.snapshot": { params: Observers.TransportQuery; result: Observers.TransportSnapshot };
     "operations.cancel": { params: OperationsCancelParams; result: Types.OperationWriteResult };
     "operations.get": { params: OperationsGetParams; result: Types.Operation };
     "operations.list": { params: Types.OperationsListParams; result: Types.OperationsListResult };

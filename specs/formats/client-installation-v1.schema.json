@@ -1,0 +1,50 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/install/v1/client-installation.json",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "schema",
+        "programId",
+        "kind",
+        "displayName",
+        "productVersion",
+        "installRoot",
+        "executable"
+    ],
+    "properties": {
+        "schema": {
+            "const": 1
+        },
+        "programId": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
+        },
+        "kind": {
+            "enum": [
+                "gui",
+                "cli",
+                "mcp"
+            ]
+        },
+        "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+        },
+        "productVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+        },
+        "installRoot": {
+            "type": "string",
+            "minLength": 1
+        },
+        "executable": {
+            "type": "string",
+            "minLength": 1
+        }
+    }
+}

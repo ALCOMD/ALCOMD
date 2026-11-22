@@ -20,6 +20,30 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
         .await
         .expect("start owned test daemon");
     wait_until_ready(client).await;
+    let desktop = daemon.observe_desktop();
+    for _ in 0..2 {
+        let result = run_group_cli(
+            runtime.clone(),
+            &[
+                "desktop",
+                "open-unity-hub-download",
+                "--idempotency-key",
+                "cli-download",
+            ],
+        );
+        assert!(result.status.success());
+        let document: serde_json::Value =
+            serde_json::from_slice(&result.stdout).expect("CLI desktop receipt");
+        assert_eq!(document["result"]["outcome"], "requested");
+    }
+    assert_eq!(
+        desktop
+            .calls
+            .lock()
+            .expect("CLI desktop receipt")
+            .as_slice(),
+        [("download".to_owned(), None)]
+    );
 
     let human_runtime = runtime.clone();
     let human = tokio::task::spawn_blocking(move || run_cli(false, human_runtime))
@@ -56,6 +80,7 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     assert_eq!(record["command"], "system status");
 
     for (arguments, expected_command) in [
+        (&["client", "list"][..], "client list"),
         (&["operation", "list"][..], "operation list"),
         (&["project", "list"][..], "project list"),
         (&["repository", "list"][..], "repository list"),
@@ -383,6 +408,56 @@ async fn mcp_cli_issues_once_and_broken_stdout_never_reissues() {
         })
         .await
         .expect("zero grants");
+    let request = run_group_cli(
+        runtime.clone(),
+        &[
+            "mcp",
+            "client",
+            "request",
+            "create",
+            "--action",
+            r#"{"kind":"createClient","displayName":"Reviewed assistant"}"#,
+            "--idempotency-key",
+            "request-review",
+            "--yes",
+        ],
+    );
+    assert!(
+        request.status.success(),
+        "{}",
+        String::from_utf8_lossy(&request.stderr)
+    );
+    let pending: serde_json::Value = serde_json::from_slice(&request.stdout).expect("request");
+    let id = pending["result"]["requestId"].as_str().expect("request ID");
+    let listed = run_group_cli(
+        runtime.clone(),
+        &["mcp", "client", "request", "list", "--limit", "1"],
+    );
+    assert!(listed.status.success());
+    let list: serde_json::Value = serde_json::from_slice(&listed.stdout).expect("list");
+    assert_eq!(list["result"]["items"][0], pending["result"]);
+    let rejected = run_group_cli(
+        runtime.clone(),
+        &[
+            "mcp",
+            "client",
+            "request",
+            "deny",
+            id,
+            "--idempotency-key",
+            "deny-review",
+            "--yes",
+        ],
+    );
+    assert!(
+        rejected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&rejected.stderr)
+    );
+    let review = run_group_cli(runtime.clone(), &["mcp", "client", "request", "get", id]);
+    assert!(review.status.success());
+    let read: serde_json::Value = serde_json::from_slice(&review.stdout).expect("review");
+    assert_eq!(read["result"]["status"], "denied");
     let args = [
         "mcp",
         "client",

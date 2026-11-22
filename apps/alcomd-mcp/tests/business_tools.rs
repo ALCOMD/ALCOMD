@@ -12,6 +12,8 @@ use rmcp::{
 use serde_json::{Value, json};
 use std::{path::Path, time::Duration};
 type Sdk = RunningService<RoleClient, ()>;
+#[path = "support/native_clients_flow.rs"]
+mod native_clients_flow;
 static REAL_CORE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 #[path = "support/extension_tools_flow.rs"]
 mod extension_tools_flow;

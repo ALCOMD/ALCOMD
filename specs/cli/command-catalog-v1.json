@@ -3,6 +3,24 @@
     "publicationRule": "publish-only-when-backend-capability-is-implemented",
     "groups": [
         {
+            "name": "desktop",
+            "aliases": [],
+            "commands": [
+                {"name": "focus-project-unity", "aliases": []},
+                {"name": "open-project-directory", "aliases": []},
+                {"name": "open-unity-hub-download", "aliases": []}
+            ]
+        },
+        {
+            "name": "client",
+            "aliases": [],
+            "commands": [
+                {"name": "list", "aliases": []},
+                {"name": "instances", "aliases": []},
+                {"name": "disconnect", "aliases": []}
+            ]
+        },
+        {
             "name": "system",
             "aliases": [],
             "commands": [
@@ -111,6 +129,13 @@
             "name": "mcp",
             "aliases": [],
             "commands": [
+                {"name": "client create", "aliases": ["clients list"]},
+                {"name": "client revoke", "aliases": ["clients list"]},
+                {"name": "client request create", "aliases": ["clients list"]},
+                {"name": "client request list", "aliases": ["clients list"]},
+                {"name": "client request get", "aliases": ["clients list"]},
+                {"name": "client request approve", "aliases": ["clients list"]},
+                {"name": "client request deny", "aliases": ["clients list"]},
                 {"name": "client list", "aliases": ["clients list"]},
                 {"name": "client issue-credential", "aliases": ["clients issue-credential"]},
                 {"name": "oauth registration list", "aliases": []},

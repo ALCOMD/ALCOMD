@@ -4,6 +4,8 @@
     "capabilities": [
         "backups.create.v1",
         "backups.restore.v1",
+        "clients.registry.v1",
+        "desktop.actions.v1",
         "events.live.v1",
         "events.replay.v1",
         "extensions.lifecycle.v1",
@@ -49,17 +51,8 @@
     "nativeMethods": "rpc/native-sdk-v1.methods.json",
     "serviceMethods": [
         "extensions.mcpTools.call",
-        "mcp.clients.create",
-        "mcp.clients.issueCredential",
-        "mcp.clients.list",
-        "mcp.clients.revoke",
         "mcp.oauth.begin",
         "mcp.oauth.finish",
-        "mcp.oauth.registrations.list",
-        "mcp.oauth.registrations.revoke",
-        "mcp.oauth.registrations.set",
-        "mcp.oauth.requests.decide",
-        "mcp.oauth.requests.get",
         "mcp.oauth.revoke",
         "mcp.oauth.token",
         "mcp.packages.plan",
@@ -71,11 +64,9 @@
         "mcp.repositories.list",
         "mcp.repositories.register",
         "mcp.repositories.remove",
-        "mcp.runtime.snapshot",
         "mcp.tools.catalog",
         "mcp.transport.bindRequest",
         "mcp.transport.report",
-        "mcp.transport.snapshot",
         "system.hello"
     ],
     "schemas": {

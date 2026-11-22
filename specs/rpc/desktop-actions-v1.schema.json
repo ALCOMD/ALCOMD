@@ -1,0 +1,92 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/desktop-actions.json",
+    "title": "Core-hosted desktop actions",
+    "$defs": {
+        "desktopFocusProjectUnityParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "projectId",
+                "expectedRevision",
+                "idempotencyKey"
+            ],
+            "properties": {
+                "projectId": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9223372036854775807
+                },
+                "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[\\u0000-\\u007f]+$"
+                }
+            }
+        },
+        "desktopFocusedResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "outcome"
+            ],
+            "properties": {
+                "outcome": {
+                    "const": "focused"
+                }
+            }
+        },
+        "desktopOpenProjectDirectoryParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "projectId",
+                "idempotencyKey"
+            ],
+            "properties": {
+                "projectId": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[\\u0000-\\u007f]+$"
+                }
+            }
+        },
+        "desktopRequestedResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "outcome"
+            ],
+            "properties": {
+                "outcome": {
+                    "const": "requested"
+                }
+            }
+        },
+        "desktopOpenUnityHubDownloadParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "idempotencyKey"
+            ],
+            "properties": {
+                "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[\\u0000-\\u007f]+$"
+                }
+            }
+        }
+    }
+}

@@ -154,6 +154,63 @@ fn executable_path(process: HANDLE) -> io::Result<PathBuf> {
     )))
 }
 
+pub(crate) fn client_process_id(stream: &crate::IpcStream) -> Option<u32> {
+    let crate::IpcStream::Server(server) = stream else {
+        return None;
+    };
+    let mut pid = 0;
+    // SAFETY: the connected server handle remains borrowed and pid is writable.
+    let ok = unsafe {
+        windows_sys::Win32::System::Pipes::GetNamedPipeClientProcessId(
+            server.as_raw_handle(),
+            &mut pid,
+        )
+    };
+    (ok != 0 && pid != 0).then_some(pid)
+}
+
+pub(crate) fn client_process_image(pid: u32, expected: &Path) -> Option<(u64, Vec<u8>)> {
+    use windows_sys::Win32::Foundation::FILETIME;
+    use windows_sys::Win32::System::Threading::GetProcessTimes;
+    // SAFETY: the non-null returned query handle is owned by this function.
+    let raw = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if raw.is_null() {
+        return None;
+    }
+    // SAFETY: ownership of the successful OpenProcess handle is transferred once.
+    let handle = unsafe { OwnedHandle::from_raw_handle(raw) };
+    let path = executable_path(handle.as_raw_handle()).ok()?;
+    let image = crate::file_identity_key(&path).ok()?;
+    if crate::file_identity_key(expected).ok()? != image {
+        return None;
+    }
+    let (mut created, mut exited, mut kernel, mut user) = (
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+    );
+    // SAFETY: handle remains live; the output slots are distinct valid FILETIMEs.
+    if unsafe {
+        GetProcessTimes(
+            handle.as_raw_handle(),
+            &mut created,
+            &mut exited,
+            &mut kernel,
+            &mut user,
+        )
+    } == 0
+        || exited.dwHighDateTime != 0
+        || exited.dwLowDateTime != 0
+    {
+        return None;
+    }
+    Some((
+        (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime),
+        image,
+    ))
+}
+
 pub(crate) fn verify_publisher(path: &Path, publisher: &str) -> io::Result<()> {
     let image = OpenOptions::new()
         .read(true)

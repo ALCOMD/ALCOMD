@@ -27,7 +27,8 @@ export function useUnityWindowAction(client: GuiRpcClient, project: ProjectSnaps
     const { t } = useTranslation();
     const canReadProject = useCapability(capabilities.projectsRead);
     const canReadUnity = useCapability(capabilities.unityRead);
-    const native = canReadProject && canReadUnity ? client.unityWindows : undefined;
+    const canFocus = useCapability(capabilities.desktopActions);
+    const native = canReadProject && canReadUnity && canFocus ? client.unityWindows : undefined;
     const { projectId, revision } = project;
     const state = useUnityWindowState(native, projectId, revision);
     const [failure, setFailure] = useState<string>();
