@@ -1813,15 +1813,18 @@ async fn unity6_creation_checks_prerelease_visibility_before_writing_the_project
                 let completed = wait_for_operation(&f, accepted.operation_id).await;
                 assert_eq!(completed.state, OperationState::Succeeded, "{completed:?}");
                 let manifest: Value = serde_json::from_slice(
-                    &fs::read(target.join("Packages/vpm-manifest.json")).unwrap(),
+                    &fs::read(target.join("Packages/vpm-manifest.json"))
+                        .expect("created project has a VPM manifest"),
                 )
-                .unwrap();
+                .expect("created VPM manifest is valid JSON");
                 for package_id in ["com.vrchat.base".to_owned(), format!("com.vrchat.{family}")] {
                     assert_eq!(manifest["locked"][&package_id]["version"], SDK);
                 }
             } else {
                 assert_eq!(
-                    result.unwrap_err().code(),
+                    result
+                        .expect_err("hidden prereleases block creation")
+                        .code(),
                     ProjectCreateErrorCode::PrereleasePackagesHidden
                 );
                 assert!(!target.exists());
