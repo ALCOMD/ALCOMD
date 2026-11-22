@@ -31,23 +31,25 @@
 | `backups.restore` | 已提供 · 项目列表「恢复备份」选择 ZIP、名称或目的地 | 已提供 · backup restore | 已提供 · alcomd_restore_backup；确认源 ZIP 及恢复目标 |
 | `events.list` | 缺少入口 · 没有历史事件页，任务页查询 operations | 缺少入口 · CLI 未提供事件读取或订阅；operation follow 轮询单项任务 | 缺少入口 · MCP 的工具目录变更订阅不能读取或续接 Core 业务事件 |
 | `events.subscribe` | 已提供 · 应用启动后订阅；事件进入通知、任务和资源列表刷新 | 缺少入口 · CLI 未提供事件读取或订阅；operation follow 轮询单项任务 | 缺少入口 · MCP 的工具目录变更订阅不能读取或续接 Core 业务事件 |
-| `extensions.applyInstall` | 已提供 · 扩展安装审阅后同意权限并提交原计划 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.applyUninstall` | 已提供 · 扩展卸载对话框确认已显示计划 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.disable` | 已提供 · 扩展列表或详情的停用按钮 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.enable` | 已提供 · 扩展列表或详情的启用按钮 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.get` | 已提供 · 扩展详情或打开扩展视图时读取记录 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.inspectSource` | 已提供 · 扩展安装对话框检查远程来源 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.list` | 已提供 · 扩展管理页读取当前扩展 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.permissions.list` | 已提供 · 扩展详情的权限面板读取授权 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.planInstall` | 已提供 · 扩展安装对话框选择本地包并预演 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.planInstallFromSource` | 已提供 · 扩展安装对话框选定已检查的源及版本再预演 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.planUninstall` | 已提供 · 扩展详情预演卸载 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.revokeGrant` | 已提供 · 扩展权限面板撤销选定授权 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.setGrant` | 已提供 · 扩展权限面板授予选定权限 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.ui.close` | 已提供 · 离开扩展页面或关闭视图后释放原会话 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.ui.dispatch` | 已提供 · 在扩展视图内操作控件，发送会话、快照修订和事件序号 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.ui.open` | 已提供 · 从导航或扩展页打开界面并取得会话 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
-| `extensions.ui.refresh` | 缺少入口 · 桥接层声明了刷新，实际视图只打开、分派和关闭；没有刷新调用点 | 缺少入口 · CLI 命令目录没有扩展生命周期、授权或界面子命令 | 缺少入口 · 工具目录没有扩展生命周期或授权管理工具；扩展发布的工具由宿主执行 |
+| `extensions.cliCommands.invoke` | 仅本机交互 | 已提供 · `extension run` | 协议专用 · MCP 使用单独签名的工具声明和导出 |
+| `extensions.cliCommands.list` | 仅本机交互 | 已提供 · `extension commands` | 协议专用 · MCP 使用单独签名的工具声明和导出 |
+| `extensions.applyInstall` | 已提供 | 已提供 · `extension apply-install` | 已提供 · `alcomd_apply_extension_install` |
+| `extensions.applyUninstall` | 已提供 | 已提供 · `extension apply-uninstall` | 已提供 · `alcomd_apply_extension_uninstall` |
+| `extensions.disable` | 已提供 | 已提供 · `extension disable` | 已提供 · `alcomd_disable_extension` |
+| `extensions.enable` | 已提供 | 已提供 · `extension enable` | 已提供 · `alcomd_enable_extension` |
+| `extensions.get` | 已提供 | 已提供 · `extension get` | 已提供 · `alcomd_get_extension` |
+| `extensions.inspectSource` | 已提供 | 已提供 · `extension inspect-source` | 已提供 · `alcomd_inspect_extension_source` |
+| `extensions.list` | 已提供 | 已提供 · `extension list` | 已提供 · `alcomd_list_extensions` |
+| `extensions.permissions.list` | 已提供 | 已提供 · `extension permissions` | 已提供 · `alcomd_list_extension_permissions` |
+| `extensions.planInstall` | 已提供 | 已提供 · `extension plan-install` | 已提供 · `alcomd_plan_extension_install` |
+| `extensions.planInstallFromSource` | 已提供 | 已提供 · `extension plan-install-from-source` | 已提供 · `alcomd_plan_extension_install_from_source` |
+| `extensions.planUninstall` | 已提供 | 已提供 · `extension plan-uninstall` | 已提供 · `alcomd_plan_extension_uninstall` |
+| `extensions.revokeGrant` | 已提供 | 已提供 · `extension revoke` | 已提供 · `alcomd_revoke_extension_permission` |
+| `extensions.setGrant` | 已提供 | 已提供 · `extension grant` | 已提供 · `alcomd_grant_extension_permission` |
+| `extensions.ui.close` | 已提供 | 仅界面交互 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 仅界面交互 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
+| `extensions.ui.dispatch` | 已提供 | 仅界面交互 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 仅界面交互 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
+| `extensions.ui.open` | 已提供 | 仅界面交互 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 仅界面交互 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
+| `extensions.ui.refresh` | 已提供 | 仅界面交互 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 仅界面交互 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
 | `logs.read` | 已提供 · 日志路由按条件查询并续页 | 缺少入口 · CLI 没有读取 Core 操作日志的子命令 | 缺少入口 · 工具目录没有读取 Core 操作日志的工具 |
 | `operations.cancel` | 已提供 · 任务面板及创建项目进度窗口取消当前任务 | 已提供 · operation cancel | 已提供 · alcomd_cancel_operation；自己的任务、预期修订和幂等键 |
 | `operations.get` | 已提供 · 任务条目或等待操作完成时按 ID 查询 | 已提供 · operation get；follow 轮询同一任务 | 部分可达 · alcomd_get_operation；返回任务状态和修订，部分任务不返回类型专属结果 |

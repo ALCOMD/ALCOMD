@@ -7,7 +7,7 @@
 - 全新 Rust workspace 与稳定命名。
 - Tauri 2 + React + Vite GUI 骨架。
 - `alcomd`、CLI、MCP、API、Extension Host、Bootstrap 的占位二进制。
-- 第一方 MCP 管理扩展与 Discord 扩展的清单和占位 UI。
+- 第一方 Discord 扩展的清单和 UI。
 - 架构、ADR、RPC、Extension API、MCP、迁移和安全文档骨架。
 - Codex `AGENTS.md`、项目 `.codex/config.toml`、ExecPlan 和首个任务提示词。
 - CI、Dependabot、PowerShell / Bash 初始化与检查脚本。

@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 
 #[test]
-fn provider_abi_is_additive_and_core_controls_write_targets() {
+fn cli_and_mcp_use_shared_host_operations_and_core_controls_write_targets() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let wit_root = root.join("specs/extensions/wit/mcp-tools-v1");
     for name in [
@@ -24,11 +24,20 @@ fn provider_abi_is_additive_and_core_controls_write_targets() {
     }
     let wit = std::fs::read_to_string(wit_root.join("world.wit")).expect("provider ABI");
     assert!(wit.contains("include alcomd:extension/extension-v1@1.0.0"));
-    assert_eq!(wit.matches(": func(").count(), 7);
-    assert!(wit.contains("apply-plan: func()"));
-    assert!(wit.contains("cancel-operation: func()"));
+    let core = include_str!("../../../specs/extensions/wit/extension-v1/host-operations.wit");
+    let cli = include_str!("../../../specs/extensions/wit/cli-commands-v1/world.wit");
+    for provider in [wit.as_str(), cli] {
+        assert!(provider.contains("import alcomd:extension/host-operations@1.0.0"));
+        assert_eq!(provider.matches(": func(").count(), 1);
+    }
+    assert_eq!(core.matches(": func(").count(), 6);
+    assert!(core.contains("apply-plan: func()"));
+    assert!(core.contains("cancel-operation: func()"));
     for forbidden in ["wasi:", "credential", "bearer", "rpc-call", "local-owner"] {
-        assert!(!wit.contains(forbidden), "{forbidden}");
+        assert!(
+            !wit.contains(forbidden) && !core.contains(forbidden),
+            "{forbidden}"
+        );
     }
     let declarations: Value = serde_json::from_str(include_str!(
         "../../../specs/extensions/mcp-tools-provider-v1.schema.json"
@@ -58,7 +67,6 @@ fn provider_abi_is_additive_and_core_controls_write_targets() {
             "mcp.connections.read",
             "mcp.requests.read",
             "mcp.subscription-streams.read",
-            "mcp.tools.provide",
             "repositories.read",
             "packages.read",
             "packages.manage",
@@ -67,12 +75,6 @@ fn provider_abi_is_additive_and_core_controls_write_targets() {
             "unity.sessions.read",
             "local-ipc.connect"
         ])
-    );
-    assert!(
-        permissions
-            .as_array()
-            .expect("permissions")
-            .contains(&json!("mcp.tools.provide"))
     );
 }
 

@@ -68,7 +68,7 @@ fn management_component_links_new_import_and_keeps_permission_failure_readable()
     let component = root.join("extension.wasm");
     std::fs::write(
         &component,
-        include_bytes!("../../../crates/alcomd-testing/fixtures/m8/mcp-runtime-v1.wasm"),
+        include_bytes!("../../../crates/alcomd-testing/fixtures/m8/third-party-management-v1.wasm"),
     )
     .expect("actual guest component");
     let mut child = Command::new(env!("CARGO_BIN_EXE_alcomd-extension-host"))
@@ -180,10 +180,10 @@ fn management_component_links_new_import_and_keeps_permission_failure_readable()
         .expect("normal Portable UI contract");
     document.validate().expect("same public UI validator");
     let text = serde_json::to_string(&document).expect("document");
-    assert!(text.contains("尚未授权读取 MCP 客户端"));
+    assert!(text.contains("clients unavailable"));
     assert!(text.contains("neutral"));
     assert!(!text.contains("permission-denied"));
-    assert!(!text.contains("创建客户端"));
+    assert!(!text.contains("create client"));
     send(&mut input, epoch, instance, seq, HostMessageBody::Shutdown);
     drop(input);
     assert!(child.wait().expect("Host exit").success());
@@ -596,6 +596,41 @@ fn send(
     input.flush().expect("flush");
 }
 #[test]
+fn a_headless_backend_links_without_portable_ui() {
+    let root = std::env::temp_dir().join(format!("alcomd-headless-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).expect("isolated preflight");
+    let component = root.join("extension.wasm");
+    std::fs::write(
+        &component,
+        include_bytes!("../../../crates/alcomd-testing/fixtures/m9/headless-background-v1.wasm"),
+    )
+    .expect("headless signed backend input");
+    for ui in [false, true] {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_alcomd-extension-host"))
+            .args(["--extension", "dev.alcomd.fixture", "--component"])
+            .arg(&component)
+            .arg("--check-entries")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("start preflight");
+        child
+            .stdin
+            .take()
+            .expect("stdin")
+            .write_all(
+                json!({"ui":ui, "background":true, "tools":[], "commands":[]})
+                    .to_string()
+                    .as_bytes(),
+            )
+            .expect("write signed declarations");
+        assert_eq!(child.wait().expect("preflight").success(), !ui);
+    }
+    std::fs::remove_dir_all(root).expect("release disposable component");
+}
+
+#[test]
 fn signed_provider_component_invokes_without_lifecycle_activation() {
     let root = std::env::temp_dir().join(format!(
         "alcomd-mcp-provider-host-{}-{}",
@@ -613,33 +648,35 @@ fn signed_provider_component_invokes_without_lifecycle_activation() {
     )
     .expect("valid isolated Provider ABI fixture");
     let declaration = json!({"name":"echo","title":"Echo","description":"Fixture","inputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false},"outputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false},"uses":[]});
-    let mut check = Command::new(env!("CARGO_BIN_EXE_alcomd-extension-host"))
-        .args(["--extension", "dev.alcomd.fixture", "--component"])
-        .arg(&path)
-        .arg("--check-tools")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("valid isolated Provider ABI fixture");
-    check
+    for (ui, cli, mcp) in (0u8..8).map(|mask| (mask & 1 != 0, mask & 2 != 0, mask & 4 != 0)) {
+        let mut check = Command::new(env!("CARGO_BIN_EXE_alcomd-extension-host"))
+            .args(["--extension", "dev.alcomd.fixture", "--component"])
+            .arg(&path)
+            .arg("--check-entries")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("valid isolated Provider ABI fixture");
+        check
         .stdin
         .take()
         .expect("valid isolated Provider ABI fixture")
         .write_all(
-            json!({"version":1,"tools":[declaration.clone()]})
+            json!({"ui":ui,"background":false,"tools":if mcp {vec![declaration.clone()]} else {vec![]}, "commands":if cli {vec![declaration.clone()]} else {vec![]}})
                 .to_string()
                 .as_bytes(),
         )
         .expect("valid isolated Provider ABI fixture");
-    assert!(
-        check
-            .wait_with_output()
-            .expect("valid isolated Provider ABI fixture")
-            .status
-            .success(),
-        "actual native ABI and Schema validation"
-    );
+        assert!(
+            check
+                .wait_with_output()
+                .expect("valid isolated Provider ABI fixture")
+                .status
+                .success(),
+            "actual native ABI and Schema validation"
+        );
+    }
     let mut child = Command::new(env!("CARGO_BIN_EXE_alcomd-extension-host"))
         .args(["--extension", "dev.alcomd.fixture", "--component"])
         .arg(&path)

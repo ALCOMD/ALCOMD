@@ -349,11 +349,11 @@ tests = ["mcp.tasks-conditional"]
 
 [[feature]]
 id = "mcp.management-ui"
-title = "MCP 管理第一方扩展"
+title = "MCP 客户端原生管理"
 source = ["alcomd3-v3-final", "product-plan"]
 user_entry = ["client setup", "credentials/revoke", "connection/request diagnostics", "tool permissions", "logs"]
-behavior = "管理 UI 仅经第三方同等公开 API；禁用/卸载不影响协议进程。"
-implementation = "com.vrclearn.alcomd.extension.mcp"
+behavior = "设置、CLI 和 MCP 通过 Core 管理客户端、轮换凭据、查看活动与撤销。已授权扩展通过公开 WIT 访问管理与观察接口。"
+implementation = "alcomd, alcomd-gui, alcomd-cli, alcomd-mcp"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "scaffold"

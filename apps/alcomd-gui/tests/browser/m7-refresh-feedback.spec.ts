@@ -124,8 +124,8 @@ test("a real Unity discovery refresh uses the circular feedback", async ({ page 
 });
 
 test("extension-owned refresh actions receive feedback without interpreting their action IDs", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/extensions/com.vrclearn.mcp-management/ui");
-    const button = page.getByRole("region", { name: "MCP Management" }).locator("md-filled-tonal-button").filter({ hasText: "Refresh" });
+    await page.goto("/browser-harness.html?route=/extensions/org.example.mcp-inspector/ui");
+    const button = page.getByRole("region", { name: "Client Inspector" }).locator("md-filled-tonal-button").filter({ hasText: "Refresh" });
     await expect(button).toBeVisible();
     const evidence = await button.evaluate(async (element) => {
         (element as HTMLElement).click();

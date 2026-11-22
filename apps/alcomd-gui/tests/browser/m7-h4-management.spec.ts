@@ -413,9 +413,9 @@ test("Permission management separates required optional and other permissions an
     await expect(required.getByRole("switch", { name: "Read projects", exact: true })).toBeVisible();
     await expect(optional.getByRole("switch")).toHaveCount(1);
     await expect(optional.getByRole("switch", { name: "Run in background", exact: true })).toBeVisible();
-    await expect(other.getByRole("switch")).toHaveCount(11);
+    await expect(other.getByRole("switch")).toHaveCount(10);
     await expect(other.getByRole("switch", { name: "Read MCP subscription streams", exact: true })).toBeVisible();
-    await expect(modal(page).getByRole("switch")).toHaveCount(13);
+    await expect(modal(page).getByRole("switch")).toHaveCount(12);
     const toggle = other.getByRole("switch", { name: "Read MCP clients", exact: true });
     await expect(toggle).not.toBeChecked();
     await toggle.click();

@@ -1,0 +1,3485 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/mcp/extensions-v1.json",
+    "title": "Extension management tools",
+    "x-alcomd-tools": [
+        {
+            "name": "alcomd_list_extensions",
+            "title": "List installed extensions",
+            "description": "List installed extensions with the original Core cursor.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "cursor": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000
+                    }
+                },
+                "$defs": {}
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.listResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.listResult": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "extensions"
+                        ],
+                        "properties": {
+                            "extensions": {
+                                "type": "array",
+                                "maxItems": 1000,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.extensionRecord"
+                                }
+                            },
+                            "next_cursor": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 1024
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.extensionRecord": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "extension_id",
+                            "version",
+                            "api_major",
+                            "package_digest",
+                            "publisher_fingerprint",
+                            "desired_state",
+                            "quarantine_state",
+                            "runtime_state",
+                            "grant_revision",
+                            "lifecycle_generation",
+                            "revision"
+                        ],
+                        "properties": {
+                            "extension_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 5,
+                                "maxLength": 128
+                            },
+                            "api_major": {
+                                "const": 1
+                            },
+                            "package_digest": {
+                                "$ref": "#/$defs/m6-extension-runtime.sha256"
+                            },
+                            "publisher_fingerprint": {
+                                "type": "string",
+                                "pattern": "^ed25519-sha256:[0-9a-f]{64}$"
+                            },
+                            "desired_state": {
+                                "$ref": "#/$defs/m6-extension-runtime.desiredState"
+                            },
+                            "quarantine_state": {
+                                "$ref": "#/$defs/m6-extension-runtime.quarantineState"
+                            },
+                            "runtime_state": {
+                                "$ref": "#/$defs/m6-extension-runtime.runtimeState"
+                            },
+                            "grant_revision": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "lifecycle_generation": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "revision": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "ui": {
+                                "$ref": "#/$defs/m6-extension-runtime.uiDeclaration"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "m6-extension-runtime.desiredState": {
+                        "enum": [
+                            "installed_disabled",
+                            "enabled",
+                            "uninstalling"
+                        ]
+                    },
+                    "m6-extension-runtime.quarantineState": {
+                        "enum": [
+                            "clear",
+                            "quarantined"
+                        ]
+                    },
+                    "m6-extension-runtime.runtimeState": {
+                        "enum": [
+                            "stopped",
+                            "starting",
+                            "running",
+                            "stopping",
+                            "crashed"
+                        ]
+                    },
+                    "m6-extension-runtime.revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    },
+                    "m6-extension-runtime.uiDeclaration": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "protocol"
+                        ],
+                        "properties": {
+                            "protocol": {
+                                "const": "portable-v1"
+                            }
+                        }
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "read",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_get_extension",
+            "title": "Get extension details",
+            "description": "Read the signed package identity, status, and declared entries.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "extension_id"
+                ],
+                "properties": {
+                    "extension_id": {
+                        "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                    }
+                },
+                "$defs": {
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.extensionResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.extensionResult": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "extension"
+                        ],
+                        "properties": {
+                            "extension": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionRecord"
+                            },
+                            "installation_source": {
+                                "$ref": "#/$defs/m6-extension-runtime.installationSource"
+                            },
+                            "cli_commands": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.toolPreview"
+                                }
+                            },
+                            "mcp_tools": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.toolPreview"
+                                }
+                            },
+                            "activation_consent": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "package_digest",
+                                    "targets"
+                                ],
+                                "properties": {
+                                    "package_digest": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{64}$"
+                                    },
+                                    "targets": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "maxItems": 8,
+                                        "items": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 700
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.extensionRecord": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "extension_id",
+                            "version",
+                            "api_major",
+                            "package_digest",
+                            "publisher_fingerprint",
+                            "desired_state",
+                            "quarantine_state",
+                            "runtime_state",
+                            "grant_revision",
+                            "lifecycle_generation",
+                            "revision"
+                        ],
+                        "properties": {
+                            "extension_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 5,
+                                "maxLength": 128
+                            },
+                            "api_major": {
+                                "const": 1
+                            },
+                            "package_digest": {
+                                "$ref": "#/$defs/m6-extension-runtime.sha256"
+                            },
+                            "publisher_fingerprint": {
+                                "type": "string",
+                                "pattern": "^ed25519-sha256:[0-9a-f]{64}$"
+                            },
+                            "desired_state": {
+                                "$ref": "#/$defs/m6-extension-runtime.desiredState"
+                            },
+                            "quarantine_state": {
+                                "$ref": "#/$defs/m6-extension-runtime.quarantineState"
+                            },
+                            "runtime_state": {
+                                "$ref": "#/$defs/m6-extension-runtime.runtimeState"
+                            },
+                            "grant_revision": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "lifecycle_generation": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "revision": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "ui": {
+                                "$ref": "#/$defs/m6-extension-runtime.uiDeclaration"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "m6-extension-runtime.desiredState": {
+                        "enum": [
+                            "installed_disabled",
+                            "enabled",
+                            "uninstalling"
+                        ]
+                    },
+                    "m6-extension-runtime.quarantineState": {
+                        "enum": [
+                            "clear",
+                            "quarantined"
+                        ]
+                    },
+                    "m6-extension-runtime.runtimeState": {
+                        "enum": [
+                            "stopped",
+                            "starting",
+                            "running",
+                            "stopping",
+                            "crashed"
+                        ]
+                    },
+                    "m6-extension-runtime.revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    },
+                    "m6-extension-runtime.uiDeclaration": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "protocol"
+                        ],
+                        "properties": {
+                            "protocol": {
+                                "const": "portable-v1"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.installationSource": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "url",
+                            "version"
+                        ],
+                        "properties": {
+                            "url": {
+                                "$ref": "#/$defs/m6-extension-runtime.sourceUrl"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.sourceUrl": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192,
+                        "pattern": "^https://",
+                        "description": "Anonymous HTTPS; no userinfo or fragment; legal query preserved."
+                    },
+                    "m6-extension-runtime.toolPreview": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "title",
+                            "description",
+                            "required_permissions",
+                            "effect"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                            },
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                            },
+                            "description": {
+                                "type": "string",
+                                "maxLength": 2048
+                            },
+                            "required_permissions": {
+                                "type": "array",
+                                "maxItems": 8,
+                                "uniqueItems": true,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                }
+                            },
+                            "effect": {
+                                "enum": [
+                                    "pure",
+                                    "read",
+                                    "plan",
+                                    "apply",
+                                    "cancel"
+                                ]
+                            }
+                        }
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "read",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_list_extension_permissions",
+            "title": "List extension permissions",
+            "description": "Read available permissions, actual grants, and the grant revision.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "extension_id"
+                ],
+                "properties": {
+                    "extension_id": {
+                        "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000
+                    }
+                },
+                "$defs": {
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.permissionsListResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.permissionsListResult": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "extension_id",
+                            "grant_revision",
+                            "required_permissions",
+                            "optional_permissions",
+                            "grants",
+                            "available_permissions"
+                        ],
+                        "properties": {
+                            "available_permissions": {
+                                "$ref": "#/$defs/m6-extension-runtime.permissionDeclarations"
+                            },
+                            "extension_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                            },
+                            "grant_revision": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "required_permissions": {
+                                "$ref": "#/$defs/m6-extension-runtime.permissionDeclarations"
+                            },
+                            "optional_permissions": {
+                                "$ref": "#/$defs/m6-extension-runtime.permissionDeclarations"
+                            },
+                            "grants": {
+                                "type": "array",
+                                "maxItems": 1000,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.permissionGrant"
+                                }
+                            },
+                            "next_cursor": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4096
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.permissionDeclarations": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        }
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    },
+                    "m6-extension-runtime.permissionGrant": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "allOf": [
+                            {
+                                "$ref": "#/$defs/m6-extension-runtime.permissionScope"
+                            }
+                        ],
+                        "required": [
+                            "permission",
+                            "resource_kind",
+                            "resource_id"
+                        ],
+                        "properties": {
+                            "permission": {
+                                "enum": [
+                                    "background.run",
+                                    "projects.read",
+                                    "mcp.clients.read",
+                                    "mcp.clients.manage",
+                                    "mcp.connections.read",
+                                    "mcp.requests.read",
+                                    "mcp.subscription-streams.read",
+                                    "repositories.read",
+                                    "packages.read",
+                                    "packages.manage",
+                                    "operations.read",
+                                    "operations.cancel",
+                                    "unity.sessions.read",
+                                    "local-ipc.connect"
+                                ]
+                            },
+                            "resource_kind": {
+                                "enum": [
+                                    "Extension",
+                                    "Global",
+                                    "LocalIpcTarget"
+                                ]
+                            },
+                            "resource_id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.permissionScope": {
+                        "oneOf": [
+                            {
+                                "properties": {
+                                    "permission": {
+                                        "const": "background.run"
+                                    },
+                                    "resource_kind": {
+                                        "const": "Extension"
+                                    },
+                                    "resource_id": {
+                                        "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                                    }
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "permission": {
+                                        "enum": [
+                                            "projects.read",
+                                            "mcp.clients.read",
+                                            "mcp.clients.manage",
+                                            "mcp.connections.read",
+                                            "mcp.requests.read",
+                                            "mcp.subscription-streams.read",
+                                            "repositories.read",
+                                            "packages.read",
+                                            "packages.manage",
+                                            "operations.read",
+                                            "operations.cancel",
+                                            "unity.sessions.read"
+                                        ]
+                                    },
+                                    "resource_kind": {
+                                        "const": "Global"
+                                    },
+                                    "resource_id": {
+                                        "const": "*"
+                                    }
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "permission": {
+                                        "const": "local-ipc.connect"
+                                    },
+                                    "resource_kind": {
+                                        "const": "LocalIpcTarget"
+                                    },
+                                    "resource_id": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64,
+                                        "pattern": "^[0-9a-f]+$"
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "read",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_inspect_extension_source",
+            "title": "Inspect an extension source",
+            "description": "Inspect a remote extension source and its available versions.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "url"
+                ],
+                "properties": {
+                    "url": {
+                        "$ref": "#/$defs/m6-extension-runtime.sourceUrl"
+                    }
+                },
+                "$defs": {
+                    "m6-extension-runtime.sourceUrl": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192,
+                        "pattern": "^https://",
+                        "description": "Anonymous HTTPS; no userinfo or fragment; legal query preserved."
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.sourcePreview"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.sourcePreview": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "url",
+                            "extension_id",
+                            "display_name",
+                            "publisher_fingerprint",
+                            "versions",
+                            "source_fingerprint"
+                        ],
+                        "properties": {
+                            "url": {
+                                "$ref": "#/$defs/m6-extension-runtime.sourceUrl"
+                            },
+                            "extension_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                            },
+                            "display_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                            },
+                            "publisher_fingerprint": {
+                                "type": "string",
+                                "pattern": "^ed25519-sha256:[0-9a-f]{64}$"
+                            },
+                            "description": {
+                                "type": "string",
+                                "maxLength": 2048
+                            },
+                            "versions": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 256,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "version",
+                                        "api_major"
+                                    ],
+                                    "properties": {
+                                        "version": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 128
+                                        },
+                                        "api_major": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 4294967295
+                                        }
+                                    }
+                                }
+                            },
+                            "source_fingerprint": {
+                                "$ref": "#/$defs/m6-extension-runtime.sha256"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.sourceUrl": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192,
+                        "pattern": "^https://",
+                        "description": "Anonymous HTTPS; no userinfo or fragment; legal query preserved."
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "read",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_plan_extension_install",
+            "title": "Plan extension installation",
+            "description": "Inspect a local signed package and prepare its original installation plan.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "source_kind",
+                    "package_path",
+                    "expected_revision"
+                ],
+                "properties": {
+                    "source_kind": {
+                        "enum": [
+                            "local_owner_selected",
+                            "first_party_packaged"
+                        ]
+                    },
+                    "package_path": {
+                        "$ref": "#/$defs/m6-extension-runtime.absolutePath"
+                    },
+                    "expected_revision": {
+                        "$ref": "#/$defs/m6-extension-runtime.expectedOptionalRevision"
+                    }
+                },
+                "$defs": {
+                    "m6-extension-runtime.absolutePath": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32768
+                    },
+                    "m6-extension-runtime.expectedOptionalRevision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9223372036854775807
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.planResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.planResult": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "plan"
+                        ],
+                        "properties": {
+                            "plan": {
+                                "$ref": "#/$defs/m6-extension-runtime.planRecord"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.planRecord": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "plan_id",
+                            "action",
+                            "state",
+                            "source_kind",
+                            "extension_id",
+                            "package_digest",
+                            "version",
+                            "api_major",
+                            "profile_version",
+                            "publisher_fingerprint",
+                            "data_disposition",
+                            "plan_fingerprint",
+                            "required_permissions",
+                            "optional_permissions",
+                            "mcp_tools",
+                            "cli_commands"
+                        ],
+                        "properties": {
+                            "installation_terms": {
+                                "$ref": "#/$defs/m6-extension-runtime.installationTerms"
+                            },
+                            "installation_source": {
+                                "$ref": "#/$defs/m6-extension-runtime.installationSource"
+                            },
+                            "cli_commands": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.toolPreview"
+                                }
+                            },
+                            "mcp_tools": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.toolPreview"
+                                }
+                            },
+                            "plan_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.uuid"
+                            },
+                            "action": {
+                                "enum": [
+                                    "install",
+                                    "uninstall"
+                                ]
+                            },
+                            "state": {
+                                "enum": [
+                                    "unapplied",
+                                    "applied"
+                                ]
+                            },
+                            "source_kind": {
+                                "enum": [
+                                    "not_applicable",
+                                    "local_owner_selected",
+                                    "first_party_packaged",
+                                    "remote_extension_source"
+                                ]
+                            },
+                            "extension_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "api_major": {
+                                "const": 1
+                            },
+                            "profile_version": {
+                                "const": 1
+                            },
+                            "package_digest": {
+                                "$ref": "#/$defs/m6-extension-runtime.sha256"
+                            },
+                            "publisher_fingerprint": {
+                                "type": "string",
+                                "pattern": "^ed25519-sha256:[0-9a-f]{64}$"
+                            },
+                            "data_disposition": {
+                                "enum": [
+                                    "not_applicable",
+                                    "retain_data",
+                                    "delete_data"
+                                ]
+                            },
+                            "plan_fingerprint": {
+                                "$ref": "#/$defs/m6-extension-runtime.sha256"
+                            },
+                            "required_permissions": {
+                                "$ref": "#/$defs/m6-extension-runtime.permissionDeclarations"
+                            },
+                            "optional_permissions": {
+                                "$ref": "#/$defs/m6-extension-runtime.permissionDeclarations"
+                            },
+                            "ui_protocol": {
+                                "enum": [
+                                    "portable-v1"
+                                ]
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.installationTerms": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "title",
+                            "text"
+                        ],
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "text": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 16384
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.installationSource": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "url",
+                            "version"
+                        ],
+                        "properties": {
+                            "url": {
+                                "$ref": "#/$defs/m6-extension-runtime.sourceUrl"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.sourceUrl": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192,
+                        "pattern": "^https://",
+                        "description": "Anonymous HTTPS; no userinfo or fragment; legal query preserved."
+                    },
+                    "m6-extension-runtime.toolPreview": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "title",
+                            "description",
+                            "required_permissions",
+                            "effect"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                            },
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                            },
+                            "description": {
+                                "type": "string",
+                                "maxLength": 2048
+                            },
+                            "required_permissions": {
+                                "type": "array",
+                                "maxItems": 8,
+                                "uniqueItems": true,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                }
+                            },
+                            "effect": {
+                                "enum": [
+                                    "pure",
+                                    "read",
+                                    "plan",
+                                    "apply",
+                                    "cancel"
+                                ]
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.uuid": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "m6-extension-runtime.permissionDeclarations": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        }
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "plan",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_plan_extension_install_from_source",
+            "title": "Plan extension installation from a source",
+            "description": "Prepare installation with a selected version and the inspected source fingerprint.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "url",
+                    "version",
+                    "expected_source_fingerprint"
+                ],
+                "properties": {
+                    "url": {
+                        "$ref": "#/$defs/m6-extension-runtime.sourceUrl"
+                    },
+                    "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "expected_source_fingerprint": {
+                        "$ref": "#/$defs/m6-extension-runtime.sha256"
+                    }
+                },
+                "$defs": {
+                    "m6-extension-runtime.sourceUrl": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192,
+                        "pattern": "^https://",
+                        "description": "Anonymous HTTPS; no userinfo or fragment; legal query preserved."
+                    },
+                    "m6-extension-runtime.sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.planResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.planResult": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "plan"
+                        ],
+                        "properties": {
+                            "plan": {
+                                "$ref": "#/$defs/m6-extension-runtime.planRecord"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.planRecord": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "plan_id",
+                            "action",
+                            "state",
+                            "source_kind",
+                            "extension_id",
+                            "package_digest",
+                            "version",
+                            "api_major",
+                            "profile_version",
+                            "publisher_fingerprint",
+                            "data_disposition",
+                            "plan_fingerprint",
+                            "required_permissions",
+                            "optional_permissions",
+                            "mcp_tools",
+                            "cli_commands"
+                        ],
+                        "properties": {
+                            "installation_terms": {
+                                "$ref": "#/$defs/m6-extension-runtime.installationTerms"
+                            },
+                            "installation_source": {
+                                "$ref": "#/$defs/m6-extension-runtime.installationSource"
+                            },
+                            "cli_commands": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.toolPreview"
+                                }
+                            },
+                            "mcp_tools": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.toolPreview"
+                                }
+                            },
+                            "plan_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.uuid"
+                            },
+                            "action": {
+                                "enum": [
+                                    "install",
+                                    "uninstall"
+                                ]
+                            },
+                            "state": {
+                                "enum": [
+                                    "unapplied",
+                                    "applied"
+                                ]
+                            },
+                            "source_kind": {
+                                "enum": [
+                                    "not_applicable",
+                                    "local_owner_selected",
+                                    "first_party_packaged",
+                                    "remote_extension_source"
+                                ]
+                            },
+                            "extension_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "api_major": {
+                                "const": 1
+                            },
+                            "profile_version": {
+                                "const": 1
+                            },
+                            "package_digest": {
+                                "$ref": "#/$defs/m6-extension-runtime.sha256"
+                            },
+                            "publisher_fingerprint": {
+                                "type": "string",
+                                "pattern": "^ed25519-sha256:[0-9a-f]{64}$"
+                            },
+                            "data_disposition": {
+                                "enum": [
+                                    "not_applicable",
+                                    "retain_data",
+                                    "delete_data"
+                                ]
+                            },
+                            "plan_fingerprint": {
+                                "$ref": "#/$defs/m6-extension-runtime.sha256"
+                            },
+                            "required_permissions": {
+                                "$ref": "#/$defs/m6-extension-runtime.permissionDeclarations"
+                            },
+                            "optional_permissions": {
+                                "$ref": "#/$defs/m6-extension-runtime.permissionDeclarations"
+                            },
+                            "ui_protocol": {
+                                "enum": [
+                                    "portable-v1"
+                                ]
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.installationTerms": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "title",
+                            "text"
+                        ],
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "text": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 16384
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.installationSource": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "url",
+                            "version"
+                        ],
+                        "properties": {
+                            "url": {
+                                "$ref": "#/$defs/m6-extension-runtime.sourceUrl"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.sourceUrl": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192,
+                        "pattern": "^https://",
+                        "description": "Anonymous HTTPS; no userinfo or fragment; legal query preserved."
+                    },
+                    "m6-extension-runtime.toolPreview": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "title",
+                            "description",
+                            "required_permissions",
+                            "effect"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                            },
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                            },
+                            "description": {
+                                "type": "string",
+                                "maxLength": 2048
+                            },
+                            "required_permissions": {
+                                "type": "array",
+                                "maxItems": 8,
+                                "uniqueItems": true,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                }
+                            },
+                            "effect": {
+                                "enum": [
+                                    "pure",
+                                    "read",
+                                    "plan",
+                                    "apply",
+                                    "cancel"
+                                ]
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.uuid": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "m6-extension-runtime.permissionDeclarations": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        }
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "plan",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_apply_extension_install",
+            "title": "Apply extension installation",
+            "description": "Apply the original plan with its fingerprint and the operator’s actual consent. Recover unknown outcomes with the original key and arguments.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "plan_id",
+                    "idempotency_key",
+                    "consent",
+                    "confirm"
+                ],
+                "properties": {
+                    "plan_id": {
+                        "$ref": "#/$defs/m6-extension-runtime.uuid"
+                    },
+                    "idempotency_key": {
+                        "$ref": "#/$defs/m6-extension-runtime.idempotencyKey"
+                    },
+                    "consent": {
+                        "$ref": "#/$defs/m6-extension-runtime.installConsent"
+                    },
+                    "confirm": {
+                        "const": true
+                    }
+                },
+                "$defs": {
+                    "m6-extension-runtime.uuid": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "m6-extension-runtime.idempotencyKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[!-~]+$"
+                    },
+                    "m6-extension-runtime.installConsent": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "plan_fingerprint",
+                            "installation_terms_accepted",
+                            "required_permissions_accepted"
+                        ],
+                        "properties": {
+                            "plan_fingerprint": {
+                                "$ref": "#/$defs/m6-extension-runtime.sha256"
+                            },
+                            "installation_terms_accepted": {
+                                "type": "boolean"
+                            },
+                            "required_permissions_accepted": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.operationResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.operationResult": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "operation_id",
+                            "replayed"
+                        ],
+                        "properties": {
+                            "operation_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.uuid"
+                            },
+                            "replayed": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.uuid": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "apply",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_enable_extension",
+            "title": "Enable an extension",
+            "description": "Enable the selected extension at its reviewed revision, supplying the activation digest when required.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "extension_id",
+                    "expected_revision",
+                    "idempotency_key",
+                    "confirm"
+                ],
+                "properties": {
+                    "extension_id": {
+                        "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                    },
+                    "expected_revision": {
+                        "$ref": "#/$defs/m6-extension-runtime.revision"
+                    },
+                    "idempotency_key": {
+                        "$ref": "#/$defs/m6-extension-runtime.idempotencyKey"
+                    },
+                    "activation_package_digest": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "confirm": {
+                        "const": true
+                    }
+                },
+                "$defs": {
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    },
+                    "m6-extension-runtime.idempotencyKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[!-~]+$"
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.extensionResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.extensionResult": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "extension"
+                        ],
+                        "properties": {
+                            "extension": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionRecord"
+                            },
+                            "installation_source": {
+                                "$ref": "#/$defs/m6-extension-runtime.installationSource"
+                            },
+                            "cli_commands": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.toolPreview"
+                                }
+                            },
+                            "mcp_tools": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.toolPreview"
+                                }
+                            },
+                            "activation_consent": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "package_digest",
+                                    "targets"
+                                ],
+                                "properties": {
+                                    "package_digest": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{64}$"
+                                    },
+                                    "targets": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "maxItems": 8,
+                                        "items": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 700
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.extensionRecord": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "extension_id",
+                            "version",
+                            "api_major",
+                            "package_digest",
+                            "publisher_fingerprint",
+                            "desired_state",
+                            "quarantine_state",
+                            "runtime_state",
+                            "grant_revision",
+                            "lifecycle_generation",
+                            "revision"
+                        ],
+                        "properties": {
+                            "extension_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 5,
+                                "maxLength": 128
+                            },
+                            "api_major": {
+                                "const": 1
+                            },
+                            "package_digest": {
+                                "$ref": "#/$defs/m6-extension-runtime.sha256"
+                            },
+                            "publisher_fingerprint": {
+                                "type": "string",
+                                "pattern": "^ed25519-sha256:[0-9a-f]{64}$"
+                            },
+                            "desired_state": {
+                                "$ref": "#/$defs/m6-extension-runtime.desiredState"
+                            },
+                            "quarantine_state": {
+                                "$ref": "#/$defs/m6-extension-runtime.quarantineState"
+                            },
+                            "runtime_state": {
+                                "$ref": "#/$defs/m6-extension-runtime.runtimeState"
+                            },
+                            "grant_revision": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "lifecycle_generation": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "revision": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "ui": {
+                                "$ref": "#/$defs/m6-extension-runtime.uiDeclaration"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "m6-extension-runtime.desiredState": {
+                        "enum": [
+                            "installed_disabled",
+                            "enabled",
+                            "uninstalling"
+                        ]
+                    },
+                    "m6-extension-runtime.quarantineState": {
+                        "enum": [
+                            "clear",
+                            "quarantined"
+                        ]
+                    },
+                    "m6-extension-runtime.runtimeState": {
+                        "enum": [
+                            "stopped",
+                            "starting",
+                            "running",
+                            "stopping",
+                            "crashed"
+                        ]
+                    },
+                    "m6-extension-runtime.revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    },
+                    "m6-extension-runtime.uiDeclaration": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "protocol"
+                        ],
+                        "properties": {
+                            "protocol": {
+                                "const": "portable-v1"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.installationSource": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "url",
+                            "version"
+                        ],
+                        "properties": {
+                            "url": {
+                                "$ref": "#/$defs/m6-extension-runtime.sourceUrl"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.sourceUrl": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192,
+                        "pattern": "^https://",
+                        "description": "Anonymous HTTPS; no userinfo or fragment; legal query preserved."
+                    },
+                    "m6-extension-runtime.toolPreview": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "title",
+                            "description",
+                            "required_permissions",
+                            "effect"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                            },
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                            },
+                            "description": {
+                                "type": "string",
+                                "maxLength": 2048
+                            },
+                            "required_permissions": {
+                                "type": "array",
+                                "maxItems": 8,
+                                "uniqueItems": true,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                }
+                            },
+                            "effect": {
+                                "enum": [
+                                    "pure",
+                                    "read",
+                                    "plan",
+                                    "apply",
+                                    "cancel"
+                                ]
+                            }
+                        }
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "apply",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_disable_extension",
+            "title": "Disable an extension",
+            "description": "Disable the selected extension at its reviewed revision.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "extension_id",
+                    "expected_revision",
+                    "idempotency_key",
+                    "confirm"
+                ],
+                "properties": {
+                    "extension_id": {
+                        "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                    },
+                    "expected_revision": {
+                        "$ref": "#/$defs/m6-extension-runtime.revision"
+                    },
+                    "idempotency_key": {
+                        "$ref": "#/$defs/m6-extension-runtime.idempotencyKey"
+                    },
+                    "confirm": {
+                        "const": true
+                    }
+                },
+                "$defs": {
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    },
+                    "m6-extension-runtime.idempotencyKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[!-~]+$"
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.extensionResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.extensionResult": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "extension"
+                        ],
+                        "properties": {
+                            "extension": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionRecord"
+                            },
+                            "installation_source": {
+                                "$ref": "#/$defs/m6-extension-runtime.installationSource"
+                            },
+                            "cli_commands": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.toolPreview"
+                                }
+                            },
+                            "mcp_tools": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.toolPreview"
+                                }
+                            },
+                            "activation_consent": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "package_digest",
+                                    "targets"
+                                ],
+                                "properties": {
+                                    "package_digest": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{64}$"
+                                    },
+                                    "targets": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "maxItems": 8,
+                                        "items": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 700
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.extensionRecord": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "extension_id",
+                            "version",
+                            "api_major",
+                            "package_digest",
+                            "publisher_fingerprint",
+                            "desired_state",
+                            "quarantine_state",
+                            "runtime_state",
+                            "grant_revision",
+                            "lifecycle_generation",
+                            "revision"
+                        ],
+                        "properties": {
+                            "extension_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 5,
+                                "maxLength": 128
+                            },
+                            "api_major": {
+                                "const": 1
+                            },
+                            "package_digest": {
+                                "$ref": "#/$defs/m6-extension-runtime.sha256"
+                            },
+                            "publisher_fingerprint": {
+                                "type": "string",
+                                "pattern": "^ed25519-sha256:[0-9a-f]{64}$"
+                            },
+                            "desired_state": {
+                                "$ref": "#/$defs/m6-extension-runtime.desiredState"
+                            },
+                            "quarantine_state": {
+                                "$ref": "#/$defs/m6-extension-runtime.quarantineState"
+                            },
+                            "runtime_state": {
+                                "$ref": "#/$defs/m6-extension-runtime.runtimeState"
+                            },
+                            "grant_revision": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "lifecycle_generation": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "revision": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "ui": {
+                                "$ref": "#/$defs/m6-extension-runtime.uiDeclaration"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "m6-extension-runtime.desiredState": {
+                        "enum": [
+                            "installed_disabled",
+                            "enabled",
+                            "uninstalling"
+                        ]
+                    },
+                    "m6-extension-runtime.quarantineState": {
+                        "enum": [
+                            "clear",
+                            "quarantined"
+                        ]
+                    },
+                    "m6-extension-runtime.runtimeState": {
+                        "enum": [
+                            "stopped",
+                            "starting",
+                            "running",
+                            "stopping",
+                            "crashed"
+                        ]
+                    },
+                    "m6-extension-runtime.revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    },
+                    "m6-extension-runtime.uiDeclaration": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "protocol"
+                        ],
+                        "properties": {
+                            "protocol": {
+                                "const": "portable-v1"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.installationSource": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "url",
+                            "version"
+                        ],
+                        "properties": {
+                            "url": {
+                                "$ref": "#/$defs/m6-extension-runtime.sourceUrl"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.sourceUrl": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192,
+                        "pattern": "^https://",
+                        "description": "Anonymous HTTPS; no userinfo or fragment; legal query preserved."
+                    },
+                    "m6-extension-runtime.toolPreview": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "title",
+                            "description",
+                            "required_permissions",
+                            "effect"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                            },
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                            },
+                            "description": {
+                                "type": "string",
+                                "maxLength": 2048
+                            },
+                            "required_permissions": {
+                                "type": "array",
+                                "maxItems": 8,
+                                "uniqueItems": true,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                }
+                            },
+                            "effect": {
+                                "enum": [
+                                    "pure",
+                                    "read",
+                                    "plan",
+                                    "apply",
+                                    "cancel"
+                                ]
+                            }
+                        }
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "apply",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_plan_extension_uninstall",
+            "title": "Plan extension removal",
+            "description": "Review the selected extension and the requested disposition of its data.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "extension_id",
+                    "expected_revision",
+                    "data_disposition"
+                ],
+                "properties": {
+                    "extension_id": {
+                        "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                    },
+                    "expected_revision": {
+                        "$ref": "#/$defs/m6-extension-runtime.revision"
+                    },
+                    "data_disposition": {
+                        "enum": [
+                            "retain_data",
+                            "delete_data"
+                        ]
+                    }
+                },
+                "$defs": {
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.planResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.planResult": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "plan"
+                        ],
+                        "properties": {
+                            "plan": {
+                                "$ref": "#/$defs/m6-extension-runtime.planRecord"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.planRecord": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "plan_id",
+                            "action",
+                            "state",
+                            "source_kind",
+                            "extension_id",
+                            "package_digest",
+                            "version",
+                            "api_major",
+                            "profile_version",
+                            "publisher_fingerprint",
+                            "data_disposition",
+                            "plan_fingerprint",
+                            "required_permissions",
+                            "optional_permissions",
+                            "mcp_tools",
+                            "cli_commands"
+                        ],
+                        "properties": {
+                            "installation_terms": {
+                                "$ref": "#/$defs/m6-extension-runtime.installationTerms"
+                            },
+                            "installation_source": {
+                                "$ref": "#/$defs/m6-extension-runtime.installationSource"
+                            },
+                            "cli_commands": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.toolPreview"
+                                }
+                            },
+                            "mcp_tools": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "$ref": "#/$defs/m6-extension-runtime.toolPreview"
+                                }
+                            },
+                            "plan_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.uuid"
+                            },
+                            "action": {
+                                "enum": [
+                                    "install",
+                                    "uninstall"
+                                ]
+                            },
+                            "state": {
+                                "enum": [
+                                    "unapplied",
+                                    "applied"
+                                ]
+                            },
+                            "source_kind": {
+                                "enum": [
+                                    "not_applicable",
+                                    "local_owner_selected",
+                                    "first_party_packaged",
+                                    "remote_extension_source"
+                                ]
+                            },
+                            "extension_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "api_major": {
+                                "const": 1
+                            },
+                            "profile_version": {
+                                "const": 1
+                            },
+                            "package_digest": {
+                                "$ref": "#/$defs/m6-extension-runtime.sha256"
+                            },
+                            "publisher_fingerprint": {
+                                "type": "string",
+                                "pattern": "^ed25519-sha256:[0-9a-f]{64}$"
+                            },
+                            "data_disposition": {
+                                "enum": [
+                                    "not_applicable",
+                                    "retain_data",
+                                    "delete_data"
+                                ]
+                            },
+                            "plan_fingerprint": {
+                                "$ref": "#/$defs/m6-extension-runtime.sha256"
+                            },
+                            "required_permissions": {
+                                "$ref": "#/$defs/m6-extension-runtime.permissionDeclarations"
+                            },
+                            "optional_permissions": {
+                                "$ref": "#/$defs/m6-extension-runtime.permissionDeclarations"
+                            },
+                            "ui_protocol": {
+                                "enum": [
+                                    "portable-v1"
+                                ]
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.installationTerms": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "title",
+                            "text"
+                        ],
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "text": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 16384
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.installationSource": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "url",
+                            "version"
+                        ],
+                        "properties": {
+                            "url": {
+                                "$ref": "#/$defs/m6-extension-runtime.sourceUrl"
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.sourceUrl": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192,
+                        "pattern": "^https://",
+                        "description": "Anonymous HTTPS; no userinfo or fragment; legal query preserved."
+                    },
+                    "m6-extension-runtime.toolPreview": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "title",
+                            "description",
+                            "required_permissions",
+                            "effect"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                            },
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                            },
+                            "description": {
+                                "type": "string",
+                                "maxLength": 2048
+                            },
+                            "required_permissions": {
+                                "type": "array",
+                                "maxItems": 8,
+                                "uniqueItems": true,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                }
+                            },
+                            "effect": {
+                                "enum": [
+                                    "pure",
+                                    "read",
+                                    "plan",
+                                    "apply",
+                                    "cancel"
+                                ]
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.uuid": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "m6-extension-runtime.permissionDeclarations": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        }
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "plan",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_apply_extension_uninstall",
+            "title": "Apply extension removal",
+            "description": "Apply the original reviewed removal plan and return its operation.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "plan_id",
+                    "idempotency_key",
+                    "confirm"
+                ],
+                "properties": {
+                    "plan_id": {
+                        "$ref": "#/$defs/m6-extension-runtime.uuid"
+                    },
+                    "idempotency_key": {
+                        "$ref": "#/$defs/m6-extension-runtime.idempotencyKey"
+                    },
+                    "confirm": {
+                        "const": true
+                    }
+                },
+                "$defs": {
+                    "m6-extension-runtime.uuid": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "m6-extension-runtime.idempotencyKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[!-~]+$"
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.operationResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.operationResult": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "operation_id",
+                            "replayed"
+                        ],
+                        "properties": {
+                            "operation_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.uuid"
+                            },
+                            "replayed": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.uuid": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "apply",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_grant_extension_permission",
+            "title": "Grant an extension permission",
+            "description": "Grant the reviewed permission on its specified resource at the expected grant revision.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "allOf": [
+                    {
+                        "$ref": "#/$defs/m6-extension-runtime.permissionScope"
+                    }
+                ],
+                "required": [
+                    "extension_id",
+                    "permission",
+                    "resource_kind",
+                    "resource_id",
+                    "expected_grant_revision",
+                    "idempotency_key",
+                    "confirm"
+                ],
+                "properties": {
+                    "extension_id": {
+                        "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                    },
+                    "permission": {
+                        "enum": [
+                            "background.run",
+                            "projects.read",
+                            "mcp.clients.read",
+                            "mcp.clients.manage",
+                            "mcp.connections.read",
+                            "mcp.requests.read",
+                            "mcp.subscription-streams.read",
+                            "repositories.read",
+                            "packages.read",
+                            "packages.manage",
+                            "operations.read",
+                            "operations.cancel",
+                            "unity.sessions.read",
+                            "local-ipc.connect"
+                        ]
+                    },
+                    "resource_kind": {
+                        "enum": [
+                            "Extension",
+                            "Global",
+                            "LocalIpcTarget"
+                        ]
+                    },
+                    "resource_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                    },
+                    "expected_grant_revision": {
+                        "$ref": "#/$defs/m6-extension-runtime.revision"
+                    },
+                    "idempotency_key": {
+                        "$ref": "#/$defs/m6-extension-runtime.idempotencyKey"
+                    },
+                    "confirm": {
+                        "const": true
+                    }
+                },
+                "$defs": {
+                    "m6-extension-runtime.permissionScope": {
+                        "oneOf": [
+                            {
+                                "properties": {
+                                    "permission": {
+                                        "const": "background.run"
+                                    },
+                                    "resource_kind": {
+                                        "const": "Extension"
+                                    },
+                                    "resource_id": {
+                                        "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                                    }
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "permission": {
+                                        "enum": [
+                                            "projects.read",
+                                            "mcp.clients.read",
+                                            "mcp.clients.manage",
+                                            "mcp.connections.read",
+                                            "mcp.requests.read",
+                                            "mcp.subscription-streams.read",
+                                            "repositories.read",
+                                            "packages.read",
+                                            "packages.manage",
+                                            "operations.read",
+                                            "operations.cancel",
+                                            "unity.sessions.read"
+                                        ]
+                                    },
+                                    "resource_kind": {
+                                        "const": "Global"
+                                    },
+                                    "resource_id": {
+                                        "const": "*"
+                                    }
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "permission": {
+                                        "const": "local-ipc.connect"
+                                    },
+                                    "resource_kind": {
+                                        "const": "LocalIpcTarget"
+                                    },
+                                    "resource_id": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64,
+                                        "pattern": "^[0-9a-f]+$"
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    },
+                    "m6-extension-runtime.idempotencyKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[!-~]+$"
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.grantResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.grantResult": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "extension_id",
+                            "grant_revision",
+                            "state",
+                            "replayed"
+                        ],
+                        "properties": {
+                            "extension_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                            },
+                            "grant_revision": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "state": {
+                                "enum": [
+                                    "granted",
+                                    "revoked"
+                                ]
+                            },
+                            "replayed": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "apply",
+            "requiredPermissions": []
+        },
+        {
+            "name": "alcomd_revoke_extension_permission",
+            "title": "Revoke an extension permission",
+            "description": "Revoke the reviewed permission on its specified resource at the expected grant revision.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "allOf": [
+                    {
+                        "$ref": "#/$defs/m6-extension-runtime.permissionScope"
+                    }
+                ],
+                "required": [
+                    "extension_id",
+                    "permission",
+                    "resource_kind",
+                    "resource_id",
+                    "expected_grant_revision",
+                    "idempotency_key",
+                    "confirm"
+                ],
+                "properties": {
+                    "extension_id": {
+                        "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                    },
+                    "permission": {
+                        "enum": [
+                            "background.run",
+                            "projects.read",
+                            "mcp.clients.read",
+                            "mcp.clients.manage",
+                            "mcp.connections.read",
+                            "mcp.requests.read",
+                            "mcp.subscription-streams.read",
+                            "repositories.read",
+                            "packages.read",
+                            "packages.manage",
+                            "operations.read",
+                            "operations.cancel",
+                            "unity.sessions.read",
+                            "local-ipc.connect"
+                        ]
+                    },
+                    "resource_kind": {
+                        "enum": [
+                            "Extension",
+                            "Global",
+                            "LocalIpcTarget"
+                        ]
+                    },
+                    "resource_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                    },
+                    "expected_grant_revision": {
+                        "$ref": "#/$defs/m6-extension-runtime.revision"
+                    },
+                    "idempotency_key": {
+                        "$ref": "#/$defs/m6-extension-runtime.idempotencyKey"
+                    },
+                    "confirm": {
+                        "const": true
+                    }
+                },
+                "$defs": {
+                    "m6-extension-runtime.permissionScope": {
+                        "oneOf": [
+                            {
+                                "properties": {
+                                    "permission": {
+                                        "const": "background.run"
+                                    },
+                                    "resource_kind": {
+                                        "const": "Extension"
+                                    },
+                                    "resource_id": {
+                                        "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                                    }
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "permission": {
+                                        "enum": [
+                                            "projects.read",
+                                            "mcp.clients.read",
+                                            "mcp.clients.manage",
+                                            "mcp.connections.read",
+                                            "mcp.requests.read",
+                                            "mcp.subscription-streams.read",
+                                            "repositories.read",
+                                            "packages.read",
+                                            "packages.manage",
+                                            "operations.read",
+                                            "operations.cancel",
+                                            "unity.sessions.read"
+                                        ]
+                                    },
+                                    "resource_kind": {
+                                        "const": "Global"
+                                    },
+                                    "resource_id": {
+                                        "const": "*"
+                                    }
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "permission": {
+                                        "const": "local-ipc.connect"
+                                    },
+                                    "resource_kind": {
+                                        "const": "LocalIpcTarget"
+                                    },
+                                    "resource_id": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64,
+                                        "pattern": "^[0-9a-f]+$"
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    },
+                    "m6-extension-runtime.idempotencyKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[!-~]+$"
+                    }
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/m6-extension-runtime.grantResult"
+                    },
+                    "error": {
+                        "$ref": "#/$defs/toolError"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ],
+                "$defs": {
+                    "m6-extension-runtime.grantResult": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "extension_id",
+                            "grant_revision",
+                            "state",
+                            "replayed"
+                        ],
+                        "properties": {
+                            "extension_id": {
+                                "$ref": "#/$defs/m6-extension-runtime.extensionId"
+                            },
+                            "grant_revision": {
+                                "$ref": "#/$defs/m6-extension-runtime.revision"
+                            },
+                            "state": {
+                                "enum": [
+                                    "granted",
+                                    "revoked"
+                                ]
+                            },
+                            "replayed": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "m6-extension-runtime.extensionId": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+                    },
+                    "m6-extension-runtime.revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9223372036854775807
+                    },
+                    "toolError": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "message": {
+                                "type": "string",
+                                "maxLength": 1024
+                            },
+                            "retryable": {
+                                "type": "boolean"
+                            },
+                            "diagnostic_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "details": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "subreason": {
+                                        "type": "string",
+                                        "maxLength": 128
+                                    }
+                                },
+                                "required": [
+                                    "subreason"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "message",
+                            "retryable"
+                        ]
+                    }
+                }
+            },
+            "effect": "apply",
+            "requiredPermissions": []
+        }
+    ]
+}

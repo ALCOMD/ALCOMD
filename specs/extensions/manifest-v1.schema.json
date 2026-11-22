@@ -68,6 +68,7 @@
                 }
             }
         },
+        "cli": {"type":"object","additionalProperties":false,"required":["commands"],"properties":{"commands":{"const":"component/cli-commands.json"}}},
         "mcp": {"type":"object","additionalProperties":false,"required":["tools"],"properties":{"tools":{"const":"component/mcp-tools.json"}}},
         "id": {
             "type": "string",

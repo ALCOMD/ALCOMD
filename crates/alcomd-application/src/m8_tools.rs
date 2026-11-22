@@ -9,10 +9,10 @@ use std::sync::{
 };
 
 pub const MCP_TOOLS_BYTES: usize = 65_536;
+pub const CLI_COMMANDS_PATH: &str = "component/cli-commands.json";
 pub const MCP_TOOLS_PATH: &str = "component/mcp-tools.json";
-pub const MCP_TOOLS_PROVIDE: &str = "mcp.tools.provide";
 pub const MCP_TOOLS_PROVIDER: &str = "alcomd:mcp-tools/provider@1.0.0";
-pub const MCP_TOOLS_CORE: &str = "alcomd:mcp-tools/core@1.0.0";
+pub const EXTENSION_HOST_OPERATIONS: &str = "alcomd:extension/host-operations@1.0.0";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum ToolOperation {
@@ -59,6 +59,16 @@ pub enum ToolEffect {
     Cancel,
 }
 impl ToolEffect {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pure => "pure",
+            Self::Read => "read",
+            Self::Plan => "plan",
+            Self::Apply => "apply",
+            Self::Cancel => "cancel",
+        }
+    }
+
     pub fn writes(self) -> bool {
         matches!(self, Self::Plan | Self::Apply | Self::Cancel)
     }
@@ -219,18 +229,39 @@ impl ToolDeclarations {
             return Err(ToolError::ResourceLimit);
         }
         let value: Self = serde_json::from_slice(bytes).map_err(|_| ToolError::InvalidInput)?;
-        if value.version != 1 || value.tools.is_empty() || value.tools.len() > 32 {
+        validate_declarations(value.version, value.tools)
+    }
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CliCommandDeclarations {
+    pub version: u32,
+    pub commands: Vec<ToolDeclaration>,
+}
+impl CliCommandDeclarations {
+    pub fn parse(bytes: &[u8]) -> Result<Vec<ToolDeclaration>, ToolError> {
+        if bytes.len() > MCP_TOOLS_BYTES {
+            return Err(ToolError::ResourceLimit);
+        }
+        let value: Self = serde_json::from_slice(bytes).map_err(|_| ToolError::InvalidInput)?;
+        validate_declarations(value.version, value.commands)
+    }
+}
+fn validate_declarations(
+    version: u32,
+    declarations: Vec<ToolDeclaration>,
+) -> Result<Vec<ToolDeclaration>, ToolError> {
+    if version != 1 || declarations.is_empty() || declarations.len() > 32 {
+        return Err(ToolError::InvalidInput);
+    }
+    let mut names = std::collections::HashSet::new();
+    for declaration in &declarations {
+        declaration.validate()?;
+        if !names.insert(&declaration.name) {
             return Err(ToolError::InvalidInput);
         }
-        let mut names = std::collections::HashSet::new();
-        for tool in &value.tools {
-            tool.validate()?;
-            if !names.insert(tool.name.clone()) {
-                return Err(ToolError::InvalidInput);
-            }
-        }
-        Ok(value.tools)
     }
+    Ok(declarations)
 }
 pub fn tool_public_name(extension: &str, local: &str) -> String {
     format!(
@@ -332,11 +363,27 @@ impl std::error::Error for ToolError {}
 
 #[derive(Clone)]
 pub enum ToolAuthentication {
+    Native(AccessContext),
     Credential([u8; 32]),
     OAuth(OAuthAccessGuard),
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExtensionEntryKind {
+    Mcp,
+    Cli,
+}
+impl ExtensionEntryKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Mcp => "mcp",
+            Self::Cli => "cli",
+        }
+    }
+}
 #[derive(Clone)]
 pub struct ToolInvocation {
+    pub kind: ExtensionEntryKind,
     pub call_id: String,
     pub principal: PrincipalId,
     pub origin: ToolOrigin,
@@ -388,6 +435,7 @@ impl ToolAuthentication {
         store: &impl crate::OAuthStore,
     ) -> Result<AccessContext, ToolError> {
         let client = match self {
+            Self::Native(access) => return Ok(access.clone()),
             Self::Credential(hash) => store
                 .mcp_authenticate(*hash)
                 .await
@@ -408,12 +456,14 @@ impl ToolAuthentication {
             .map_err(|_| ToolError::PermissionDenied)?
             .with_actor("MCP".into());
         Ok(match self {
+            Self::Native(_) => return Err(ToolError::PermissionDenied),
             Self::Credential(_) => access,
             Self::OAuth(guard) => access.with_oauth_guard(guard.clone()),
         })
     }
     pub fn binding(&self) -> String {
         match self {
+            Self::Native(access) => digest(access.principal().as_str().as_bytes()),
             Self::Credential(hash) => digest(hash),
             Self::OAuth(g) => {
                 digest(format!("{}:{}", crate::oauth_hex(&g.token_hash), g.resource).as_bytes())
@@ -429,11 +479,10 @@ pub struct ToolProvider {
     pub record: crate::ExtensionRecord,
     pub owner: PrincipalId,
     pub locator: String,
-    pub granted: Vec<String>,
 }
 #[derive(Clone)]
 pub struct ToolStoreSnapshot {
-    pub client: crate::McpClient,
+    pub principal: PrincipalId,
     pub providers: Vec<ToolProvider>,
 }
 /// Private trusted Host reply. This envelope is constructed by native Host code,
@@ -448,6 +497,7 @@ pub struct ToolProviderOutcome {
 
 #[derive(Clone)]
 pub struct ToolWriteAdmission {
+    pub kind: ExtensionEntryKind,
     pub origin: ToolOrigin,
     pub name: String,
     pub key: String,

@@ -18,6 +18,14 @@ mod bindings {
     });
 }
 pub(super) use bindings::BackgroundIntegrationV1 as Bindings;
+
+pub(super) fn preflight(
+    instance: wasmtime::component::InstancePre<HostState>,
+) -> anyhow::Result<()> {
+    bindings::BackgroundIntegrationV1Pre::new(instance)
+        .map_err(|_| anyhow::anyhow!("invalid background ABI"))?;
+    Ok(())
+}
 use bindings::alcomd::extension::{host_local_ipc as ipc, host_unity_sessions as unity};
 
 pub(super) fn add_to_linker(linker: &mut Linker<HostState>) -> anyhow::Result<()> {

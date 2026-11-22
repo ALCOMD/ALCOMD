@@ -1,6 +1,6 @@
 //! Trusted, bounded Schema validation and the independent MCP provider interface.
 use super::HostState;
-use alcomd_application::{MCP_TOOLS_BYTES, ToolDeclaration, ToolDeclarations};
+use alcomd_application::{MCP_TOOLS_BYTES, ToolDeclaration};
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
 use wasmtime::component::{Component, Instance, Linker};
@@ -12,7 +12,13 @@ mod bindings {
         imports: { default: async }, exports: { default: async },
     });
 }
-use bindings::alcomd::mcp_tools::core as wit;
+mod cli {
+    wasmtime::component::bindgen!({
+        path: "../../specs/extensions/wit/cli-commands-v1", world: "provider-v1",
+        imports: { default: async }, exports: { default: async },
+    });
+}
+use bindings::alcomd::extension::host_operations as wit;
 
 pub(super) fn add_to_linker(linker: &mut Linker<HostState>) -> Result<()> {
     wit::add_to_linker::<_, wasmtime::component::HasSelf<_>>(linker, |s| s)
@@ -181,37 +187,47 @@ fn schema(value: &Value) -> Result<jsonschema::Validator> {
 fn bounded(value: &Value) -> bool {
     serde_json::to_vec(value).is_ok_and(|v| v.len() <= MCP_TOOLS_BYTES)
 }
-pub(super) fn declarations(bytes: &[u8]) -> Result<Vec<ToolDeclaration>> {
-    let tools = ToolDeclarations::parse(bytes)?;
-    for tool in &tools {
-        schema(&tool.input_schema)?;
-        schema(&tool.public_input_schema())?;
-        schema(&tool.output_schema)?;
-    }
-    Ok(tools)
-}
-/// Type-check the exact export without instantiating or running an untrusted guest.
+/// Type-check declared exports and bounded schemas without instantiating or running the guest.
 pub(super) fn preflight(engine: &Engine, component: &Component, bytes: &[u8]) -> Result<()> {
-    declarations(bytes)?;
-    // Generated binding pre-instantiation checks the complete canonical function type.
+    let abi = |_| anyhow::anyhow!("invalid component or declared entry ABI");
+    let entries: alcomd_extensions::EntryPreflight = serde_json::from_slice(bytes)?;
     let mut linker = Linker::<HostState>::new(engine);
     super::ExtensionV1::add_to_linker::<_, wasmtime::component::HasSelf<_>>(&mut linker, |s| s)
-        .map_err(|_| anyhow::anyhow!("link"))?;
+        .map_err(abi)?;
     super::mcp_management::add_to_linker(&mut linker)?;
     super::mcp_runtime::add_to_linker(&mut linker)?;
+    super::mcp_transport::add_to_linker(&mut linker)?;
+    if entries.background {
+        super::background_integration::add_to_linker(&mut linker)?;
+    }
     add_to_linker(&mut linker)?;
-    bindings::ProviderV1Pre::new(
-        linker
-            .instantiate_pre(component)
-            .map_err(|_| anyhow::anyhow!("link"))?,
-    )
-    .map_err(|_| anyhow::anyhow!("provider ABI"))?;
+    let instance = linker.instantiate_pre(component).map_err(abi)?;
+    super::ExtensionV1Pre::new(instance.clone()).map_err(abi)?;
+    if entries.ui {
+        super::portable::PortableUiV1Pre::new(instance.clone()).map_err(abi)?;
+    }
+    if entries.background {
+        super::background_integration::preflight(instance.clone())?;
+    }
+    if !entries.tools.is_empty() {
+        bindings::ProviderV1Pre::new(instance.clone()).map_err(abi)?;
+    }
+    if !entries.commands.is_empty() {
+        cli::ProviderV1Pre::new(instance).map_err(abi)?;
+    }
+    for declaration in entries.tools.iter().chain(&entries.commands) {
+        declaration.validate()?;
+        schema(&declaration.input_schema)?;
+        schema(&declaration.public_input_schema())?;
+        schema(&declaration.output_schema)?;
+    }
     Ok(())
 }
 pub(super) async fn invoke(
     instance: &Instance,
     store: &mut Store<HostState>,
     input: Value,
+    kind: alcomd_application::ExtensionEntryKind,
 ) -> Result<Value, super::HostStableError> {
     use alcomd_application::{ToolError as E, ToolProviderOutcome as Reply};
     let result: std::result::Result<Value, (E, bool)> = async {
@@ -228,15 +244,25 @@ pub(super) async fn invoke(
         {
             return Err((E::InvalidInput, false));
         }
-        let provider = bindings::ProviderV1::new(&mut *store, instance)
-            .map_err(|_| (E::ProviderUnavailable, true))?;
         let bytes = serde_json::to_vec(&arguments).map_err(|_| (E::InvalidInput, false))?;
-        let output = provider
-            .alcomd_mcp_tools_provider()
-            .call_invoke(&mut *store, &declaration.name, &bytes)
-            .await
-            .map_err(|_| (E::ProviderUnavailable, true))?
-            .map_err(|_| (E::ProviderUnavailable, false))?;
+        let output = match kind {
+            alcomd_application::ExtensionEntryKind::Mcp => {
+                let p = bindings::ProviderV1::new(&mut *store, instance)
+                    .map_err(|_| (E::ProviderUnavailable, true))?;
+                p.alcomd_mcp_tools_provider()
+                    .call_invoke(&mut *store, &declaration.name, &bytes)
+                    .await
+            }
+            alcomd_application::ExtensionEntryKind::Cli => {
+                let p = cli::ProviderV1::new(&mut *store, instance)
+                    .map_err(|_| (E::ProviderUnavailable, true))?;
+                p.alcomd_cli_commands_provider()
+                    .call_invoke(&mut *store, &declaration.name, &bytes)
+                    .await
+            }
+        }
+        .map_err(|_| (E::ProviderUnavailable, true))?
+        .map_err(|_| (E::ProviderUnavailable, false))?;
         if output.len() > MCP_TOOLS_BYTES {
             return Err((E::OutputInvalid, true));
         }
@@ -271,7 +297,7 @@ impl HostState {
         }
         let result = self
             .protocol
-            .capability(&format!("host-mcp-tools.{method}"), input)
+            .capability(&format!("host-operations.{method}"), input)
             .map_err(|_| wit::Error::Unavailable)?;
         if !bounded(&result) {
             return Err(wit::Error::ResourceLimit);

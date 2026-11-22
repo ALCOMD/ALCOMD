@@ -1,125 +1,11 @@
 //! Real signed Provider -> frozen SDK -> STDIO/HTTP -> real Core transactions.
 use super::*;
-use ed25519_dalek::{Signer, SigningKey};
-use sha2::{Digest, Sha256};
-use std::io::Write;
-const ID: &str = "dev.alcomd.tools-fixture";
+#[path = "../../../../crates/alcomd-testing/fixtures/m8/signed_entry_package.rs"]
+mod signed_entries;
+pub(super) use signed_entries::package_with_install_requirements;
+use signed_entries::{ID, declarations};
 fn public(local: &str) -> String {
     alcomd_application::tool_public_name(ID, local)
-}
-fn declarations() -> Value {
-    fn item(name: &str, uses: &[&str], properties: Value, required: &[&str]) -> Value {
-        json!({"name":name,"title":name,"description":format!("Disposable test {name}"),"inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},"outputSchema":{"type":"object"},"uses":uses})
-    }
-    let pid = json!({"type":"string","format":"uuid"});
-    let mut items = vec![
-        item(
-            "echo",
-            &[],
-            json!({"text":{"type":"string","maxLength":128}}),
-            &["text"],
-        ),
-        item("projects", &["projects.list"], json!({}), &[]),
-        item(
-            "project",
-            &["projects.get"],
-            json!({"project_id":pid}),
-            &["project_id"],
-        ),
-        item(
-            "unauthorized_read",
-            &[],
-            json!({"project_id":pid}),
-            &["project_id"],
-        ),
-        item(
-            "operation",
-            &["operations.get"],
-            json!({"operation_id":pid}),
-            &["operation_id"],
-        ),
-        item("cancel", &["operations.cancel"], json!({}), &[]),
-    ];
-    for name in ["plan_remove", "plan_twice"] {
-        items.push(item(name,&["packages.planUninstall"],json!({"project_id":pid,"expected_revision":{"type":"integer","minimum":1},"package_id":{"type":"string","minLength":1,"maxLength":128}}),&["project_id","expected_revision","package_id"]));
-    }
-    for name in [
-        "apply",
-        "bad_after_apply",
-        "trap_after_apply",
-        "loop_after_apply",
-        "apply_twice",
-    ] {
-        items.push(item(name, &["packages.applyPlan"], json!({}), &[]));
-    }
-    json!({"version":1,"tools":items})
-}
-fn hex(value: &[u8]) -> String {
-    value.iter().map(|b| format!("{b:02x}")).collect()
-}
-fn package(path: &Path) {
-    package_with_install_requirements(path, false);
-}
-pub(super) fn package_with_install_requirements(path: &Path, consent: bool) {
-    let signing = SigningKey::from_bytes(&[23; 32]);
-    let key = signing.verifying_key().to_bytes();
-    let publisher = format!("ed25519-sha256:{}", hex(&Sha256::digest(key)));
-    let mut manifest = format!(
-        "schema=1\nid=\"{ID}\"\nname=\"Disposable tool provider\"\nversion=\"1.0.0\"\napi=1\npublisher_name=\"ALCOMD test\"\npublisher_key_fingerprint=\"{publisher}\"\nlicense=\"AGPL-3.0-only\"\n[entrypoints]\ncomponent=\"component/extension.wasm\"\n[mcp]\ntools=\"component/mcp-tools.json\"\n[interfaces]\nrequired=[\"alcomd:mcp-tools/core@1.0.0\"]\noptional=[]\n[permissions]\nrequired=[]\noptional=[\"mcp.tools.provide\",\"operations.cancel\",\"operations.read\",\"packages.manage\",\"packages.read\",\"projects.read\",\"repositories.read\"]\n"
-    );
-    if consent {
-        manifest = manifest
-            .replace(
-                "[permissions]\nrequired=[]",
-                "[permissions]\nrequired=[\"projects.read\"]",
-            )
-            .replace(",\"projects.read\"", "");
-        manifest.push_str("[installation_terms]\ntitle=\"Fixture terms\"\ntext=\"Use only disposable test data.\"\n");
-    }
-    let catalogue = serde_json::to_vec(&declarations()).expect("valid isolated Provider fixture");
-    let component =
-        include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/mcp-tools-provider-v1.wasm");
-    let mut entries = vec![
-        ("alcomd-extension.toml", manifest.as_bytes()),
-        ("component/extension.wasm", component.as_slice()),
-        ("component/mcp-tools.json", catalogue.as_slice()),
-    ];
-    entries.sort_by_key(|(name, _)| *name);
-    let mut digest = Sha256::new();
-    digest.update(b"ALCOMD-EXT-CONTENT-SHA256-V1\0");
-    for (name, bytes) in &entries {
-        digest.update(
-            u32::try_from(name.len())
-                .expect("valid isolated Provider fixture")
-                .to_le_bytes(),
-        );
-        digest.update(name.as_bytes());
-        digest.update(
-            u64::try_from(bytes.len())
-                .expect("valid isolated Provider fixture")
-                .to_le_bytes(),
-        );
-        digest.update(bytes);
-    }
-    let digest = digest.finalize();
-    let mut message = b"ALCOMD-EXT-SIGNATURE-V1\0".to_vec();
-    message.extend_from_slice(&digest);
-    let signature = json!({"formatVersion":1,"algorithm":"ed25519","packageDigest":hex(&digest),"publicKey":hex(&key),"publisherFingerprint":publisher,"signature":hex(&signing.sign(&message).to_bytes())});
-    let mut zip =
-        zip::ZipWriter::new(std::fs::File::create(path).expect("valid isolated Provider fixture"));
-    let options =
-        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    for (name, bytes) in entries {
-        zip.start_file(name, options)
-            .expect("valid isolated Provider fixture");
-        zip.write_all(bytes)
-            .expect("valid isolated Provider fixture");
-    }
-    zip.start_file("META-INF/alcomd-signature-v1.json", options)
-        .expect("valid isolated Provider fixture");
-    zip.write_all(signature.to_string().as_bytes())
-        .expect("valid isolated Provider fixture");
-    zip.finish().expect("valid isolated Provider fixture");
 }
 pub(super) async fn ext(client: &Sdk, name: &str, args: Value) -> CallToolResult {
     match tokio::time::timeout(
@@ -227,7 +113,7 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         .await
         .expect("valid isolated Provider fixture");
     let path = root.join("provider.alcomdextension");
-    package(&path);
+    package_with_install_requirements(&path, false);
     let request = ExtensionPlanInstallParams {
         source_kind: ExtensionSourceKind::LocalOwnerSelected,
         package_path: path.to_string_lossy().into_owned(),
@@ -239,6 +125,7 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         .expect("normal signed plan")
         .plan;
     assert_eq!(plan.mcp_tools.len(), 13);
+    assert_eq!(plan.cli_commands.len(), 13);
     assert!(plan.required_permissions.is_empty());
     let install = owner
         .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
@@ -258,21 +145,46 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         .await
         .expect("valid isolated Provider fixture")
         .extension;
-    let enabled = owner
-        .extension_enable(ExtensionLifecycleParams {
-            extension_id: ID.into(),
-            expected_revision: record.revision,
-            idempotency_key: "enable-no-background".into(),
-        })
-        .await
-        .expect("valid isolated Provider fixture")
-        .extension;
-    assert_eq!(enabled.desired_state, ExtensionDesiredState::Enabled);
-    assert_eq!(enabled.runtime_state, ExtensionRuntimeState::Stopped);
     let (a, secret_a) = client(&mut owner, "Provider A").await;
     let (b, secret_b) = client(&mut owner, "Provider B").await;
     let sa = sdk(&secret_a, None, &core).await;
     let sb = sdk(&secret_b, None, &core).await;
+    let mut management_trace = Vec::new();
+    let shared = call(
+        &sa,
+        &mut management_trace,
+        "get_extension",
+        json!({"extension_id": ID}),
+    )
+    .await
+    .expect("authenticated operator can inspect the shared installation")
+    .structured_content
+    .expect("complete reply");
+    assert_eq!(shared["data"]["extension"]["extension_id"], ID);
+    assert_eq!(shared["data"]["extension"]["revision"], record.revision);
+    let account_b = core.client.clone().with_mcp_credential(secret_b.clone());
+    let mut operator_b = AlcomdClient::connect(account_b)
+        .await
+        .expect("authenticated second operator");
+    let removal = operator_b
+        .extension_plan_uninstall(alcomd_protocol::ExtensionPlanUninstallParams {
+            extension_id: ID.into(),
+            expected_revision: record.revision,
+            data_disposition: alcomd_protocol::ExtensionDataDisposition::RetainData,
+        })
+        .await
+        .expect("shared installation removable by second operator")
+        .plan;
+    let id = &removal.plan_id;
+    let lookup = alcomd_protocol::PlansGetParams {
+        kind: alcomd_protocol::PlanKind::ExtensionUninstall,
+        plan_id: id.clone(),
+    };
+    assert!(
+        owner.get_plan(lookup.clone()).await.is_err(),
+        "plan belongs to its actual caller"
+    );
+    assert!(operator_b.get_plan(lookup).await.is_ok());
     let initial = sa.list_all_tools().await.expect("built-in directory");
     assert!(initial.iter().any(|tool| tool.name == "alcomd_get_project"));
     assert!(initial.iter().all(|tool| tool.name != public("echo")));
@@ -284,7 +196,27 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         )
         .await
         .expect("catalogue subscription before publication");
-    permission(&mut owner, "mcp.tools.provide", false, "publish").await;
+    let enabled = operator_b
+        .extension_enable(ExtensionLifecycleParams {
+            extension_id: ID.into(),
+            expected_revision: record.revision,
+            idempotency_key: "enable-no-background".into(),
+        })
+        .await
+        .expect("valid isolated Provider fixture")
+        .extension;
+    let stale = operator_b
+        .extension_apply_uninstall(alcomd_protocol::ExtensionApplyParams {
+            plan_id: removal.plan_id,
+            idempotency_key: "stale-shared-removal".into(),
+        })
+        .await;
+    assert!(
+        matches!(stale, Err(alcomd_client::ClientError::Remote(error)) if error.code=="extension_plan_stale" || error.code=="revision_conflict")
+    );
+    assert_eq!(enabled.desired_state, ExtensionDesiredState::Enabled);
+    assert_eq!(enabled.runtime_state, ExtensionRuntimeState::Stopped);
+
     assert!(matches!(
         tokio::time::timeout(Duration::from_secs(4), subscription.next())
             .await
@@ -301,7 +233,40 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         .await
         .expect("valid isolated Provider fixture");
     assert!(visible.iter().any(|t| t.name == public("echo")));
-    assert!(!visible.iter().any(|t| t.name == public("projects")));
+    assert!(visible.iter().any(|t| t.name == public("projects")));
+    let unauthorized = ext(&sa, "projects", json!({})).await;
+    assert_eq!(unauthorized.is_error, Some(true));
+    let cli_commands = owner
+        .extension_cli_commands_list(alcomd_protocol::ExtensionCliCommandsListParams {
+            extension_id: Some(ID.into()),
+            ..Default::default()
+        })
+        .await
+        .expect("discover CLI commands without business grants");
+    assert!(
+        cli_commands
+            .commands
+            .iter()
+            .any(|entry| entry.name == "projects")
+    );
+    let call_cli =
+        |name: &str, arguments: Value| alcomd_protocol::ExtensionCliCommandsInvokeParams {
+            extension_id: ID.into(),
+            name: name.into(),
+            arguments,
+        };
+    let command = owner
+        .extension_cli_commands_invoke(call_cli("echo", json!({"text":"actual Wasm"})))
+        .await
+        .expect("CLI-only guest export");
+    assert_eq!(command.data, json!({"cli":"actual Wasm"}));
+    let rejected = owner
+        .extension_cli_commands_invoke(call_cli("projects", json!({})))
+        .await;
+    assert!(
+        matches!(&rejected, Err(alcomd_client::ClientError::Remote(e)) if e.code=="permission_denied")
+            || matches!(rejected,Ok(value) if value.error.as_deref()==Some("permission_denied"))
+    );
     let echo = ext(&sa, "echo", json!({"text":"actual Wasm"})).await;
     assert_ne!(echo.is_error, Some(true));
     let echo = echo
@@ -321,6 +286,14 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
     ] {
         permission(&mut owner, name, false, &format!("grant-{name}")).await;
     }
+    assert!(
+        owner
+            .extension_cli_commands_invoke(call_cli("projects", json!({})))
+            .await
+            .expect("authorized CLI command")
+            .error
+            .is_none()
+    );
     let all = sa
         .list_tools(None)
         .await
@@ -380,8 +353,8 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
             rmcp::model::PaginatedRequestParams::default().with_cursor(Some(next))
         ))
         .await
-        .is_err(),
-        "no mixed authorization snapshot"
+        .is_ok(),
+        "grant changes leave the signed catalogue unchanged"
     );
     permission(&mut owner, "packages.manage", false, "restore-manage").await;
     let denied = ext(
@@ -525,6 +498,25 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         assert_eq!(effect["kind"], "plan");
         assert_eq!(effect["source"]["extensionId"], ID);
         assert_eq!(effect["plan"]["action"], "remove");
+        if index == 0 {
+            let mut same_caller =
+                AlcomdClient::connect(core.client.clone().with_mcp_credential(secret_a.clone()))
+                    .await
+                    .expect("same authenticated caller through native command RPC");
+            let input = call_cli("plan_remove", args.clone());
+            let original = same_caller
+                .extension_cli_commands_invoke(input.clone())
+                .await
+                .expect("independent CLI plan");
+            let independent = original.core_effect.expect("accepted CLI effect");
+            assert_ne!(independent["planId"], effect["planId"]);
+            let restored = same_caller
+                .extension_cli_commands_invoke(input)
+                .await
+                .expect("CLI replay");
+            assert!(restored.replayed);
+            assert_eq!(restored.core_effect.as_ref(), Some(&independent));
+        }
         let plan_replay = ext(
             &sa,
             if index == 1 {
@@ -560,12 +552,14 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
             .as_str()
             .expect("authoritative accepted operation")
             .to_owned();
-        let replay = ext(transport, apply, args.clone())
-            .await
-            .structured_content
-            .expect("valid isolated Provider fixture");
-        assert_eq!(replay["coreEffect"]["operationId"], operation);
-        assert_eq!(replay["replayed"], true);
+        if index != 4 {
+            let replay = ext(transport, apply, args.clone())
+                .await
+                .structured_content
+                .expect("valid isolated Provider fixture");
+            assert_eq!(replay["coreEffect"]["operationId"], operation);
+            assert_eq!(replay["replayed"], true);
+        }
         let mut trace = vec![];
         let result = terminal(&sa, &mut trace, &operation).await;
         assert_eq!(result["state"], "succeeded");
@@ -600,14 +594,12 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         }
         operations.push(operation);
     }
-    permission(&mut owner, "mcp.tools.provide", true, "unpublish").await;
     let removed = sa
         .list_all_tools()
         .await
         .expect("valid isolated Provider fixture");
     assert!(removed.iter().all(|t| !t.name.starts_with("alcomd_ext_")));
     assert_eq!(removed.len(), initial.len());
-    let last = operations.last().expect("valid isolated Provider fixture");
     let db = rusqlite::Connection::open_with_flags(
         data_root.join("state.db"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -643,18 +635,16 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         })
         .await
         .expect("valid isolated Provider fixture");
-    let replay = ext(
-        &sa,
-        "loop_after_apply",
-        recovery_args.expect("valid isolated Provider fixture"),
-    )
-    .await;
-    assert_ne!(replay.is_error, Some(true));
-    let replay = replay
-        .structured_content
-        .expect("valid isolated Provider fixture");
-    assert_eq!(replay["replayed"], true);
-    assert_eq!(replay["coreEffect"]["operationId"], *last);
+    let stale_args = recovery_args.expect("previously accepted call");
+    assert!(
+        sa.call_tool_once(
+            CallToolRequestParams::new(public("loop_after_apply"))
+                .with_arguments(stale_args.as_object().expect("arguments").clone())
+        )
+        .await
+        .is_err(),
+        "disabled extension cannot replay a previous write"
+    );
     std::fs::write(root.join("summary.json"),serde_json::to_vec_pretty(&json!({"operations":operations,"signedProvider":ID,"clientA":a.client_id,"clientB":b.client_id,"stdio":true,"http":true})).expect("valid isolated Provider fixture")).expect("valid isolated Provider fixture");
     stop(http_sdk).await;
     http.finish().await;

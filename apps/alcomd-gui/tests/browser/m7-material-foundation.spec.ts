@@ -95,8 +95,8 @@ test("Core and Portable UI share Material controls and the same MD3 theme source
     await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
     const corePrimary = await page.locator("html").evaluate((element) => getComputedStyle(element).getPropertyValue("--md-sys-color-primary").trim());
 
-    await openHarness(page, "/extensions/com.vrclearn.mcp-management/ui");
-    await expect(page.getByRole("region", { name: "MCP Management" }).locator("md-filled-tonal-button").filter({ hasText: "Refresh" })).toBeVisible();
+    await openHarness(page, "/extensions/org.example.mcp-inspector/ui");
+    await expect(page.getByRole("region", { name: "Client Inspector" }).locator("md-filled-tonal-button").filter({ hasText: "Refresh" })).toBeVisible();
     const portablePrimary = await page.locator("html").evaluate((element) => getComputedStyle(element).getPropertyValue("--md-sys-color-primary").trim());
     expect(portablePrimary).toBe(corePrimary);
 });

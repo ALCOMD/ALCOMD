@@ -1,26 +1,26 @@
 import { openLocalExtensionInstall } from "./extension-install-entry";
 import { expect, test } from "@playwright/test";
 const route = "/browser-harness.html?route=%2Fextensions%2Fcom.example.alpha&state=ready&h4-management=1&m8-tool-provider=1";
-test("provider publication is optional, global, keyboard accessible and failed writes keep authority", async ({ page }) => {
+test("provider business access is optional, global, keyboard accessible and failed writes keep authority", async ({ page }) => {
     await page.goto(route);
     await expect(page.getByRole("region", { name: "Declared MCP tools" })).toBeVisible();
     await page.getByRole("button", { name: "Manage permissions", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
-    const publish = dialog.getByRole("switch", { name: "Publish MCP tools", exact: true });
-    await expect(dialog.getByRole("switch")).toHaveCount(13);
-    await expect(publish).not.toBeChecked();
+    const access = dialog.getByRole("switch", { name: "Read repositories", exact: true });
+    await expect(dialog.getByRole("switch")).toHaveCount(12);
+    await expect(access).not.toBeChecked();
     await expect(dialog.getByText("Required to enable", { exact: true })).toHaveCount(0);
     await page.evaluate(() => window.h4Management.hold("extensions.setGrant", true));
-    await publish.focus(); await page.keyboard.press("Space");
-    await expect(publish).toBeDisabled();
+    await access.focus(); await page.keyboard.press("Space");
+    await expect(access).toBeDisabled();
     await expect(dialog.getByRole("switch", { name: "Change project packages", exact: true })).toBeDisabled();
     await page.evaluate(() => { window.h4Management.hold("extensions.setGrant", false); window.h4Management.release("extensions.setGrant", "extension_permission_denied"); });
     await expect(dialog.getByRole("alert")).toBeVisible();
-    await expect(publish).not.toBeChecked(); await expect(publish).toBeEnabled();
-    await publish.click(); await expect(publish).toBeChecked(); await expect(publish).toBeEnabled();
+    await expect(access).not.toBeChecked(); await expect(access).toBeEnabled();
+    await access.click(); await expect(access).toBeChecked(); await expect(access).toBeEnabled();
     await expect(dialog.getByRole("alert")).toHaveCount(0);
     const writes = await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.setGrant"));
-    expect(writes.map((r) => [r.params.permission, r.params.resourceKind, r.params.resourceId])).toEqual([["mcp.tools.provide", "Global", "*"], ["mcp.tools.provide", "Global", "*"]]);
+    expect(writes.map((r) => [r.params.permission, r.params.resourceKind, r.params.resourceId])).toEqual([["repositories.read", "Global", "*"], ["repositories.read", "Global", "*"]]);
     expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "projects.list").length)).toBe(0);
 });
 for (const colorScheme of ["light", "dark"] as const) {
@@ -38,7 +38,7 @@ for (const colorScheme of ["light", "dark"] as const) {
         await dialog.getByLabel("Extension package", { exact: true }).fill("C:\\Fixture\\provider.alcomdextension");
         await dialog.getByRole("button", { name: "Install extension", exact: true }).click();
         await expect(dialog.getByRole("region", { name: "Declared MCP tools" })).toBeVisible();
-        await expect(dialog.getByText("Publish MCP tools", { exact: false })).toBeVisible();
+        await expect(dialog.getByText("Read repositories", { exact: false })).toBeVisible();
         await expect(dialog.getByRole("switch")).toHaveCount(0);
         const preview = dialog.getByRole("region", { name: "Declared MCP tools" });
         expect(await preview.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);

@@ -100,7 +100,7 @@ get_lock_file_snapshot() {
     local lock_files=(
         Cargo.lock
         package-lock.json
-        extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock
+        crates/alcomd-testing/fixtures/m8/management-guest-source/Cargo.lock
     )
     local lock_file
     local hashes=()

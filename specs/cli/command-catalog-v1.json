@@ -21,6 +21,10 @@
             ]
         },
         {
+            "name": "extension", "aliases": [],
+            "commands": [{"name": "commands", "aliases": []}, {"name": "run", "aliases": []}]
+        },
+        {
             "name": "system",
             "aliases": [],
             "commands": [

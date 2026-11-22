@@ -1,13 +1,9 @@
 # ALCOMD Extension ABI v1
 
-状态：M7 active ABI v1；Portable UI 以 pre-release direct replacement 进入同一个 world。
-
 ## Runtime 与 world
 
-- ABI v1 使用 WebAssembly Component Model 与 `alcomd:extension@1.0.0` versioned WIT package。
-- exact world 是 `alcomd:extension/extension-v1@1.0.0`。
-- imports：`host-projects@1.0.0`、`host-data@1.0.0`；exports：`guest-lifecycle@1.0.0`、
-  `guest-ui@1.0.0`。
+- 每个扩展的签名后端满足基础 world `alcomd:extension/extension-v1@1.0.0`。它可导入 `host-projects` 和 `host-data`，并导出 `guest-lifecycle`。
+- 声明可移植 UI 时另须导出 `alcomd:extension/guest-ui@1.0.0`。CLI 和 MCP 分别声明并实现 `alcomd:cli-commands/provider@1.0.0`、`alcomd:mcp-tools/provider@1.0.0`。两者通过同一 `alcomd:extension/host-operations@1.0.0` 调用已授权的业务操作。
 - WIT call shape 是同步 request/response。Host implementation 与 guest invocation 使用 Wasmtime async embedding，
   以便 host use case await、wall timeout 与 cancellation；ABI v1 不使用 Component Model future/stream。
 - guest language 不受限制，只要产物是满足 exact world 的 Component；Rust、C/C++、Go 等没有 privileged SDK。
@@ -30,8 +26,7 @@ directory 等 convenience configuration；未列入 exact linker allowlist 的 i
 2. Host 解析 required/optional interface ID，required 缺失则拒绝 enable；unknown optional 可忽略。
 3. Host 只链接 permission/grant/scope 当前允许的 interface。Manifest request 不是授权。
 4. `guest-lifecycle` 与 `guest-ui` exports 的 exact type 必须匹配；缺失或不匹配是
-   `extension_api_unsupported`，不是 trap。所有 ABI v1 Component 都必须 export `guest-ui`；没有 Manifest `[ui]`
-   时 daemon 不调用它，reference guest使用empty/default stub。
+   `extension_api_unsupported`，不是 trap。Host 在安装预检时验证签名清单声明的 UI、CLI、MCP 接口。基础 world 只要求导出生命周期。
 5. activation context 是 Host 提供的诊断/代际信息，guest 不能用它声明 Principal、publisher、trust 或 scope。
 
 ## Shape compatibility

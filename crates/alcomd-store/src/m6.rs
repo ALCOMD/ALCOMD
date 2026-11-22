@@ -6,8 +6,8 @@ use alcomd_application::{
     ExtensionPermissionsCursor, ExtensionPermissionsPage, ExtensionPlanRecord,
     ExtensionProjectSummary, ExtensionQuarantineState, ExtensionRecord, ExtensionRuntimeState,
     ExtensionRuntimeTarget, ExtensionSourceKind, ExtensionStartContext, ExtensionUiProtocol,
-    ExtensionUninstallPlanDraft, IdempotencyKey, M6Error, M6ErrorCode, OperationId,
-    PACKAGED_MCP_EXTENSION_ID, PlanId, PrincipalId, Revision,
+    ExtensionUninstallPlanDraft, IdempotencyKey, M6Error, M6ErrorCode, OperationId, PlanId,
+    PrincipalId, Revision,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -21,13 +21,15 @@ struct PermissionEvidence {
 
 #[derive(Serialize, Deserialize)]
 struct InterfaceEvidence {
+    mcp_tools: Vec<alcomd_application::ExtensionEntryPreview>,
+    cli_commands: Vec<alcomd_application::ExtensionEntryPreview>,
     required: Vec<String>,
     optional: Vec<String>,
 }
 
 pub(super) fn list_extensions(
     connection: &Connection,
-    owner: &PrincipalId,
+    _caller: &PrincipalId,
     cursor: Option<&ExtensionCursor>,
     limit: u32,
 ) -> Result<ExtensionPage, M6Error> {
@@ -39,14 +41,13 @@ pub(super) fn list_extensions(
                     e.grant_revision, e.lifecycle_generation, e.revision, e.ui_protocol
              FROM extensions e
              LEFT JOIN extension_instances i ON i.extension_id=e.extension_id
-             WHERE e.principal_id=?1 AND e.extension_id>?2
-             ORDER BY e.extension_id LIMIT ?3",
+             WHERE e.extension_id>?1
+             ORDER BY e.extension_id LIMIT ?2",
         )
         .map_err(store_error)?;
     let rows = statement
         .query_map(
             params![
-                owner.as_str(),
                 cursor.map_or("", ExtensionCursor::last_extension_id),
                 i64::from(limit) + 1
             ],
@@ -71,7 +72,7 @@ pub(super) fn list_extensions(
 
 pub(super) fn get_extension(
     connection: &Connection,
-    owner: &PrincipalId,
+    _caller: &PrincipalId,
     extension_id: &str,
 ) -> Result<ExtensionRecord, M6Error> {
     connection
@@ -82,8 +83,8 @@ pub(super) fn get_extension(
                     e.grant_revision, e.lifecycle_generation, e.revision, e.ui_protocol
              FROM extensions e
              LEFT JOIN extension_instances i ON i.extension_id=e.extension_id
-             WHERE e.principal_id=?1 AND e.extension_id=?2",
-            params![owner.as_str(), extension_id],
+             WHERE e.extension_id=?1",
+            [extension_id],
             load_extension_row,
         )
         .optional()
@@ -123,8 +124,8 @@ pub(super) fn list_permissions(
     let (manifest_digest, component_digest, installed_at_ms) = transaction
         .query_row(
             "SELECT manifest_digest, component_digest, installed_at_ms FROM extensions
-         WHERE principal_id=?1 AND extension_id=?2",
-            params![owner.as_str(), extension_id],
+         WHERE extension_id=?1",
+            [extension_id],
             |row| {
                 Ok((
                     digest(row.get(0)?)?,
@@ -221,7 +222,7 @@ pub(super) fn list_permissions(
 
 fn installed_permission_evidence(
     connection: &Connection,
-    owner: &PrincipalId,
+    _caller: &PrincipalId,
     extension_id: &str,
 ) -> Result<(PlanId, PermissionEvidence), M6Error> {
     let frozen = connection
@@ -236,9 +237,9 @@ fn installed_permission_evidence(
           AND p.ui_protocol IS e.ui_protocol
          JOIN extension_filesystem_journal j ON j.operation_id=p.apply_operation_id
           AND j.phase='state_committed' AND j.state='completed'
-         WHERE e.principal_id=?1 AND e.extension_id=?2 AND j.updated_at_ms>=e.installed_at_ms
+         WHERE e.extension_id=?1 AND j.updated_at_ms>=e.installed_at_ms
          ORDER BY j.updated_at_ms DESC, j.step DESC, p.plan_id DESC LIMIT 1",
-            params![owner.as_str(), extension_id],
+            [extension_id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
@@ -298,14 +299,14 @@ fn valid_permission_declarations(permissions: &[String]) -> bool {
 
 pub(super) fn live_package_locator(
     connection: &Connection,
-    owner: &PrincipalId,
+    _caller: &PrincipalId,
     extension_id: &str,
 ) -> Result<String, M6Error> {
     connection
         .query_row(
             "SELECT live_package_locator FROM extensions
-             WHERE extension_id=?1 AND principal_id=?2",
-            params![extension_id, owner.as_str()],
+             WHERE extension_id=?1",
+            [extension_id],
             |row| row.get(0),
         )
         .optional()
@@ -315,7 +316,7 @@ pub(super) fn live_package_locator(
 
 pub(super) fn has_background_authority(
     connection: &Connection,
-    owner: &PrincipalId,
+    _caller: &PrincipalId,
     extension_id: &str,
 ) -> Result<bool, M6Error> {
     connection
@@ -323,14 +324,14 @@ pub(super) fn has_background_authority(
             "SELECT EXISTS(
                 SELECT 1 FROM extensions e
                 JOIN extension_grants g ON g.extension_id=e.extension_id
-                WHERE e.principal_id=?1 AND e.extension_id=?2
+                WHERE e.extension_id=?1
                   AND e.desired_state='enabled' AND e.quarantine_state='clear'
                   AND g.permission_name='background.run'
                   AND g.resource_kind='Extension'
                   AND g.resource_id=e.extension_id
                   AND g.state='granted'
             )",
-            params![owner.as_str(), extension_id],
+            [extension_id],
             |row| row.get(0),
         )
         .map_err(store_error)
@@ -395,6 +396,8 @@ fn create_install_plan_on(
     })
     .map_err(|_| internal())?;
     let interfaces = serde_json::to_string(&InterfaceEvidence {
+        mcp_tools: draft.evidence.mcp_tools.clone(),
+        cli_commands: draft.evidence.cli_commands.clone(),
         required: draft.evidence.required_interfaces.clone(),
         optional: draft.evidence.optional_interfaces.clone(),
     })
@@ -509,77 +512,6 @@ fn create_install_plan_on(
     Ok(record)
 }
 
-pub(super) fn needs_packaged_mcp_install(connection: &Connection) -> Result<bool, M6Error> {
-    connection
-        .query_row(
-            "SELECT NOT (
-                EXISTS (SELECT 1 FROM extensions WHERE extension_id=?1)
-                OR EXISTS (
-                    SELECT 1 FROM extension_plans p
-                    JOIN extension_filesystem_journal j
-                      ON j.plan_id=p.plan_id AND j.operation_id=p.apply_operation_id
-                    JOIN operations o ON o.operation_id=p.apply_operation_id
-                    WHERE p.extension_id=?1 AND p.owner_principal_id=?2
-                      AND j.state='completed' AND (
-                          (p.action='install' AND j.phase='accepted' AND (
-                              p.source_kind='first_party_packaged'
-                              OR o.state NOT IN ('succeeded','failed','cancelled')
-                          ))
-                          OR (p.action='uninstall' AND j.phase='state_committed')
-                      )
-                )
-            )",
-            params![
-                PACKAGED_MCP_EXTENSION_ID,
-                PrincipalId::local_owner().as_str()
-            ],
-            |row| row.get(0),
-        )
-        .map_err(store_error)
-}
-
-pub(super) fn accept_packaged_mcp_install(
-    connection: &mut Connection,
-    evidence: ExtensionPackageEvidence,
-    now_ms: u64,
-) -> Result<Option<OperationId>, M6Error> {
-    if !evidence.is_packaged_mcp_default() {
-        return Err(error(M6ErrorCode::ManifestInvalid));
-    }
-    let transaction = transaction(connection)?;
-    if !needs_packaged_mcp_install(&transaction)? {
-        return Ok(None);
-    }
-    let owner = PrincipalId::local_owner();
-    let plan = create_install_plan_on(
-        &transaction,
-        &owner,
-        ExtensionInstallPlanDraft {
-            plan_fingerprint: evidence.package_digest,
-            evidence,
-            expected_revision: None,
-        },
-        now_ms,
-    )?;
-    let key =
-        IdempotencyKey::parse(format!("packaged-mcp:{}", plan.plan_id)).map_err(|_| internal())?;
-    let consent = alcomd_application::ExtensionInstallConsent {
-        plan_fingerprint: install_plan_fingerprint(&plan),
-        installation_terms_accepted: false,
-        required_permissions_accepted: false,
-    };
-    let accepted = accept_plan_on(
-        &transaction,
-        &owner,
-        plan.plan_id,
-        Some(consent),
-        &key,
-        now_ms,
-    )?;
-    transaction.commit().map_err(store_error)?;
-    Ok(Some(accepted.operation_id))
-}
-
 pub(super) fn create_uninstall_plan(
     connection: &mut Connection,
     owner: &PrincipalId,
@@ -615,7 +547,7 @@ pub(super) fn create_uninstall_plan(
                       AND p.state='applied' AND p.package_digest=e.package_digest
                     ORDER BY p.created_at_ms DESC, p.plan_id DESC LIMIT 1
                  )
-               WHERE e.extension_id=?6 AND e.principal_id=?2",
+               WHERE e.extension_id=?6",
             params![
                 plan_id.to_string(),
                 owner.as_str(),
@@ -716,7 +648,7 @@ pub(super) fn begin_apply(
         if changed != 1 {
             return Err(error(M6ErrorCode::RecoveryRequired));
         }
-        extension_changed = plan.owner == PrincipalId::local_owner();
+        extension_changed = true;
         transaction
             .execute(
                 "DELETE FROM extension_grants WHERE extension_id=?1",
@@ -1094,11 +1026,7 @@ pub(super) fn finish_install(
                     p.publisher_fingerprint,
                     plan.owner.as_str(),
                     live_locator,
-                    if p.is_packaged_mcp_default() && plan.owner == PrincipalId::local_owner() {
-                        "enabled"
-                    } else {
-                        "installed_disabled"
-                    },
+                    "installed_disabled",
                     p.ui_protocol.map(ExtensionUiProtocol::as_str),
                     now
                 ],
@@ -1310,13 +1238,12 @@ pub(super) fn set_grant(
     transaction
         .execute(
             "UPDATE extensions SET grant_revision=?1, revision=revision+1, updated_at_ms=?2,
-             desired_state=CASE WHEN ?6 AND desired_state='enabled' THEN 'installed_disabled' ELSE desired_state END
-             WHERE extension_id=?3 AND principal_id=?4 AND grant_revision=?5",
+             desired_state=CASE WHEN ?5 AND desired_state='enabled' THEN 'installed_disabled' ELSE desired_state END
+             WHERE extension_id=?3 AND grant_revision=?4",
             params![
                 sqlite_revision(next),
                 now,
                 extension_id,
-                owner.as_str(),
                 sqlite_revision(expected),
                 interrupts_activation,
             ],
@@ -1348,7 +1275,7 @@ pub(super) fn set_grant(
         .map_err(|cause| unavailable().with_source(cause))?;
     save_idempotent(&transaction, owner, method, key, &fingerprint, &result, now)?;
     transaction.commit().map_err(store_error)?;
-    Ok((result, owner == &PrincipalId::local_owner()))
+    Ok((result, true))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1432,8 +1359,8 @@ pub(super) fn set_desired(
         }
         transaction
             .execute(
-                "UPDATE extensions SET grant_revision=?1 WHERE extension_id=?2 AND principal_id=?3",
-                params![sqlite_revision(next), extension_id, owner.as_str()],
+                "UPDATE extensions SET grant_revision=?1 WHERE extension_id=?2",
+                params![sqlite_revision(next), extension_id],
             )
             .map_err(store_error)?;
     }
@@ -1445,7 +1372,7 @@ pub(super) fn set_desired(
             "UPDATE extensions SET desired_state=?1,
              quarantine_state=CASE WHEN ?1='enabled' THEN 'clear' ELSE quarantine_state END,
              lifecycle_generation=lifecycle_generation+1,
-             revision=revision+1, updated_at_ms=?2 WHERE extension_id=?3 AND principal_id=?4",
+             revision=revision+1, updated_at_ms=?2 WHERE extension_id=?3",
             params![
                 if enable {
                     "enabled"
@@ -1453,8 +1380,7 @@ pub(super) fn set_desired(
                     "installed_disabled"
                 },
                 now,
-                extension_id,
-                owner.as_str()
+                extension_id
             ],
         )
         .map_err(store_error)?;
@@ -1483,7 +1409,7 @@ pub(super) fn set_desired(
     .map_err(|cause| unavailable().with_source(cause))?;
     save_idempotent(&transaction, owner, method, key, &fingerprint, &result, now)?;
     transaction.commit().map_err(store_error)?;
-    Ok((result, owner == &PrincipalId::local_owner()))
+    Ok((result, true))
 }
 
 pub(super) fn data_get(
@@ -1757,14 +1683,14 @@ pub(super) fn prepare_instance(
             .query_row(
                 "SELECT publisher_fingerprint, grant_revision, lifecycle_generation,
                         live_package_locator
-                 FROM extensions WHERE extension_id=?1 AND principal_id=?2
+                 FROM extensions WHERE extension_id=?1
                  AND desired_state='enabled' AND quarantine_state='clear'
                  AND EXISTS (
                     SELECT 1 FROM extension_data_namespaces n
                     WHERE n.extension_id=extensions.extension_id
                       AND n.publisher_fingerprint=extensions.publisher_fingerprint
                  )",
-                params![extension_id, owner.as_str()],
+                [extension_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()
@@ -1830,7 +1756,7 @@ pub(super) fn prepare_instance(
         activation_kind: alcomd_application::ExtensionActivationKind::Background,
     };
     transaction.commit().map_err(store_error)?;
-    Ok((context, owner == &PrincipalId::local_owner()))
+    Ok((context, true))
 }
 
 pub(super) fn mark_instance_running(
@@ -2208,6 +2134,8 @@ fn load_plan_row(row: &Row<'_>) -> rusqlite::Result<ExtensionPlanRecord> {
             publisher_fingerprint: row.get(15)?,
             required_permissions: permissions.required,
             optional_permissions: permissions.optional,
+            mcp_tools: interfaces.mcp_tools,
+            cli_commands: interfaces.cli_commands,
             required_interfaces: interfaces.required,
             optional_interfaces: interfaces.optional,
             ui_protocol: parse_ui_protocol(row.get(22)?)?,
@@ -2250,13 +2178,13 @@ fn load_extension_row(row: &Row<'_>) -> rusqlite::Result<ExtensionRecord> {
 
 fn extension_revision(
     connection: &Connection,
-    owner: &PrincipalId,
+    _caller: &PrincipalId,
     extension_id: &str,
 ) -> Result<Option<Revision>, M6Error> {
     connection
         .query_row(
-            "SELECT revision FROM extensions WHERE principal_id=?1 AND extension_id=?2",
-            params![owner.as_str(), extension_id],
+            "SELECT revision FROM extensions WHERE extension_id=?1",
+            [extension_id],
             |row| row_revision(row, 0),
         )
         .optional()
@@ -2730,12 +2658,7 @@ fn reject_tool_namespace_collision(
     db: &Connection,
     evidence: &ExtensionPackageEvidence,
 ) -> Result<(), M6Error> {
-    if !evidence
-        .required_permissions
-        .iter()
-        .chain(&evidence.optional_permissions)
-        .any(|p| p == alcomd_application::MCP_TOOLS_PROVIDE)
-    {
+    if evidence.mcp_tools.is_empty() {
         return Ok(());
     }
     let prefix = alcomd_application::tool_public_name(&evidence.extension_id, "");

@@ -4,7 +4,7 @@ import type { ExtensionUiDispatchParams } from "@alcomd/sdk";
 import "./h4-portable-client";
 
 const discord = "com.vrclearn.discord";
-const mcp = "com.vrclearn.mcp-management";
+const mcp = "org.example.mcp-inspector";
 const uiRoute = (extensionId: string) => `/extensions/${extensionId}/ui`;
 
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -34,6 +34,20 @@ async function expectHostErrorsCleared(page: Page) {
     // successful host request must not erase an extension's field-level error.
     await expect(page.getByLabel("Custom detail", { exact: true })).toHaveAccessibleDescription(/The host rejected the previous value\./);
 }
+
+test("refresh reuses the portable view session and the current snapshot revision", async ({ page }) => {
+    await openUi(page);
+    const refresh = page.locator(".extension-context").getByRole("button", { name: "Refresh", exact: true });
+    await refresh.click();
+    await expect.poll(() => requests(page, "extensions.ui.refresh")).toHaveLength(1);
+    await refresh.click();
+    const reads = await requests(page, "extensions.ui.refresh");
+    expect(reads.map(read => read.params)).toEqual([
+        { sessionId: "h4-session-1", expectedSnapshotRevision: 1 },
+        { sessionId: "h4-session-1", expectedSnapshotRevision: 2 },
+    ]);
+    expect(await requests(page, "extensions.ui.open")).toHaveLength(1);
+});
 
 test("H4 Portable UI opens with the whole-page progress bar at the canvas edge", async ({ page }) => {
     await openUi(page, discord, "&h4-hold=open");

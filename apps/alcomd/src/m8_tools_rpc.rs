@@ -1,6 +1,6 @@
 //! Extension tools use the authenticated MCP caller and the existing six Core use cases.
 use super::{Applications, ConnectionState, DispatchAction, error_action, success_action};
-use alcomd_application::{self as app, ToolError as E};
+use alcomd_application::{self as app, ExtensionEntryKind, ToolError as E};
 use alcomd_protocol as rpc;
 use serde_json::{Value, json};
 use std::{
@@ -160,11 +160,16 @@ fn builtin_entries(capabilities: &HashSet<String>) -> Result<Vec<Entry>, E> {
         &mut entries,
         include_str!("../../../specs/mcp/template-edit-v1.schema.json"),
     )?;
+    append_builtin_tools(
+        &mut entries,
+        include_str!("../../../specs/mcp/extensions-v1.schema.json"),
+    )?;
     entries.retain(|entry| {
         let name = &entry.descriptor.name;
         rpc::mcp_workflows_tool_capability(name)
             .or_else(|| rpc::mcp_repositories_tool_capability(name))
             .or_else(|| rpc::mcp_environment_tool_capability(name))
+            .or_else(|| rpc::mcp_extension_management_capability(name))
             .is_none_or(|capability| capabilities.contains(capability))
     });
     Ok(entries)
@@ -174,12 +179,23 @@ async fn entries(
     apps: &Applications,
     authentication: app::ToolAuthentication,
     capabilities: &HashSet<String>,
+    kind: ExtensionEntryKind,
+    extension: Option<&str>,
 ) -> Result<(Vec<Entry>, String), E> {
-    let snapshot = apps.store.tool_snapshot(authentication.clone()).await?;
-    let mut evidence =
-        json!({"auth":authentication.binding(),"client":snapshot.client.revision,"providers":[]});
-    let mut entries = builtin_entries(capabilities)?;
+    let snapshot = apps
+        .store
+        .tool_snapshot(authentication.clone(), kind)
+        .await?;
+    let mut evidence = json!({"auth":authentication.binding(),"kind":kind,"extension":extension});
+    let mut entries = if kind == ExtensionEntryKind::Mcp {
+        builtin_entries(capabilities)?
+    } else {
+        Vec::new()
+    };
     for provider in snapshot.providers {
+        if extension.is_some_and(|id| id != provider.record.extension_id) {
+            continue;
+        }
         let path = std::path::PathBuf::from(&provider.locator);
         let verified = tokio::task::spawn_blocking(move || {
             alcomd_extensions::inspect_extension_directory(&path)
@@ -193,29 +209,37 @@ async fn entries(
         {
             return Err(E::ProviderUnavailable);
         }
-        evidence["providers"].as_array_mut().ok_or(E::Unavailable)?.push(json!({"id":provider.record.extension_id,"digest":provider.record.package_digest,"revision":provider.record.revision,"grantRevision":provider.record.grant_revision,"grants":provider.granted}));
         let origin = app::ToolOrigin {
             extension_id: provider.record.extension_id.clone(),
             publisher_fingerprint: provider.record.publisher_fingerprint.clone(),
             package_digest: app::oauth_hex(&provider.record.package_digest),
             version: provider.record.version.clone(),
         };
-        for declaration in verified.mcp_tools {
-            let required = declaration.permissions();
-            if required.iter().any(|p| !provider.granted.contains(p)) {
-                continue;
+        let declarations = match kind {
+            ExtensionEntryKind::Mcp => verified.mcp_tools,
+            ExtensionEntryKind::Cli => verified.cli_commands,
+        };
+        for declaration in declarations {
+            let mut descriptor = app::ToolDescriptor::extension(origin.clone(), &declaration)?;
+            if kind == ExtensionEntryKind::Cli {
+                descriptor.name.clone_from(&declaration.name);
+                descriptor.title.clone_from(&declaration.title);
+                descriptor
+                    .output_schema
+                    .clone_from(&declaration.output_schema);
             }
             entries.push(Entry {
-                descriptor: app::ToolDescriptor::extension(origin.clone(), &declaration)?,
+                descriptor,
                 provider: Some(provider.clone()),
                 declaration: Some(declaration),
             });
         }
     }
     entries.sort_by(|a, b| a.descriptor.name.cmp(&b.descriptor.name));
-    if entries
-        .windows(2)
-        .any(|pair| pair[0].descriptor.name == pair[1].descriptor.name)
+    if kind == ExtensionEntryKind::Mcp
+        && entries
+            .windows(2)
+            .any(|pair| pair[0].descriptor.name == pair[1].descriptor.name)
     {
         return Err(E::ProviderUnavailable);
     }
@@ -305,6 +329,8 @@ async fn call(
     state: &ConnectionState,
     authentication: app::ToolAuthentication,
     request: app::ToolCallRequest,
+    kind: ExtensionEntryKind,
+    extension: Option<&str>,
 ) -> Result<app::ToolCallResult, E> {
     if request.name.len() > 64
         || serde_json::to_vec(&request.arguments)
@@ -315,27 +341,14 @@ async fn call(
     {
         return Err(E::InvalidInput);
     }
-    let request_fingerprint = app::tool_request_fingerprint(&request.name, &request.arguments)?;
-    if let Some(key) = request
-        .arguments
-        .get("idempotency_key")
-        .and_then(Value::as_str)
-    {
-        app::IdempotencyKey::parse(key.to_owned()).map_err(|_| E::InvalidInput)?;
-        if let Some(saved) = apps
-            .store
-            .tool_replay(
-                authentication.clone(),
-                request.name.clone(),
-                key.into(),
-                request_fingerprint.clone(),
-            )
-            .await?
-        {
-            return Ok(saved);
-        }
-    }
-    let (items, _) = entries(apps, authentication.clone(), &HashSet::new()).await?;
+    let (items, _) = entries(
+        apps,
+        authentication.clone(),
+        &HashSet::new(),
+        kind,
+        extension,
+    )
+    .await?;
     let entry = items
         .into_iter()
         .find(|e| e.descriptor.name == request.name)
@@ -402,14 +415,24 @@ async fn call(
             return Err(E::InvalidInput);
         }
         let origin = entry.descriptor.origin.clone().ok_or(E::Unavailable)?;
-        let fingerprint = request_fingerprint;
+        let fingerprint = app::tool_request_fingerprint(
+            &format!(
+                "{}/{}/{}/{}",
+                kind.as_str(),
+                origin.extension_id,
+                origin.package_digest,
+                declaration.name
+            ),
+            &request.arguments,
+        )?;
         let (id, accepted, status) = apps
             .store
             .tool_begin(
                 authentication.clone(),
                 app::ToolWriteAdmission {
                     origin,
-                    name: request.name,
+                    kind,
+                    name: declaration.name.clone(),
                     key: key.to_owned(),
                     fingerprint,
                     permissions: declaration.permissions(),
@@ -433,12 +456,16 @@ async fn call(
             });
         }
     }
-    let snapshot = apps.store.tool_snapshot(authentication.clone()).await?;
+    let snapshot = apps
+        .store
+        .tool_snapshot(authentication.clone(), kind)
+        .await?;
     let active = Arc::new(AtomicBool::new(true));
     let _cancel = CancelOnDrop(active.clone());
     let authority = app::ToolInvocation {
+        kind,
         call_id: call_id.clone(),
-        principal: snapshot.client.principal_id.clone(),
+        principal: snapshot.principal.clone(),
         origin: entry.descriptor.origin.ok_or(E::Unavailable)?,
         declaration,
         authentication,
@@ -452,7 +479,7 @@ async fn call(
     let runtime = apps.extension_runtime.clone();
     let store = apps.store.clone();
     let connection = state.clone();
-    let principal = snapshot.client.principal_id;
+    let principal = snapshot.principal;
     tokio::spawn(async move {
         let _extension_lock = extension_lock;
         let result = runtime
@@ -488,28 +515,50 @@ pub(super) async fn dispatch(
     apps: &Applications,
     access: &app::AccessContext,
 ) -> DispatchAction {
-    if let Some(action) =
-        super::require_capability(&request.id, state, rpc::CAPABILITY_MCP_EXTENSION_TOOLS_V1)
-    {
+    let kind = match request.method.as_str() {
+        rpc::METHOD_EXTENSIONS_CLI_COMMANDS_LIST | rpc::METHOD_EXTENSIONS_CLI_COMMANDS_INVOKE => {
+            ExtensionEntryKind::Cli
+        }
+        _ => ExtensionEntryKind::Mcp,
+    };
+    let capability = match kind {
+        ExtensionEntryKind::Cli => rpc::CAPABILITY_EXTENSION_CLI_COMMANDS_V1,
+        ExtensionEntryKind::Mcp => rpc::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
+    };
+    if let Some(action) = super::require_capability(&request.id, state, capability) {
         return action;
     }
     let id = request.id;
     let result = async {
-        let authentication = auth(state, access)?;
+        let authentication = if kind == ExtensionEntryKind::Cli && access.principal() == &app::PrincipalId::local_owner(){
+            app::ToolAuthentication::Native(access.clone())
+        } else { auth(state, access)? };
         match request.method.as_str() {
             rpc::METHOD_MCP_TOOLS_CATALOG => {
                 let params = serde_json::from_value(request.params).map_err(|_| E::InvalidInput)?;
                 let (items, fingerprint) =
-                    entries(apps, authentication, &state.capabilities).await?;
+                    entries(apps, authentication, &state.capabilities, kind, None).await?;
                 serde_json::to_value(catalog(items, fingerprint, params, &apps.tools_cursor_key)?)
                     .map_err(|_| E::Unavailable)
             }
-            rpc::METHOD_EXTENSION_MCP_TOOLS_CALL => {
+            rpc::METHOD_EXTENSIONS_CLI_COMMANDS_LIST => {
+                let q: rpc::ExtensionCliCommandsListParams = serde_json::from_value(request.params).map_err(|_| E::InvalidInput)?;
+                if q.extension_id.as_ref().is_some_and(|v| !alcomd_extensions::valid_extension_id(v)) {return Err(E::InvalidInput);}
+                let (items,fingerprint) = entries(apps, authentication, &state.capabilities, kind, q.extension_id.as_deref()).await?;
+                let page=catalog(items,fingerprint,app::ToolCatalogRequest { name:None, cursor:q.cursor, limit:q.limit },&apps.tools_cursor_key)?;
+                Ok(json!({"commands":page.tools,"nextCursor":page.next_cursor,"catalogFingerprint":page.catalog_fingerprint}))
+            }
+            rpc::METHOD_EXTENSION_MCP_TOOLS_CALL | rpc::METHOD_EXTENSIONS_CLI_COMMANDS_INVOKE => {
+                let (extension, params) = if kind == ExtensionEntryKind::Cli {
+                    let q: rpc::ExtensionCliCommandsInvokeParams = serde_json::from_value(request.params).map_err(|_| E::InvalidInput)?;
+                    if !alcomd_extensions::valid_extension_id(&q.extension_id) {return Err(E::InvalidInput);}
+                    (Some(q.extension_id),app::ToolCallRequest {name:q.name, arguments:q.arguments})
+                } else { (None, serde_json::from_value(request.params).map_err(|_| E::InvalidInput)?) };
                 let mut result = call(
                     apps,
                     state,
                     authentication,
-                    serde_json::from_value(request.params).map_err(|_| E::InvalidInput)?,
+                    params, kind, extension.as_deref(),
                 )
                 .await?;
                 if let Some(effect) = result.core_effect.as_mut()
@@ -560,14 +609,14 @@ pub(super) async fn business(
 ) -> Result<Value, app::M6Error> {
     use app::ToolOperation as O;
     let (op, method) = match capability {
-        "host-mcp-tools.projects.list" => (O::ProjectsList, rpc::METHOD_PROJECTS_LIST),
-        "host-mcp-tools.projects.get" => (O::ProjectsGet, rpc::METHOD_PROJECTS_GET),
-        "host-mcp-tools.packages.planUninstall" => {
+        "host-operations.projects.list" => (O::ProjectsList, rpc::METHOD_PROJECTS_LIST),
+        "host-operations.projects.get" => (O::ProjectsGet, rpc::METHOD_PROJECTS_GET),
+        "host-operations.packages.planUninstall" => {
             (O::PlanUninstall, rpc::METHOD_PACKAGES_PLAN_REMOVE)
         }
-        "host-mcp-tools.packages.applyPlan" => (O::ApplyPlan, rpc::METHOD_PACKAGES_APPLY_PLAN),
-        "host-mcp-tools.operations.get" => (O::OperationGet, rpc::METHOD_OPERATIONS_GET),
-        "host-mcp-tools.operations.cancel" => (O::OperationCancel, rpc::METHOD_OPERATIONS_CANCEL),
+        "host-operations.packages.applyPlan" => (O::ApplyPlan, rpc::METHOD_PACKAGES_APPLY_PLAN),
+        "host-operations.operations.get" => (O::OperationGet, rpc::METHOD_OPERATIONS_GET),
+        "host-operations.operations.cancel" => (O::OperationCancel, rpc::METHOD_OPERATIONS_CANCEL),
         _ => return Ok(json!({"error":"permission_denied"})),
     };
     let access = match apps.store.tool_check(authority.clone(), Some(op)).await {
@@ -603,9 +652,11 @@ pub(super) async fn business(
             ),
         ),
     );
-    let response = app::with_workflow_authentication(authority.authentication.clone(), dispatch)
-        .await
-        .response;
+    let response = match &authority.authentication {
+        app::ToolAuthentication::Native(_) => dispatch.await,
+        auth => app::with_workflow_authentication(auth.clone(), dispatch).await,
+    }
+    .response;
     if !op.effect().writes()
         && let Err(e) = apps.store.tool_check(authority, Some(op)).await
     {

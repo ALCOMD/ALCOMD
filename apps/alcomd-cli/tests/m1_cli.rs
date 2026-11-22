@@ -870,6 +870,155 @@ async fn oauth_cli_registration_and_consent_preserve_one_time_output_rules() {
     }
 }
 
+#[path = "../../../crates/alcomd-testing/fixtures/m8/signed_entry_package.rs"]
+mod signed_entries;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn installed_extension_commands_run_through_the_native_cli() {
+    use alcomd_protocol::{
+        ExtensionPlan, OperationState, PlanKind, PlansGetParams, PlansGetResult,
+    };
+    fn successful(output: std::process::Output) -> serde_json::Value {
+        assert!(output.status.success(), "{output:?}");
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("CLI response")["result"]
+            .clone()
+    }
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let (ipc, config, runtime) = isolated_configuration();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let root = std::env::temp_dir().join(format!(
+        "alcomd-cli-entry-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("test clock after Unix epoch")
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    std::fs::create_dir_all(&data).expect("isolated data directory");
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        alcomd_platform::DataConfig::isolated(data),
+        wait_for_shutdown(Arc::clone(&shutdown)),
+    )
+    .await
+    .expect("owned Core");
+    wait_until_ready(config.clone()).await;
+    let mut owner = AlcomdClient::connect(config).await.expect("native owner");
+    let archive = root.join("test.alcomdextension");
+    signed_entries::package_with_install_requirements(&archive, false);
+    let response = successful(run_group_cli(
+        runtime.clone(),
+        &[
+            "extension",
+            "plan-install",
+            archive.to_str().expect("fixture path"),
+            "--dry-run",
+            "--yes",
+        ],
+    ));
+    let plan: ExtensionPlan =
+        serde_json::from_value(response["plan"].clone()).expect("complete signed plan");
+    let frozen = PlansGetParams {
+        kind: PlanKind::ExtensionInstall,
+        plan_id: plan.plan_id.clone(),
+    };
+    let moved = root.join("relocated.alcomdextension");
+    std::fs::rename(&archive, &moved).expect("move disposable selection");
+    assert_eq!(
+        owner.get_plan(frozen).await.expect("read original plan"),
+        PlansGetResult::ExtensionInstall {
+            plan: Box::new(plan.clone())
+        }
+    );
+    std::fs::rename(&moved, &archive).expect("restore selection before Apply");
+    let result = successful(run_group_cli(
+        runtime.clone(),
+        &[
+            "extension",
+            "apply-install",
+            &plan.plan_id,
+            "--plan-fingerprint",
+            &plan.plan_fingerprint,
+            "--idempotency-key",
+            "cli-install-entry",
+            "--yes",
+        ],
+    ));
+    let operation = result["operationId"]
+        .as_str()
+        .expect("install operation")
+        .to_owned();
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let state = owner
+                .operation_get(operation.clone())
+                .await
+                .expect("install status")
+                .state;
+            match state {
+                OperationState::Succeeded => break,
+                OperationState::Failed | OperationState::Cancelled => panic!("install {state:?}"),
+                _ => tokio::time::sleep(Duration::from_millis(20)).await,
+            }
+        }
+    })
+    .await
+    .expect("install deadline");
+    let id = signed_entries::ID;
+    let record = owner
+        .extension_get(id.into())
+        .await
+        .expect("installed")
+        .extension;
+    successful(run_group_cli(
+        runtime.clone(),
+        &[
+            "extension",
+            "enable",
+            id,
+            "--expected-revision",
+            &record.revision.to_string(),
+            "--idempotency-key",
+            "cli-enable-entry",
+            "--yes",
+        ],
+    ));
+    let output = run_group_cli(
+        runtime.clone(),
+        &["extension", "commands", "--extension-id", id],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let page: serde_json::Value = serde_json::from_slice(&output.stdout).expect("commands");
+    assert!(
+        page["result"]["commands"]
+            .as_array()
+            .expect("commands")
+            .iter()
+            .any(|item| item["name"] == "projects")
+    );
+    let echo = [
+        "extension",
+        "run",
+        id,
+        "echo",
+        "--arguments",
+        r#"{"text":"cli"}"#,
+    ];
+    let output = run_group_cli(runtime.clone(), &echo);
+    assert!(output.status.success(), "{output:?}");
+    let response: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("command reply");
+    assert_eq!(response["result"]["data"], serde_json::json!({"cli":"cli"}));
+    let mut dry = vec!["--dry-run", "--yes"];
+    dry.extend(echo);
+    assert!(!run_group_cli(runtime, &dry).status.success());
+    drop(owner);
+    shutdown.store(true, Ordering::Release);
+    assert!(daemon.await.expect("stop isolated Core").is_ok());
+    std::fs::remove_dir_all(root).expect("release fixture");
+}
+
 async fn wait_for_shutdown(shutdown: Arc<AtomicBool>) {
     while !shutdown.load(Ordering::Acquire) {
         tokio::time::sleep(Duration::from_millis(10)).await;

@@ -53,18 +53,17 @@ impl<S: M6Store> ExtensionEngine<S> {
     }
 
     async fn validate_tools(&self, verified: &VerifiedExtensionPackage) -> Result<(), M6Error> {
-        if verified.mcp_tools.is_empty() {
-            return Ok(());
-        }
         let host = self
             .tools_validator
             .clone()
             .ok_or_else(|| error(M6ErrorCode::ApiUnsupported))?;
         let root = self.root.join("staging");
         let bytes = verified.component_bytes.clone();
-        let declarations = serde_json::to_vec(&alcomd_application::ToolDeclarations {
-            version: 1,
+        let declarations = serde_json::to_vec(&crate::EntryPreflight {
+            ui: verified.manifest.ui.is_some(),
+            background: verified.manifest.background_integration().enabled,
             tools: verified.mcp_tools.clone(),
+            commands: verified.cli_commands.clone(),
         })
         .map_err(|_| error(M6ErrorCode::PackageInvalid))?;
         let id = verified.manifest.id.clone();
@@ -105,7 +104,7 @@ impl<S: M6Store> ExtensionEngine<S> {
             let mut child = Command::new(host)
                 .args(["--extension", &id, "--component"])
                 .arg(&path)
-                .arg("--check-tools")
+                .arg("--check-entries")
                 .env_clear()
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null())
@@ -608,6 +607,12 @@ fn package_evidence(
         .map(ToOwned::to_owned)
         .ok_or_else(|| error(M6ErrorCode::PackageInvalid))?;
     let ui_protocol = manifest_ui_protocol(&package);
+    let mcp_tools = alcomd_application::ExtensionEntryPreview::from_declarations(
+        Some(&package.manifest.id),
+        &package.mcp_tools,
+    )?;
+    let cli_commands =
+        alcomd_application::ExtensionEntryPreview::from_declarations(None, &package.cli_commands)?;
     Ok(ExtensionPackageEvidence {
         source_kind,
         source_locator,
@@ -624,6 +629,8 @@ fn package_evidence(
         remote_source: None,
         required_permissions: package.manifest.permissions.required,
         optional_permissions: package.manifest.permissions.optional,
+        mcp_tools,
+        cli_commands,
         required_interfaces: package.manifest.interfaces.required,
         optional_interfaces: package.manifest.interfaces.optional,
         ui_protocol,
@@ -640,7 +647,7 @@ fn required_interfaces_supported(interfaces: &[String]) -> bool {
                     | "alcomd:mcp-runtime/observations@1.0.0"
                     | "alcomd:mcp-transport/observations@1.0.0"
                     | "alcomd:mcp-management/clients@1.0.0"
-                    | "alcomd:mcp-tools/core@1.0.0"
+                    | "alcomd:extension/host-operations@1.0.0"
             )
     })
 }

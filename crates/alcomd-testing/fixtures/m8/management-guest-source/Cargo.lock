@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "alcomd-extension-mcp-backend"
+name = "alcomd-management-test-guest"
 version = "0.1.0"
 dependencies = [
  "wit-bindgen",

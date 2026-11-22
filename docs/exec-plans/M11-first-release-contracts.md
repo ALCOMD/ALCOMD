@@ -23,7 +23,7 @@
 | `projectTemplates.v1` | 当前单文件模板和项目创建 | 模板目录、创建、导入和导出 |
 | `backups.create.v1` | 普通 ZIP，接受目的文件 | GUI/CLI/MCP/SDK、ZIP IPC |
 | `backups.restore.v1` | 普通 ZIP，接受源文件与恢复目录 | GUI/CLI/MCP/SDK、恢复重开 |
-| `mcp.clients.v1` | 连接认证、签发与撤销 | Core、MCP、管理扩展、撤销测试 |
+| `mcp.clients.v1` | 连接认证、签发与撤销 | Core、GUI 设置、CLI、MCP、撤销测试 |
 | `mcp.oauth.v1` | OAuth 连接 scope、真实 Principal | OAuth 端到端及生命周期测试 |
 | `mcp.project-workflows.v1` | 登记、创建、复制、备份恢复 | 工作流工具、授权、路径、幂等复验 |
 | `unity.hub.open.v1` | 以 expectedTargetToken 复验 Hub，返回 launch_requested；所有者补充核定 | Core、GUI、SDK、Schema 和握手 |

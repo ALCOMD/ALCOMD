@@ -698,6 +698,26 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
         }
     };
 
+    const refresh = async () => {
+        const scope = scopeRef.current;
+        if (scope === undefined || !isCurrent(scope) || scope.busy || dirty || scope.pendingAction !== undefined
+            || snapshot === undefined || scope.sessionId !== snapshot.sessionId) return;
+        scope.busy = true;
+        setBusy(true);
+        setError(undefined);
+        try {
+            const result = await scope.client.extensionUiRefresh({
+                sessionId: snapshot.sessionId, expectedSnapshotRevision: snapshot.snapshotRevision,
+            });
+            if (isCurrent(scope)) setSnapshot(result.snapshot);
+        } catch (caught: unknown) {
+            handleSessionError(scope, caught);
+        } finally {
+            scope.busy = false;
+            if (isCurrent(scope)) setBusy(false);
+        }
+    };
+
     const dispatch = async (action: UiAction) => {
         const scope = scopeRef.current;
         if (scope === undefined || !isCurrent(scope) || scope.busy
@@ -767,6 +787,8 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
                 <div className="extension-context">
                     <p className="eyebrow">{t("Extension-provided content")}</p>
                     <p className="extension-id"><code>{extensionId}</code></p>
+                    {snapshot === undefined ? null : <Button disabled={busy || dirty || scopeRef.current?.pendingAction !== undefined}
+                        onClick={() => { void refresh(); }} type="button" variant="text">{t("Refresh")}</Button>}
                 </div>
                 {extension === undefined ? null : <ExtensionIdentity extension={extension} />}
                 {error === undefined || snapshot !== undefined ? null : (

@@ -176,6 +176,23 @@ impl AlcomdClient {
     pub fn hello_result(&self) -> &HelloResult {
         &self.hello_result
     }
+    pub async fn extension_cli_commands_list(
+        &mut self,
+        params: alcomd_protocol::ExtensionCliCommandsListParams,
+    ) -> Result<alcomd_protocol::ExtensionCliCommandsListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_CLI_COMMANDS_LIST, params)
+            .await
+    }
+    pub async fn extension_cli_commands_invoke(
+        &mut self,
+        params: alcomd_protocol::ExtensionCliCommandsInvokeParams,
+    ) -> Result<alcomd_protocol::ExtensionMcpToolsCallResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_EXTENSIONS_CLI_COMMANDS_INVOKE,
+            params,
+        )
+        .await
+    }
     pub async fn mcp_tools_catalog(
         &mut self,
         params: alcomd_protocol::McpToolsCatalogParams,
@@ -381,6 +398,7 @@ impl AlcomdClient {
             },
             capabilities: vec![
                 alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_EXTENSION_CLI_COMMANDS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1.to_owned(),

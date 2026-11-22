@@ -509,9 +509,9 @@ test("Portable UI renders all 17 node kinds with host-owned chrome and safe form
     await expect(page.locator(".portable-group")).toBeVisible();
     await expect(page.locator(".portable-key-value")).toContainText("Editing project");
 
-    await openHarness(page, "/extensions/com.vrclearn.mcp-management/ui");
-    const mcp = page.getByRole("region", { name: "MCP Management" });
-    await expect(page.getByRole("heading", { level: 2, name: "MCP Management" })).toBeVisible();
+    await openHarness(page, "/extensions/org.example.mcp-inspector/ui");
+    const mcp = page.getByRole("region", { name: "Client Inspector" });
+    await expect(page.getByRole("heading", { level: 2, name: "Client Inspector" })).toBeVisible();
     await expect(mcp.getByRole("list")).toBeVisible();
     await expect(mcp.getByRole("listitem")).toContainText("Codex desktop");
     await expect(mcp.getByRole("button", { name: "Refresh" })).toBeVisible();

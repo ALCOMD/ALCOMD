@@ -472,9 +472,6 @@ impl IdempotencyKey {
 /// Permissions frozen for M2 application use cases.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub enum Permission {
-    /// Allow a verified extension to publish its declared MCP tools.
-    #[serde(rename = "mcp.tools.provide")]
-    McpToolsProvide,
     /// Start a read-only state integrity check.
     #[serde(rename = "state.check")]
     StateCheck,
@@ -570,7 +567,6 @@ impl Permission {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::McpToolsProvide => "mcp.tools.provide",
             Self::StateCheck => "state.check",
             Self::OperationsRead => "operations.read",
             Self::OperationsCancel => "operations.cancel",

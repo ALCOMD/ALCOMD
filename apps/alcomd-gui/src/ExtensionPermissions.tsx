@@ -25,7 +25,6 @@ export function permissionName(permission: string, t: Translate): string {
     if (permission === "mcp.connections.read") return t("Read MCP Core connections");
     if (permission === "mcp.subscription-streams.read") return t("Read MCP subscription streams");
     if (permission === "mcp.requests.read") return t("Read MCP Core calls");
-    if (permission === "mcp.tools.provide") return t("Publish MCP tools");
     if (permission === "repositories.read") return t("Read repositories");
     if (permission === "packages.read") return t("Read package information");
     if (permission === "packages.manage") return t("Change project packages");
@@ -45,7 +44,6 @@ function permissionDescription(permission: string, t: Translate): string {
         case "mcp.requests.read": return t("View Core calls currently executing for all MCP clients.");
         case "mcp.clients.read": return t("View all registered MCP clients and their grants.");
         case "mcp.clients.manage": return t("Create and permanently revoke MCP clients.");
-        case "mcp.tools.provide": return t("Make declared tools available to MCP clients with matching business permissions.");
         case "repositories.read": return t("Read repository and package source information.");
         case "packages.read": return t("Read available packages and prepare package change plans.");
         case "packages.manage": return t("Apply explicitly confirmed package change plans to current and future projects.");
@@ -56,7 +54,7 @@ function permissionDescription(permission: string, t: Translate): string {
 }
 
 function editablePermission(permission: string): permission is ExtensionPermissionGrant["permission"] {
-    return permission === "background.run" || permission === "projects.read" || permission === "mcp.clients.read" || permission === "mcp.clients.manage" || permission === "mcp.connections.read" || permission === "mcp.requests.read" || permission === "mcp.subscription-streams.read" || permission === "mcp.tools.provide" || permission === "repositories.read" || permission === "packages.read" || permission === "packages.manage" || permission === "operations.read" || permission === "operations.cancel" || permission === "unity.sessions.read" || permission === "local-ipc.connect";
+    return permission === "background.run" || permission === "projects.read" || permission === "mcp.clients.read" || permission === "mcp.clients.manage" || permission === "mcp.connections.read" || permission === "mcp.requests.read" || permission === "mcp.subscription-streams.read" || permission === "repositories.read" || permission === "packages.read" || permission === "packages.manage" || permission === "operations.read" || permission === "operations.cancel" || permission === "unity.sessions.read" || permission === "local-ipc.connect";
 }
 
 export function ExtensionPermissionRequests({ required, optional }: { required: string[]; optional: string[] }) {
@@ -216,8 +214,9 @@ function requestError(caught: unknown): RpcError {
     return { code: "internal_error", message: "" };
 }
 
-export function ExtensionToolPreview({ tools }: { tools: import("@alcomd/sdk").McpToolPreview[] | undefined }) {
+export function ExtensionToolPreview({ tools, kind = "mcp" }: { kind?: "cli" | "mcp"; tools: import("@alcomd/sdk").McpToolPreview[] | undefined }) {
     const { t } = useTranslation();
     if (tools === undefined || tools.length === 0) return null;
-    return <section className="extension-tool-preview" aria-label={t("Declared MCP tools")}><h3>{t("Declared MCP tools")}</h3><dl className="dialog-summary">{tools.map((tool) => <div key={tool.name}><dt>{tool.title}</dt><dd><p>{tool.description}</p><p>{t(tool.effect === "pure" || tool.effect === "read" ? "Read or compute" : tool.effect === "plan" ? "Creates a review plan" : tool.effect === "apply" ? "Applies the confirmed plan" : "Requests task cancellation")}</p>{tool.requiredPermissions.length === 0 ? null : <p>{tool.requiredPermissions.map((p) => permissionName(p, t)).join(" · ")}</p>}</dd></div>)}</dl></section>;
+    const heading = t(kind === "cli" ? "Declared CLI commands" : "Declared MCP tools");
+    return <section className="extension-tool-preview" aria-label={heading}><h3>{heading}</h3><dl className="dialog-summary">{tools.map((tool) => <div key={tool.name}><dt>{tool.title}</dt><dd><p>{tool.description}</p><p>{t(tool.effect === "pure" || tool.effect === "read" ? "Read or compute" : tool.effect === "plan" ? "Creates a review plan" : tool.effect === "apply" ? "Applies the confirmed plan" : "Requests task cancellation")}</p>{tool.requiredPermissions.length === 0 ? null : <p>{tool.requiredPermissions.map((p) => permissionName(p, t)).join(" · ")}</p>}</dd></div>)}</dl></section>;
 }

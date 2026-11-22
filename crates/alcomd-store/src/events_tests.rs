@@ -71,6 +71,8 @@ pub(super) async fn installed_extension_for(
                 remote_source: None,
                 required_permissions: vec!["background.run".to_owned()],
                 optional_permissions: vec![],
+                mcp_tools: Vec::new(),
+                cli_commands: Vec::new(),
                 required_interfaces: vec!["alcomd:extension/host-data@1.0.0".to_owned()],
                 optional_interfaces: vec![],
                 ui_protocol: None,

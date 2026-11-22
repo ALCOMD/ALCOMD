@@ -1,21 +1,23 @@
 {
     "artifact": "crates/alcomd-testing/fixtures/m8/mcp-tools-provider-v1.wasm",
-    "sha256": "d9ac5e894881ed90228f32cef88eceb240337dfb3df050555a769282d8ee8721",
+    "sha256": "373c6e7a4a1230acfb0722b0b72f5d4560fd5f7cefb64ebba2148a074ae2e387",
     "toolchain": "1.97.1",
     "target": "wasm32-unknown-unknown",
     "profile": "release",
     "encoder": "wit-component 0.254.2 via cargo xtask component",
     "inputs": {
-        "extensions/examples/mcp-tools-provider/backend/src/lib.rs": "ac777ba2a0da006177088f004c8354d9af05c5ffb52654a6003d39919788eeac",
+        "extensions/examples/mcp-tools-provider/backend/src/lib.rs": "c7c9a3f34b828e317f5bd75bea0e2806912bb2e37dcd28bcf34870e5b891199a",
         "extensions/examples/mcp-tools-provider/backend/Cargo.toml": "13c491bf6ec77b2f01e7485696080244f02f1bb6df69f66cbc24271d0ef65fe8",
         "extensions/examples/mcp-tools-provider/backend/Cargo.lock": "171aaec5c83fa8aba3e76de3705702c3cfd87dea11c8c14df551134f551abf5a",
-        "specs/extensions/wit/mcp-tools-v1/world.wit": "3a16b5312b4fc1fb9534805d950c3f82520ef355769ae82f4ac89f4f240c4301",
+        "specs/extensions/wit/mcp-tools-v1/world.wit": "a33ea3e4ed5b3a5bdf3389085bf1957dfa57e14f20b74f93e9185fb400a8de57",
         "specs/extensions/wit/mcp-tools-v1/deps/extension/guest-lifecycle.wit": "78b4e7fb822a560c464d24f6e5ef31901a28ad059202ffe711b89b51281577a1",
         "specs/extensions/wit/mcp-tools-v1/deps/extension/guest-ui.wit": "82157011b38f03125ba3ff44a253df6c28b5c50b543882ad5f56898bbd5dbd99",
         "specs/extensions/wit/mcp-tools-v1/deps/extension/host-data.wit": "2f70a251ae30d1d463faab2dee9e6baa08b277ab87d6efa4e65761ba914d7347",
         "specs/extensions/wit/mcp-tools-v1/deps/extension/host-projects.wit": "aa7fd7d38f2af28ca3606d7f70471586b134abb5a76dd4f82154bebd31a4dacb",
         "specs/extensions/wit/mcp-tools-v1/deps/extension/types.wit": "4fe1c69e2779b043f2f6ca81ca836e1e8f4132fa000f38cac256e03e9d2147bd",
-        "specs/extensions/wit/mcp-tools-v1/deps/extension/world.wit": "27f577baa5510bde52ba57a7b1179e79f61511f81d3b290665cb06b967c17ffd",
-        "rust-toolchain.toml": "8e390d6a0838315f972690f46ef8bae8b7ecc9ee6c1ed70140ef852869c2482e"
+        "specs/extensions/wit/mcp-tools-v1/deps/extension/world.wit": "4a4bea28c4b3e4f4a79da773f8fc1157423b3fc4a6bda6ec2c3936cb2dbda7cc",
+        "rust-toolchain.toml": "8e390d6a0838315f972690f46ef8bae8b7ecc9ee6c1ed70140ef852869c2482e",
+        "specs/extensions/wit/cli-commands-v1/world.wit": "938c67088bd919dc43a276965c42fe9eed4cd8827f52b856e575e6b077c826fc",
+        "specs/extensions/wit/mcp-tools-v1/deps/extension/host-operations.wit": "acc68c7fbc101eee9cc17e913846d77abe47985b63700a65eccd4922ddc36a4e"
     }
 }

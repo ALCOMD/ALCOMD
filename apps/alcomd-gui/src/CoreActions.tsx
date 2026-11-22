@@ -1031,6 +1031,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted, sourceKin
             {reviewingTerms ? <section className="extension-install-terms" aria-label={t("Extension terms")}><h3>{plan.installationTerms!.title}</h3><div className="extension-install-terms-text" tabIndex={0}>{plan.installationTerms!.text}</div></section> : !reviewingPermissions ? null : <>
                 <ExtensionPermissionRequests required={plan.requiredPermissions} optional={[]} />
                 <ExtensionToolPreview tools={plan.mcpTools} />
+            <ExtensionToolPreview kind="cli" tools={plan.cliCommands} />
                 {canGrant ? null : <p role="alert">{t("You cannot approve extension permissions with this connection.")}</p>}
             </>}
             {reviewingTerms || reviewingPermissions ? <div className="dialog-actions"><Button disabled={feedback.busy || submitted} onClick={decline} type="button" variant="text">{t("Decline")}</Button><LoadingButton disabled={!available || submitted || (reviewingPermissions && !canGrant)} loading={feedback.busy} onClick={() => void run()} type="button">{t(reviewingTerms && plan.requiredPermissions.length > 0 ? "Agree and continue" : "Agree and install")}</LoadingButton></div> : feedback.error === undefined || submitted ? null : <div className="dialog-actions"><LoadingButton disabled={!available} loading={feedback.busy} onClick={() => void run()} type="button">{t("Retry")}</LoadingButton></div>}

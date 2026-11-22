@@ -121,7 +121,7 @@ impl std::error::Error for M7Error {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExtensionInvocationKind {
-    McpTool,
+    BusinessEntry,
     Background,
     InteractiveUiRender,
     InteractiveUiAction,
@@ -132,7 +132,7 @@ impl ExtensionInvocationKind {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::McpTool => "mcp-tool",
+            Self::BusinessEntry => "business-entry",
             Self::Background => "background",
             Self::InteractiveUiRender => "interactive-ui-render",
             Self::InteractiveUiAction => "interactive-ui-action",

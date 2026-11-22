@@ -1,8 +1,8 @@
 {
     "protocol": "portable-v1",
-    "title": "MCP Management",
+    "title": "Client Inspector",
     "nodes": [
-        {"nodeId": "root", "order": 0, "kind": "page", "payload": {"title": "MCP Management"}},
+        {"nodeId": "root", "order": 0, "kind": "page", "payload": {"title": "Client Inspector"}},
         {"nodeId": "overview", "parentId": "root", "order": 0, "kind": "section", "payload": {"label": "Overview"}},
         {"nodeId": "service-status", "parentId": "overview", "order": 0, "kind": "status", "payload": {"label": "Service available", "tone": "success"}},
         {"nodeId": "connection-count", "parentId": "overview", "order": 1, "kind": "key-value", "payload": {"label": "Connections", "value": "2"}},

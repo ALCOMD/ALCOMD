@@ -169,7 +169,10 @@ pub(super) async fn stage(
     let (package, target_scope) = verified_package(options, preference.enabled).await?;
     let final_root = committed_root(options.publish_data_dir)?;
     let (stage_root, _) = resolve_plain_storage_directory(stage_root)?;
-    let engine = ExtensionEngine::new(store.clone(), stage_root.join("extensions"))?;
+    let engine = ExtensionEngine::new(store.clone(), stage_root.join("extensions"))?
+        .with_tools_validator(
+            super::m6_runtime::PlatformExtensionRuntime::new(store.clone())?.host_executable(),
+        );
     let evidence = engine
         .inspect(
             ExtensionSourceKind::FirstPartyPackaged,

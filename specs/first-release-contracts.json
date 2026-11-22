@@ -8,6 +8,7 @@
         "desktop.actions.v1",
         "events.live.v1",
         "events.replay.v1",
+        "extensions.cli-commands.v1",
         "extensions.lifecycle.v1",
         "extensions.permissions.read.v1",
         "extensions.permissions.v1",

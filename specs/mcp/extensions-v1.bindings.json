@@ -1,0 +1,111 @@
+{
+    "schemaFile": "extensions-v1.schema.json",
+    "schemaId": "https://alcomd.vrclearn.com/schema/mcp/extensions-v1.json",
+    "title": "Extension management tools",
+    "tools": [
+        {
+            "method": "extensions.list",
+            "name": "alcomd_list_extensions",
+            "title": "List installed extensions",
+            "description": "List installed extensions with the original Core cursor.",
+            "effect": "read",
+            "permissions": []
+        },
+        {
+            "method": "extensions.get",
+            "name": "alcomd_get_extension",
+            "title": "Get extension details",
+            "description": "Read the signed package identity, status, and declared entries.",
+            "effect": "read",
+            "permissions": []
+        },
+        {
+            "method": "extensions.permissions.list",
+            "name": "alcomd_list_extension_permissions",
+            "title": "List extension permissions",
+            "description": "Read available permissions, actual grants, and the grant revision.",
+            "effect": "read",
+            "permissions": []
+        },
+        {
+            "method": "extensions.inspectSource",
+            "name": "alcomd_inspect_extension_source",
+            "title": "Inspect an extension source",
+            "description": "Inspect a remote extension source and its available versions.",
+            "effect": "read",
+            "permissions": []
+        },
+        {
+            "method": "extensions.planInstall",
+            "name": "alcomd_plan_extension_install",
+            "title": "Plan extension installation",
+            "description": "Inspect a local signed package and prepare its original installation plan.",
+            "effect": "plan",
+            "permissions": []
+        },
+        {
+            "method": "extensions.planInstallFromSource",
+            "name": "alcomd_plan_extension_install_from_source",
+            "title": "Plan extension installation from a source",
+            "description": "Prepare installation with a selected version and the inspected source fingerprint.",
+            "effect": "plan",
+            "permissions": []
+        },
+        {
+            "method": "extensions.applyInstall",
+            "name": "alcomd_apply_extension_install",
+            "title": "Apply extension installation",
+            "description": "Apply the original plan with its fingerprint and the operator’s actual consent. Recover unknown outcomes with the original key and arguments.",
+            "effect": "apply",
+            "permissions": []
+        },
+        {
+            "method": "extensions.enable",
+            "name": "alcomd_enable_extension",
+            "title": "Enable an extension",
+            "description": "Enable the selected extension at its reviewed revision, supplying the activation digest when required.",
+            "effect": "apply",
+            "permissions": []
+        },
+        {
+            "method": "extensions.disable",
+            "name": "alcomd_disable_extension",
+            "title": "Disable an extension",
+            "description": "Disable the selected extension at its reviewed revision.",
+            "effect": "apply",
+            "permissions": []
+        },
+        {
+            "method": "extensions.planUninstall",
+            "name": "alcomd_plan_extension_uninstall",
+            "title": "Plan extension removal",
+            "description": "Review the selected extension and the requested disposition of its data.",
+            "effect": "plan",
+            "permissions": []
+        },
+        {
+            "method": "extensions.applyUninstall",
+            "name": "alcomd_apply_extension_uninstall",
+            "title": "Apply extension removal",
+            "description": "Apply the original reviewed removal plan and return its operation.",
+            "effect": "apply",
+            "permissions": []
+        },
+        {
+            "method": "extensions.setGrant",
+            "name": "alcomd_grant_extension_permission",
+            "title": "Grant an extension permission",
+            "description": "Grant the reviewed permission on its specified resource at the expected grant revision.",
+            "effect": "apply",
+            "permissions": []
+        },
+        {
+            "method": "extensions.revokeGrant",
+            "name": "alcomd_revoke_extension_permission",
+            "title": "Revoke an extension permission",
+            "description": "Revoke the reviewed permission on its specified resource at the expected grant revision.",
+            "effect": "apply",
+            "permissions": []
+        }
+    ]
+}

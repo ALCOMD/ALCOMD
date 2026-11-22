@@ -809,10 +809,11 @@ CREATE TABLE mcp_oauth_tokens (
     CHECK(kind='refresh' OR consumed_at_ms IS NULL)
 ) STRICT;
 
-CREATE TABLE extension_mcp_calls (
+CREATE TABLE extension_entry_calls (
     call_id TEXT PRIMARY KEY CHECK(length(call_id)=36),
-    principal_id TEXT NOT NULL CHECK(length(principal_id) BETWEEN 5 AND 128 AND principal_id LIKE 'mcp:%'),
-    tool_name TEXT NOT NULL CHECK(length(tool_name) BETWEEN 1 AND 128),
+    principal_id TEXT NOT NULL CHECK(length(principal_id) BETWEEN 5 AND 128 AND (principal_id LIKE 'mcp:%' OR principal_id='builtin:local-owner')),
+    entry_kind TEXT NOT NULL CHECK(entry_kind IN ('cli','mcp')),
+    entry_name TEXT NOT NULL CHECK(length(entry_name) BETWEEN 1 AND 32),
     idempotency_key TEXT NOT NULL CHECK(length(idempotency_key) BETWEEN 1 AND 128),
     request_fingerprint TEXT NOT NULL CHECK(length(request_fingerprint)=64),
     extension_id TEXT NOT NULL CHECK(length(extension_id) BETWEEN 3 AND 255),
@@ -824,7 +825,7 @@ CREATE TABLE extension_mcp_calls (
     core_effect_json TEXT CHECK(core_effect_json IS NULL OR (json_valid(core_effect_json) AND length(core_effect_json)<=65536)),
     created_at_ms INTEGER NOT NULL CHECK(created_at_ms>=0),
     updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms>=created_at_ms),
-    UNIQUE(principal_id,tool_name,idempotency_key)
+    UNIQUE(principal_id,extension_id,entry_kind,entry_name,idempotency_key)
 ) STRICT;
 
 CREATE TABLE "extension_plans" (
@@ -862,7 +863,7 @@ CREATE TABLE "extension_plans" (
 
 CREATE TABLE "extension_grants" (
     extension_id TEXT NOT NULL REFERENCES extensions(extension_id) ON DELETE CASCADE,
-    permission_name TEXT NOT NULL CHECK(permission_name IN ('background.run','projects.read','mcp.clients.read','mcp.clients.manage','mcp.tools.provide','repositories.read','packages.read','packages.manage','operations.read','operations.cancel','mcp.connections.read','mcp.requests.read','mcp.subscription-streams.read','unity.sessions.read','local-ipc.connect')),
+    permission_name TEXT NOT NULL CHECK(permission_name IN ('background.run','projects.read','mcp.clients.read','mcp.clients.manage','repositories.read','packages.read','packages.manage','operations.read','operations.cancel','mcp.connections.read','mcp.requests.read','mcp.subscription-streams.read','unity.sessions.read','local-ipc.connect')),
     resource_kind TEXT NOT NULL CHECK(resource_kind IN ('Extension','Global','LocalIpcTarget')),
     resource_id TEXT NOT NULL CHECK(length(resource_id) BETWEEN 1 AND 255),
     state TEXT NOT NULL CHECK(state IN ('granted','revoked')),
@@ -870,7 +871,7 @@ CREATE TABLE "extension_grants" (
     updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms BETWEEN 0 AND 9223372036854775807),
     PRIMARY KEY(extension_id,permission_name,resource_kind,resource_id),
     CHECK((permission_name='background.run' AND resource_kind='Extension' AND resource_id=extension_id)
- OR (permission_name IN ('projects.read','mcp.clients.read','mcp.clients.manage','mcp.tools.provide','repositories.read','packages.read','packages.manage','operations.read','operations.cancel','mcp.connections.read','mcp.requests.read','mcp.subscription-streams.read','unity.sessions.read') AND resource_kind='Global' AND resource_id='*')
+ OR (permission_name IN ('projects.read','mcp.clients.read','mcp.clients.manage','repositories.read','packages.read','packages.manage','operations.read','operations.cancel','mcp.connections.read','mcp.requests.read','mcp.subscription-streams.read','unity.sessions.read') AND resource_kind='Global' AND resource_id='*')
  OR (permission_name='local-ipc.connect' AND resource_kind='LocalIpcTarget' AND length(resource_id)=64 AND resource_id NOT GLOB '*[^0-9a-f]*'))
 ) STRICT;
 

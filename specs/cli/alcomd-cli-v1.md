@@ -84,3 +84,10 @@ NDJSON。普通日志不得污染任何 machine stdout。
 # Core desktop actions
 
 `desktop focus-project-unity <PROJECT_ID> --expected-revision <REVISION> --idempotency-key <KEY>` focuses the project's running Unity editor on the Core machine. `desktop open-project-directory <PROJECT_ID> --idempotency-key <KEY>` opens the registered directory. `desktop open-unity-hub-download --idempotency-key <KEY>` opens the official Unity download page. Reuse the original key and arguments to recover a lost response. Each command reports the system outcome and rejects `--dry-run`.
+
+
+## 扩展声明的 CLI 命令
+
+`extension commands [--extension-id ID] [--cursor CURSOR] [--limit LIMIT]` 列出已启用扩展签名声明的命令。`extension run EXTENSION_ID COMMAND [--arguments JSON]` 在 Core 的扩展宿主内运行该扩展的 CLI 导出。未传参数时输入为空对象。Core 会再次检查实际扩展权限和调用者身份。
+
+声明为 plan 的命令可用 `--dry-run` 获取真实计划。plan、apply、cancel 均需 `--idempotency-key`。apply 使用 `--plan-id` 及原计划修订，交互时展示实际计划，也可显式提交 `--expected-revision` 和 `--yes`。cancel 使用 `--operation-id`、`--expected-revision` 及确认。[声明 Schema](../extensions/cli-commands-v1.schema.json) · [原生 RPC](../rpc/extension-cli-commands-v1.schema.json)

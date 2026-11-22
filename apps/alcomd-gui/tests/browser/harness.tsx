@@ -1774,7 +1774,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     extensionsList(): ReturnType<GuiRpcClient["extensionsList"]> { return this.value({ extensions: this.mode === "empty" ? [] : [extension(DISCORD_ID), extension(MCP_ID)] }); }
     extensionPermissionsList(extensionId: string): ReturnType<GuiRpcClient["extensionPermissionsList"]> {
         if (this.permissionReadFailing) return Promise.reject({ code: "store_unavailable" });
-        return this.value({ availablePermissions: ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel"] as import("@alcomd/sdk").ExtensionPermissionGrant["permission"][], extensionId, grantRevision: 3, requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"], grants: [] });
+        return this.value({ availablePermissions: ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel"] as import("@alcomd/sdk").ExtensionPermissionGrant["permission"][], extensionId, grantRevision: 3, requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"], grants: [] });
     }
     extensionGet(extensionId: string): ReturnType<GuiRpcClient["extensionGet"]> { return this.value({ extension: extension(extensionId) }); }
     extensionInspectSource(url: string): ReturnType<GuiRpcClient["extensionInspectSource"]> {
@@ -1836,7 +1836,7 @@ const TEMPLATE_PAGE_CURSOR = "opaque template cursor:100/+=";
 const OPERATION_ID = "00000000-0000-4000-8000-000000000105";
 const PLAN_ID = "00000000-0000-4000-8000-000000000106";
 const DISCORD_ID = "com.vrclearn.discord";
-const MCP_ID = "com.vrclearn.mcp-management";
+const MCP_ID = "org.example.mcp-inspector";
 const HASH = "a".repeat(64);
 
 function projectListPage(projects: ProjectSnapshot[], cursor: RegistryCursor | undefined, view: ProjectListView | undefined, expectedViewSequence: number | undefined, paginate: boolean): ProjectsListResult {
@@ -1908,7 +1908,7 @@ function catalogTemplate(index: number) {
 function runningOperation(): Operation { return { operationId: OPERATION_ID, kind: "packages.apply", state: "running", revision: 3, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000, progress: { phase: "extracting" } }; }
 function packagePlan(action: PackagePlan["action"]): PackagePlan { return { planId: PLAN_ID, action, state: "unapplied", projectId: PROJECT_ID, projectRevision: 2, changeSetFingerprint: HASH, changeSet: { formatVersion: 1, mutations: [{ kind: action === "remove" ? "remove" : "install", packageId: "com.example.avatar", source: null, ...(action === "remove" ? { fromVersion: "1.2.3", toVersion: null } : { fromVersion: null, toVersion: "1.2.3" }) }], dependencyEdges: [], vpmManifestSha256: HASH } }; }
 function extension(extensionId: string): ExtensionRecord { return { extensionId, version: "1.0.0", apiMajor: 1, packageDigest: HASH, publisherFingerprint: `ed25519-sha256:${HASH}`, desiredState: "enabled", quarantineState: "clear", runtimeState: "running", grantRevision: 3, lifecycleGeneration: 2, revision: 4, ui: { protocol: "portable-v1" } }; }
-function extensionPlan(action: string) { return { mcpTools: [], planId: PLAN_ID, action, state: "unapplied", sourceKind: "local_owner_selected", extensionId: DISCORD_ID, version: "1.0.0", apiMajor: 1, profileVersion: 1, packageDigest: HASH, publisherFingerprint: `ed25519-sha256:${HASH}`, dataDisposition: "retain_data", planFingerprint: HASH, uiProtocol: "portable-v1", requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"] }; }
+function extensionPlan(action: string) { return { mcpTools: [], cliCommands: [], planId: PLAN_ID, action, state: "unapplied", sourceKind: "local_owner_selected", extensionId: DISCORD_ID, version: "1.0.0", apiMajor: 1, profileVersion: 1, packageDigest: HASH, publisherFingerprint: `ed25519-sha256:${HASH}`, dataDisposition: "retain_data", planFingerprint: HASH, uiProtocol: "portable-v1", requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"] }; }
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("Missing #root element");

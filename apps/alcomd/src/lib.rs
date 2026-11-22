@@ -222,13 +222,10 @@ struct Applications {
 }
 
 /// Initializes the authoritative store, recovers Operations, then binds IPC.
-///
-/// Pass a packaged MCP extension only when the product bootstrap verified the
-/// distribution pins and established eligibility for this profile.
 pub async fn serve_with_data_until<F>(
     ipc: IpcConfig,
     data: DataConfig,
-    packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
+
     shutdown: F,
 ) -> Result<(), BindError>
 where
@@ -238,7 +235,6 @@ where
         ipc,
         data,
         Arc::new(storage_platform::PlatformStorageDirectories),
-        packaged_mcp,
     )
     .await?;
     applications
@@ -267,14 +263,12 @@ async fn initialize_daemon_with_directories(
     ipc: IpcConfig,
     data: DataConfig,
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
-    packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
     initialize_daemon_with_adapters(
         ipc,
         data,
         directory_platform,
         None,
-        packaged_mcp,
         #[cfg(feature = "test-kill-gates")]
         None,
     )
@@ -286,7 +280,7 @@ async fn initialize_daemon_with_adapters(
     data: DataConfig,
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
     source: Option<Arc<dyn alcomd_application::ExtensionSourceFetcher>>,
-    packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
+
     #[cfg(feature = "test-kill-gates")] vpm_reader: Option<alcomd_vpm::VpmReader>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
@@ -431,16 +425,6 @@ async fn initialize_daemon_with_adapters(
     m6.recover(current_time_ms()?)
         .await
         .map_err(|_| BindError::Io(io::Error::other("Extension recovery failed")))?;
-    if let Some(package) = packaged_mcp
-        && let Err(error) = m6
-            .initialize_packaged_mcp(package, current_time_ms()?)
-            .await
-    {
-        eprintln!(
-            "Packaged MCP extension initialization failed: {:?}",
-            error.code()
-        );
-    }
     let m7 = M7Application::new(m6.clone(), m7_rpc::ProtocolUiValidator);
     if let Ok(defaults) = official_gui
         .observe_storage_directories(&alcomd_application::ConfigSnapshot::default())
@@ -726,7 +710,7 @@ async fn serve_connection(
                     .mcp_apply_request_count
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
-            let is_tool_call=serde_json::from_slice::<Value>(&payload).is_ok_and(|v|v["method"]==alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL);
+            let is_tool_call=serde_json::from_slice::<Value>(&payload).is_ok_and(|v|matches!(v["method"].as_str(),Some(alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL | alcomd_protocol::METHOD_EXTENSIONS_CLI_COMMANDS_INVOKE)));
             let action=if is_tool_call {
                 // One in-flight typed RPC per connection. EOF revokes only this
                 // invocation's authority; the detached finalizer preserves accepted work.
@@ -1022,6 +1006,8 @@ async fn dispatch_authenticated(
         request.method.as_str(),
         alcomd_protocol::METHOD_MCP_TOOLS_CATALOG
             | alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL
+            | alcomd_protocol::METHOD_EXTENSIONS_CLI_COMMANDS_LIST
+            | alcomd_protocol::METHOD_EXTENSIONS_CLI_COMMANDS_INVOKE
     ) {
         return m8_tools_rpc::dispatch(request, state, applications, access).await;
     }
@@ -1151,6 +1137,7 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_DESKTOP_ACTIONS_V1,
         alcomd_protocol::CAPABILITY_MCP_RUNTIME_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
+        alcomd_protocol::CAPABILITY_EXTENSION_CLI_COMMANDS_V1,
         alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1,
         alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1,
         alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1,

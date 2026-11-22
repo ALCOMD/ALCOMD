@@ -6,7 +6,6 @@ pub const EXTENSION_PERMISSIONS: &[&str] = &[
     "mcp.connections.read",
     "mcp.requests.read",
     "mcp.subscription-streams.read",
-    "mcp.tools.provide",
     "repositories.read",
     "packages.read",
     "packages.manage",
@@ -15,17 +14,6 @@ pub const EXTENSION_PERMISSIONS: &[&str] = &[
     crate::UNITY_SESSION_PERMISSION,
     crate::LOCAL_IPC_PERMISSION,
 ];
-
-pub const PACKAGED_MCP_EXTENSION_ID: &str = "com.vrclearn.alcomd.extension.mcp";
-
-/// Verified distribution input for an eligible fresh profile. The pins must come
-/// from the product distribution, independently of the extension archive.
-#[derive(Clone, Debug)]
-pub struct PackagedMcpExtension {
-    pub path: String,
-    pub publisher_fingerprint: String,
-    pub package_digest: [u8; 32],
-}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -62,7 +50,6 @@ pub const EXTENSION_GLOBAL_PERMISSIONS: &[&str] = &[
     "mcp.connections.read",
     "mcp.requests.read",
     "mcp.subscription-streams.read",
-    "mcp.tools.provide",
     "repositories.read",
     "packages.read",
     "packages.manage",
@@ -138,6 +125,41 @@ impl ExtensionUiProtocol {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionEntryPreview {
+    pub name: String,
+    pub title: String,
+    pub description: String,
+    pub required_permissions: Vec<String>,
+    pub effect: crate::ToolEffect,
+}
+
+impl ExtensionEntryPreview {
+    pub fn from_declarations(
+        extension_id: Option<&str>,
+        declarations: &[crate::ToolDeclaration],
+    ) -> Result<Vec<Self>, M6Error> {
+        declarations
+            .iter()
+            .map(|tool| {
+                Ok(Self {
+                    name: extension_id.map_or_else(
+                        || tool.name.clone(),
+                        |id| crate::tool_public_name(id, &tool.name),
+                    ),
+                    title: tool.title.clone(),
+                    description: tool.description.clone(),
+                    required_permissions: tool.permissions(),
+                    effect: tool
+                        .effect()
+                        .map_err(|_| M6Error::new(M6ErrorCode::PackageInvalid))?,
+                })
+            })
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionPackageEvidence {
     pub source_kind: ExtensionSourceKind,
@@ -155,20 +177,11 @@ pub struct ExtensionPackageEvidence {
     pub optional_permissions: Vec<String>,
     pub installation_terms: Option<ExtensionInstallationTerms>,
     pub remote_source: Option<crate::ExtensionRemoteSourceEvidence>,
+    pub mcp_tools: Vec<ExtensionEntryPreview>,
+    pub cli_commands: Vec<ExtensionEntryPreview>,
     pub required_interfaces: Vec<String>,
     pub optional_interfaces: Vec<String>,
     pub ui_protocol: Option<ExtensionUiProtocol>,
-}
-
-impl ExtensionPackageEvidence {
-    #[must_use]
-    pub fn is_packaged_mcp_default(&self) -> bool {
-        self.source_kind == ExtensionSourceKind::FirstPartyPackaged
-            && self.extension_id == PACKAGED_MCP_EXTENSION_ID
-            && self.ui_protocol == Some(ExtensionUiProtocol::PortableV1)
-            && self.installation_terms.is_none()
-            && self.required_permissions.is_empty()
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -440,7 +453,7 @@ pub struct ExtensionStartContext {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExtensionActivationKind {
-    McpTool,
+    BusinessEntry,
     Background,
     InteractiveUi,
 }
@@ -696,12 +709,6 @@ pub trait M6Store: Clone + Send + Sync + 'static {
         draft: ExtensionInstallPlanDraft,
         now_ms: u64,
     ) -> impl Future<Output = Result<ExtensionPlanRecord, M6Error>> + Send;
-    fn needs_packaged_mcp_install(&self) -> impl Future<Output = Result<bool, M6Error>> + Send;
-    fn accept_packaged_mcp_install(
-        &self,
-        evidence: ExtensionPackageEvidence,
-        now_ms: u64,
-    ) -> impl Future<Output = Result<Option<OperationId>, M6Error>> + Send;
     fn create_uninstall_plan(
         &self,
         owner: PrincipalId,
@@ -975,43 +982,6 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
 
     /// Schedules the ordinary install Operation for a verified distribution
     /// input. Native clients cannot request this source through RPC.
-    pub async fn initialize_packaged_mcp(
-        &self,
-        package: PackagedMcpExtension,
-        now_ms: u64,
-    ) -> Result<Option<OperationId>, M6Error> {
-        if !self.store.needs_packaged_mcp_install().await? {
-            return Ok(None);
-        }
-        let _guard = self
-            .locks
-            .acquire(vec![ResourceKey::Extension(
-                PACKAGED_MCP_EXTENSION_ID.into(),
-            )])
-            .await;
-        let evidence = self
-            .packages
-            .inspect(ExtensionSourceKind::FirstPartyPackaged, package.path)
-            .await?;
-        if evidence.publisher_fingerprint != package.publisher_fingerprint
-            || evidence.package_digest != package.package_digest
-            || evidence.extension_id != PACKAGED_MCP_EXTENSION_ID
-        {
-            return Err(M6Error::new(M6ErrorCode::PackageUntrusted));
-        }
-        if !evidence.is_packaged_mcp_default() {
-            return Err(M6Error::new(M6ErrorCode::ManifestInvalid));
-        }
-        let operation = self
-            .store
-            .accept_packaged_mcp_install(evidence, now_ms)
-            .await?;
-        if let Some(id) = operation {
-            self.schedule(id);
-        }
-        Ok(operation)
-    }
-
     pub async fn list(
         &self,
         access: &AccessContext,
@@ -1120,6 +1090,22 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
                 now_ms,
             )
             .await
+    }
+
+    pub async fn get_plan(
+        &self,
+        access: &AccessContext,
+        id: PlanId,
+        action: &str,
+    ) -> Result<ExtensionPlanRecord, M6Error> {
+        access
+            .require(Permission::ExtensionsManage)
+            .map_err(map_access)?;
+        let plan = self.store.get_plan(id).await?;
+        if &plan.owner != access.principal() || plan.action != action {
+            return Err(M6Error::new(M6ErrorCode::PlanStale));
+        }
+        Ok(plan)
     }
 
     pub async fn plan_uninstall(
