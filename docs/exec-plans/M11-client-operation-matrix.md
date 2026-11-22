@@ -31,25 +31,25 @@
 | `backups.restore` | 已提供 · 项目列表「恢复备份」选择 ZIP、名称或目的地 | 已提供 · backup restore | 已提供 · alcomd_restore_backup；确认源 ZIP 及恢复目标 |
 | `events.list` | 缺少入口 · 没有历史事件页，任务页查询 operations | 缺少入口 · CLI 未提供事件读取或订阅；operation follow 轮询单项任务 | 缺少入口 · MCP 的工具目录变更订阅不能读取或续接 Core 业务事件 |
 | `events.subscribe` | 已提供 · 应用启动后订阅；事件进入通知、任务和资源列表刷新 | 缺少入口 · CLI 未提供事件读取或订阅；operation follow 轮询单项任务 | 缺少入口 · MCP 的工具目录变更订阅不能读取或续接 Core 业务事件 |
-| `extensions.cliCommands.invoke` | 仅本机交互 | 已提供 · `extension run` | 协议专用 · MCP 使用单独签名的工具声明和导出 |
-| `extensions.cliCommands.list` | 仅本机交互 | 已提供 · `extension commands` | 协议专用 · MCP 使用单独签名的工具声明和导出 |
-| `extensions.applyInstall` | 已提供 | 已提供 · `extension apply-install` | 已提供 · `alcomd_apply_extension_install` |
-| `extensions.applyUninstall` | 已提供 | 已提供 · `extension apply-uninstall` | 已提供 · `alcomd_apply_extension_uninstall` |
-| `extensions.disable` | 已提供 | 已提供 · `extension disable` | 已提供 · `alcomd_disable_extension` |
-| `extensions.enable` | 已提供 | 已提供 · `extension enable` | 已提供 · `alcomd_enable_extension` |
-| `extensions.get` | 已提供 | 已提供 · `extension get` | 已提供 · `alcomd_get_extension` |
-| `extensions.inspectSource` | 已提供 | 已提供 · `extension inspect-source` | 已提供 · `alcomd_inspect_extension_source` |
-| `extensions.list` | 已提供 | 已提供 · `extension list` | 已提供 · `alcomd_list_extensions` |
-| `extensions.permissions.list` | 已提供 | 已提供 · `extension permissions` | 已提供 · `alcomd_list_extension_permissions` |
-| `extensions.planInstall` | 已提供 | 已提供 · `extension plan-install` | 已提供 · `alcomd_plan_extension_install` |
-| `extensions.planInstallFromSource` | 已提供 | 已提供 · `extension plan-install-from-source` | 已提供 · `alcomd_plan_extension_install_from_source` |
-| `extensions.planUninstall` | 已提供 | 已提供 · `extension plan-uninstall` | 已提供 · `alcomd_plan_extension_uninstall` |
-| `extensions.revokeGrant` | 已提供 | 已提供 · `extension revoke` | 已提供 · `alcomd_revoke_extension_permission` |
-| `extensions.setGrant` | 已提供 | 已提供 · `extension grant` | 已提供 · `alcomd_grant_extension_permission` |
-| `extensions.ui.close` | 已提供 | 仅界面交互 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 仅界面交互 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
-| `extensions.ui.dispatch` | 已提供 | 仅界面交互 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 仅界面交互 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
-| `extensions.ui.open` | 已提供 | 仅界面交互 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 仅界面交互 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
-| `extensions.ui.refresh` | 已提供 | 仅界面交互 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 仅界面交互 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
+| `extensions.cliCommands.invoke` | 协议专用 · GUI 按已签名的可移植界面声明展示并分派控件动作 | 已提供 · `extension run` | 协议专用 · MCP 使用单独签名的工具声明和导出 |
+| `extensions.cliCommands.list` | 协议专用 · GUI 按已签名的可移植界面声明展示并分派控件动作 | 已提供 · `extension commands` | 协议专用 · MCP 使用单独签名的工具声明和导出 |
+| `extensions.applyInstall` | 已提供 · 扩展安装审阅后同意权限并提交原计划 | 已提供 · `extension apply-install` | 已提供 · `alcomd_apply_extension_install` |
+| `extensions.applyUninstall` | 已提供 · 扩展卸载对话框确认已显示计划 | 已提供 · `extension apply-uninstall` | 已提供 · `alcomd_apply_extension_uninstall` |
+| `extensions.disable` | 已提供 · 扩展列表或详情的停用按钮 | 已提供 · `extension disable` | 已提供 · `alcomd_disable_extension` |
+| `extensions.enable` | 已提供 · 扩展列表或详情的启用按钮 | 已提供 · `extension enable` | 已提供 · `alcomd_enable_extension` |
+| `extensions.get` | 已提供 · 扩展详情或打开扩展视图时读取记录 | 已提供 · `extension get` | 已提供 · `alcomd_get_extension` |
+| `extensions.inspectSource` | 已提供 · 扩展安装对话框检查远程来源 | 已提供 · `extension inspect-source` | 已提供 · `alcomd_inspect_extension_source` |
+| `extensions.list` | 已提供 · 扩展管理页读取当前扩展 | 已提供 · `extension list` | 已提供 · `alcomd_list_extensions` |
+| `extensions.permissions.list` | 已提供 · 扩展详情的权限面板读取授权 | 已提供 · `extension permissions` | 已提供 · `alcomd_list_extension_permissions` |
+| `extensions.planInstall` | 已提供 · 扩展安装对话框选择本地包并预演 | 已提供 · `extension plan-install` | 已提供 · `alcomd_plan_extension_install` |
+| `extensions.planInstallFromSource` | 已提供 · 扩展安装对话框选定已检查的源及版本再预演 | 已提供 · `extension plan-install-from-source` | 已提供 · `alcomd_plan_extension_install_from_source` |
+| `extensions.planUninstall` | 已提供 · 扩展详情预演卸载 | 已提供 · `extension plan-uninstall` | 已提供 · `alcomd_plan_extension_uninstall` |
+| `extensions.revokeGrant` | 已提供 · 扩展权限面板撤销选定授权 | 已提供 · `extension revoke` | 已提供 · `alcomd_revoke_extension_permission` |
+| `extensions.setGrant` | 已提供 · 扩展权限面板授予选定权限 | 已提供 · `extension grant` | 已提供 · `alcomd_grant_extension_permission` |
+| `extensions.ui.close` | 已提供 · 离开扩展页面或关闭视图后释放原会话 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
+| `extensions.ui.dispatch` | 已提供 · 在扩展视图内操作控件，发送会话、快照修订和事件序号 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
+| `extensions.ui.open` | 已提供 · 从导航或扩展页打开界面并取得会话 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
+| `extensions.ui.refresh` | 缺少入口 · 桥接层声明了刷新，实际视图只打开、分派和关闭；没有刷新调用点 | 协议专用 · 可移植视图绑定原 Core IPC 连接，独立 CLI 命令结束时连接关闭 | 协议专用 · MCP 工具没有该可移植视图的连接及控件状态，MCP 可调用独立签名工具 |
 | `logs.read` | 已提供 · 日志路由按条件查询并续页 | 缺少入口 · CLI 没有读取 Core 操作日志的子命令 | 缺少入口 · 工具目录没有读取 Core 操作日志的工具 |
 | `operations.cancel` | 已提供 · 任务面板及创建项目进度窗口取消当前任务 | 已提供 · operation cancel | 已提供 · alcomd_cancel_operation；自己的任务、预期修订和幂等键 |
 | `operations.get` | 已提供 · 任务条目或等待操作完成时按 ID 查询 | 已提供 · operation get；follow 轮询同一任务 | 部分可达 · alcomd_get_operation；返回任务状态和修订，部分任务不返回类型专属结果 |
@@ -165,4 +165,4 @@
 | 仓库、设置与同步 | 仓库清单保持自身分页、排序与完整收录范围。更新设置时对照部分字段、显式 false、预期修订和关闭预发布可见性后的偏好复位。仓库登记重试绑定调用者、原来源和原键。[GUI 仓库文件导入导出](../../apps/alcomd-gui/src/RepositoryListDialog.tsx) · [MCP 仓库适配](../../apps/alcomd-mcp/src/tools/repositories.rs) · [跨客户端仓库 RPC](../../crates/alcomd-testing/tests/m7_repository_list_rpc.rs) · [GUI 设置回归](../../apps/alcomd-gui/tests/browser/m7-settings-autosave.spec.ts) · [CLI 真实 IPC](../../apps/alcomd-cli/tests/m1_cli.rs) |
 | 模板、备份与 Unity | 对照模板 ID、ZIP 目标、明确覆盖的选项、启动参数及原修订。GUI 文件选择和 CLI/MCP 路径输入最终指向同一个 Core 目标。[GUI 创建与恢复](../../apps/alcomd-gui/src/ProjectCreationDialogs.tsx) · [GUI 模板工作区](../../apps/alcomd-gui/src/ProjectTemplatesWorkspace.tsx) · [备份用例](../../apps/alcomd-gui/tests/browser/m7-project-backup-defaults.spec.ts) · [MCP 模板测试](../../apps/alcomd-mcp/tests/support/project_assets_flow.rs) · [真实 Unity RPC](../../crates/alcomd-testing/tests/m5_unity_rpc.rs) |
 | 日志、事件与 GUI 扩展 | 日志、资源变化和调用者任务分别观察。检查订阅续接、会话 ID、快照修订、事件序号和显式授权。适配器未接入的按钮不能通过调用测试桩代替。[GUI 事件消费](../../apps/alcomd-gui/src/core-events.ts) · [日志页面](../../apps/alcomd-gui/src/OperationLogsRoute.tsx) · [GUI 便携界面分派](../../apps/alcomd-gui/src/App.tsx) · [会话交互测试](../../apps/alcomd-gui/tests/browser/m7-h4-portable.spec.ts) |
-| 连接与管理服务 | 管理扩展的 WIT 调用和原生 RPC 可以到达同一管理用例。检查真实客户端、凭据代次、授权请求归属、一次性展示、撤销和扩展沙箱。OAuth 授权端的输入和状态与原生管理请求分开验证。[管理扩展](../../extensions/first-party/alcomd-extension-mcp/backend/src/management.rs) · [CLI 授权管理](../../apps/alcomd-cli/src/m8_oauth.rs) · [HTTP 端点](../../apps/alcomd-mcp/src/http/oauth.rs) · [传输观测](../../apps/alcomd-mcp/src/observations.rs) · [OAuth 真实工具测试](../../apps/alcomd-mcp/tests/support/oauth_flow.rs) · [扩展工具集成测试](../../apps/alcomd-mcp/tests/support/extension_tools_flow.rs) |
+| 连接与管理服务 | 第三方扩展的 WIT 调用和原生 RPC 可以到达同一管理用例。检查真实客户端、凭据代次、授权请求归属、一次性展示、撤销和扩展沙箱。OAuth 授权端的输入和状态与原生管理请求分开验证。[第三方管理接口测试](../../crates/alcomd-testing/fixtures/m8/management-guest-source/src/lib.rs) · [CLI 授权管理](../../apps/alcomd-cli/src/m8_oauth.rs) · [HTTP 端点](../../apps/alcomd-mcp/src/http/oauth.rs) · [传输观测](../../apps/alcomd-mcp/src/observations.rs) · [OAuth 真实工具测试](../../apps/alcomd-mcp/tests/support/oauth_flow.rs) · [扩展工具集成测试](../../apps/alcomd-mcp/tests/support/extension_tools_flow.rs) |

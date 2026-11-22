@@ -222,10 +222,10 @@ impl ui::Guest for Guest {
                 ui::UiAction::Activate(action) if action == "revoke" => view.confirming = true,
                 ui::UiAction::Activate(action) if action == "cancel" => view.confirming = false,
                 ui::UiAction::Activate(action) if action == "confirm" && view.confirming => {
-                    if let (Some(id), Ok(page)) = (&view.selected, clients::list(None, Some(50))) {
-                        if let Some(client) = page.items.into_iter().find(|c| &c.client_id == id) {
-                            let _ = clients::revoke(id, client.revision, &key);
-                        }
+                    if let (Some(id), Ok(page)) = (&view.selected, clients::list(None, Some(50)))
+                        && let Some(client) = page.items.into_iter().find(|c| &c.client_id == id)
+                    {
+                        let _ = clients::revoke(id, client.revision, &key);
                     }
                     view.confirming = false;
                 }
@@ -235,10 +235,9 @@ impl ui::Guest for Guest {
                         .into_iter()
                         .find(|f| f.field_id == "name")
                         .map(|f| f.value)
+                        && let Ok(record) = clients::create(&name, &key)
                     {
-                        if let Ok(record) = clients::create(&name, &key) {
-                            view.selected = Some(record.client_id);
-                        }
+                        view.selected = Some(record.client_id);
                     }
                 }
                 _ => {}
