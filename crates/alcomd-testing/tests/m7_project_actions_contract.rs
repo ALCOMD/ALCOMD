@@ -518,10 +518,15 @@ fn p7_delete_directory_vectors_freeze_fail_closed_recovery_boundaries() {
 #[test]
 fn official_gui_local_project_affordances_remain_closed() {
     assert!(GUI_RUST_ADAPTER.contains("async fn gui_open_project_directory("));
-    assert!(GUI_RUST_ADAPTER.contains("project_id: String"));
-    assert!(GUI_RUST_ADAPTER.contains("client.project_get(project_id).await"));
-    assert!(GUI_RUST_ADAPTER.contains("external_filesystem_path(&root)"));
-    assert!(GUI_RUST_ADAPTER.contains("open::that(path.as_os_str())"));
+    assert!(
+        GUI_RUST_ADAPTER.contains("params: alcomd_protocol::DesktopOpenProjectDirectoryParams")
+    );
+    assert!(GUI_RUST_ADAPTER.contains(".desktop_open_project_directory(params)"));
+    let desktop = include_str!("../../alcomd-platform/src/desktop.rs");
+    assert!(
+        desktop.contains("open::that(crate::external_filesystem_path(project_root).as_os_str())")
+    );
+    assert!(!desktop.contains("open::with"));
     assert!(!GUI_RUST_ADAPTER.contains("open::with"));
     let directory_command = GUI_RUST_ADAPTER
         .split("async fn gui_select_directory(")
