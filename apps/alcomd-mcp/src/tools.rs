@@ -652,19 +652,12 @@ pub async fn execute(
         Ok(value) => value,
         Err(error) => return Ok(failure(Failure::Remote(error, false))),
     };
-    let recovery = descriptor.is_none()
-        && params.name.starts_with("alcomd_ext_")
-        && params
-            .arguments
-            .as_ref()
-            .is_some_and(|a| a.contains_key("idempotency_key"));
-    if descriptor.as_ref().is_some_and(|d| d.origin.is_some()) || recovery {
+    if let Some(descriptor) = descriptor.as_ref().filter(|entry| entry.origin.is_some()) {
         if params.input_responses.is_some() || params.request_state.is_some() {
             return Err(invalid());
         }
         let arguments = Value::Object(params.arguments.unwrap_or_default());
-        let writing = descriptor.as_ref().is_none_or(descriptor_writes)
-            || arguments.get("idempotency_key").is_some();
+        let writing = descriptor_writes(descriptor) || arguments.get("idempotency_key").is_some();
         let value = match client
             .extension_mcp_tools_call(rpc::ExtensionMcpToolsCallParams {
                 name: params.name.into_owned(),

@@ -785,9 +785,30 @@ async fn permissions_keyset_pages_reject_revocation_and_package_snapshot_changes
 #[tokio::test]
 async fn shared_extension_permissions_are_visible_to_another_caller_and_require_valid_pages() {
     let (store, path, package) = permissions_fixture("permissions-shared").await;
-    let other = PrincipalId::parse("fixture:other-operator").expect("second caller");
+    let unrelated = PrincipalId::parse("fixture:other-operator").expect("unrelated principal");
+    assert_eq!(
+        store
+            .list_permissions(unrelated, package.extension_id.clone(), None, 100)
+            .await
+            .expect_err("unrelated installation is not visible")
+            .code(),
+        M6ErrorCode::NotInstalled
+    );
+    let other = alcomd_application::McpIdentityApplication::new(store.clone())
+        .write(
+            &alcomd_application::AccessContext::local_owner(),
+            "register-reader".into(),
+            alcomd_application::McpIdentityWrite::Create {
+                name: "Registered reader".into(),
+            },
+            1,
+        )
+        .await
+        .expect("real client registration")
+        .client
+        .principal_id;
     let shared = store
-        .list_permissions(other.clone(), package.extension_id.clone(), None, 100)
+        .list_permissions(other, package.extension_id.clone(), None, 100)
         .await
         .expect("shared installation");
     let original = store
