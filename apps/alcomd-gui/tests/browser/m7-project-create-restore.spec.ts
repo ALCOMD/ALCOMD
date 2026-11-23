@@ -80,7 +80,13 @@ for (const family of ["Avatars", "Worlds"]) {
         await expect(dialog).toBeHidden();
         const requests = await page.evaluate(() => window.templateRequests.filter((r) => r.method === "projects.create"));
         expect(requests).toHaveLength(2);
-        for (const { params } of requests) expect(params).toMatchObject({ name: "Unity 6 sample", unityVersion: "6000.0.67f1", template: { id: "com.vrclearn.alcomd.templates.vrchat." + family.toLowerCase() + ".6000" } });
+        for (const { params } of requests) {
+            expect(params).toMatchObject({
+                target: { kind: "default", name: "Unity 6 sample" },
+                unityVersion: "6000.0.67f1",
+                template: { id: "com.vrclearn.alcomd.templates.vrchat." + family.toLowerCase() + ".6000" }
+            });
+        }
     });
 }
 
