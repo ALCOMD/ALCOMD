@@ -56,8 +56,8 @@ pub(super) fn create_plan(
             target_installation_revision,target_installation_identity,
             target_installation_snapshot_json,writer_evidence_revision,writer_evidence_json,
             classification,preparation_profile,plan_fingerprint,request_fingerprint,
-            plan_idempotency_key,created_at_ms,expires_at_ms,state,operation_id
-         ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,'unapplied',NULL)",
+            plan_idempotency_key,created_at_ms,expires_at_ms,target_sdk_version,state,operation_id
+         ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,'unapplied',NULL)",
         params![
             draft.plan_id.to_string(), owner.as_str(), draft.project.project_id.to_string(),
             integer(draft.project.revision.get())?, draft.source_unity_version,
@@ -71,7 +71,7 @@ pub(super) fn create_plan(
             json(&draft.writer_evidence)?, draft.classification.as_str(),
             draft.preparation_profile, draft.plan_fingerprint, draft.request_fingerprint,
             draft.plan_idempotency_key.as_str(), integer(draft.created_at_ms)?,
-            integer(draft.expires_at_ms)?,
+            integer(draft.expires_at_ms)?, draft.target_sdk_version,
         ],
     ).map_err(failure)?;
     let plan = load_plan(&transaction, owner, draft.plan_id)?;
@@ -608,7 +608,7 @@ fn load_plan(
                 project_root_identity,project_version_marker_sha256,target_unity_version,
                 target_revision_metadata,target_installation_snapshot_json,writer_evidence_json,
                 classification,preparation_profile,plan_fingerprint,request_fingerprint,
-                plan_idempotency_key,created_at_ms,expires_at_ms
+                plan_idempotency_key,created_at_ms,expires_at_ms,target_sdk_version
          FROM project_unity_migration_plans WHERE plan_id=?1 AND owner_principal_id=?2",
             params![plan_id.to_string(), owner.as_str()],
             |row| plan_from_row(row, plan_id, owner.clone()),
@@ -648,6 +648,7 @@ fn plan_from_row(
             writer_evidence,
             classification: parse_classification(&row.get::<_, String>(9)?)?,
             preparation_profile: row.get(10)?,
+            target_sdk_version: row.get(16)?,
             plan_fingerprint: row.get(11)?,
             request_fingerprint,
             plan_idempotency_key: key,

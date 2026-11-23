@@ -1173,10 +1173,14 @@ async fn apply(f: &Fixture, plan: PackagePlanRecord) -> OperationRecord {
         )
         .await
         .expect("owned VPM regression fixture succeeds");
+    wait_for_operation(f, operation.operation_id).await
+}
+
+async fn wait_for_operation(f: &Fixture, operation_id: OperationId) -> OperationRecord {
     for _ in 0..1000 {
         let result = f
             .store
-            .get_operation(PrincipalId::local_owner(), operation.operation_id)
+            .get_operation(PrincipalId::local_owner(), operation_id)
             .await
             .expect("owned VPM regression fixture succeeds");
         if result.state.is_terminal() {
@@ -1749,6 +1753,91 @@ async fn closed_local_source_is_excluded_and_invalidates_a_prepared_plan() {
     f.settings(|settings| settings.hide_local_user_packages = false)
         .await;
     assert_eq!(apply(&f, plan).await.state, OperationState::Succeeded);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unity6_creation_checks_prerelease_visibility_before_writing_the_project() {
+    const SDK: &str = "3.11.0-beta.1";
+    let mut manifests = Vec::new();
+    for version in ["3.10.6", SDK] {
+        manifests.push(package("com.vrchat.base", version, json!({})));
+        for family in ["com.vrchat.avatars", "com.vrchat.worlds"] {
+            manifests.push(package(
+                family,
+                version,
+                json!({ "com.vrchat.base": version }),
+            ));
+        }
+    }
+    let f = fixture("unity6-create-visibility", empty(), manifests, None).await;
+    let access = AccessContext::local_owner();
+    let engine = alcomd_vpm::ProjectCreateEngine::new(
+        f.store.clone(),
+        f.reader.clone(),
+        f.directory.join("cache"),
+    )
+    .expect("project create engine");
+    let app = ProjectCreateApplication::with_locks(
+        f.store.clone(),
+        engine,
+        Arc::new(ResourceLockCoordinator::default()),
+    );
+    app.seed_builtin_templates()
+        .await
+        .expect("Unity 6 templates");
+    let templates = app
+        .list_templates(&access, None, None)
+        .await
+        .expect("templates")
+        .templates;
+    for show in [false, true] {
+        f.settings(|s| {
+            s.show_prerelease = show;
+            s.prefer_prerelease = false;
+        })
+        .await;
+        for family in ["avatars", "worlds"] {
+            let id = format!("com.vrclearn.alcomd.templates.vrchat.{family}.6000");
+            let template = templates
+                .iter()
+                .find(|t| t.declaration.id == id)
+                .expect("Unity 6 template");
+            let target = f.directory.join(family);
+            let input = ProjectCreateInput {
+                name: family.to_owned(),
+                target_parent: f.directory.to_string_lossy().into_owned(),
+                unity_version: "6000.0.67f1".to_owned(),
+                template: Some(ProjectTemplateRef {
+                    id,
+                    revision: template.revision,
+                }),
+            };
+            let result = app
+                .create(&access, input, key(&format!("create-{family}")))
+                .await;
+            if show {
+                let accepted = result.expect("creation can be retried with its original key");
+                let completed = wait_for_operation(&f, accepted.operation_id).await;
+                assert_eq!(completed.state, OperationState::Succeeded, "{completed:?}");
+                let manifest: Value = serde_json::from_slice(
+                    &fs::read(target.join("Packages/vpm-manifest.json"))
+                        .expect("created project has a VPM manifest"),
+                )
+                .expect("created VPM manifest is valid JSON");
+                for package_id in ["com.vrchat.base".to_owned(), format!("com.vrchat.{family}")] {
+                    assert_eq!(manifest["locked"][&package_id]["version"], SDK);
+                }
+            } else {
+                assert_eq!(
+                    result
+                        .expect_err("hidden prereleases block creation")
+                        .code(),
+                    ProjectCreateErrorCode::PrereleasePackagesHidden
+                );
+                assert!(!target.exists());
+            }
+        }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

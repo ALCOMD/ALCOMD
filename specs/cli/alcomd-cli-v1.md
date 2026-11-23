@@ -70,6 +70,8 @@ NDJSON。普通日志不得污染任何 machine stdout。
 选用模板时同时提供 `--template-id <id>` 和 `--template-revision <revision>`。
 命令直接接受任务，支持 `--no-wait`，不接受 `--dry-run`。
 
+`project migrate-unity` 将受支持的 2022 Avatar 或 Worlds 迁移到 Unity `6000.0.67f1` 时，默认复制到同级目录 `<原工程名>-Unity6`。`--copy-name` 可指定副本目录名。`--in-place` 在原目录执行，确认前应先备份。`--dry-run` 在副本模式返回 `sourcePlan` 和 `copyPlan`。确认执行后，CLI 等待复制成功，读取副本项目 ID 并重新制定迁移计划。结果中的 `copy` 保存复制回执，`migration` 保存迁移结果或 `--no-wait` 请求的任务回执。跟踪已接受的复制或迁移任务时，CLI 遇到临时读取错误会重新连接，继续查询原任务 ID。若迁移失败，副本保留，可通过任务列表读取复制结果，在该副本上重新计划。按 ID 执行 `project apply-unity-migration` 时，Unity 6 路线需要 `--copy-operation-id` 对应已完成的副本，或用 `--in-place` 确认原地写入。内容经 Unity 6 上传后，再次更新同一内容需要 Unity 6。
+
 ## completion
 
 `completion <shell>` 只根据静态 command tree 向 stdout 输出 script，不连接/启动 daemon，不访问

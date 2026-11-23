@@ -236,6 +236,38 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         .expect("Core copy rejection"),
         "project_copy_target_exists",
     );
+    let missing = uuid::Uuid::new_v4().to_string();
+    error(
+        call(
+            &sdk,
+            &mut trace,
+            "plan_project_unity_migration",
+            json!({
+                "project_id": project_id,
+                "target_installation_id": missing,
+                "expected_project_revision": registered["project"]["revision"],
+                "idempotency_key": "migration-missing-editor"
+            }),
+        )
+        .await
+        .expect("Core migration preflight"),
+        "unity_installation_not_found",
+    );
+    error(
+        call(
+            &sdk,
+            &mut trace,
+            "apply_project_unity_migration",
+            json!({
+                "plan_id": missing,
+                "idempotency_key": "migration-missing-plan",
+                "confirm": true
+            }),
+        )
+        .await
+        .expect("Core plan lookup"),
+        "project_unity_migration_plan_not_found",
+    );
     let archive = external.join("第一份 备份.zip");
     let backup = json!({
         "project_id": project_id,

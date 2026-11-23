@@ -535,11 +535,12 @@ class DeterministicGuiClient implements GuiRpcClient {
     private pendingProject?: ReturnType<typeof project>;
     private pendingDeleteProjectId?: string;
     private pendingMigrationTarget?: string;
+    private failNextMigration = query.has("migration-fails-once");
     private deletedProjectIds = new Set<string>();
     private createdProjects: ReturnType<typeof project>[] = [];
     private favoriteConflictPending = true;
     private currentProjectRevision = 2;
-    private currentUnityVersion = "2022.3.22f1";
+    private currentUnityVersion = query.has("existingUnity6") ? "6000.0.67f1" : "2022.3.22f1";
     private launchArguments = query.has("project-arguments") ? JSON.parse(query.get("project-arguments")!) as string[] : ["-logFile"];
     private launchConfigRevision = query.has("launch-inherit") ? 0 : 2;
     private snapshotRevision = 1;
@@ -644,9 +645,11 @@ class DeterministicGuiClient implements GuiRpcClient {
         const project = createdProject ?? this.pendingProject;
         const deleting = this.pendingDeleteProjectId;
         const migration = this.pendingMigrationTarget;
+        const failMigration = kind === "projects.migrateUnity" && this.failNextMigration;
+        if (failMigration) this.failNextMigration = false;
         browserCoreEvents.emit("operation", operationId, "operation.created", 1);
         if (!query.has("hold-core-operation")) setTimeout(() => {
-            const state = this.mode === "failed" ? "failed" : this.mode === "cancelled" ? "cancelled" : "succeeded";
+            const state = this.mode === "failed" || failMigration ? "failed" : this.mode === "cancelled" ? "cancelled" : "succeeded";
             if (state === "succeeded" && project && !this.createdProjects.some((candidate) => candidate.projectId === project.projectId)) this.createdProjects.push(project);
             if (state === "succeeded" && deleting) this.deletedProjectIds.add(deleting);
             if (state === "succeeded" && migration) { this.currentUnityVersion = migration; this.currentProjectRevision++; }
@@ -1590,13 +1593,15 @@ class DeterministicGuiClient implements GuiRpcClient {
         return new Promise((resolve) => window.setTimeout(() => resolve({ launch: acceptedLaunch, replayed: false }), 100));
     }
     projectPlanUnityMigration(_projectId: string, targetInstallationId: string): ReturnType<GuiRpcClient["projectPlanUnityMigration"]> {
-        window.unityRequests.push({ method: "projects.planUnityMigration", params: { projectId: _projectId, targetInstallationId } });
-        const targetUnityVersion = targetInstallationId === MIGRATION_INSTALLATION_ID ? "2022.3.23f1" : "2022.3.22f1";
-        return this.value({ kind: "planned", replayed: false, plan: { planId: PLAN_ID, projectId: PROJECT_ID, sourceUnityVersion: "2022.3.22f1", targetUnityVersion, targetInstallationId, classification: { kind: "patch_or_minor_upgrade", supportedForApply: true }, expiresAtMs: 1_800_000_000_000 } });
+        const planId = query.has("unity6") ? crypto.randomUUID() : PLAN_ID;
+        window.unityRequests.push({ method: "projects.planUnityMigration", params: { projectId: _projectId, targetInstallationId, planId } });
+        const targetUnityVersion = targetInstallationId === MIGRATION_INSTALLATION_ID ? migrationInstallation().unityVersion : "2022.3.22f1";
+        return this.value({ kind: "planned", replayed: false, plan: { planId, projectId: _projectId, ...(query.has("unity6") ? { targetSdkVersion: "3.11.0-beta.1" } : {}), sourceUnityVersion: "2022.3.22f1", targetUnityVersion, targetInstallationId, classification: { kind: query.has("unity6") ? "major_upgrade" : "patch_or_minor_upgrade", supportedForApply: true }, expiresAtMs: 1_800_000_000_000 } });
     }
-    projectApplyUnityMigration(): ReturnType<GuiRpcClient["projectApplyUnityMigration"]> {
-        this.pendingMigrationTarget = "2022.3.23f1";
-        return this.value({ operationId: this.beginOperation(), replayed: false });
+    projectApplyUnityMigration(planId: string): ReturnType<GuiRpcClient["projectApplyUnityMigration"]> {
+        window.unityRequests.push({ method: "projects.applyUnityMigration", params: { planId } });
+        this.pendingMigrationTarget = migrationInstallation().unityVersion;
+        return this.value({ operationId: this.beginOperation("projects.migrateUnity"), replayed: false });
     }
 
     async projectInventory(params: Parameters<GuiRpcClient["projectInventory"]>[0]): ReturnType<GuiRpcClient["projectInventory"]> {
@@ -1762,6 +1767,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             const record = this.projectTemplates.find(({ id }) => id === requested.id)
                 ?? (query.has("template-pages") ? Array.from({ length: 101 }, (_, index) => catalogTemplate(index + 1)).find(({ id }) => id === requested.id) : undefined);
             if (record?.revision !== requested.revision) throw { code: "revision_conflict" };
+            if (record.editorVersion === "6000.0.67f1" && !this.settings.settings.packages.showPrerelease) throw { code: "prerelease_packages_hidden" };
             if (record.editorVersion !== undefined && record.editorVersion !== input.unityVersion) throw { code: "invalid_request" };
         }
         const projectId = this.creationRequests.size === 0 ? CREATED_PROJECT_ID : crypto.randomUUID();
@@ -1897,23 +1903,23 @@ function project(projectId = PROJECT_ID, name = "Sample", favorite = false) {
     const directoryState: ProjectSnapshot["directoryState"] = window.omitProjectDirectoryState ? undefined : observed === "available" || observed === "missing" || observed === "unavailable" ? observed : undefined;
     const rootPath = query.has("windows-paths") ? `\\\\?\\C:\\Projects\\${name}` : projectId === PROJECT_ID && name === "Sample" ? "<private-project>" : `C:\\Fixture\\${name}`;
     const displayName = rootPath === "<private-project>" ? rootPath : name;
-    return { projectId, directoryState, registeredAtMs: 1_690_000_000_000, lastModifiedAtMs: 1_700_000_000_000, favorite, rootPath, displayName, projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], revision: 2 };
+    return { projectId, directoryState, registeredAtMs: 1_690_000_000_000, lastModifiedAtMs: 1_700_000_000_000, favorite, rootPath, displayName, projectType: "avatars", unityVersion: query.has("existingUnity6") ? "6000.0.67f1" : "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], revision: 2 };
 }
 function repository() { return { repositoryId: REPOSITORY_ID, source: { kind: "remote" as const, url: "https://packages.example.invalid/index.json" }, actions: { canRemove: true, canEditAuthentication: true }, declaredId: "example", name: "Example packages", declaredUrl: "https://packages.example.invalid/index.json", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function localRepository() { return { repositoryId: LOCAL_REPOSITORY_ID, source: { kind: "local" as const, path: "<private-local-repository>" }, actions: { canRemove: true, canEditAuthentication: false }, declaredId: "local-example", name: "Local packages", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function userPackage(revision = 1) { return { userPackageId: USER_PACKAGE_ID, sourceRootPath: "<private-user-package>", packageId: "com.example.avatar", version: "1.2.3", displayName: "Local avatar tools", revision, archiveSha256: HASH, createdAtMs: 1_700_000_000_000, updatedAtMs: revision === 1 ? 1_700_000_000_000 : 1_700_000_001_000 }; }
-function installation() { return { installationId: INSTALLATION_ID, executablePath: query.has("windows-paths") ? "\\\\?\\C:\\Program Files\\Unity\\Hub\\Editor\\2022.3.22f1\\Editor\\Unity.exe" : "<private-editor>", filesystemIdentity: "opaque", unityVersion: "2022.3.22f1", architecture: "x86_64", sourceKind: "manual", revision: 2, observedAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
-function migrationInstallation() { return { ...installation(), installationId: MIGRATION_INSTALLATION_ID, executablePath: "<private-editor-migration>", filesystemIdentity: "opaque-migration", unityVersion: "2022.3.23f1" }; }
+function installation() { return { installationId: INSTALLATION_ID, executablePath: query.has("windows-paths") ? "\\\\?\\C:\\Program Files\\Unity\\Hub\\Editor\\2022.3.22f1\\Editor\\Unity.exe" : "<private-editor>", filesystemIdentity: "opaque", unityVersion: query.has("existingUnity6") ? "6000.0.67f1" : "2022.3.22f1", architecture: "x86_64", sourceKind: "manual", revision: 2, observedAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
+function migrationInstallation() { return { ...installation(), installationId: MIGRATION_INSTALLATION_ID, executablePath: "<private-editor-migration>", filesystemIdentity: "opaque-migration", unityVersion: query.has("unity6") ? "6000.0.67f1" : "2022.3.23f1" }; }
 function launchConfig(arguments_: string[], revision: number) { return { projectId: PROJECT_ID, arguments: arguments_, revision, updatedAtMs: 1_700_000_000_000 }; }
 function launch() { return { launchId: "00000000-0000-4000-8000-000000000107", projectId: PROJECT_ID, installationId: INSTALLATION_ID, state: "opening", spawnAccepted: true, createdAtMs: 1_700_000_000_000 }; }
 function builtinTemplates(): ProjectTemplateRecord[] {
-    const versions = ["2022.3.22f1", "2019.4.31f1"];
+    const versions = ["2022.3.22f1", "2019.4.31f1", "6000.0.67f1"];
     return [{ id: "com.vrclearn.alcomd.templates.blank", name: "Blank", revision: 1, locked: true }, ...[false, true].flatMap((worlds) => versions.map((editorVersion, index) => {
         const id = worlds ? WORLD_TEMPLATE_ID : TEMPLATE_ID;
         const year = editorVersion.slice(0, 4);
         return { id: id + "." + year,
-            name: `${worlds ? "VRChat Worlds" : "VRChat Avatars"} ${year}`, editorVersion,
-            revision: 2 + index + (worlds ? versions.length : 0), locked: true };
+            name: `VRChat ${worlds ? "Worlds" : "Avatars"} ${year === "6000" ? "· " + editorVersion : year}`, editorVersion,
+            revision: year === "6000" ? (worlds ? 7 : 6) : 2 + index + (worlds ? 2 : 0), locked: true };
     }))];
 }
 

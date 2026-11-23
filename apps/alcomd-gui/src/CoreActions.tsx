@@ -28,7 +28,7 @@ import { DialogCloseButton, LoadingButton, Button, Checkbox, Dialog as MaterialD
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch, useUnityWindowAction, type ProjectUnityLaunchAction } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
-import { displayPath } from "./display-path";
+import { displayPath, displayChildPath } from "./display-path";
 import { backupCompressionOptions } from "./backup-compression";
 import { isBuiltinRepository, repositoryDefaultName, repositoryDisplayName } from "./repository-display";
 import type { RepositoryLinkDraft } from "./repository-link";
@@ -555,7 +555,82 @@ export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, 
     </MaterialDialog>;
 }
 
-export function ProjectUnityActions({ afterMigrationOpen = false, client, launchConfig, launchOptions, project, onChanged }: ActionProps & { afterMigrationOpen?: boolean; launchConfig: ProjectUnityLaunchConfigResult; launchOptions: UnityLaunchOptionsResult; project: ProjectSnapshot }) {
+function Unity6MigrationDialog({ client, initialPlan, project, onClose, onFinished }: {
+    client: GuiRpcClient; initialPlan: ProjectUnityMigrationPlan; project: ProjectSnapshot;
+    onClose(): void; onFinished(id: string): void;
+}) {
+    const { t } = useTranslation();
+    const write = useGuiWrite(client, initialPlan.planId);
+    const [inPlace, setInPlace] = useState(false);
+    const source = project.rootPath;
+    const split = Math.max(source.lastIndexOf("/"), source.lastIndexOf("\\"));
+    const parent = source.slice(0, split + 1);
+    const [leaf, setLeaf] = useState(source.slice(split + 1) + "-Unity6");
+    const [copyPlan, setCopyPlan] = useState<Awaited<ReturnType<GuiRpcClient["projectPlanCopy"]>>["plan"]>();
+    const [copy, setCopy] = useState<Awaited<ReturnType<GuiRpcClient["projectApplyCopy"]>>>();
+    const [copyComplete, setCopyComplete] = useState(false);
+    const [reviewedMigration, setReviewedMigration] = useState<ProjectUnityMigrationPlan>();
+    const [migration, setMigration] = useState<string>();
+    const [migrationState, setMigrationState] = useState<string>();
+    const done = migrationState === "succeeded";
+    const needsReview = migrationState === "failed" || migrationState === "cancelled";
+    const [busy, setBusy] = useState(false);
+    const pending = useRef(false);
+    const [error, setError] = useState<RpcError>();
+    const selected = reviewedMigration ?? initialPlan;
+    const destination = inPlace ? displayPath(source) : displayChildPath(copyPlan?.targetParentCanonicalPath ?? parent, copyPlan?.normalizedTargetLeaf ?? leaf);
+    const advance = async () => {
+        if (pending.current || project.revision === undefined) return;
+        pending.current = true;
+        setBusy(true); setError(undefined);
+        try {
+            if (!inPlace && copyPlan === undefined) {
+                setCopyPlan((await write("projectPlanCopy", initialPlan.projectId, project.revision, { kind: "absolute", parentPath: parent, name: leaf })).plan);
+            } else if (!inPlace && copyPlan !== undefined && copy === undefined) {
+                const fresh = await write("projectPlanUnityMigration", initialPlan.projectId, initialPlan.targetInstallationId, project.revision);
+                if (fresh.kind !== "planned" || fresh.plan.targetSdkVersion !== initialPlan.targetSdkVersion) throw { code: "project_unity_migration_plan_stale" };
+                setCopy(await client.projectApplyCopy(copyPlan.planId, copyPlan.sourceProjectRevision, "inline"));
+            } else if (needsReview || (copyComplete && reviewedMigration === undefined)) {
+                const targetId = copy?.targetProjectId ?? initialPlan.projectId;
+                const target = (await client.projectGet(targetId)).project;
+                if (target.revision === undefined) throw { code: "project_not_registered" };
+                const result = await write("projectPlanUnityMigration", targetId, initialPlan.targetInstallationId, target.revision);
+                if (result.kind !== "planned" || result.plan.targetSdkVersion === undefined) throw { code: "project_unity_migration_plan_stale" };
+                setReviewedMigration(result.plan);
+                setMigration(undefined);
+                setMigrationState(undefined);
+            } else if (inPlace || reviewedMigration !== undefined) {
+                setMigration((await client.projectApplyUnityMigration(selected.planId, selected.planId, "inline")).operationId);
+            }
+        } catch (caught: unknown) { setError(safeError(caught)); }
+        finally { pending.current = false; setBusy(false); }
+    };
+    const action = needsReview ? "Review migration" : inPlace || reviewedMigration ? "Apply reviewed plan" : copyComplete ? "Review migration" : copyPlan ? "Copy project" : "Review copy";
+    return <ModalDialog open dismissible={!busy} onClose={onClose} title={t("Review Unity migration")}>
+        {copy === undefined && migration === undefined && <Select label={t("Migration target")} disabled={busy}
+            value={inPlace ? "original" : "copy"} onChange={(value) => { setInPlace(value === "original"); setCopyPlan(undefined); setReviewedMigration(undefined); setError(undefined); }}
+            options={[{ value: "copy", label: t("Migrate a copy") }, { value: "original", label: t("Upgrade in place") }]} />}
+        {!inPlace && copyPlan === undefined && <TextField label={t("Copy folder name")} value={leaf} disabled={busy} onInput={setLeaf} />}
+        <dl className="dialog-summary">
+            <div><dt>{t("Source project")}</dt><dd title={displayPath(source)}>{displayPath(source)}</dd></div>
+            <div><dt>{t("Destination")}</dt><dd title={destination}>{destination}</dd></div>
+            <div><dt>Unity</dt><dd>{selected.sourceUnityVersion} → {selected.targetUnityVersion}</dd></div>
+            <div><dt>{t("VRChat SDK")}</dt><dd>{selected.targetSdkVersion}</dd></div>
+        </dl>
+        {inPlace && <p>{t("Back up this project before upgrading in place.")}</p>}
+        <p>{t("After uploading this avatar or world with Unity 6, you can no longer update it with Unity 2022.")}</p>
+        {copy && <OperationFollow client={client} operationId={copy.operationId} title={t("Copy project")} onSnapshot={(op) => setCopyComplete(op.state === "succeeded")} />}
+        {migration && <OperationFollow client={client} operationId={migration} title={t("Migrate Project Unity version")} onSnapshot={(op) => setMigrationState(op.state)} />}
+        {done && <p>{t("Complete the VRChat SDK Upgrade Wizard in Unity.")}</p>}
+        {error && <p role="alert">{t(requestErrorMessage(error.code))} <code>{error.code}</code></p>}
+        <div className="dialog-actions"><DialogCloseButton disabled={busy} variant="tonal">{t("Close")}</DialogCloseButton>
+            {done ? <Button type="button" onClick={() => onFinished(selected.projectId)}>{t("Open project details")}</Button> :
+                <Button type="button" disabled={busy || (migration !== undefined && !needsReview) || (!inPlace && (!leaf.trim() || (copy !== undefined && !copyComplete)))} onClick={() => void advance()}>{t(action)}</Button>}
+        </div>
+    </ModalDialog>;
+}
+
+export function ProjectUnityActions({ afterMigrationOpen = false, navigate, client, launchConfig, launchOptions, project, onChanged }: ActionProps & { navigate(path: string): void; afterMigrationOpen?: boolean; launchConfig: ProjectUnityLaunchConfigResult; launchOptions: UnityLaunchOptionsResult; project: ProjectSnapshot }) {
     const { t } = useTranslation();
     const writeRequest = useGuiWrite(client, project.projectId);
     const canLaunch = useCapability(capabilities.unityLaunch);
@@ -664,7 +739,10 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, launch
             <Select id="project-unity-version" label={t("Target Unity version")} onChange={chooseTargetVersion} options={[{ label: t("Current · {version}", { version: launchOptions.projectUnityVersion }), value: "" }, ...migrationVersions.map(({ unityVersion }) => ({ label: unityVersion, value: unityVersion }))]} value={targetVersion} />
             {targetInstallations.length > 1 ? <Select id="migration-installation" label={t("Target Unity installation")} onChange={setTargetInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...targetInstallations.map((item) => ({ label: `${targetVersion} · ${item.architecture}`, value: item.installationId }))]} value={targetInstallationId} /> : null}
             <Button disabled={!canMigrate || feedback.busy || targetInstallationId.length === 0 || projectRevision === undefined} onClick={() => void planMigration()} title={capabilityUnavailableTitle(canMigrate, capabilities.projectsUnityMigration, t)} type="button" variant="tonal">{t("Review migration")}</Button>
-            <PlanDialog applyDisabled={migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => setMigrationPlan(undefined)} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
+            {migrationPlan?.targetSdkVersion === undefined ? null : <Unity6MigrationDialog key={migrationPlan.planId}
+                client={client} initialPlan={migrationPlan} project={project} onClose={() => setMigrationPlan(undefined)}
+                onFinished={(id) => { setMigrationPlan(undefined); onChanged?.(); navigate("/projects/" + encodeURIComponent(id) + "/packages"); }} />}
+            <PlanDialog applyDisabled={migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => setMigrationPlan(undefined)} open={migrationPlan !== undefined && migrationPlan.targetSdkVersion === undefined} title={t("Review Unity migration")}>
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
                 {feedback.error === undefined ? null : <div role="alert" data-notification-error={feedback.error.code}><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
             </PlanDialog>
@@ -770,7 +848,10 @@ export function ProjectUnityWorkspaceActions({ client, launchOptions, navigate, 
                     <Button disabled={migrationInstallationId.length === 0 || feedback.busy} onClick={() => void planMigration(migrationInstallationId)} type="button">{t("Review migration")}</Button>
                 </div>
             </ModalDialog>
-            <PlanDialog applyDisabled={(submitted && !operationRequestOutcomeUnknown(feedback.error)) || migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => { setMigrationPlan(undefined); setMigrationVersion(undefined); setFeedback(INITIAL_FEEDBACK); }} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
+            {migrationPlan?.targetSdkVersion === undefined ? null : <Unity6MigrationDialog key={migrationPlan.planId}
+                client={client} initialPlan={migrationPlan} project={project} onClose={() => setMigrationPlan(undefined)}
+                onFinished={(id) => { setMigrationPlan(undefined); onChanged?.(); navigate("/projects/" + encodeURIComponent(id) + "/packages"); }} />}
+            <PlanDialog applyDisabled={(submitted && !operationRequestOutcomeUnknown(feedback.error)) || migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => { setMigrationPlan(undefined); setMigrationVersion(undefined); setFeedback(INITIAL_FEEDBACK); }} open={migrationPlan !== undefined && migrationPlan.targetSdkVersion === undefined} title={t("Review Unity migration")}>
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
                 {feedback.error === undefined ? null : <div role="alert" data-notification-error={feedback.error.code}><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{submitted && operationRequestOutcomeUnknown(feedback.error) ? t("The result of this request is unknown.") : undefined}</div>}
             </PlanDialog>

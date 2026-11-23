@@ -313,6 +313,7 @@ pub mod error_code {
     pub const PROJECT_UNITY_MIGRATION_PLAN_NOT_FOUND: &str =
         "project_unity_migration_plan_not_found";
     pub const PROJECT_UNITY_MIGRATION_PLAN_STALE: &str = "project_unity_migration_plan_stale";
+    pub const PRERELEASE_PACKAGES_HIDDEN: &str = "prerelease_packages_hidden";
     pub const PROJECT_UNITY_MIGRATION_UNSUPPORTED: &str = "project_unity_migration_unsupported";
     pub const PROJECT_UNITY_MIGRATION_SOURCE_CHANGED: &str =
         "project_unity_migration_source_changed";
@@ -722,6 +723,12 @@ impl RpcError {
     /// Creates a bounded error for project creation and template management.
     #[must_use]
     pub fn project_create(code: &str) -> Self {
+        if code == error_code::PRERELEASE_PACKAGES_HIDDEN {
+            return Self::simple(
+                code,
+                "Enable Show prerelease packages in settings and retry.",
+            );
+        }
         Self::simple(
             code,
             "The project creation or template request could not be completed.",
@@ -740,6 +747,12 @@ impl RpcError {
     /// Creates a stable, non-sensitive M7 Project Unity migration error.
     #[must_use]
     pub fn unity_migration(code: &str) -> Self {
+        if code == error_code::PRERELEASE_PACKAGES_HIDDEN {
+            return Self::simple(
+                code,
+                "Enable Show prerelease packages in settings and retry.",
+            );
+        }
         Self::simple(code, "The Project Unity migration could not be completed.")
     }
 
@@ -2590,6 +2603,8 @@ pub struct ProjectUnityMigrationClassification {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectUnityMigrationPlan {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_sdk_version: Option<String>,
     pub plan_id: String,
     pub project_id: String,
     pub source_unity_version: String,

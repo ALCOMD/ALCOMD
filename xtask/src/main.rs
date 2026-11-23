@@ -276,6 +276,7 @@ fn check_builtin_templates(
             "name": name,
             "packageId": package,
             "variants": [
+                {"editorVersion": "6000.0.67f1", "lockedVersions": {}},
                 {"editorVersion": "2022.3.22f1", "lockedVersions": {}},
                 {"editorVersion": "2019.4.31f1", "lockedVersions": locked}
             ]
@@ -343,9 +344,9 @@ fn check_unsafe_boundary(
 fn registered_nested_worktrees(
     root: &Path,
 ) -> Result<BTreeSet<PathBuf>, Box<dyn std::error::Error>> {
-    let local_worktrees = Path::new(".local/worktrees");
+    let worktree_parents = [Path::new(".local/worktrees"), Path::new(".local/parity")];
     let mut nested = BTreeSet::new();
-    if !root.join(local_worktrees).is_dir() || !root.join(".git").exists() {
+    if !root.join(".git").exists() || !worktree_parents.iter().any(|dir| root.join(dir).is_dir()) {
         return Ok(nested);
     }
 
@@ -374,7 +375,9 @@ fn registered_nested_worktrees(
             Err(error) => return Err(error.into()),
         };
         if let Ok(relative) = path.strip_prefix(&canonical_root)
-            && relative.parent() == Some(local_worktrees)
+            && relative
+                .parent()
+                .is_some_and(|dir| worktree_parents.contains(&dir))
             && path.join(".git").is_file()
         {
             nested.insert(relative.to_owned());

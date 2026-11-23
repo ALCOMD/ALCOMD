@@ -6,6 +6,8 @@
 
 M11 正在实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 
+Unity `6000.0.67f1` 的两个内置模板和八组迁移已完成 Windows 开发验收。三平台门禁见 [PR #13](https://github.com/ALCOMD/ALCOMD/pull/13)。[Unity 6 ExecPlan](exec-plans/unity-6-first-release.md)
+
 项目登记、创建和复制预演以及仓库检查、登记和移除已共用原生方法。仓库、设置、事件和 Unity 分域候选的[首发清单](../specs/first-release-contracts.json)涵盖 127 个 RPC、44 项能力和 103 个内建 MCP 工具，原生 SDK 的 116 个方法见[方法目录](../specs/rpc/native-sdk-v1.methods.json)。手动创建的模板从选定的内置或用户模板继承内容，成品独立使用。v3 派生模板迁移只生成 `2022.3.22f1` 的版本。[首发合同及验收范围](exec-plans/M11-first-release-contracts.md)
 
 **M11 实施中。** 普通 ZIP 和 Core 主机绝对路径已接通。首发 State1 和 Config1 已通过 Windows 隔离测试，涵盖正常重开、结构不符时保全文件以及设置恢复。Windows 已通过绝对路径 IPC、MCP HTTP/OAuth、Core 重开后的配置和项目对账，以及普通 ZIP 的定向验证。隔离签名 bridge 已执行暂存和回滚，真实 3.4.0 样本和跨平台验收待完成。[M11 实施计划](exec-plans/M11-v3-migration-and-zip.md)

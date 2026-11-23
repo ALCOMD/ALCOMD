@@ -32,6 +32,8 @@ const PLAYER: &str = "ProjectSettings/ProjectSettings.asset";
 const RESOLVER: &str = "com.vrchat.core.vpm-resolver";
 const BUILTIN_PROJECTS: &[u8] =
     include_bytes!("../../../specs/templates/builtin-scaffolds/v3-projects.zip");
+const UNITY6_PROJECTS: &[u8] =
+    include_bytes!("../../../specs/templates/builtin-scaffolds/unity6-projects.zip");
 const BUILTIN_PROJECT_LICENSE: &[u8] =
     include_bytes!("../../../specs/templates/builtin-scaffolds/LICENSE");
 
@@ -339,9 +341,7 @@ impl TemplateArchiveStore {
 
     pub(crate) fn builtins(&self) -> Result<Vec<ProjectTemplateDeclaration>, ProjectCreateError> {
         self.verify_root()?;
-        let mut projects = zip::ZipArchive::new(Cursor::new(BUILTIN_PROJECTS))
-            .map_err(|error| invalid().with_source(error))?;
-        let mut result = Vec::with_capacity(5);
+        let mut result = Vec::new();
         let mut blank = blank_inventory()?;
         blank.add_bytes(
             "package.json",
@@ -360,6 +360,13 @@ impl TemplateArchiveStore {
                 .ok_or_else(invalid)?;
             for variant in family.variants {
                 let (year, _) = variant.editor_version.split_once('.').ok_or_else(invalid)?;
+                let data = if year == "6000" {
+                    UNITY6_PROJECTS
+                } else {
+                    BUILTIN_PROJECTS
+                };
+                let mut projects = zip::ZipArchive::new(Cursor::new(data))
+                    .map_err(|error| invalid().with_source(error))?;
                 let prefix = format!("{kind}-{}/", variant.editor_version);
                 let mut inventory = Inventory::default();
                 for index in 0..projects.len() {
@@ -391,7 +398,11 @@ impl TemplateArchiveStore {
                     return Err(invalid());
                 }
                 let id = format!("{}.{year}", family.id);
-                let name = format!("{} {year}", family.name);
+                let name = if year == "6000" {
+                    format!("{} · {}", family.name, variant.editor_version)
+                } else {
+                    format!("{} {year}", family.name)
+                };
                 inventory.add_bytes("package.json", template_metadata(&id, &name)?)?;
                 inventory.add_bytes("LICENSE", BUILTIN_PROJECT_LICENSE.to_vec())?;
                 let scratch = Scratch::new(&self.root)?;

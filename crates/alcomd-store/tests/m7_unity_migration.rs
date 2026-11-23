@@ -17,7 +17,11 @@ async fn unity_migration_plan_reads_only_its_immutable_snapshots() {
     let directory = TestDirectory::new();
     let database_path = directory.0.join("state.db");
     let store = StateStoreHandle::open(database_path.clone()).expect("open store");
-    let (owner, draft) = registered_draft(&store).await;
+    let (owner, mut draft) = registered_draft(&store).await;
+    draft.source_unity_version = "2022.3.22f1".into();
+    draft.target_unity_version = "6000.0.67f1".into();
+    draft.preparation_profile = Some(alcomd_application::UNITY6_MIGRATION_PROFILE.into());
+    draft.target_sdk_version = Some("3.11.0-beta.1".into());
 
     let planned = store
         .create_unity_migration_plan(owner.clone(), draft.clone())
@@ -27,6 +31,16 @@ async fn unity_migration_plan_reads_only_its_immutable_snapshots() {
         panic!("expected durable migration plan");
     };
     assert!(!replayed);
+    let expired = store
+        .accept_unity_migration(
+            owner.clone(),
+            draft.plan_id,
+            key("expired-unity6"),
+            draft.expires_at_ms,
+        )
+        .await
+        .expect_err("an expired Unity 6 plan must never start a migration");
+    assert_eq!(expired.code(), M7UnityMigrationErrorCode::PlanStale);
 
     let mut changed_project = draft.project.observation.clone();
     changed_project.root_path = "C:/mutated/project".to_owned();
@@ -73,6 +87,9 @@ async fn unity_migration_plan_reads_only_its_immutable_snapshots() {
         )
         .expect("mutate current Unity installation authority");
 
+    drop(connection);
+    drop(store);
+    let store = StateStoreHandle::open(directory.0.join("state.db")).expect("reopen store");
     let reloaded = store
         .get_unity_migration_plan(owner, draft.plan_id)
         .await
@@ -228,6 +245,7 @@ async fn registered_draft(store: &StateStoreHandle) -> (PrincipalId, UnityMigrat
         target_installation,
         writer_evidence,
         classification: UnityMigrationClassificationKind::MajorUpgrade,
+        target_sdk_version: None,
         preparation_profile: Some("vrchat-2019-to-2022-v1".to_owned()),
         plan_fingerprint: "sealed-plan-fingerprint".to_owned(),
         request_fingerprint: r#"{"version":1,"request":"sealed"}"#.to_owned(),

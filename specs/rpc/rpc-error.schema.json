@@ -101,6 +101,7 @@
                 "unity_editor_selection_required",
                 "project_unity_migration_plan_not_found",
                 "project_unity_migration_plan_stale",
+                "prerelease_packages_hidden",
                 "project_unity_migration_unsupported",
                 "project_unity_migration_source_changed",
                 "project_unity_migration_recovery_required",

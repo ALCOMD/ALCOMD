@@ -3,6 +3,7 @@
     "name": "VRChat Worlds",
     "packageId": "com.vrchat.worlds",
     "variants": [
+        { "editorVersion": "6000.0.67f1", "lockedVersions": {} },
         { "editorVersion": "2022.3.22f1", "lockedVersions": {} },
         {
             "editorVersion": "2019.4.31f1",

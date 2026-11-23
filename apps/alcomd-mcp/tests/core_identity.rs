@@ -111,10 +111,13 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
                 .with_runtime_directory(runtime),
         )
     };
+    let (shutdown, stopped) = tokio::sync::oneshot::channel();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc.clone(),
         DataConfig::isolated(data.clone()),
-        std::future::pending(),
+        async {
+            let _ = stopped.await;
+        },
     )
     .await
     .expect("bind isolated Core before connecting");
@@ -447,12 +450,15 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
     drop(ca);
     drop(cb);
     drop(owner);
-    daemon.abort();
-    let _ = daemon.await;
+    shutdown.send(()).expect("stop isolated Core");
+    daemon.await.expect("join").expect("isolated Core shutdown");
+    let (shutdown, stopped) = tokio::sync::oneshot::channel();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc.clone(),
         DataConfig::isolated(data.clone()),
-        std::future::pending(),
+        async {
+            let _ = stopped.await;
+        },
     )
     .await
     .expect("restart same isolated database");
@@ -509,12 +515,15 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
     drop(ca);
     drop(cb);
     drop(owner);
-    daemon.abort();
-    let _ = daemon.await;
+    shutdown.send(()).expect("stop isolated Core");
+    daemon.await.expect("join").expect("isolated Core shutdown");
+    let (shutdown, stopped) = tokio::sync::oneshot::channel();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc,
         DataConfig::isolated(data.clone()),
-        std::future::pending(),
+        async {
+            let _ = stopped.await;
+        },
     )
     .await
     .expect("restart after revocation");
@@ -549,8 +558,8 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
     assert!(cb.project_get(p2id.clone()).await.is_ok());
     drop(cb);
     drop(owner);
-    daemon.abort();
-    let _ = daemon.await;
+    shutdown.send(()).expect("stop isolated Core");
+    daemon.await.expect("join").expect("isolated Core shutdown");
     assert_eq!(
         std::fs::read(p1.join("Packages/vpm-manifest.json")).expect("manifest after"),
         original_manifest

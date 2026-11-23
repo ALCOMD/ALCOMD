@@ -1,14 +1,17 @@
 //! Named MCP adapters for the project registry, frozen plans, and local packages.
-use alcomd_client::AlcomdClient;
+use std::path::Path;
+
+use alcomd_client::{AlcomdClient, ClientError};
 use alcomd_protocol as rpc;
 use rmcp::{
     ErrorData,
     model::{CallToolRequestParams, CallToolResult},
 };
+use serde::Deserialize;
 use serde_json::Value;
 
 use super::environment::{confirmed, params, result, write_result};
-use super::{failure, invalid, ipc_fields, safe_numbers, snake, success};
+use super::{Failure, failure, invalid, ipc_fields, read, safe_numbers, snake, success, write};
 
 fn candidate_request(mut fields: Value) -> Result<rpc::ProjectCandidateRequest, ErrorData> {
     // CandidateSource uses snake_case on native IPC as well as on MCP.
@@ -26,6 +29,125 @@ fn candidate_request(mut fields: Value) -> Result<rpc::ProjectCandidateRequest, 
         }
     }
     params(fields)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MigrationOptions {
+    #[serde(default)]
+    in_place: bool,
+    copy_operation_id: Option<String>,
+}
+
+fn migration_options(mut value: Value) -> Result<(MigrationOptions, Value), ErrorData> {
+    let fields = value.as_object_mut().ok_or_else(invalid)?;
+    let mut options = serde_json::Map::new();
+    for key in ["inPlace", "copyOperationId"] {
+        if let Some(value) = fields.remove(key) {
+            options.insert(key.into(), value);
+        }
+    }
+    let options: MigrationOptions = params(Value::Object(options))?;
+    if options.in_place && options.copy_operation_id.is_some() {
+        return Err(invalid());
+    }
+    Ok((options, value))
+}
+
+async fn check_copy(client: &mut AlcomdClient, id: String, target: &str) -> Result<(), Failure> {
+    let operation = client.operation_get(id).await.map_err(read)?;
+    if operation.kind != "projects.copy"
+        || operation.state != rpc::OperationState::Succeeded
+        || operation
+            .result
+            .as_ref()
+            .and_then(|r| r.get("targetProjectId"))
+            .and_then(Value::as_str)
+            != Some(target)
+    {
+        return Err(read(ClientError::Remote(rpc::RpcError::invalid_request())));
+    }
+    Ok(())
+}
+
+async fn plan_migration(
+    client: &mut AlcomdClient,
+    input: rpc::ProjectsPlanUnityMigrationParams,
+    options: MigrationOptions,
+) -> Result<Value, Failure> {
+    let result = client
+        .project_plan_unity_migration(input.clone())
+        .await
+        .map_err(write)?;
+    let rpc::ProjectsPlanUnityMigrationResult::Planned { plan, .. } = &result else {
+        return write_result(Ok::<_, ClientError>(result));
+    };
+    if plan.target_sdk_version.is_none() {
+        return write_result(Ok::<_, ClientError>(result));
+    }
+    if let Some(id) = &options.copy_operation_id {
+        check_copy(client, id.clone(), &plan.project_id).await?;
+    }
+    let source = client
+        .project_get(plan.project_id.clone())
+        .await
+        .map_err(read)?
+        .project;
+    if options.in_place || options.copy_operation_id.is_some() {
+        let mut reviewed = write_result(Ok::<_, ClientError>(result))?;
+        reviewed["destination_path"] = Value::String(source.root_path);
+        return Ok(reviewed);
+    }
+    let root = Path::new(&source.root_path);
+    let (Some(parent), Some(name)) = (
+        root.parent().and_then(Path::to_str),
+        root.file_name().and_then(|name| name.to_str()),
+    ) else {
+        return Err(Failure::InvalidCore);
+    };
+    let copy = client
+        .project_plan_copy(rpc::ProjectsPlanCopyParams {
+            source_project_id: plan.project_id.clone(),
+            expected_revision: input.expected_project_revision,
+            target: rpc::ProjectTarget::Absolute {
+                parent_path: parent.to_owned(),
+                name: format!("{name}-Unity6"),
+            },
+            idempotency_key: plan.plan_id.clone(),
+        })
+        .await
+        .map_err(write)?;
+    let path =
+        Path::new(&copy.plan.target_parent_canonical_path).join(&copy.plan.normalized_target_leaf);
+    Ok(
+        serde_json::json!({"kind":"copy_required", "copy_plan": snake(serde_json::to_value(copy).map_err(|_| Failure::InvalidCore)?),
+        "source_path":source.root_path,"destination_path":path,"target_installation_id":plan.target_installation_id,
+        "target_unity_version":plan.target_unity_version,"target_sdk_version":plan.target_sdk_version}),
+    )
+}
+
+async fn apply_migration(
+    client: &mut AlcomdClient,
+    input: rpc::ProjectsApplyUnityMigrationParams,
+    options: MigrationOptions,
+) -> Result<Value, Failure> {
+    let rpc::PlansGetResult::ProjectUnityMigration { plan } = client
+        .get_plan(rpc::PlansGetParams {
+            kind: rpc::PlanKind::ProjectUnityMigration,
+            plan_id: input.plan_id.clone(),
+        })
+        .await
+        .map_err(read)?
+    else {
+        return Err(Failure::InvalidCore);
+    };
+    if plan.target_sdk_version.is_some() && !options.in_place {
+        let id = options
+            .copy_operation_id
+            .ok_or_else(|| read(ClientError::Remote(rpc::RpcError::invalid_request())))?;
+        check_copy(client, id, &plan.project_id).await?;
+    }
+    write_result(client.project_apply_unity_migration(input).await)
 }
 
 pub(super) async fn execute(
@@ -109,18 +231,20 @@ pub(super) async fn execute(
             ),
             "Deletion accepted. Check the operation for the outcome.",
         ),
-        "alcomd_plan_project_unity_migration" => (
-            write_result(client.project_plan_unity_migration(params(fields)?).await),
-            "Review the project, target installation and migration steps.",
-        ),
-        "alcomd_apply_project_unity_migration" => (
-            write_result(
-                client
-                    .project_apply_unity_migration(confirmed(fields)?)
-                    .await,
-            ),
-            "Unity migration accepted. Check the operation for the outcome.",
-        ),
+        "alcomd_plan_project_unity_migration" => {
+            let (options, fields) = migration_options(fields)?;
+            (
+                plan_migration(client, params(fields)?, options).await,
+                "Review the destination, editor and SDK. Back up before an in-place upgrade. After uploading this content using Unity 6, future updates require Unity 6. For copy_required, confirm the copy and plan again with its completed operation ID.",
+            )
+        }
+        "alcomd_apply_project_unity_migration" => {
+            let (options, fields) = migration_options(fields)?;
+            (
+                apply_migration(client, confirmed(fields)?, options).await,
+                "Unity migration accepted. Check the operation. When upgrading to Unity 6, complete the VRChat SDK wizard in the editor.",
+            )
+        }
         "alcomd_get_plan" => (
             result(client.get_plan(params(fields)?).await),
             "Original plan for the authenticated caller.",

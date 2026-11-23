@@ -29,7 +29,7 @@ class Schemas:
             value = value[int(key)] if isinstance(value, list) else value[key]
         return filename, pointer, value
 
-    def project(self, root):
+    def project(self, root, *, prefix=""):
         definitions = {}
         labels = {}
 
@@ -44,9 +44,9 @@ class Schemas:
                     target, pointer, schema = self.resolve(node, filename)
                     identity = (target, pointer)
                     if identity not in labels:
-                        label = pointer.removeprefix("/$defs/").replace("/", "-")
+                        label = prefix + pointer.removeprefix("/$defs/").replace("/", "-")
                         if label in labels.values():
-                            label = target.split(".")[0] + "-" + label
+                            label = prefix + target.split(".")[0] + "-" + label.removeprefix(prefix)
                         labels[identity] = label
                         definitions[label] = convert(schema, target)
                     output[key] = "#/$defs/" + labels[identity]
@@ -86,9 +86,35 @@ def generated():
         if tool["effect"] == "apply" and tool["x-alcomd-method"] not in {"projects.register", "projects.create"}:
             inputs["properties"]["confirm"] = {"const": True}
             inputs.setdefault("required", []).append("confirm")
+        if tool["x-alcomd-method"] in {"projects.planUnityMigration", "projects.applyUnityMigration"}:
+            inputs["properties"]["in_place"] = {"type": "boolean", "default": False}
+            inputs["properties"]["copy_operation_id"] = {"$ref": "#/$defs/uuid"}
+            inputs["not"] = {
+                "properties": {"in_place": {"const": True}},
+                "required": ["in_place", "copy_operation_id"],
+            }
         if input_defs:
             inputs["$defs"] = input_defs
         data, output_defs = schemas.project(native["resultSchema"])
+        if tool["x-alcomd-method"] == "projects.planUnityMigration":
+            planned = next(item for item in data["oneOf"] if item["properties"]["kind"]["const"] == "planned")
+            path = {"type": "string", "minLength": 1}
+            planned["properties"]["destination_path"] = path
+            copy, copy_defs = schemas.project(methods["projects.planCopy"]["resultSchema"], prefix="copy-")
+            output_defs.update(copy_defs)
+            properties = {
+                "kind": {"const": "copy_required"},
+                "copy_plan": copy,
+                "source_path": path,
+                "destination_path": path,
+                "target_unity_version": {"$ref": "#/$defs/canonicalUnityVersion"},
+                "target_sdk_version": {"type": "string", "minLength": 1},
+                "target_installation_id": {"$ref": "#/$defs/uuid"},
+            }
+            data["oneOf"].append({
+                "type": "object", "additionalProperties": False,
+                "properties": properties, "required": list(properties),
+            })
         output = {
             "type": "object",
             "additionalProperties": False,

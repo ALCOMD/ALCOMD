@@ -312,10 +312,10 @@ test("Project workspace Open Unity uses the exact 0/1/many flow", async ({ page 
     await expect.poll(() => page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch").length)).toBe(1);
 });
 
-for (const view of ["list", "grid"] as const) {
-    test(`Projects ${view} Open Unity launches directly or asks in place without routing to Project Unity`, async ({ page }) => {
+for (const [view, version] of [["list", "2022.3.22f1"], ["grid", "2022.3.22f1"], ["list", "6000.0.67f1"]] as const) {
+    test(`Projects ${view} Open Unity ${version} launches directly or asks in place without routing to Project Unity`, async ({ page }) => {
         const openProjects = async (state: string) => {
-            await openHarness(page, "/projects", state);
+            await openHarness(page, "/projects", state + (version === "6000.0.67f1" ? "&existingUnity6" : ""));
             await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
             const switchView = page.getByRole("button", { name: view === "grid" ? "List view" : "Grid view", exact: true });
             if (await switchView.isVisible()) await switchView.click();
@@ -331,7 +331,7 @@ for (const view of ["list", "grid"] as const) {
         const missing = await openProjects("unity-zero");
         await missing.click();
         await expect(page.getByRole("dialog", { name: "Unity installation required", exact: true })).toBeVisible();
-        await expect(page.locator("md-dialog[open]")).toContainText("Unity 2022.3.22f1");
+        await expect(page.locator("md-dialog[open]")).toContainText("Unity " + version);
         expect(await launches()).toEqual([]);
         expect(await page.evaluate(() => window.unityRequests.some((request) => request.method === "projects.planUnityMigration"))).toBe(false);
         await expect(page).toHaveURL(/\/projects$/);
@@ -452,6 +452,53 @@ test("Project workspace Unity version selector creates one reviewed migration Op
     await review.getByRole("button", { name: "Apply reviewed plan" }).click();
     await expect(page.locator('md-dialog[open][data-aria-label="Unity migration"]').getByRole("status")).toContainText("succeeded");
     await expect(page).toHaveURL(new RegExp(`/projects/${PROJECT_ID}/packages$`));
+});
+
+for (const retry of [false, true]) {
+    test(retry ? "Unity 6 migration reviews the retained copy after failure" : "Unity 6 migration defaults to a copy and replans against its new project ID", async ({ page }) => {
+        await openHarness(page, `/projects/${PROJECT_ID}/packages`, "unity-migration&unity6=1&windows-paths=1" + (retry ? "&migration-fails-once=1" : ""));
+        await page.getByRole("navigation", { name: "Project actions" }).getByRole("combobox", { name: "Unity version" }).click();
+        await page.getByRole("option", { name: "Unity 6000.0.67f1" }).click();
+        const dialog = page.locator("md-dialog[open]").filter({ hasText: "Review Unity migration" });
+        await expect(dialog).toContainText("3.11.0-beta.1");
+        await expect(dialog.getByRole("combobox", { name: "Migration target" })).toContainText("Migrate a copy");
+        await expect(dialog).toContainText("C:\\Projects\\Sample-Unity6");
+        await expect(dialog).toContainText("After uploading this avatar or world with Unity 6");
+        await dialog.getByRole("button", { name: "Review copy" }).click();
+        await dialog.getByRole("button", { name: "Copy project" }).click();
+        await dialog.getByRole("button", { name: "Review migration" }).click();
+        await expect.poll(() => page.evaluate(() => window.unityRequests
+            .filter((r) => r.method === "projects.planUnityMigration").at(-1)?.params))
+            .toMatchObject({ projectId: "00000000-0000-4000-8000-000000000061" });
+        await dialog.getByRole("button", { name: "Apply reviewed plan" }).click();
+        if (retry) {
+            await expect(dialog.getByRole("alert")).toContainText("Operation failed");
+            await dialog.getByRole("button", { name: "Review migration" }).click();
+            await dialog.getByRole("button", { name: "Apply reviewed plan" }).click();
+        }
+        await expect(dialog).toContainText("Complete the VRChat SDK Upgrade Wizard in Unity.");
+        expect(await page.evaluate(() => window.h3Requests.filter((r) => r.method === "projects.planCopy"))).toHaveLength(1);
+        const requests = await page.evaluate(() => window.unityRequests.map(({ method, params }) => ({ method, ...params as { projectId?: string; planId?: string } })));
+        const applied = requests.filter((r) => r.method === "projects.applyUnityMigration").map((r) => r.planId);
+        const copyPlans = requests.filter((r) => r.method === "projects.planUnityMigration" && r.projectId === "00000000-0000-4000-8000-000000000061");
+        expect(applied).toEqual(copyPlans.map((r) => r.planId));
+    });
+}
+
+test("Unity 6 migration in place confirms the original directory and does not copy", async ({ page }) => {
+    await openHarness(page, `/projects/${PROJECT_ID}/unity`, "unity-migration&unity6=1&windows-paths=1");
+    await page.getByRole("combobox", { name: "Target Unity version" }).click();
+    await page.getByRole("option", { name: "6000.0.67f1", exact: true }).click();
+    await page.getByRole("button", { name: "Review migration" }).click();
+    const dialog = page.locator("md-dialog[open]").filter({ hasText: "Review Unity migration" });
+    await dialog.getByRole("combobox", { name: "Migration target" }).click();
+    await dialog.getByRole("option", { name: "Upgrade in place" }).click();
+    await expect(dialog).toContainText("Back up this project before upgrading in place.");
+    await expect(dialog).toContainText("3.11.0-beta.1");
+    await expect(dialog.locator("dd").nth(1)).toHaveText("C:\\Projects\\Sample");
+    await dialog.getByRole("button", { name: "Apply reviewed plan" }).click();
+    await expect(dialog).toContainText("Complete the VRChat SDK Upgrade Wizard in Unity.");
+    expect(await page.evaluate(() => window.h3Requests.filter((r) => r.method === "projects.planCopy"))).toEqual([]);
 });
 
 test("Open Unity migration composition revalidates options before the exact launch", async ({ page }) => {

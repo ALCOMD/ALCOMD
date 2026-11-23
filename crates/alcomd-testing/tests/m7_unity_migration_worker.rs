@@ -835,6 +835,7 @@ async fn registered_draft(store: &StateStoreHandle) -> (PrincipalId, UnityMigrat
         target_installation,
         writer_evidence,
         classification: UnityMigrationClassificationKind::MajorUpgrade,
+        target_sdk_version: None,
         preparation_profile: Some("vrchat-2019-to-2022-v1".to_owned()),
         plan_fingerprint: "sealed-plan-fingerprint".to_owned(),
         request_fingerprint: r#"{"version":1,"request":"worker"}"#.to_owned(),

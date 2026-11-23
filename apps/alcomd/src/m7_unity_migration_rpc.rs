@@ -90,6 +90,7 @@ pub(super) fn migration_plan(
         project_id: value.draft.project.project_id.to_string(),
         source_unity_version: value.draft.source_unity_version,
         target_unity_version: value.draft.target_unity_version,
+        target_sdk_version: value.draft.target_sdk_version,
         target_installation_id: value.draft.target_installation.installation_id.to_string(),
         classification: rpc::ProjectUnityMigrationClassification {
             kind: match value.draft.classification {
@@ -150,6 +151,9 @@ const fn migration_error_code(value: app::M7UnityMigrationErrorCode) -> &'static
         }
         app::M7UnityMigrationErrorCode::PlanStale => {
             rpc::error_code::PROJECT_UNITY_MIGRATION_PLAN_STALE
+        }
+        app::M7UnityMigrationErrorCode::PrereleasePackagesHidden => {
+            rpc::error_code::PRERELEASE_PACKAGES_HIDDEN
         }
         app::M7UnityMigrationErrorCode::Unsupported => {
             rpc::error_code::PROJECT_UNITY_MIGRATION_UNSUPPORTED
