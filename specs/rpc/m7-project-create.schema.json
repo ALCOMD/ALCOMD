@@ -83,10 +83,9 @@
         "createParams": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "targetParent", "unityVersion", "idempotencyKey"],
+            "required": ["target", "unityVersion", "idempotencyKey"],
             "properties": {
-                "name": {"type": "string", "minLength": 1, "maxLength": 255},
-                "targetParent": {"type": "string", "minLength": 1, "maxLength": 32768},
+                "target": {"$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m3-project-repository.json#/$defs/projectTarget"},
                 "unityVersion": {"$ref": "#/$defs/unityVersion"},
                 "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"},
                 "template": {"$ref": "#/$defs/templateRef"}

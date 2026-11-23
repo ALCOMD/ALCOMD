@@ -6,9 +6,8 @@ use std::{fs, path::Path, path::PathBuf, time::Duration};
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{
-    McpClientMutationParams, McpProjectSource, McpProjectTarget, McpProjectsCreateParams,
-    McpProjectsPlanCopyParams, McpProjectsRegisterParams, OperationState, ProjectTemplateRef,
-    ProjectsApplyCopyParams,
+    McpClientMutationParams, OperationState, ProjectRegisterParams, ProjectSource, ProjectTarget,
+    ProjectTemplateRef, ProjectsApplyCopyParams, ProjectsCreateParams, ProjectsPlanCopyParams,
 };
 use tokio::sync::oneshot;
 
@@ -52,6 +51,7 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
     owner
         .settings_update(
             serde_json::from_value(serde_json::json!({
+                "idempotencyKey": "project-paths-fixture-defaults",
                 "expectedRevision": settings.revision,
                 "update": {
                     "paths": {"projectDirectory": configured},
@@ -74,8 +74,8 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
 
     let source = external.join("源 工程");
     write_project(&source);
-    let register = McpProjectsRegisterParams {
-        source: McpProjectSource::Absolute {
+    let register = ProjectRegisterParams {
+        source: ProjectSource::Absolute {
             path: text(&source),
         },
         idempotency_key: "register-absolute".into(),
@@ -85,8 +85,8 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
         text(&external.join("..").join("configured")),
     ] {
         let error = actor
-            .mcp_project_register(McpProjectsRegisterParams {
-                source: McpProjectSource::Absolute { path },
+            .project_register(ProjectRegisterParams {
+                source: ProjectSource::Absolute { path },
                 ..register.clone()
             })
             .await
@@ -94,24 +94,38 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
         assert_code(error, "invalid_request");
     }
     let project = actor
-        .mcp_project_register(register.clone())
+        .project_register(register.clone())
         .await
         .expect("register absolute");
     assert!(
-        !serde_json::to_string(&project)
+        serde_json::to_string(&project)
             .expect("public response")
             .contains("外部 路径")
     );
-    assert!(
+    let moved_source = external.join("offline source");
+    fs::rename(&source, &moved_source).expect("temporarily remove the source after acceptance");
+    let replayed = actor
+        .project_register(register.clone())
+        .await
+        .expect("read the original registration without probing its source");
+    assert!(replayed.replayed);
+    assert_eq!(replayed.project, project.project);
+    assert_code(
         actor
-            .mcp_project_register(register)
+            .project_register(ProjectRegisterParams {
+                source: ProjectSource::Absolute {
+                    path: text(&moved_source),
+                },
+                ..register
+            })
             .await
-            .expect("register replay")
-            .replayed
+            .expect_err("same key with a changed source"),
+        "idempotency_conflict",
     );
+    fs::rename(&moved_source, &source).expect("restore fixture source");
     assert!(
         owner
-            .project_get(project.project.project_id.clone())
+            .project_get(project.project.project_id.clone().expect("registered ID"))
             .await
             .is_ok()
     );
@@ -119,8 +133,8 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
     write_project(&configured.join("Default project"));
     assert!(
         actor
-            .mcp_project_register(McpProjectsRegisterParams {
-                source: McpProjectSource::Default {
+            .project_register(ProjectRegisterParams {
+                source: ProjectSource::Default {
                     relative_path: "Default project".into()
                 },
                 idempotency_key: "register-default".into(),
@@ -139,9 +153,10 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
         .find(|template| template.locked && template.editor_version.is_none())
         .expect("built-in blank template");
     let create_path = external.join("新 工程");
-    let create = McpProjectsCreateParams {
-        target: McpProjectTarget::Absolute {
-            path: text(&create_path),
+    let create = ProjectsCreateParams {
+        target: ProjectTarget::Absolute {
+            parent_path: text(&external),
+            name: "新 工程".into(),
         },
         unity_version: "2022.3.22f1".into(),
         template: Some(ProjectTemplateRef {
@@ -151,7 +166,7 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
         idempotency_key: "create-absolute".into(),
     };
     let created = actor
-        .mcp_project_create(create.clone())
+        .projects_create(create.clone())
         .await
         .expect("create absolute");
     succeeded(&mut actor, &created.operation_id).await;
@@ -162,7 +177,7 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
     );
     assert_eq!(
         actor
-            .mcp_project_create(create.clone())
+            .projects_create(create.clone())
             .await
             .expect("create replay")
             .operation_id,
@@ -170,7 +185,7 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
     );
     assert!(owner.project_get(created.project_id).await.is_ok());
     let occupied = actor
-        .mcp_project_create(McpProjectsCreateParams {
+        .projects_create(ProjectsCreateParams {
             idempotency_key: "create-over-existing".into(),
             ..create
         })
@@ -178,28 +193,31 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
         .expect_err("must not replace existing project");
     assert_code(occupied, "project_create_target_exists");
 
-    let plan_copy = McpProjectsPlanCopyParams {
-        source_project_id: project.project.project_id,
-        expected_revision: project.project.revision,
-        target: McpProjectTarget::Absolute {
-            path: text(&external.join("已 复制")),
+    let plan_copy = ProjectsPlanCopyParams {
+        source_project_id: project.project.project_id.expect("registered ID"),
+        expected_revision: project.project.revision.expect("registered revision"),
+        target: ProjectTarget::Absolute {
+            parent_path: text(&external),
+            name: "已 复制".into(),
         },
         idempotency_key: "plan-absolute-copy".into(),
     };
     let plan = actor
-        .mcp_project_plan_copy(plan_copy.clone())
+        .project_plan_copy(plan_copy.clone())
         .await
-        .expect("plan");
+        .expect("plan")
+        .plan;
     assert!(
-        !serde_json::to_string(&plan)
+        serde_json::to_string(&plan)
             .expect("public response")
             .contains("外部 路径")
     );
     assert_eq!(
         actor
-            .mcp_project_plan_copy(plan_copy.clone())
+            .project_plan_copy(plan_copy.clone())
             .await
             .expect("plan replay")
+            .plan
             .plan_id,
         plan.plan_id
     );
@@ -228,7 +246,7 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
     );
     let apply = ProjectsApplyCopyParams {
         plan_id: plan.plan_id,
-        expected_revision: plan.expected_revision,
+        expected_revision: plan.source_project_revision,
         idempotency_key: "apply-absolute-copy".into(),
     };
     assert!(
@@ -239,18 +257,42 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
     let movable = external.join("replaceable parent");
     fs::create_dir(&movable).expect("replaceable parent");
     let target = movable.join("never created");
+    let changing_request = ProjectsPlanCopyParams {
+        target: ProjectTarget::Absolute {
+            parent_path: text(&movable),
+            name: "never created".into(),
+        },
+        idempotency_key: "parent-change-plan".into(),
+        ..plan_copy.clone()
+    };
     let changed = actor
-        .mcp_project_plan_copy(McpProjectsPlanCopyParams {
-            target: McpProjectTarget::Absolute {
-                path: text(&target),
-            },
-            idempotency_key: "parent-change-plan".into(),
-            ..plan_copy.clone()
-        })
+        .project_plan_copy(changing_request.clone())
         .await
-        .expect("freeze parent identity");
+        .expect("freeze parent identity")
+        .plan;
     let original = external.join("previous parent");
     fs::rename(&movable, &original).expect("move original parent");
+    let replay = actor
+        .project_plan_copy(changing_request.clone())
+        .await
+        .expect("replay with the original parent offline");
+    assert!(replay.replayed);
+    assert_eq!(
+        serde_json::to_value(&replay.plan).expect("replayed plan"),
+        serde_json::to_value(&changed).expect("original plan")
+    );
+    assert_code(
+        actor
+            .project_plan_copy(ProjectsPlanCopyParams {
+                target: ProjectTarget::Default {
+                    name: "never created".into(),
+                },
+                ..changing_request
+            })
+            .await
+            .expect_err("changed destination with same key"),
+        "idempotency_conflict",
+    );
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(&original, &movable).expect("link to original parent");
@@ -258,7 +300,7 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
             actor
                 .project_apply_copy(ProjectsApplyCopyParams {
                     plan_id: changed.plan_id.clone(),
-                    expected_revision: changed.expected_revision,
+                    expected_revision: changed.source_project_revision,
                     idempotency_key: "linked-parent".into(),
                 })
                 .await
@@ -272,7 +314,7 @@ async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destinatio
         actor
             .project_apply_copy(ProjectsApplyCopyParams {
                 plan_id: changed.plan_id,
-                expected_revision: changed.expected_revision,
+                expected_revision: changed.source_project_revision,
                 idempotency_key: "parent-change-apply".into(),
             })
             .await

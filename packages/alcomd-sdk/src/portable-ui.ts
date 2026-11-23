@@ -32,6 +32,7 @@ export interface ExtensionRecord {
 export interface ExtensionResult {
     installationSource?: import("./extension-sources.js").ExtensionInstallationSource;
     mcpTools?: McpToolPreview[];
+    cliCommands?: McpToolPreview[];
     activationConsent?: ExtensionActivationConsent;
     extension: ExtensionRecord;
 }

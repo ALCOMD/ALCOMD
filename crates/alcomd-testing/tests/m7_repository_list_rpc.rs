@@ -50,24 +50,26 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     let address = listener.local_addr().expect("address");
     let url = format!("http://{address}/repository.json?z=2&a=1&a=3");
     let server = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.expect("request");
-        let mut bytes = [0_u8; 4096];
-        let read = stream.read(&mut bytes).await.expect("read");
-        assert!(
-            String::from_utf8_lossy(&bytes[..read])
-                .starts_with("GET /repository.json?z=2&a=1&a=3 HTTP/1.1")
-        );
-        let body = r#"{"id":"list-rpc-remote","name":"List RPC","packages":{}}"#;
-        stream
-            .write_all(
-                format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().await.expect("request");
+            let mut bytes = [0_u8; 4096];
+            let read = stream.read(&mut bytes).await.expect("read");
+            assert!(
+                String::from_utf8_lossy(&bytes[..read])
+                    .starts_with("GET /repository.json?z=2&a=1&a=3 HTTP/1.1")
+            );
+            let body = r#"{"id":"list-rpc-remote","name":"List RPC","packages":{}}"#;
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
                 )
-                .as_bytes(),
-            )
-            .await
-            .expect("response");
+                .await
+                .expect("response");
+        }
     });
     let input = fixture.0.join("input.txt");
     let input_bytes = format!(
@@ -114,18 +116,19 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
         input_bytes.as_bytes()
     );
     let source = RepositorySource::Remote { url: url.clone() };
-    client
-        .repository_inspect(source.clone())
+    let remote = client
+        .repository_inspect(source)
         .await
         .expect("read source");
+    let remote_id = remote.preview_id.expect("original ID");
     client
-        .repository_register(source.clone(), "list-add-remote".into())
+        .repository_register(remote_id.clone(), "list-add-remote".into())
         .await
-        .expect("explicit append reuses the single remote response");
+        .expect("registration revalidates the remote observation");
     server.await.expect("server");
     assert!(
         client
-            .repository_register(source.clone(), "list-add-remote".into())
+            .repository_register(remote_id.clone(), "list-add-remote".into())
             .await
             .expect("registration receipt remains available after the HTTP server stops")
             .replayed
@@ -140,8 +143,45 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     let local_source = RepositorySource::Local {
         path: local.to_str().expect("path").into(),
     };
+    let local_preview = actor
+        .repository_inspect(local_source.clone())
+        .await
+        .expect("local preview");
+    let local_id = local_preview
+        .preview_id
+        .expect("local registration preview");
+    let params = alcomd_protocol::PlansGetParams {
+        kind: alcomd_protocol::PlanKind::RepositoryRegistration,
+        plan_id: local_id.clone(),
+    };
+    assert_code(
+        client
+            .get_plan(params.clone())
+            .await
+            .expect_err("foreign preview"),
+        "revision_conflict",
+    );
+    let alcomd_protocol::PlansGetResult::RepositoryRegistration { plan } = actor
+        .get_plan(params.clone())
+        .await
+        .expect("read original preview")
+    else {
+        panic!("wrong kind")
+    };
+    assert_eq!(*plan, local_preview.repository);
+    fs::write(&local, r#"{"id":"changed","packages":{}}"#)
+        .expect("change contents after inspection");
+    assert_code(
+        actor
+            .repository_register(local_id.clone(), "local-stale".into())
+            .await
+            .expect_err("changed preview"),
+        "revision_conflict",
+    );
+    fs::write(&local, r#"{"id":"list-rpc-local","packages":{}}"#)
+        .expect("restore reviewed content");
     let registered = actor
-        .repository_register(local_source.clone(), "list-add-local".into())
+        .repository_register(local_id.clone(), "list-add-local".into())
         .await
         .expect("MCP registers a shared local repository");
     assert!(!registered.replayed);
@@ -149,22 +189,28 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     fs::rename(&local, &offline).expect("take owned source offline");
     assert_code(
         actor
-            .repository_register(source, "list-add-local".into())
+            .repository_register(remote_id, "list-add-local".into())
             .await
             .expect_err("another source cannot replay the accepted key"),
         "idempotency_conflict",
     );
     assert!(
         actor
-            .repository_register(local_source.clone(), "list-add-local".into())
+            .repository_register(local_id.clone(), "list-add-local".into())
             .await
             .expect("MCP replays its registration while the source file is offline")
             .replayed
     );
     fs::rename(offline, &local).expect("restore owned source");
+    let owner_preview = client
+        .repository_inspect(local_source)
+        .await
+        .expect("owner inspection")
+        .preview_id
+        .expect("owner preview ID");
     assert_code(
         client
-            .repository_register(local_source, "list-add-local".into())
+            .repository_register(owner_preview, "list-add-local".into())
             .await
             .expect_err("local owner has an independent receipt"),
         "repository_already_registered",
@@ -176,6 +222,7 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
                 output.to_str().expect("path").into(),
                 old_preview.fingerprint,
                 alcomd_protocol::RepositoryListFormat::Legacy,
+                "export-fixture-1".into(),
             )
             .await
             .expect_err("stale preview"),
@@ -193,9 +240,20 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
             output.to_str().expect("path").into(),
             preview.fingerprint.clone(),
             alcomd_protocol::RepositoryListFormat::Legacy,
+            "export-fixture-2".into(),
         )
         .await
         .expect("export");
+    let replay = client
+        .repository_configuration_export_file(
+            output.to_str().expect("path").into(),
+            preview.fingerprint.clone(),
+            alcomd_protocol::RepositoryListFormat::Legacy,
+            "export-fixture-2".into(),
+        )
+        .await
+        .expect("replay successful publication even though the file now exists");
+    assert_eq!(replay.exported_count, 1);
     assert_eq!(exported.exported_count, 1);
     assert_eq!(
         fs::read_to_string(&output).expect("complete output"),
@@ -207,6 +265,7 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
                 output.to_str().expect("path").into(),
                 preview.fingerprint.clone(),
                 alcomd_protocol::RepositoryListFormat::Legacy,
+                "export-fixture-3".into(),
             )
             .await
             .expect_err("no overwrite"),
@@ -222,6 +281,7 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
                 data.join("blocked.txt").to_str().expect("path").into(),
                 preview.fingerprint,
                 alcomd_protocol::RepositoryListFormat::Legacy,
+                "export-fixture-4".into(),
             )
             .await
             .expect_err("protected data"),
@@ -347,7 +407,12 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     let native_path = fixture.0.join("repositories.alcomdrepositories");
     let path = native_path.to_string_lossy().into_owned();
     client
-        .repository_configuration_export_file(path.clone(), preview.fingerprint, native)
+        .repository_configuration_export_file(
+            path.clone(),
+            preview.fingerprint,
+            native,
+            "native-export".into(),
+        )
         .await
         .expect("native RPC export");
     let mut document: serde_json::Value =
@@ -598,19 +663,24 @@ async fn accepted_authenticated_repository_writes_replay_without_network_or_stag
         ),
     };
     drop(endpoint);
+    let preview_id = alcomd_application::OperationId::new();
     let record = store
         .register_repository_authenticated(
             owner.clone(),
-            RepositoryObservation {
-                source: source.clone(),
-                source_identity_key: vec![7],
-                declared_id: Some("fixture".into()),
-                name: None,
-                declared_url: None,
-                issues: vec![],
-                packages: vec![],
-                validators: Default::default(),
-                refreshed_at_ms: 1,
+            alcomd_application::RepositoryRegistration {
+                preview_id: Some(preview_id),
+                requested_source: source.clone(),
+                observation: RepositoryObservation {
+                    source: source.clone(),
+                    source_identity_key: vec![7],
+                    declared_id: Some("fixture".into()),
+                    name: None,
+                    declared_url: None,
+                    issues: vec![],
+                    packages: vec![],
+                    validators: Default::default(),
+                    refreshed_at_ms: 1,
+                },
             },
             uuid::Uuid::new_v4().to_string(),
             key("register"),
@@ -635,13 +705,7 @@ async fn accepted_authenticated_repository_writes_replay_without_network_or_stag
         headers: [("X-Fixture".to_owned(), "temporary-value".to_owned())].into(),
     };
     let registered = app
-        .register_repository_for_connection(
-            &access,
-            "reconnected",
-            source,
-            key("register"),
-            Some(credentials.clone()),
-        )
+        .register_repository_preview(&access, preview_id, key("register"))
         .await
         .expect("registration receipt with neither a live source nor a keyring record");
     let replaced = app

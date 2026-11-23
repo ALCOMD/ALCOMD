@@ -16,7 +16,10 @@
                         "package",
                         "project_copy",
                         "project_delete_directory",
-                        "project_unity_migration"
+                        "project_unity_migration",
+                        "extension_install",
+                        "extension_uninstall",
+                        "repositoryRegistration"
                     ]
                 },
                 "planId": {
@@ -86,6 +89,54 @@
                         },
                         "plan": {
                             "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-unity-project-version.json#/$defs/planUnityMigrationResult/oneOf/1/properties/plan"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "kind",
+                        "plan"
+                    ],
+                    "properties": {
+                        "kind": {
+                            "const": "extension_install"
+                        },
+                        "plan": {
+                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m6-extension-runtime.json#/$defs/planRecord"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "kind",
+                        "plan"
+                    ],
+                    "properties": {
+                        "kind": {
+                            "const": "extension_uninstall"
+                        },
+                        "plan": {
+                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m6-extension-runtime.json#/$defs/planRecord"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "kind",
+                        "plan"
+                    ],
+                    "properties": {
+                        "kind": {
+                            "const": "repositoryRegistration"
+                        },
+                        "plan": {
+                            "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/native-sdk-v1.schema.json#/$defs/RepositoryResult/properties/repository"
                         }
                     },
                     "additionalProperties": false

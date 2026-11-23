@@ -30,11 +30,15 @@ fn home_directory() -> io::Result<PathBuf> {
 }
 
 fn validate_path_text(path: &Path) -> io::Result<()> {
+    validate_bounded_path(path, MAX_PATH_BYTES)
+}
+
+fn validate_bounded_path(path: &Path, max_bytes: usize) -> io::Result<()> {
     let text = path
         .to_str()
         .ok_or_else(|| invalid("directory path is not Unicode"))?;
     if !path.is_absolute()
-        || text.len() > MAX_PATH_BYTES
+        || text.len() > max_bytes
         || text.chars().any(char::is_control)
         || path
             .components()
@@ -104,7 +108,16 @@ pub fn normalize_storage_directory(path: &str) -> io::Result<String> {
 /// Resolves a workflow directory without accepting a link in the selected path.
 /// Callers freeze the returned identity and check it again before accepting a write.
 pub fn resolve_plain_storage_directory(path: &Path) -> io::Result<(PathBuf, Vec<u8>)> {
-    validate_path_text(path)?;
+    resolve_plain_directory(path, MAX_PATH_BYTES)
+}
+
+/// Resolves a project path using the native project contract’s 32 KiB path bound.
+pub fn resolve_plain_project_directory(path: &Path) -> io::Result<(PathBuf, Vec<u8>)> {
+    resolve_plain_directory(path, 32_768)
+}
+
+fn resolve_plain_directory(path: &Path, max_bytes: usize) -> io::Result<(PathBuf, Vec<u8>)> {
+    validate_bounded_path(path, max_bytes)?;
     for ancestor in path.ancestors() {
         let metadata = std::fs::symlink_metadata(ancestor)?;
         if !metadata.is_dir() || is_link_or_reparse(&metadata) {
@@ -112,7 +125,7 @@ pub fn resolve_plain_storage_directory(path: &Path) -> io::Result<(PathBuf, Vec<
         }
     }
     let (canonical, identity) = crate::resolve_directory_identity(path)?;
-    validate_path_text(&canonical)?;
+    validate_bounded_path(&canonical, max_bytes)?;
     Ok((canonical, identity))
 }
 

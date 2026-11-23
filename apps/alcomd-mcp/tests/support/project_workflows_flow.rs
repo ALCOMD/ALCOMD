@@ -172,6 +172,7 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         .expect("owner");
     let settings = owner.settings_get().await.expect("settings");
     owner.settings_update(serde_json::from_value(json!({
+        "idempotencyKey": "workflow-fixture-paths",
         "expectedRevision": settings.revision,
         "update": {
             "paths": {"projectDirectory":projects.to_string_lossy(),"backupDirectory":archives.to_string_lossy()},
@@ -209,7 +210,16 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         .as_str()
         .expect("registered ID");
     assert!(owner.project_get(project_id.to_owned()).await.is_ok());
-    assert!(registered["project"].get("root_path").is_none());
+    let shared = owner
+        .project_get(project_id.to_owned())
+        .await
+        .expect("owner reads the same project")
+        .project;
+    assert_eq!(registered["project"]["root_path"], shared.root_path);
+    assert_eq!(
+        registered["project"]["favorite"],
+        serde_json::json!(shared.favorite)
+    );
     error(
         call(
             &sdk,
@@ -218,7 +228,7 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
             json!({
                 "source_project_id": project_id,
                 "expected_revision": registered["project"]["revision"],
-                "target": {"kind":"absolute","path":source},
+                "target": {"kind":"absolute","parent_path":source.parent().expect("fixture project parent"),"name":source.file_name().expect("fixture project name").to_str().expect("UTF-8 fixture name")},
                 "idempotency_key":"copy-existing-target"
             }),
         )
@@ -231,7 +241,7 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         call(
             &sdk,
             &mut trace,
-            "plan_unity_migration",
+            "plan_project_unity_migration",
             json!({
                 "project_id": project_id,
                 "target_installation_id": missing,
@@ -247,7 +257,7 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         call(
             &sdk,
             &mut trace,
-            "apply_unity_migration",
+            "apply_project_unity_migration",
             json!({
                 "plan_id": missing,
                 "idempotency_key": "migration-missing-plan",

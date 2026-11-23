@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { RpcError } from "@alcomd/sdk";
+import type { ProjectTarget, RpcError } from "@alcomd/sdk";
 import type { GuiRpcClient } from "./rpc";
 import { normalizeRequestError } from "./request-errors";
 
@@ -21,5 +21,8 @@ export function useProjectDirectory(client: GuiRpcClient, open: boolean) {
         });
         return () => { active = false; };
     }, [client, open]);
-    return { directory, setDirectory, error };
+    const projectTarget = (name: string): ProjectTarget => edited.current
+        ? { kind: "absolute", parentPath: directory, name }
+        : { kind: "default", name };
+    return { directory, setDirectory, error, projectTarget };
 }

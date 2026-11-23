@@ -59,20 +59,25 @@ async fn confirmed_manual_unity_override_round_trips_through_rpc_and_apply() {
     publish_cache_object(&data, &archive, &digest);
     let mut client = connect_with_retry(config).await;
     let registered_project = client
-        .project_register(
-            project.to_string_lossy().into_owned(),
-            "manual-project".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: project.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "manual-project".into(),
+        })
         .await
         .expect("project")
         .project;
+    let preview_id = client
+        .repository_inspect(RepositorySource::Local {
+            path: repository.to_string_lossy().into_owned(),
+        })
+        .await
+        .expect("inspect repository")
+        .preview_id
+        .expect("registration preview");
     let repository = client
-        .repository_register(
-            RepositorySource::Local {
-                path: repository.to_string_lossy().into_owned(),
-            },
-            "manual-repository".into(),
-        )
+        .repository_register(preview_id, "manual-repository".into())
         .await
         .expect("repository")
         .repository;
@@ -185,10 +190,12 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
     let mut client = connect_with_retry(config).await;
 
     let registered_project = client
-        .project_register(
-            project.to_string_lossy().into_owned(),
-            "m4-project-register".to_owned(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: project.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "m4-project-register".to_owned(),
+        })
         .await
         .expect("register project");
     let project_id = registered_project.project.project_id.expect("project ID");
@@ -199,8 +206,14 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
     let source = RepositorySource::Local {
         path: repository.to_string_lossy().into_owned(),
     };
+    let preview_id = client
+        .repository_inspect(source)
+        .await
+        .expect("inspect repository")
+        .preview_id
+        .expect("registration preview");
     let registered_repository = client
-        .repository_register(source, "m4-repository-register".to_owned())
+        .repository_register(preview_id, "m4-repository-register".to_owned())
         .await
         .expect("register repository");
     let repository_id = registered_repository
@@ -403,10 +416,12 @@ async fn user_package_plan_uses_owned_cache_after_source_mutation_and_registry_r
     .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let project_result = client
-        .project_register(
-            project.to_string_lossy().into_owned(),
-            "p6-user-package-project".to_owned(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: project.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "p6-user-package-project".to_owned(),
+        })
         .await
         .expect("register project");
     let project_id = project_result.project.project_id.expect("project ID");
@@ -524,10 +539,12 @@ async fn user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_mi
     .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let project_id = client
-        .project_register(
-            project.to_string_lossy().into_owned(),
-            "p6-user-package-missing-cache-project".to_owned(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: project.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "p6-user-package-missing-cache-project".to_owned(),
+        })
         .await
         .expect("register project")
         .project
@@ -663,20 +680,25 @@ fn subprocess_runs_package_apply_until_killed() {
         publish_cache_object(&data, &archive, &digest);
         let mut client = connect_with_retry(config).await;
         let project_result = client
-            .project_register(
-                project.to_string_lossy().into_owned(),
-                "m4-crash-project".to_owned(),
-            )
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute {
+                    path: project.to_string_lossy().into_owned(),
+                },
+                idempotency_key: "m4-crash-project".to_owned(),
+            })
             .await
             .expect("register crash project");
         let project_id = project_result.project.project_id.expect("project ID");
+        let preview_id = client
+            .repository_inspect(RepositorySource::Local {
+                path: repository.to_string_lossy().into_owned(),
+            })
+            .await
+            .expect("inspect repository")
+            .preview_id
+            .expect("registration preview");
         let repository_result = client
-            .repository_register(
-                RepositorySource::Local {
-                    path: repository.to_string_lossy().into_owned(),
-                },
-                "m4-crash-repository".to_owned(),
-            )
+            .repository_register(preview_id, "m4-crash-repository".to_owned())
             .await
             .expect("register crash repository");
         let repository_id = repository_result

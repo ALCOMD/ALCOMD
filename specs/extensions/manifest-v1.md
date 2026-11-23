@@ -67,14 +67,14 @@ The scope key is lowercase SHA-256 over `alcomd-local-ipc-target-v1`, target ID 
   不存在 alias、deprecated parser 或 compatibility warning。
 - `[ui]` 可选；存在时只允许 `protocol = "portable-v1"`，表示唯一隐式 main Portable UI。它不包含页面 identity、
   URL、asset、framework、renderer 或 GUI placement。没有 `[ui]` 的 backend extension 仍完整有效。
-- 所有 ABI v1 Component 都必须实现 `guest-ui`；没有 `[ui]` 时 daemon 永不调用，官方 SDK/reference guest提供空桩。
+只有声明 `[ui]` 才要求 `alcomd:extension/guest-ui@1.0.0` 导出；每个组件都要求生命周期导出。
 - native DLL、`.so`、`.dylib`、script/shell entrypoint 和 static Web UI asset 均禁止。
 - entrypoint 经过 `package-profile-v1.json` 的 normalized path、type、digest 和 quota 检查。
 
 ## 权限
 
 - Manifest 只声明 permission name，不包含 scope 或 grant。scope 由 daemon grant authority 保存。
-- 全部当前可授权扩展权限均可放入required或optional，二者互斥；包括mcp.tools.provide。required未授予时不能enable/打开UI；optional未授予时对应Host调用拒绝，不自动授权。
+- 全部当前可授权扩展权限均可放入required或optional，二者互斥。required未授予时不能enable/打开UI；optional未授予时对应Host调用拒绝，不自动授权。
 - 声明用于说明安装需求，不再是用户显式授权的上限；未声明但可授权的权限也可在管理页开启。接口、工具声明及调用者自身权限仍独立验证。
 - `background.run` 不由 `[ui]` 隐式添加。UI-only extension 可不请求该权限，并由 interactive UI session按需启动。
   Project read grant 使用 `Global/*`，覆盖当前及以后登记项目的安全摘要，不逐ProjectId授权；
@@ -92,4 +92,9 @@ The scope key is lowercase SHA-256 over `alcomd-local-ipc-target-v1`, target ID 
 
 可选`[installation_terms]`只有`title`与`text`：title非空、最多128 Unicode字符、禁止控制字符；text非空、UTF-8最多16384字节，仅允许换行/回车/制表控制字符。它属于原签名Manifest，不读取远端文本，不执行HTML/Markdown/脚本。不存在时跳过条款步骤。
 
-Plan冻结条款与权限声明。GUI先确认作者条款，再集中确认required权限；最后一次确认才调用带consent的applyInstall。拒绝不提交，不产生安装/授权Operation。Core以相同Plan fingerprint验证同意；安装登记与初始required grants同事务提交；optional/未声明默认关闭。条款同意不构成包安全认证，不替代签名、沙箱及双Principal检查。用户发起的安装完成后仍为 `installed_disabled`。随包入口仅接受没有安装条款和必需权限的已验证包。
+Plan冻结条款与权限声明。GUI先确认作者条款，再集中确认required权限；最后一次确认才调用带consent的applyInstall。拒绝不提交，不产生安装/授权Operation。Core以相同Plan fingerprint验证同意；安装登记与初始required grants同事务提交；optional/未声明默认关闭。条款同意不构成包安全认证，不替代签名、沙箱及双Principal检查。用户发起的安装完成后仍为 `installed_disabled`。随包入口仅接受没有安装条款和必需权限的已验证包。 CLI 命令和 MCP 工具在启用后按各自声明发现。
+
+
+## 声明命令和工具
+
+必填 `[entrypoints].component` 指向签名后端。可选 `[ui].protocol = "portable-v1"`、`[cli].commands = "component/cli-commands.json"` 和 `[mcp].tools = "component/mcp-tools.json"` 分别声明三个入口。启用后即可发现已声明的入口。Core 在调用时核实签名声明中的业务操作、调用者与扩展权限。CLI 的局部命令名由完整扩展 ID 隔离。[命令声明](cli-commands-v1.schema.json) · [工具声明](mcp-tools-provider-v1.schema.json)

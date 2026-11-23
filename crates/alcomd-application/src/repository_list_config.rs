@@ -41,6 +41,11 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
             byte_count: prepared.preview.byte_count,
             sha256: prepared.sha256,
         };
+        if let Some(acceptance) = crate::ExternalAcceptance::current()
+            && !acceptance.claim().await
+        {
+            return Err(RepositoryListError("store_unavailable"));
+        }
         crate::log_execution_step(
             "repositories.exportListFile",
             "write_repository_configuration",
@@ -196,6 +201,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                     Some(record) => Ok((record.repository_id, false)),
                     None => {
                         let registration = crate::RepositoryRegistration {
+                            preview_id: None,
                             requested_source: source,
                             observation: observation.expect("new source was read"),
                         };

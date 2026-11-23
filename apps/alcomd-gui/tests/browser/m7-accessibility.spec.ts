@@ -58,6 +58,8 @@ test("modal traps focus, closes on Escape, and restores the invoking control", a
     const dialog = page.getByRole("dialog", { name: "Register this project?" });
     await expect(dialog).toBeVisible();
     const drop = page.getByRole("button", { name: "Drop a folder here or click to select", exact: true });
+    await expect(page.getByRole("checkbox", { name: "Relative to default project directory", exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
     await expect(drop).toBeFocused();
     await expect(page.getByRole("button", { name: "Confirm" })).toBeDisabled();
     await page.getByRole("textbox", { name: "Project location", exact: true }).fill("C:\\Fixture\\Avatar");
@@ -480,7 +482,7 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
 test("failed and cancelled Operations expose stable terminal states", async ({ page }) => {
     for (const state of ["failed", "cancelled"] as const) {
         await page.goto("/browser-harness.html?route=/operations&hold-core-operation=1");
-        const id = await page.evaluate(async () => (await window.fixtureCore.stateCheck()).operationId);
+        const id = await page.evaluate(async () => (await window.fixtureCore.stateCheck(crypto.randomUUID())).operationId);
         await page.evaluate(({ id, state }) => window.completeGuiTask(id, state), { id, state });
         await page.getByRole("row").filter({ hasText: "Check state" }).getByRole("button", { name: "View operation", exact: true }).click();
         const main = page.getByRole("main");
@@ -509,9 +511,9 @@ test("Portable UI renders all 17 node kinds with host-owned chrome and safe form
     await expect(page.locator(".portable-group")).toBeVisible();
     await expect(page.locator(".portable-key-value")).toContainText("Editing project");
 
-    await openHarness(page, "/extensions/com.vrclearn.mcp-management/ui");
-    const mcp = page.getByRole("region", { name: "MCP Management" });
-    await expect(page.getByRole("heading", { level: 2, name: "MCP Management" })).toBeVisible();
+    await openHarness(page, "/extensions/org.example.mcp-inspector/ui");
+    const mcp = page.getByRole("region", { name: "Client Inspector" });
+    await expect(page.getByRole("heading", { level: 2, name: "Client Inspector" })).toBeVisible();
     await expect(mcp.getByRole("list")).toBeVisible();
     await expect(mcp.getByRole("listitem")).toContainText("Codex desktop");
     await expect(mcp.getByRole("button", { name: "Refresh" })).toBeVisible();

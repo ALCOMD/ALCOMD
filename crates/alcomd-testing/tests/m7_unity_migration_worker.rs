@@ -509,6 +509,93 @@ async fn migration_rejects_target_linked_writers_before_any_adapter_mutation() {
     }
 }
 
+#[tokio::test]
+async fn removed_registrations_preserve_the_plan_and_reject_apply_before_work_starts() {
+    use alcomd_application::M7UnityMigrationErrorCode;
+
+    enum Removed {
+        Project,
+        Installation,
+    }
+
+    for removed in [Removed::Project, Removed::Installation] {
+        let fixture = TestDirectory::new();
+        let store = StateStoreHandle::open(fixture.0.join("state.db")).expect("open store");
+        let (owner, draft) = registered_draft(&store).await;
+        store
+            .create_unity_migration_plan(owner.clone(), draft.clone())
+            .await
+            .expect("save plan");
+        let adapter = RecordingAdapter::new(store.clone());
+        let calls = adapter.call_order.clone();
+        let app = M7UnityMigrationApplication::with_locks(
+            store.clone(),
+            adapter,
+            FixedWriter,
+            Arc::new(ResourceLockCoordinator::default()),
+        );
+        let access = AccessContext::local_owner();
+        let original = app
+            .get_plan(&access, draft.plan_id)
+            .await
+            .expect("read original plan");
+        let expected = match removed {
+            Removed::Project => {
+                store
+                    .unregister_project(
+                        owner.clone(),
+                        draft.project.project_id,
+                        draft.project.revision,
+                        key("remove-project"),
+                        4,
+                    )
+                    .await
+                    .expect("remove project record referenced by plan");
+                M7UnityMigrationErrorCode::ProjectNotRegistered
+            }
+            Removed::Installation => {
+                store
+                    .remove_installation(
+                        owner.clone(),
+                        draft.target_installation.installation_id,
+                        draft.target_installation.revision,
+                        key("remove-installation"),
+                        4,
+                    )
+                    .await
+                    .expect("remove installation record referenced by plan");
+                M7UnityMigrationErrorCode::InstallationNotFound
+            }
+        };
+        assert_eq!(
+            app.get_plan(&access, draft.plan_id)
+                .await
+                .expect("read retained plan"),
+            original
+        );
+        let error = app
+            .apply(&access, draft.plan_id, key("reject-removed-input"))
+            .await
+            .expect_err("removed input must stop Apply");
+        assert_eq!(error.code(), expected);
+        assert!(calls.lock().expect("adapter calls").is_empty());
+        assert!(
+            store
+                .list_operations(owner, None, 10, false)
+                .await
+                .expect("list tasks")
+                .operations
+                .is_empty()
+        );
+        assert_eq!(
+            app.get_plan(&access, draft.plan_id)
+                .await
+                .expect("plan after rejected Apply"),
+            original
+        );
+    }
+}
+
 impl M5BackupWriterGate for FixedWriter {
     async fn observe_backup_source(
         &self,

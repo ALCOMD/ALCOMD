@@ -1,0 +1,25 @@
+{
+    "artifact": "crates/alcomd-testing/fixtures/m8/third-party-management-v1.wasm",
+    "sha256": "2d23ec8a97ea4bbfba48ee2262e6b446f459b3bae60196896db2213ab5604cf3",
+    "toolchain": "1.97.1",
+    "target": "wasm32-unknown-unknown",
+    "profile": "release",
+    "bindings": "wit-bindgen 0.57.1; default-features=false; macros/realloc/std",
+    "encoder": "wit-component 0.254.2 via cargo xtask component",
+    "inputs": {
+        "crates/alcomd-testing/fixtures/m8/management-guest-source/Cargo.lock": "fea8ce4bdd4cfe7a857431dee969d5c4e92df1d4b9a7c7490bb5f48b37de1b24",
+        "crates/alcomd-testing/fixtures/m8/management-guest-source/Cargo.toml": "cc0df76a09bb4d3ef342cbf37639d923068ee8c1ab75062fb321c9c647af956b",
+        "crates/alcomd-testing/fixtures/m8/management-guest-source/src/lib.rs": "096b9bb1bfe081df495422e3fd4b554061747efcefab9611208fc448e1cb1285",
+        "rust-toolchain.toml": "8e390d6a0838315f972690f46ef8bae8b7ecc9ee6c1ed70140ef852869c2482e",
+        "specs/extensions/wit/mcp-runtime-v1/deps/extension/guest-lifecycle.wit": "78b4e7fb822a560c464d24f6e5ef31901a28ad059202ffe711b89b51281577a1",
+        "specs/extensions/wit/mcp-runtime-v1/deps/extension/guest-ui.wit": "82157011b38f03125ba3ff44a253df6c28b5c50b543882ad5f56898bbd5dbd99",
+        "specs/extensions/wit/mcp-runtime-v1/deps/extension/host-data.wit": "2f70a251ae30d1d463faab2dee9e6baa08b277ab87d6efa4e65761ba914d7347",
+        "specs/extensions/wit/mcp-runtime-v1/deps/extension/host-projects.wit": "aa7fd7d38f2af28ca3606d7f70471586b134abb5a76dd4f82154bebd31a4dacb",
+        "specs/extensions/wit/mcp-runtime-v1/deps/extension/types.wit": "4fe1c69e2779b043f2f6ca81ca836e1e8f4132fa000f38cac256e03e9d2147bd",
+        "specs/extensions/wit/mcp-runtime-v1/deps/extension/world.wit": "501cd19062d5b98643c62d39f135e2e2786f93d6e535ee91af0a3e6f97d0ced4",
+        "specs/extensions/wit/mcp-runtime-v1/deps/mcp-management/management.wit": "1b8a6d2c39dacc58c2e41e73b1abac1ba6eafc6e971bf18477d115fca374dec9",
+        "specs/extensions/wit/mcp-runtime-v1/runtime.wit": "825a5d0ac1a4fa39da2ea5a5e3a1287fb477c46841fcfd7b152b811bd7b34f8f",
+        "specs/extensions/wit/mcp-transport-v1/transport.wit": "72cf59022a46984cce3221d888ed86426c73d506e7953c22ee143af4eeed0cdd"
+    },
+    "sourceCandidate": "MCP client management and observation interfaces for the first release"
+}

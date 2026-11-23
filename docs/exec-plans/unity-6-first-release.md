@@ -8,7 +8,7 @@
 
 ## 已批准的首发合同
 
-沿用首发 v1 的创建、复制、Unity 迁移和计划读取。迁移计划在需要更新 SDK 时返回 `targetSdkVersion`，由原计划读取入口返回相同值；创建与迁移预检使用 `prerelease_packages_hidden` 区别于缺少兼容包。MCP 增加 `alcomd_plan_unity_migration` 和 `alcomd_apply_unity_migration`，复用原有调用者、权限和确认。所有者已核定以上公共差异及 State1 计划表的可空 TEXT 列 `target_sdk_version`，用于重开后读取与复验同一 SDK。
+沿用首发 v1 的创建、复制、Unity 迁移和计划读取。迁移计划在需要更新 SDK 时返回 `targetSdkVersion`，由原计划读取入口返回相同值；创建与迁移预检使用 `prerelease_packages_hidden` 区别于缺少兼容包。MCP 增加 `alcomd_plan_project_unity_migration` 和 `alcomd_apply_project_unity_migration`，复用原有调用者、权限和确认。所有者已核定以上公共差异及 State1 计划表的可空 TEXT 列 `target_sdk_version`，用于重开后读取与复验同一 SDK。
 
 ## 样本与验收
 
@@ -61,3 +61,7 @@ Windows 实测中，SDK 暂存树刷盘使用只读句柄导致 Apply 失败，�
 候选 `575d1dfc` 的 Windows 串行工作区测试 1054 项通过、22 项忽略，Chromium 751 项全部通过。两次创建和八组迁移均由真实 Editor 完成本地构建。所有副本源内容哈希一致，五组 Worlds 的构建报告均为 Succeeded、零错误和警告；历史原地 Worlds 在验收克隆补入 VRCWorld 描述器后复开产物得到 Assets/Probe.unity。实测 Core/CLI 来自相同生产源码的 `f0ace592`。
 
 `1e3c9eb1` 调整两组 SDK 错误码的清单顺序，完整 Windows 本地检查、Ubuntu、macOS 和 CodeQL 均通过。托管 Windows 同一提交的 Node SDK 重启步骤通过，第一次完整作业在 MCP OAuth 测试组达到 120 分钟上限。整合主线 `e644dced` 后，三端合同检查得到 132 个 RPC、45 项能力、50 个内建 MCP 工具和 114 个原生 SDK 方法。最新候选及托管结果见 [PR #13](https://github.com/ALCOMD/ALCOMD/pull/13)。
+
+候选 `0265e151` 通过三平台 CI、CodeQL 和 Windows 真实编辑器验收。其 Core 和 CLI 均由该提交重建，两个新建与八组迁移的 SDK 构建通过，四组副本源哈希一致。已有 Avatar、Worlds 的打开、包清单、安装和升级通过。六次隐藏预发布包的尝试在写入前被拒绝，两个家族在重新开启后均可继续。[三平台 CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45039391392)
+
+整合 `a9bdc332` 时，CLI、GUI 和 MCP 的 Unity 6 副本预演统一使用主线项目复制目标。MCP 在主线现有两个迁移入口上执行同一套确认规则，沿用已核定的迁移权限。

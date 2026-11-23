@@ -76,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
         .data_dir
         .map(alcomd_platform::DataConfig::isolated)
         .unwrap_or_default();
-    alcomd::serve_with_data_until(config, data, None, async {
+    alcomd::serve_with_data_until(config, data, async {
         tokio::signal::ctrl_c()
             .await
             .expect("failed to wait for Ctrl+C");

@@ -11,6 +11,81 @@ use alcomd_platform::IpcConfig;
 static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cli_settings_applies_only_the_requested_fields_at_the_given_revision() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let (ipc, config, runtime) = isolated_configuration();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon =
+        alcomd_daemon::test_support::start_until(ipc, wait_for_shutdown(Arc::clone(&shutdown)))
+            .await
+            .expect("start owned daemon");
+    let read = || {
+        let response = run_group_cli(runtime.clone(), &["settings", "get"]);
+        assert!(
+            response.status.success(),
+            "{}",
+            String::from_utf8_lossy(&response.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&response.stdout).expect("settings result")["result"].clone()
+    };
+    let initial = read();
+    let revision = initial["revision"]
+        .as_u64()
+        .expect("settings revision")
+        .to_string();
+    let args = [
+        "settings",
+        "update",
+        "--expected-revision",
+        &revision,
+        "--update",
+        r#"{"packages":{"showPrerelease":false}}"#,
+        "--idempotency-key",
+        "cli-settings-update",
+    ];
+    let preview = run_group_cli(
+        runtime.clone(),
+        &[&["--dry-run", "--yes"][..], &args].concat(),
+    );
+    assert!(!preview.status.success());
+    assert_eq!(read(), initial);
+    let response = run_group_cli(runtime.clone(), &args);
+    assert!(
+        response.status.success(),
+        "{}",
+        String::from_utf8_lossy(&response.stderr)
+    );
+    let saved = read();
+    assert_eq!(saved["settings"]["packages"]["showPrerelease"], false);
+    assert_eq!(saved["settings"]["packages"]["preferPrerelease"], false);
+    let mut expected = initial["settings"].clone();
+    expected["packages"]["showPrerelease"] = false.into();
+    assert_eq!(saved["settings"], expected);
+    let replay = run_group_cli(runtime.clone(), &args);
+    assert!(replay.status.success());
+    assert_eq!(replay.stdout, response.stdout);
+    let mut new_request = args;
+    *new_request.last_mut().expect("request key") = "cli-settings-new-request";
+    let conflicting = run_group_cli(runtime.clone(), &new_request);
+    assert!(!conflicting.status.success());
+    assert_eq!(read(), saved);
+    let mut sdk = AlcomdClient::connect(config)
+        .await
+        .expect("connect native client");
+    let authoritative = sdk.settings_get().await.expect("read back from Core");
+    assert_eq!(
+        serde_json::to_value(authoritative).expect("serialize settings returned by Core"),
+        saved
+    );
+    drop(sdk);
+    shutdown.store(true, Ordering::SeqCst);
+    daemon
+        .await
+        .expect("join owned daemon")
+        .expect("stop owned daemon");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cli_reports_human_and_json_status_over_real_ipc() {
     let _serial = RPC_TEST_LOCK.lock().await;
     let (ipc, client, runtime) = isolated_configuration();
@@ -309,11 +384,41 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
         serde_json::from_slice(&restore.stdout).expect("backup restore JSON");
     assert_eq!(restore["command"], "backup restore");
     assert_eq!(restore["result"]["state"], "succeeded");
+    let operations = run_group_cli(runtime.clone(), &["operation", "list", "--limit", "1"]);
+    assert!(operations.status.success());
+    let first: serde_json::Value =
+        serde_json::from_slice(&operations.stdout).expect("parse first task page");
+    let cursor = &first["result"]["nextCursor"];
+    assert!(cursor["createdAtMs"].is_u64() && cursor["operationId"].is_string());
+    let next = run_group_cli(
+        runtime.clone(),
+        &[
+            "operation",
+            "list",
+            "--limit",
+            "1",
+            "--cursor",
+            &cursor.to_string(),
+        ],
+    );
+    assert!(next.status.success());
+    let next: serde_json::Value =
+        serde_json::from_slice(&next.stdout).expect("parse continued task page");
+    assert_ne!(
+        first["result"]["operations"][0]["operationId"],
+        next["result"]["operations"][0]["operationId"]
+    );
+    let incomplete = run_group_cli(
+        runtime.clone(),
+        &["operation", "list", "--cursor", r#"{"createdAtMs":0}"#],
+    );
+    assert_eq!(incomplete.status.code(), Some(2));
     assert!(
         restored
             .join("ProjectSettings/ProjectVersion.txt")
             .is_file()
     );
+    project_catalog_parity(&runtime, &project_parent, created_id);
     std::fs::remove_dir_all(&project_parent).expect("remove owned project fixture directory");
 
     let confirmation_runtime = runtime.clone();
@@ -368,6 +473,137 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     if let Some(runtime) = runtime {
         let _ = std::fs::remove_dir_all(runtime);
     }
+}
+
+fn project_catalog_parity(runtime: &Option<PathBuf>, root: &std::path::Path, project_id: &str) {
+    let run = |args: &[&str]| -> serde_json::Value {
+        let result = run_group_cli(runtime.clone(), args);
+        assert!(
+            result.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&result.stdout).expect("CLI JSON")["result"]
+            .clone()
+    };
+    let initial = run(&["project", "get", project_id]);
+    let initial_revision = initial["project"]["revision"].to_string();
+    let favorite = run(&[
+        "project",
+        "set-favorite",
+        project_id,
+        "true",
+        "--expected-revision",
+        &initial_revision,
+        "--idempotency-key",
+        "catalog-favorite",
+    ]);
+    assert_eq!(favorite["project"]["favorite"], true);
+    let view = r#"{"search":"CLI Project","sort":"name","descending":false}"#;
+    let page = run(&["project", "list", "--view", view, "--limit", "1"]);
+    assert_eq!(page["projects"][0]["projectId"], project_id);
+    assert!(page["viewSequence"].is_u64());
+    let source = root.join("Source");
+    std::fs::create_dir(&source).expect("owned local package");
+    std::fs::write(
+        source.join("package.json"),
+        r#"{"name":"com.example.parity","version":"1.0.0"}"#,
+    )
+    .expect("write local package manifest");
+    let enroll = run(&[
+        "package",
+        "user-package",
+        "enroll",
+        source.to_str().expect("fixture path"),
+        "--idempotency-key",
+        "catalog-enroll",
+    ]);
+    let user = &enroll["userPackage"];
+    let id = user["userPackageId"]
+        .as_str()
+        .expect("registered package ID");
+    assert_eq!(
+        run(&["package", "user-package", "get", id])["userPackage"],
+        *user
+    );
+    assert_eq!(
+        run(&["package", "user-package", "list"])["userPackages"][0],
+        *user
+    );
+    let revision = favorite["project"]["revision"].to_string();
+    let page = run(&[
+        "package",
+        "candidates",
+        project_id,
+        "--expected-revision",
+        &revision,
+        "--view",
+        r#"{"kind":"summary","packageIds":["com.example.parity"]}"#,
+    ]);
+    assert_eq!(
+        page["items"][0]["recommended"]["candidate"]["version"], "1.0.0",
+        "{page}"
+    );
+    let intent = r#"{"kind":"install","packageId":"com.example.parity"}"#;
+    let plan = run(&[
+        "package",
+        "bulk",
+        project_id,
+        "--expected-revision",
+        &revision,
+        "--intent",
+        intent,
+        "--dry-run",
+        "--yes",
+    ]);
+    let plan_id = plan["planId"].as_str().expect("reviewed plan");
+    assert_eq!(run(&["plan", "get", "package", plan_id])["plan"], plan);
+    let applied = run(&[
+        "package",
+        "apply-plan",
+        plan_id,
+        "--expected-revision",
+        &revision,
+        "--idempotency-key",
+        "catalog-apply",
+        "--yes",
+    ]);
+    assert_eq!(applied["state"], "succeeded", "{applied}");
+    let next_revision = run(&["project", "get", project_id])["project"]["revision"].to_string();
+    let reinstall = run(&[
+        "package",
+        "reinstall",
+        project_id,
+        "--expected-revision",
+        &next_revision,
+        "--package-id",
+        "com.example.parity",
+        "--dry-run",
+    ]);
+    assert_eq!(reinstall["action"], "reinstall");
+    let refreshed = run(&[
+        "package",
+        "user-package",
+        "refresh",
+        id,
+        "--expected-revision",
+        &user["revision"].to_string(),
+        "--idempotency-key",
+        "catalog-refresh",
+    ]);
+    let removed = run(&[
+        "package",
+        "user-package",
+        "remove",
+        id,
+        "--expected-revision",
+        &refreshed["userPackage"]["revision"].to_string(),
+        "--idempotency-key",
+        "catalog-remove",
+        "--yes",
+    ]);
+    assert_eq!(removed["removed"], true);
+    assert!(source.is_dir());
 }
 
 fn run_confirmation_required_cli(runtime: Option<PathBuf>) -> std::process::Output {
@@ -868,6 +1104,155 @@ async fn oauth_cli_registration_and_consent_preserve_one_time_output_rules() {
     if let Some(path) = runtime {
         let _ = std::fs::remove_dir_all(path);
     }
+}
+
+#[path = "../../../crates/alcomd-testing/fixtures/m8/signed_entry_package.rs"]
+mod signed_entries;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn installed_extension_commands_run_through_the_native_cli() {
+    use alcomd_protocol::{
+        ExtensionPlan, OperationState, PlanKind, PlansGetParams, PlansGetResult,
+    };
+    fn successful(output: std::process::Output) -> serde_json::Value {
+        assert!(output.status.success(), "{output:?}");
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("CLI response")["result"]
+            .clone()
+    }
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let (ipc, config, runtime) = isolated_configuration();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let root = std::env::temp_dir().join(format!(
+        "alcomd-cli-entry-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("test clock after Unix epoch")
+            .as_nanos()
+    ));
+    let data = root.join("data");
+    std::fs::create_dir_all(&data).expect("isolated data directory");
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        alcomd_platform::DataConfig::isolated(data),
+        wait_for_shutdown(Arc::clone(&shutdown)),
+    )
+    .await
+    .expect("owned Core");
+    wait_until_ready(config.clone()).await;
+    let mut owner = AlcomdClient::connect(config).await.expect("native owner");
+    let archive = root.join("test.alcomdextension");
+    signed_entries::package_with_install_requirements(&archive, false);
+    let response = successful(run_group_cli(
+        runtime.clone(),
+        &[
+            "extension",
+            "plan-install",
+            archive.to_str().expect("fixture path"),
+            "--dry-run",
+            "--yes",
+        ],
+    ));
+    let plan: ExtensionPlan =
+        serde_json::from_value(response["plan"].clone()).expect("complete signed plan");
+    let frozen = PlansGetParams {
+        kind: PlanKind::ExtensionInstall,
+        plan_id: plan.plan_id.clone(),
+    };
+    let moved = root.join("relocated.alcomdextension");
+    std::fs::rename(&archive, &moved).expect("move disposable selection");
+    assert_eq!(
+        owner.get_plan(frozen).await.expect("read original plan"),
+        PlansGetResult::ExtensionInstall {
+            plan: Box::new(plan.clone())
+        }
+    );
+    std::fs::rename(&moved, &archive).expect("restore selection before Apply");
+    let result = successful(run_group_cli(
+        runtime.clone(),
+        &[
+            "extension",
+            "apply-install",
+            &plan.plan_id,
+            "--plan-fingerprint",
+            &plan.plan_fingerprint,
+            "--idempotency-key",
+            "cli-install-entry",
+            "--yes",
+        ],
+    ));
+    let operation = result["operationId"]
+        .as_str()
+        .expect("install operation")
+        .to_owned();
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let state = owner
+                .operation_get(operation.clone())
+                .await
+                .expect("install status")
+                .state;
+            match state {
+                OperationState::Succeeded => break,
+                OperationState::Failed | OperationState::Cancelled => panic!("install {state:?}"),
+                _ => tokio::time::sleep(Duration::from_millis(20)).await,
+            }
+        }
+    })
+    .await
+    .expect("install deadline");
+    let id = signed_entries::ID;
+    let record = owner
+        .extension_get(id.into())
+        .await
+        .expect("installed")
+        .extension;
+    successful(run_group_cli(
+        runtime.clone(),
+        &[
+            "extension",
+            "enable",
+            id,
+            "--expected-revision",
+            &record.revision.to_string(),
+            "--idempotency-key",
+            "cli-enable-entry",
+            "--yes",
+        ],
+    ));
+    let output = run_group_cli(
+        runtime.clone(),
+        &["extension", "commands", "--extension-id", id],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let page: serde_json::Value = serde_json::from_slice(&output.stdout).expect("commands");
+    assert!(
+        page["result"]["commands"]
+            .as_array()
+            .expect("commands")
+            .iter()
+            .any(|item| item["name"] == "projects")
+    );
+    let echo = [
+        "extension",
+        "run",
+        id,
+        "echo",
+        "--arguments",
+        r#"{"text":"cli"}"#,
+    ];
+    let output = run_group_cli(runtime.clone(), &echo);
+    assert!(output.status.success(), "{output:?}");
+    let response: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("command reply");
+    assert_eq!(response["result"]["data"], serde_json::json!({"cli":"cli"}));
+    let mut dry = vec!["--dry-run", "--yes"];
+    dry.extend(echo);
+    assert!(!run_group_cli(runtime, &dry).status.success());
+    drop(owner);
+    shutdown.store(true, Ordering::Release);
+    assert!(daemon.await.expect("stop isolated Core").is_ok());
+    std::fs::remove_dir_all(root).expect("release fixture");
 }
 
 async fn wait_for_shutdown(shutdown: Arc<AtomicBool>) {

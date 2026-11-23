@@ -4,5 +4,9 @@ world extension-v1 {
     import host-projects;
     import host-data;
     export guest-lifecycle;
+}
+
+world portable-ui-v1 {
+    include extension-v1;
     export guest-ui;
 }

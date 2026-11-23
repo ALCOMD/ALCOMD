@@ -131,25 +131,6 @@ pub(super) async fn dispatch(
                 Err(error) => m3_error(request.id, error),
             }
         }
-        rpc::METHOD_PROJECTS_REGISTER => {
-            require!(request, state, rpc::CAPABILITY_PROJECTS_REGISTRY_V1);
-            let params: rpc::ProjectRegisterParams = parse!(request);
-            let key = key!(request, params.idempotency_key);
-            match application.register_project(access, params.path, key).await {
-                Ok(value) => {
-                    let project = application.project_directory_view(value.value).await;
-                    success_action(
-                        request.id,
-                        rpc::ProjectWriteResult {
-                            project: project_directory_record(project),
-                            replayed: value.replayed,
-                        },
-                        None,
-                    )
-                }
-                Err(error) => m3_error(request.id, error),
-            }
-        }
         rpc::METHOD_PROJECTS_REFRESH => {
             require!(request, state, rpc::CAPABILITY_PROJECTS_REGISTRY_V1);
             let params: rpc::ProjectMutationParams = parse!(request);
@@ -231,15 +212,15 @@ pub(super) async fn dispatch(
             match application
                 .inspect_repository(
                     access,
-                    &state.connection_id,
                     source,
                     params.credentials.map(repository_credentials),
                 )
                 .await
             {
-                Ok(value) => success_action(
+                Ok((value, id)) => success_action(
                     request.id,
-                    rpc::RepositoryResult {
+                    rpc::RepositoryInspectResult {
+                        preview_id: id.map(|id| id.to_string()),
                         repository: repository_observation(value),
                     },
                     None,
@@ -325,15 +306,11 @@ pub(super) async fn dispatch(
             require!(request, state, rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1);
             let params: rpc::RepositoryRegisterParams = parse!(request);
             let key = key!(request, params.idempotency_key);
-            let source = repository_source(params.source);
+            let Ok(preview_id) = OperationId::parse(&params.preview_id) else {
+                return invalid(request.id);
+            };
             match application
-                .register_repository_for_connection(
-                    access,
-                    &state.connection_id,
-                    source,
-                    key,
-                    params.credentials.map(repository_credentials),
-                )
+                .register_repository_preview(access, preview_id, key)
                 .await
             {
                 Ok(value) => success_action(
@@ -609,7 +586,7 @@ fn project_directory_record(value: app::ProjectDirectoryView) -> rpc::ProjectSna
     snapshot
 }
 
-fn project_record(value: app::ProjectRecord) -> rpc::ProjectSnapshot {
+pub(super) fn project_record(value: app::ProjectRecord) -> rpc::ProjectSnapshot {
     project_snapshot(
         Some(value.project_id.to_string()),
         Some(value.registered_at_ms),
@@ -747,7 +724,7 @@ fn repository_record(
     snapshot
 }
 
-fn repository_snapshot(
+pub(super) fn repository_snapshot(
     repository_id: Option<String>,
     value: app::RepositoryMetadata,
     revision: Option<u64>,

@@ -102,7 +102,7 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
     const [value, setValue] = useState(initial?.url ?? "");
     const [authentication, setAuthentication] = useState<RepositoryAuthenticationDraft>(() => initial
         ? { headers: initial.headers } : EMPTY_REPOSITORY_AUTH);
-    const [preview, setPreview] = useState<RepositorySnapshot>();
+    const [preview, setPreview] = useState<RepositorySnapshot & {previewId?: string}>();
     const writeRequest = useGuiWrite(client, preview, authentication);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     useUtilityDialogBusy(feedback.busy);
@@ -117,18 +117,17 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
             const selected = source();
             const result = await client.repositoriesInspect(selected,
                 selected.kind === "remote" ? repositoryCredentials(authentication) : undefined);
-            if (current()) { setPreview(result.repository); setFeedback({ busy: false }); }
+            if (current()) { setPreview({...result.repository,previewId:result.previewId}); setFeedback({ busy: false }); }
         }
         catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
     };
     const register = async () => {
-        if (pending.current || !available || preview === undefined) return;
+        if (pending.current || !available || !preview?.previewId) return;
         pending.current = true;
         setFeedback({ busy: true });
         try {
-            await writeRequest("repositoryRegister", preview.source,
-                preview.source.kind === "remote" ? repositoryCredentials(authentication) : undefined);
+            await writeRequest("repositoryRegister", preview.previewId);
             if (!current()) return;
             setPreview(undefined); setValue(""); setAuthentication(EMPTY_REPOSITORY_AUTH);
             setFeedback(INITIAL_FEEDBACK);  close(); onChanged?.();
@@ -166,7 +165,7 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
             {authentication.headers.length > 0 ? <p>{t("Uses authentication")}</p> : null}
             {preview.issues.length === 0 ? null : <div>{t("This repository has {count} reported issues.", { count: preview.issues.length })}</div>}
             {error}
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPreview(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button disabled={!available || feedback.busy} onClick={() => void register()} type="button">{t("Add repository")}</Button></div>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPreview(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button disabled={!available || !preview.previewId || feedback.busy} onClick={() => void register()} type="button">{t("Add repository")}</Button></div>
         </>}
     </ActionSection>;
 }
@@ -289,6 +288,8 @@ export interface PackageActionSelection {
     includePrerelease?: boolean;
     allowUnityIncompatible?: boolean;
     intents?: import("./core-models").PackageBulkIntent[];
+    packageIds?: string[];
+    reinstallSources?: Array<{ packageId: string; source: PackageSourceSelector }>;
     candidateSnapshot?: string;
 }
 
@@ -327,9 +328,15 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
                 result = await client.packagePlanBulk({ projectId, expectedRevision: revision, intents: selection.intents });
             }
             else if (action === "remove") result = await client.packagePlanRemove({ projectId, expectedRevision: revision, packageId: selectedPackageId });
-            else if (action === "resolve") result = await client.packagePlanResolve({ projectId, expectedRevision: revision });
-            else if (action === "reinstall-all") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "all" } });
-            else if (action === "reinstall") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "packages", packageIds: [selectedPackageId] }, ...(selectedSource === undefined ? {} : { sources: [{ packageId: selectedPackageId, source: selectedSource }] }) });
+            else if (action === "resolve") result = await client.packagePlanResolve({ projectId, expectedRevision: revision, ...(includePrerelease === undefined ? {} : { includePrerelease }) });
+            else if (action === "reinstall-all" || action === "reinstall") {
+                const sources = selection?.reinstallSources ?? (selectedSource ? [{ packageId: selectedPackageId, source: selectedSource }] : undefined);
+                result = await client.packagePlanReinstall({
+                    projectId, expectedRevision: revision,
+                    selection: action === "reinstall-all" ? { kind: "all" } : { kind: "packages", packageIds: selection?.packageIds ?? [selectedPackageId] },
+                    ...(sources ? { sources } : {})
+                });
+            }
             else if (action === "downgrade") result = await client.packagePlanDowngrade({ projectId, expectedRevision: revision, packageId: selectedPackageId, version: selectedVersion, ...(allowUnityIncompatible ? { allowUnityIncompatible: true } : {}), ...(selectedSource === undefined ? {} : { source: selectedSource }) });
             else {
                 const params = { projectId, expectedRevision: revision, packageId: selectedPackageId, ...(includePrerelease === undefined ? {} : { includePrerelease }), ...(allowUnityIncompatible ? { allowUnityIncompatible: true } : {}), ...(selectedVersion.length === 0 ? {} : { versionRange: selectedVersion }), ...(selectedSource === undefined ? {} : { source: selectedSource }) };
@@ -578,7 +585,7 @@ function Unity6MigrationDialog({ client, initialPlan, project, onClose, onFinish
         setBusy(true); setError(undefined);
         try {
             if (!inPlace && copyPlan === undefined) {
-                setCopyPlan((await write("projectPlanCopy", initialPlan.projectId, project.revision, parent, leaf)).plan);
+                setCopyPlan((await write("projectPlanCopy", initialPlan.projectId, project.revision, { kind: "absolute", parentPath: parent, name: leaf })).plan);
             } else if (!inPlace && copyPlan !== undefined && copy === undefined) {
                 const fresh = await write("projectPlanUnityMigration", initialPlan.projectId, initialPlan.targetInstallationId, project.revision);
                 if (fresh.kind !== "planned" || fresh.plan.targetSdkVersion !== initialPlan.targetSdkVersion) throw { code: "project_unity_migration_plan_stale" };
@@ -1112,6 +1119,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted, sourceKin
             {reviewingTerms ? <section className="extension-install-terms" aria-label={t("Extension terms")}><h3>{plan.installationTerms!.title}</h3><div className="extension-install-terms-text" tabIndex={0}>{plan.installationTerms!.text}</div></section> : !reviewingPermissions ? null : <>
                 <ExtensionPermissionRequests required={plan.requiredPermissions} optional={[]} />
                 <ExtensionToolPreview tools={plan.mcpTools} />
+            <ExtensionToolPreview kind="cli" tools={plan.cliCommands} />
                 {canGrant ? null : <p role="alert">{t("You cannot approve extension permissions with this connection.")}</p>}
             </>}
             {reviewingTerms || reviewingPermissions ? <div className="dialog-actions"><Button disabled={feedback.busy || submitted} onClick={decline} type="button" variant="text">{t("Decline")}</Button><LoadingButton disabled={!available || submitted || (reviewingPermissions && !canGrant)} loading={feedback.busy} onClick={() => void run()} type="button">{t(reviewingTerms && plan.requiredPermissions.length > 0 ? "Agree and continue" : "Agree and install")}</LoadingButton></div> : feedback.error === undefined || submitted ? null : <div className="dialog-actions"><LoadingButton disabled={!available} loading={feedback.busy} onClick={() => void run()} type="button">{t("Retry")}</LoadingButton></div>}

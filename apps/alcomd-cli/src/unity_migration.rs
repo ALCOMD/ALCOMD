@@ -59,8 +59,10 @@ pub(super) async fn run(
         .project_plan_copy(rpc::ProjectsPlanCopyParams {
             source_project_id: plan.project_id.clone(),
             expected_revision: revision,
-            target_parent_path: parent.to_owned(),
-            target_leaf: copy_name.unwrap_or_else(|| format!("{leaf}-Unity6")),
+            target: rpc::ProjectTarget::Absolute {
+                parent_path: parent.to_owned(),
+                name: copy_name.unwrap_or_else(|| format!("{leaf}-Unity6")),
+            },
             idempotency_key: plan.plan_id.clone(),
         })
         .await?

@@ -413,7 +413,9 @@ impl State {
         }
         let observed_request = observed
             .as_ref()
-            .and_then(|c| observations::method(method).and_then(|m| c.request(m, Some(config))))
+            .and_then(|c| {
+                observations::method(method).and_then(|m| c.request(m, Some(config.clone())))
+            })
             .map(Arc::new);
         let notifications =
             core.supports_capability(alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1);
@@ -478,6 +480,7 @@ impl State {
         let service = Arc::new(ProtocolService {
             core: Mutex::new(core),
             bound: true,
+            events_config: Some(config),
             configuration: None,
             observed_connection: None,
             notifications,

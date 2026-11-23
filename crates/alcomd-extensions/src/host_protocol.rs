@@ -42,6 +42,15 @@ pub fn decode_local_ipc_bytes(encoded: &str) -> Option<Vec<u8>> {
         .map(|pair| Some(digit(pair[0])? << 4 | digit(pair[1])?))
         .collect()
 }
+/// Signed entry descriptions submitted to the isolated Host for static type checking.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EntryPreflight {
+    pub ui: bool,
+    pub background: bool,
+    pub tools: Vec<alcomd_application::ToolDeclaration>,
+    pub commands: Vec<alcomd_application::ToolDeclaration>,
+}
 pub const MAX_HOST_FRAME_BYTES: usize = 512 * 1024;
 pub const MAX_WIT_VALUE_BYTES: usize = 256 * 1024;
 
@@ -293,6 +302,7 @@ impl HostMessage {
                 if !matches!(
                     export.as_str(),
                     "mcp.invoke"
+                        | "cli.invoke"
                         | "activate"
                         | "deactivate"
                         | "background.tick"
@@ -332,12 +342,12 @@ impl HostMessage {
                             | "host-mcp-clients.list"
                             | "host-mcp-clients.create"
                             | "host-mcp-clients.revoke"
-                            | "host-mcp-tools.projects.list"
-                            | "host-mcp-tools.projects.get"
-                            | "host-mcp-tools.packages.planUninstall"
-                            | "host-mcp-tools.packages.applyPlan"
-                            | "host-mcp-tools.operations.get"
-                            | "host-mcp-tools.operations.cancel"
+                            | "host-operations.projects.list"
+                            | "host-operations.projects.get"
+                            | "host-operations.packages.planUninstall"
+                            | "host-operations.packages.applyPlan"
+                            | "host-operations.operations.get"
+                            | "host-operations.operations.cancel"
                     )
                 {
                     return Err(HostProtocolError::InvalidEnvelope);
@@ -346,7 +356,7 @@ impl HostMessage {
                 if (capability == "host-mcp-runtime.snapshot"
                     || capability == "host-mcp-transport.snapshot"
                     || capability.starts_with("host-mcp-clients.")
-                    || capability.starts_with("host-mcp-tools."))
+                    || capability.starts_with("host-operations."))
                     && serde_json::to_vec(input).map_or(true, |bytes| bytes.len() > 65_536)
                 {
                     return Err(HostProtocolError::FrameLimit);

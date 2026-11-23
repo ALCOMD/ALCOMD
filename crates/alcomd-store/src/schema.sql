@@ -538,8 +538,13 @@ CREATE TABLE project_unity_migration_plans (
     plan_id TEXT PRIMARY KEY CHECK (length(plan_id) = 36),
     owner_principal_id TEXT NOT NULL
         CHECK (length(owner_principal_id) BETWEEN 1 AND 128),
-    project_id TEXT NOT NULL
-        REFERENCES projects(project_id) ON DELETE RESTRICT,
+    project_id TEXT NOT NULL CHECK (
+        length(project_id) = 36 AND project_id = lower(project_id)
+        AND substr(project_id, 9, 1) = '-' AND substr(project_id, 14, 1) = '-'
+        AND substr(project_id, 19, 1) = '-' AND substr(project_id, 24, 1) = '-'
+        AND length(replace(project_id, '-', '')) = 32
+        AND replace(project_id, '-', '') NOT GLOB '*[^0-9a-f]*'
+    ),
     project_revision INTEGER NOT NULL
         CHECK (project_revision BETWEEN 1 AND 9223372036854775807),
     source_unity_version TEXT NOT NULL
@@ -560,8 +565,13 @@ CREATE TABLE project_unity_migration_plans (
         CHECK (length(target_unity_version) BETWEEN 8 AND 64),
     target_revision_metadata TEXT
         CHECK (target_revision_metadata IS NULL OR length(target_revision_metadata) BETWEEN 1 AND 128),
-    target_installation_id TEXT NOT NULL
-        REFERENCES unity_installations(installation_id) ON DELETE RESTRICT,
+    target_installation_id TEXT NOT NULL CHECK (
+        length(target_installation_id) = 36 AND target_installation_id = lower(target_installation_id)
+        AND substr(target_installation_id, 9, 1) = '-' AND substr(target_installation_id, 14, 1) = '-'
+        AND substr(target_installation_id, 19, 1) = '-' AND substr(target_installation_id, 24, 1) = '-'
+        AND length(replace(target_installation_id, '-', '')) = 32
+        AND replace(target_installation_id, '-', '') NOT GLOB '*[^0-9a-f]*'
+    ),
     target_installation_revision INTEGER NOT NULL
         CHECK (target_installation_revision BETWEEN 1 AND 9223372036854775807),
     target_installation_identity BLOB NOT NULL
@@ -717,7 +727,8 @@ CREATE TABLE operations (
         'extensions.install', 'extensions.uninstall',
         'projects.create', 'projects.copy', 'projects.delete-directory', 'projects.unity-migration',
         'projectTemplates.save', 'projectTemplates.export',
-        'desktop.focusProjectUnity', 'desktop.openProjectDirectory', 'desktop.openUnityHubDownload'
+        'desktop.focusProjectUnity', 'desktop.openProjectDirectory', 'desktop.openUnityHubDownload',
+        'settings.update', 'unity.hub.open', 'repositories.exportListFile'
     )),
     state TEXT NOT NULL CHECK (state IN (
         'queued', 'planning', 'waiting_for_input', 'running', 'cancelling',
@@ -810,10 +821,11 @@ CREATE TABLE mcp_oauth_tokens (
     CHECK(kind='refresh' OR consumed_at_ms IS NULL)
 ) STRICT;
 
-CREATE TABLE extension_mcp_calls (
+CREATE TABLE extension_entry_calls (
     call_id TEXT PRIMARY KEY CHECK(length(call_id)=36),
-    principal_id TEXT NOT NULL CHECK(length(principal_id) BETWEEN 5 AND 128 AND principal_id LIKE 'mcp:%'),
-    tool_name TEXT NOT NULL CHECK(length(tool_name) BETWEEN 1 AND 128),
+    principal_id TEXT NOT NULL CHECK(length(principal_id) BETWEEN 5 AND 128 AND (principal_id LIKE 'mcp:%' OR principal_id='builtin:local-owner')),
+    entry_kind TEXT NOT NULL CHECK(entry_kind IN ('cli','mcp')),
+    entry_name TEXT NOT NULL CHECK(length(entry_name) BETWEEN 1 AND 32),
     idempotency_key TEXT NOT NULL CHECK(length(idempotency_key) BETWEEN 1 AND 128),
     request_fingerprint TEXT NOT NULL CHECK(length(request_fingerprint)=64),
     extension_id TEXT NOT NULL CHECK(length(extension_id) BETWEEN 3 AND 255),
@@ -825,7 +837,7 @@ CREATE TABLE extension_mcp_calls (
     core_effect_json TEXT CHECK(core_effect_json IS NULL OR (json_valid(core_effect_json) AND length(core_effect_json)<=65536)),
     created_at_ms INTEGER NOT NULL CHECK(created_at_ms>=0),
     updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms>=created_at_ms),
-    UNIQUE(principal_id,tool_name,idempotency_key)
+    UNIQUE(principal_id,extension_id,entry_kind,entry_name,idempotency_key)
 ) STRICT;
 
 CREATE TABLE "extension_plans" (
@@ -863,7 +875,7 @@ CREATE TABLE "extension_plans" (
 
 CREATE TABLE "extension_grants" (
     extension_id TEXT NOT NULL REFERENCES extensions(extension_id) ON DELETE CASCADE,
-    permission_name TEXT NOT NULL CHECK(permission_name IN ('background.run','projects.read','mcp.clients.read','mcp.clients.manage','mcp.tools.provide','repositories.read','packages.read','packages.manage','operations.read','operations.cancel','mcp.connections.read','mcp.requests.read','mcp.subscription-streams.read','unity.sessions.read','local-ipc.connect')),
+    permission_name TEXT NOT NULL CHECK(permission_name IN ('background.run','projects.read','mcp.clients.read','mcp.clients.manage','repositories.read','packages.read','packages.manage','operations.read','operations.cancel','mcp.connections.read','mcp.requests.read','mcp.subscription-streams.read','unity.sessions.read','local-ipc.connect')),
     resource_kind TEXT NOT NULL CHECK(resource_kind IN ('Extension','Global','LocalIpcTarget')),
     resource_id TEXT NOT NULL CHECK(length(resource_id) BETWEEN 1 AND 255),
     state TEXT NOT NULL CHECK(state IN ('granted','revoked')),
@@ -871,7 +883,7 @@ CREATE TABLE "extension_grants" (
     updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms BETWEEN 0 AND 9223372036854775807),
     PRIMARY KEY(extension_id,permission_name,resource_kind,resource_id),
     CHECK((permission_name='background.run' AND resource_kind='Extension' AND resource_id=extension_id)
- OR (permission_name IN ('projects.read','mcp.clients.read','mcp.clients.manage','mcp.tools.provide','repositories.read','packages.read','packages.manage','operations.read','operations.cancel','mcp.connections.read','mcp.requests.read','mcp.subscription-streams.read','unity.sessions.read') AND resource_kind='Global' AND resource_id='*')
+ OR (permission_name IN ('projects.read','mcp.clients.read','mcp.clients.manage','repositories.read','packages.read','packages.manage','operations.read','operations.cancel','mcp.connections.read','mcp.requests.read','mcp.subscription-streams.read','unity.sessions.read') AND resource_kind='Global' AND resource_id='*')
  OR (permission_name='local-ipc.connect' AND resource_kind='LocalIpcTarget' AND length(resource_id)=64 AND resource_id NOT GLOB '*[^0-9a-f]*'))
 ) STRICT;
 

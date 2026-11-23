@@ -247,8 +247,8 @@ enum Step {
         source_path: String,
         key: String,
     },
-    Settings(Box<SettingsUpdate>),
-    Theme(AppearanceMode),
+    Settings(Box<SettingsUpdate>, String),
+    Theme(AppearanceMode, String),
 }
 
 #[derive(Debug)]
@@ -340,15 +340,21 @@ async fn merge(
                 summary.local_packages_confirmed += 1;
             }
         }
-        Selection::Settings { patch } => match call(Step::Settings(Box::new(patch.clone()))).await?
+        Selection::Settings { patch } => match call(Step::Settings(
+            Box::new(patch.clone()),
+            format!("select:{digest}:settings"),
+        ))
+        .await?
         {
             Reply::Settings(changed) => summary.settings_changed = changed,
             _ => anyhow::bail!("unexpected settings receipt"),
         },
-        Selection::Theme { mode } => match call(Step::Theme(*mode)).await? {
-            Reply::Theme(changed) => summary.theme_changed = changed,
-            _ => anyhow::bail!("unexpected settings receipt"),
-        },
+        Selection::Theme { mode } => {
+            match call(Step::Theme(*mode, format!("select:{digest}:theme"))).await? {
+                Reply::Theme(changed) => summary.theme_changed = changed,
+                _ => anyhow::bail!("unexpected settings receipt"),
+            }
+        }
     }
     Ok(summary)
 }
@@ -390,7 +396,13 @@ async fn has_enrolled_source(core: &mut AlcomdClient, path: &str) -> Result<bool
 
 async fn apply_step(core: &mut AlcomdClient, step: Step) -> Result<Reply> {
     match step {
-        Step::RegisterProject { path, key } => match core.project_register(path, key).await {
+        Step::RegisterProject { path, key } => match core
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute { path },
+                idempotency_key: key,
+            })
+            .await
+        {
             Ok(result) => Ok(Reply::Project {
                 id: result
                     .project
@@ -440,7 +452,23 @@ async fn apply_step(core: &mut AlcomdClient, step: Step) -> Result<Reply> {
             Ok(Reply::Done)
         }
         Step::RegisterRepository { source, key } => {
-            match core.repository_register(source, key).await {
+            let mut cursor = None;
+            loop {
+                let page = core.repositories_list(cursor, None).await?;
+                if page.repositories.iter().any(|row| row.source == source) {
+                    return Ok(Reply::Done);
+                }
+                let Some(next) = page.next_cursor else { break };
+                cursor = Some(next);
+            }
+            let preview_id = core
+                .repository_inspect(source)
+                .await?
+                .preview_id
+                .ok_or(ClientError::InvalidResponse)?;
+            // A new inspection reviews a new preview. A receipt belongs to that exact request.
+            let request_key = format!("{key}:{preview_id}");
+            match core.repository_register(preview_id, request_key).await {
                 Ok(_) => {}
                 Err(ClientError::Remote(error))
                     if error.code == error_code::REPOSITORY_ALREADY_REGISTERED => {}
@@ -468,26 +496,31 @@ async fn apply_step(core: &mut AlcomdClient, step: Step) -> Result<Reply> {
             }
             Ok(Reply::Done)
         }
-        Step::Settings(patch) => {
+        Step::Settings(patch, key) => {
             let current = core.settings_get().await?;
             let expected = serde_json::to_value(&patch)?;
             if matches_object_fields(&expected, &serde_json::to_value(&current.settings)?) {
                 return Ok(Reply::Settings(false));
             }
             core.settings_update(SettingsUpdateParams {
+                idempotency_key: format!("{key}:{}", current.revision),
                 expected_revision: current.revision,
                 update: *patch,
             })
             .await?;
             Ok(Reply::Settings(true))
         }
-        Step::Theme(mode) => {
+        Step::Theme(mode, key) => {
             let current = core.settings_get().await?;
             if current.settings.appearance.mode == mode {
                 return Ok(Reply::Theme(false));
             }
-            core.settings_update(theme_update(current.revision, mode))
-                .await?;
+            core.settings_update(theme_update(
+                current.revision,
+                mode,
+                format!("{key}:{}", current.revision),
+            ))
+            .await?;
             Ok(Reply::Theme(true))
         }
     }
@@ -504,8 +537,13 @@ fn matches_object_fields(expected: &Value, current: &Value) -> bool {
     }
 }
 
-fn theme_update(revision: u64, mode: AppearanceMode) -> SettingsUpdateParams {
+fn theme_update(
+    revision: u64,
+    mode: AppearanceMode,
+    idempotency_key: String,
+) -> SettingsUpdateParams {
     SettingsUpdateParams {
+        idempotency_key,
         expected_revision: revision,
         update: SettingsUpdate {
             appearance: Some(AppearanceSettingsUpdate {
@@ -755,8 +793,8 @@ mod tests {
                     keys.push(key);
                     Reply::Done
                 }
-                Step::Theme(_)
-                | Step::Settings(_)
+                Step::Theme(_, _)
+                | Step::Settings(_, _)
                 | Step::RegisterRepository { .. }
                 | Step::EnrollLocalPackage { .. } => {
                     panic!("unselected account groups may not change")
@@ -783,8 +821,9 @@ mod tests {
     #[test]
     fn theme_update_carries_no_unselected_settings() {
         assert_eq!(
-            serde_json::to_value(theme_update(17, AppearanceMode::Dark)).expect("typed update"),
-            json!({"expectedRevision":17,"update":{"appearance":{"mode":"dark"}}})
+            serde_json::to_value(theme_update(17, AppearanceMode::Dark, "theme".into()))
+                .expect("typed update"),
+            json!({"idempotencyKey":"theme","expectedRevision":17,"update":{"appearance":{"mode":"dark"}}})
         );
     }
 }

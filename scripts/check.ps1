@@ -12,10 +12,10 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 cargo check --locked --package alcomd-gui
 
-$mcpManifest = "extensions/first-party/alcomd-extension-mcp/backend/Cargo.toml"
-cargo fmt --manifest-path $mcpManifest -- --check
-cargo clippy --locked --manifest-path $mcpManifest --all-targets -- -D warnings
-cargo test --locked --manifest-path $mcpManifest
+$managementFixture = "crates/alcomd-testing/fixtures/m8/management-guest-source/Cargo.toml"
+cargo fmt --manifest-path $managementFixture -- --check
+cargo clippy --locked --manifest-path $managementFixture --all-targets -- -D warnings
+cargo test --locked --manifest-path $managementFixture
 
 npm run check
 npm run build

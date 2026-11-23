@@ -91,6 +91,7 @@ mod native_discord_import;
 mod native_state_import;
 pub use native_discord_import::DiscordImportOptions;
 pub use native_state_import::{check_native_state, import_native_state};
+mod external_write_rpc;
 mod m3_rpc;
 mod m4_rpc;
 mod m5_backup_rpc;
@@ -109,15 +110,14 @@ mod m8_mcp_rpc;
 mod m8_oauth_rpc;
 mod m8_packages_rpc;
 mod m8_project_assets_rpc;
-mod m8_repositories_rpc;
 mod m8_runtime_rpc;
 mod m8_tools_rpc;
 mod m8_transport_rpc;
-mod m8_workflows_rpc;
 mod m9_runtime;
 mod plans_rpc;
 mod project_create_rpc;
 mod project_discovery_platform;
+mod project_paths_rpc;
 mod repository_list_rpc;
 mod storage_platform;
 
@@ -222,13 +222,10 @@ struct Applications {
 }
 
 /// Initializes the authoritative store, recovers Operations, then binds IPC.
-///
-/// Pass a packaged MCP extension only when the product bootstrap verified the
-/// distribution pins and established eligibility for this profile.
 pub async fn serve_with_data_until<F>(
     ipc: IpcConfig,
     data: DataConfig,
-    packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
+
     shutdown: F,
 ) -> Result<(), BindError>
 where
@@ -238,7 +235,6 @@ where
         ipc,
         data,
         Arc::new(storage_platform::PlatformStorageDirectories),
-        packaged_mcp,
     )
     .await?;
     applications
@@ -267,14 +263,12 @@ async fn initialize_daemon_with_directories(
     ipc: IpcConfig,
     data: DataConfig,
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
-    packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
     initialize_daemon_with_adapters(
         ipc,
         data,
         directory_platform,
         None,
-        packaged_mcp,
         #[cfg(feature = "test-kill-gates")]
         None,
     )
@@ -286,7 +280,7 @@ async fn initialize_daemon_with_adapters(
     data: DataConfig,
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
     source: Option<Arc<dyn alcomd_application::ExtensionSourceFetcher>>,
-    packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
+
     #[cfg(feature = "test-kill-gates")] vpm_reader: Option<alcomd_vpm::VpmReader>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
@@ -431,16 +425,6 @@ async fn initialize_daemon_with_adapters(
     m6.recover(current_time_ms()?)
         .await
         .map_err(|_| BindError::Io(io::Error::other("Extension recovery failed")))?;
-    if let Some(package) = packaged_mcp
-        && let Err(error) = m6
-            .initialize_packaged_mcp(package, current_time_ms()?)
-            .await
-    {
-        eprintln!(
-            "Packaged MCP extension initialization failed: {:?}",
-            error.code()
-        );
-    }
     let m7 = M7Application::new(m6.clone(), m7_rpc::ProtocolUiValidator);
     if let Ok(defaults) = official_gui
         .observe_storage_directories(&alcomd_application::ConfigSnapshot::default())
@@ -726,7 +710,7 @@ async fn serve_connection(
                     .mcp_apply_request_count
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
-            let is_tool_call=serde_json::from_slice::<Value>(&payload).is_ok_and(|v|v["method"]==alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL);
+            let is_tool_call=serde_json::from_slice::<Value>(&payload).is_ok_and(|v|matches!(v["method"].as_str(),Some(alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL | alcomd_protocol::METHOD_EXTENSIONS_CLI_COMMANDS_INVOKE)));
             let action=if is_tool_call {
                 // One in-flight typed RPC per connection. EOF revokes only this
                 // invocation's authority; the detached finalizer preserves accepted work.
@@ -845,10 +829,6 @@ async fn serve_connection(
     applications.client_registry.closed(&state.connection_id);
     drop(observed_connection);
     applications.mcp_transport.forget(&state.connection_id);
-    applications
-        .m3
-        .forget_repository_preview(&state.connection_id)
-        .await;
     applications
         .m7
         .close_connection(&state.connection_id, current_time_ms().unwrap_or(0))
@@ -979,6 +959,9 @@ async fn dispatch_authenticated(
             gate.intercept().await;
         }
     }
+    if let Some(method) = alcomd_application::ExternalMethod::parse(&request.method) {
+        return external_write_rpc::dispatch(request, state, applications, access, method).await;
+    }
     if request.method.starts_with("mcp.transport.") {
         return m8_transport_rpc::dispatch(request, state, applications, access);
     }
@@ -998,9 +981,6 @@ async fn dispatch_authenticated(
         return m8_packages_rpc::dispatch(request, state, applications, access, payload.len())
             .await;
     }
-    if request.method.starts_with("mcp.repositories.") {
-        return m8_repositories_rpc::dispatch(request, state, applications, access).await;
-    }
     if request.method == alcomd_protocol::METHOD_PROJECT_INVENTORY {
         return m8_project_assets_rpc::inventory(request, state, applications, access).await;
     }
@@ -1012,16 +992,10 @@ async fn dispatch_authenticated(
     }
     if matches!(
         request.method.as_str(),
-        alcomd_protocol::METHOD_MCP_PROJECTS_CREATE
-            | alcomd_protocol::METHOD_MCP_PROJECTS_REGISTER
-            | alcomd_protocol::METHOD_MCP_PROJECTS_PLAN_COPY
-    ) {
-        return m8_workflows_rpc::dispatch(request, state, applications, access).await;
-    }
-    if matches!(
-        request.method.as_str(),
         alcomd_protocol::METHOD_MCP_TOOLS_CATALOG
             | alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL
+            | alcomd_protocol::METHOD_EXTENSIONS_CLI_COMMANDS_LIST
+            | alcomd_protocol::METHOD_EXTENSIONS_CLI_COMMANDS_INVOKE
     ) {
         return m8_tools_rpc::dispatch(request, state, applications, access).await;
     }
@@ -1151,11 +1125,10 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_DESKTOP_ACTIONS_V1,
         alcomd_protocol::CAPABILITY_MCP_RUNTIME_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
+        alcomd_protocol::CAPABILITY_EXTENSION_CLI_COMMANDS_V1,
         alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1,
         alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1,
         alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1,
-        alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1,
-        alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_OAUTH_V1,
@@ -1425,8 +1398,6 @@ async fn dispatch_m2(
         _ if matches!(
             request.method.as_str(),
             alcomd_protocol::METHOD_SETTINGS_GET
-                | alcomd_protocol::METHOD_SETTINGS_UPDATE
-                | alcomd_protocol::METHOD_UNITY_HUB_OPEN
         ) =>
         {
             m7_official_rpc::dispatch(request, state, &applications.official_gui, access).await
@@ -1444,12 +1415,12 @@ async fn dispatch_m2(
         _ if request.method.starts_with("packages.") => {
             m4_rpc::dispatch(request, state, &applications.m4, access).await
         }
-        _ if matches!(
-            request.method.as_str(),
-            alcomd_protocol::METHOD_PROJECTS_PLAN_COPY
-                | alcomd_protocol::METHOD_PROJECTS_APPLY_COPY
-        ) =>
-        {
+        alcomd_protocol::METHOD_PROJECTS_REGISTER
+        | alcomd_protocol::METHOD_PROJECTS_CREATE
+        | alcomd_protocol::METHOD_PROJECTS_PLAN_COPY => {
+            project_paths_rpc::dispatch(request, state, applications, access).await
+        }
+        alcomd_protocol::METHOD_PROJECTS_APPLY_COPY => {
             m7_copy_rpc::dispatch(request, state, &applications.project_copy, access).await
         }
         _ if matches!(
@@ -1472,8 +1443,7 @@ async fn dispatch_m2(
         _ if request.method.starts_with("unity.") => {
             m5_rpc::dispatch(request, state, &applications.m5, access).await
         }
-        alcomd_protocol::METHOD_PROJECTS_CREATE
-        | alcomd_protocol::METHOD_PROJECT_TEMPLATES_LIST
+        alcomd_protocol::METHOD_PROJECT_TEMPLATES_LIST
         | alcomd_protocol::METHOD_PROJECT_TEMPLATES_SAVE
         | alcomd_protocol::METHOD_PROJECT_TEMPLATES_EXPORT
         | alcomd_protocol::METHOD_PROJECT_TEMPLATES_REMOVE => {
@@ -1508,7 +1478,6 @@ async fn dispatch_m2(
                 | alcomd_protocol::METHOD_REPOSITORIES_IMPORT_LIST_FILE
                 | alcomd_protocol::METHOD_REPOSITORIES_CANCEL_LIST_REGISTRATION
                 | alcomd_protocol::METHOD_REPOSITORIES_PREVIEW_LIST_EXPORT
-                | alcomd_protocol::METHOD_REPOSITORIES_EXPORT_LIST_FILE
         ) =>
         {
             repository_list_rpc::dispatch(

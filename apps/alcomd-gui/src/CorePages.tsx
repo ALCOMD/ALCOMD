@@ -1,3 +1,4 @@
+import { CoreDiagnostics } from "./CoreDiagnostics";
 import { useGuiWrite } from "./gui-write-attempt";
 import { unityInstallationSourceLabel } from "./unity-installation-source";
 import { ExtensionToolPreview } from "./ExtensionPermissions";
@@ -5,6 +6,9 @@ import { Translated, useTranslation } from "./i18n";
 import { productFamily } from "@alcomd/ui";
 import { guiVersion } from "./build-info";
 import { OperationItems } from "./OperationItems";
+import { ProjectInspectionDialog } from "./ProjectInspectionDialog";
+import { FrozenPlanDialog } from "./FrozenPlanDialog";
+import { PackageRequestDialog } from "./PackageRequestDialog";
 import { ProjectInventoryDialog } from "./ProjectInventoryDialog";
 import { useCoreEvents, useCoreInvalidation, useViewState, useViewReadingPosition, useWorkspaceInvalidation } from "./core-events-ui";
 import type { ChangeScope, CoreEvents } from "./core-events";
@@ -291,6 +295,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const root = useRef<HTMLElement>(null);
     const { t, locale } = useTranslation();
     const canRegister = useCapability(capabilities.projectsRegistry);
+    const canInspect = useCapability(capabilities.projectsRead);
     const canCreate = useCapability(capabilities.projectsCreate);
     const canRestore = useCapability(capabilities.backupsRestore);
     const [search, setSearch] = useViewState("projects", "search", "");
@@ -317,6 +322,8 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         }
     });
     const [registerOpen, setRegisterOpen] = useState(false);
+    const [inspectOpen, setInspectOpen] = useState(false);
+    const [planLookupOpen, setPlanLookupOpen] = useState(false);
     const writeRequest = useGuiWrite(client, registerOpen);
     const [createOpen, setCreateOpen] = useState(false);
     const [restoreOpen, setRestoreOpen] = useState(false);
@@ -432,6 +439,8 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 <SplitButton disabled={!canCreate} label={t("Create project")} menuButtonRef={addProjectMenuRef} menuLabel={t("More project creation options")} onClick={() => setCreateOpen(true)} primaryRef={createButtonRef} title={capabilityUnavailableTitle(canCreate, capabilities.projectsCreate, t)}>
                     <MenuItem disabled={!canRegister} label={t("Add existing project")} onClick={() => setRegisterOpen(true)} title={capabilityUnavailableTitle(canRegister, capabilities.projectsRegistry, t)} />
                     <MenuItem disabled={!canRestore} label={t("Restore from backup")} onClick={() => setRestoreOpen(true)} title={capabilityUnavailableTitle(canRestore, capabilities.backupsRestore, t)} />
+                    <MenuItem disabled={!canInspect} label={t("Inspect project")} onClick={() => setInspectOpen(true)} title={capabilityUnavailableTitle(canInspect, capabilities.projectsRead, t)} />
+                    <MenuItem label={t("Look up plan")} onClick={() => setPlanLookupOpen(true)} />
                 </SplitButton>
             </PageHeader>
             {view === "grid" ? (
@@ -471,13 +480,16 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 {(projects.length > 0 || state.loading) && view === "list" ? <ProjectsTable loading={state.loading && !state.loaded} client={client} descending={descending} navigate={navigate} onChanged={() => void refresh()} onProjectChanged={updateProject} onSort={updateSort} projects={projects} sort={sort} /> : null}
                 {projects.length > 0 && view === "grid" ? <ScrollArea className="projects-grid">{projects.map((project) => <ProjectCard client={client} key={project.projectId ?? project.rootPath} onChanged={updateProject} onRefresh={() => void refresh()} project={project} navigate={navigate} />)}</ScrollArea> : null}
             </div>
+            {inspectOpen && <ProjectInspectionDialog client={client} origin={addProjectMenuRef} onClose={() => setInspectOpen(false)} />}
+            {planLookupOpen && <FrozenPlanDialog client={client} origin={addProjectMenuRef} onClose={() => setPlanLookupOpen(false)} />}
             <DirectorySelectionDialog
                 client={client}
                 defaultDirectory="projectDirectory"
                 label={t("Project location")}
                 onChanged={() => void refresh()}
                 onClose={() => setRegisterOpen(false)}
-                onConfirm={(path) => writeRequest("projectRegister", path)}
+                allowRelativeProjectPath
+                onConfirm={(path, relative) => writeRequest("projectRegister", relative ? { kind: "default", relativePath: path } : { kind: "absolute", path })}
                 open={registerOpen}
                 origin={addProjectMenuRef}
                 title={t("Register this project?")}
@@ -586,6 +598,8 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     const [argumentsOpen, setArgumentsOpen] = useState(false);
     const [copyOpen, setCopyOpen] = useState(false);
     const [openingDirectory, setOpeningDirectory] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [refreshError, setRefreshError] = useState<RpcError>();
     const [menuOpen, setMenuOpen] = useState(false);
     const [removalIntent, setRemovalIntent] = useState<"unregister" | "delete">("unregister");
     const [unregistering, setUnregistering] = useState(false);
@@ -632,6 +646,21 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             if (current()) setRemovalFailure({ error: safeError(t, locale, caught), message: t("Unable to unregister project: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }) });
         } finally {
             setUnregistering(false);
+        }
+    };
+
+    const refreshProject = async () => {
+        if (refreshing || revision === undefined) return;
+        setMenuOpen(false);
+        setRefreshing(true);
+        setRefreshError(undefined);
+        try {
+            const result = await writeRequest("projectRefresh", projectId, revision);
+            if (current()) onProjectChanged(result.project);
+        } catch (caught) {
+            if (current()) setRefreshError(normalizeRequestError(caught));
+        } finally {
+            if (current()) setRefreshing(false);
         }
     };
 
@@ -704,6 +733,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
 
     const menuItems = <>
         {workspace ? <MenuItem disabled={!canManageUnity} label={t("Edit launch arguments")} onClick={() => setArgumentsOpen(true)} title={capabilityUnavailableTitle(canManageUnity, capabilities.unityManage, t)} /> : null}
+        <MenuItem disabled={!canManageProjects || refreshing || revision === undefined} label={t("Refresh project")} onClick={() => void refreshProject()} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t)} />
         <MenuItem disabled={!canReadProjects || !canUseDesktop || openingDirectory} label={t("Open Project Directory")} onClick={() => void openDirectory()} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead, t) ?? capabilityUnavailableTitle(canUseDesktop, capabilities.desktopActions, t)} />
         <MenuItem disabled={!canCopyProjects || revision === undefined} label={t("Copy Project")} onClick={beginCopy} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy, t)} />
         {workspace ? <>
@@ -730,6 +760,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                 </Menu>
                 </> : <SplitButton {...launchAction} menuButtonRef={menuAnchorRef} menuLabel={t("More actions for {value0}", { value0: projectName(t, locale, project) })}>{menuItems}</SplitButton>}
             </div>
+            {refreshError && <p role="alert" data-notification-error={refreshError.code}>{t(requestErrorMessage(refreshError.code))}</p>}
             {workspace ? null : unityLaunch.dialogs}
             {workspace && argumentsOpen ? <ProjectLaunchArgumentsDialog client={client} onChanged={onChanged} onClose={() => { setArgumentsOpen(false); window.requestAnimationFrame(() => menuAnchorRef.current?.focus()); }}  projectId={projectId} /> : null}
             <Dialog onClose={() => { if (!deleting) { setConfirmUnregister(false); setDeletePlan(undefined); setRemovalIntent("unregister"); } }} open={confirmUnregister} title={deletePlan === undefined ? removalIntent === "delete" ? t("Preparing permanent deletion…") : workspace ? t("Remove this project from the list?") : t("Remove this project?") : t("Permanently delete project directory?")}>
@@ -787,7 +818,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
 
 function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { client: GuiRpcClient; onCompleted(targetProjectId: string): void; onClose(): void; open: boolean; project: ProjectSnapshot }) {
     const { t, locale } = useTranslation();
-    const { directory: targetParent, setDirectory: setTargetParent, error: directoryError } = useProjectDirectory(client, open);
+    const { directory: targetParent, setDirectory: setTargetParent, error: directoryError, projectTarget } = useProjectDirectory(client, open);
     const [targetLeaf, setTargetLeaf] = useState("");
     const writeRequest = useGuiWrite(client, open, targetLeaf);
     const [plan, setPlan] = useState<ProjectCopyPlan>();
@@ -828,7 +859,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
         setBusy(true);
         setError(undefined);
         try {
-            const result = await writeRequest("projectPlanCopy", project.projectId, project.revision, targetParent, targetLeaf.trim());
+            const result = await writeRequest("projectPlanCopy", project.projectId, project.revision, projectTarget(targetLeaf.trim()));
             setPlan(result.plan);
         } catch (caught: unknown) {
             setError(safeError(t, locale, caught));
@@ -983,13 +1014,14 @@ function ProjectFavoriteButton({ client, onChanged, onRefresh, project }: { clie
     return <IconButton aria-pressed={favorite} className="project-favorite-action" disabled={!canManageProjects || busy || revision === undefined} label={label} onClick={() => void toggle()} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t) ?? label} type="button"><Icon asset={favorite ? starFilledIcon : starIcon} /></IconButton>;
 }
 
-function DirectorySelectionDialog({ client, defaultDirectory, label, onChanged, onClose, onConfirm, open, origin, title }: {
+function DirectorySelectionDialog({ client, defaultDirectory, label, onChanged, onClose, onConfirm, open, origin, title, allowRelativeProjectPath = false }: {
     client: GuiRpcClient;
+    allowRelativeProjectPath?: boolean;
     defaultDirectory?: keyof SettingsGetResult["directories"];
     label: string;
     onChanged(): void;
     onClose(): void;
-    onConfirm(path: string): Promise<unknown>;
+    onConfirm(path: string, relative: boolean): Promise<unknown>;
     open: boolean;
     origin: DialogOrigin;
     title: string;
@@ -998,6 +1030,7 @@ function DirectorySelectionDialog({ client, defaultDirectory, label, onChanged, 
     const current = useActionScope(client, open);
     const pending = useRef(false);
     const [path, setPath] = useState("");
+    const [relative, setRelative] = useState(false);
     const [busy, setBusy] = useState(false);
     const [choosing, setChoosing] = useState(false);
     const [error, setError] = useState<RpcError>();
@@ -1005,6 +1038,7 @@ function DirectorySelectionDialog({ client, defaultDirectory, label, onChanged, 
     useEffect(() => {
         if (open) return;
         setPath("");
+        setRelative(false);
         setError(undefined);
     }, [open]);
 
@@ -1014,7 +1048,7 @@ function DirectorySelectionDialog({ client, defaultDirectory, label, onChanged, 
         setBusy(true);
         setError(undefined);
         try {
-            await onConfirm(path);
+            await onConfirm(path, relative);
             if (!current()) return;
             onChanged();
             onClose();
@@ -1031,14 +1065,17 @@ function DirectorySelectionDialog({ client, defaultDirectory, label, onChanged, 
         <Button disabled={busy || choosing || path.trim() === ""} onClick={() => void confirm()} type="button">{t("Confirm")}</Button>
     </>}>
         {open ? <>
-            <FilePicker client={client} kind="directory" choosePath={async () => {
+            {allowRelativeProjectPath && <Checkbox label={t("Relative to default project directory")} checked={relative} disabled={busy || choosing} onChange={(value) => {
+                setRelative(value); setPath(""); setError(undefined);
+            }} />}
+            {relative ? <TextField label={label} value={path} onInput={setPath} disabled={busy} /> : <FilePicker client={client} kind="directory" choosePath={async () => {
                 // A start-location hint must not prevent manual selection when settings are unavailable.
                 const currentPath = path || (defaultDirectory === undefined ? undefined : await client.settingsGet().then((value) => value.directories[defaultDirectory], () => undefined));
                 if (!current()) return undefined;
                 return client.selectDirectory(currentPath);
             }} disabled={busy}
                 label={label} value={path} onChoosingChange={setChoosing}
-                onPathChange={(next) => { setPath(next); setError(undefined); }} />
+                onPathChange={(next) => { setPath(next); setError(undefined); }} />}
             {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
         </> : null}
     </Dialog>;
@@ -1298,10 +1335,11 @@ function PackageRowMoreMenu({ canPlan, client, onAction, row }: {
     )}</>;
 }
 
-function PackageWorkspaceMoreMenu({ canPlan, inventory, onResolve, onReinstallAll }: {
+function PackageWorkspaceMoreMenu({ canPlan, inventory, onResolve, onReinstallAll, onCustom }: {
     canPlan: boolean;
     inventory?: { client: GuiRpcClient; projectId: string; revision: number };
     onResolve(origin: DialogOrigin): void; onReinstallAll(origin: DialogOrigin): void;
+    onCustom(origin: DialogOrigin): void;
 }) {
     const { t } = useTranslation();
     const [open, setOpen] = useState(false);
@@ -1315,6 +1353,7 @@ function PackageWorkspaceMoreMenu({ canPlan, inventory, onResolve, onReinstallAl
             <Menu anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
                 <MenuItem disabled={!canPlan} label={t("Resolve Dependencies…")} onClick={() => { setOpen(false); onResolve(anchorRef); }} title={capabilityUnavailableTitle(canPlan, capabilities.packagesPlan, t)} />
                 <MenuItem disabled={!canPlan} label={t("Reinstall All Installed Packages…")} onClick={() => { setOpen(false); onReinstallAll(anchorRef); }} title={capabilityUnavailableTitle(canPlan, capabilities.packagesPlan, t)} />
+                <MenuItem disabled={!canPlan} label={t("Custom package plan")} onClick={() => { setOpen(false); onCustom(anchorRef); }} />
                 {inventory === undefined ? null : <MenuItem label={t("Installed packages")} onClick={() => { setOpen(false); setInventoryOpen(true); }} />}
             </Menu>
             {inventory === undefined ? null : <ProjectInventoryDialog {...inventory} open={inventoryOpen} onClose={() => setInventoryOpen(false)} origin={anchorRef} />}
@@ -1702,6 +1741,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     useEffect(() => { selectionAnchor.current = undefined; }, [search, filter, sourceFilter]);
     useEffect(() => { if (bulkSelection.length === 0) selectionAnchor.current = undefined; }, [bulkSelection.length]);
     const [selection, setSelection] = useState<PackageActionSelection>();
+    const [customOrigin, setCustomOrigin] = useState<DialogOrigin>();
     const selectedSource = (row: PackageWorkspaceRow): PackageSourceSelector | undefined => {
         const selectedKey = sourceSelections[row.packageId];
         if (selectedKey?.startsWith("repository:")) return { kind: "repository", repositoryId: selectedKey.slice(11) };
@@ -1796,7 +1836,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 <PackageWorkspaceMoreMenu canPlan={canPlanPackages && catalogReady}
                                     inventory={canReadInventory && project.projectId !== undefined && project.revision !== undefined
                                         ? { client, projectId: project.projectId, revision: project.revision } : undefined}
-                                    onResolve={(origin) => selectAction("resolve", origin)} onReinstallAll={(origin) => selectAction("reinstall-all", origin)} />
+                                    onResolve={(origin) => selectAction("resolve", origin)} onReinstallAll={(origin) => selectAction("reinstall-all", origin)} onCustom={setCustomOrigin} />
                                 <PackageFilters canUseUserPackages={canUseUserPackages} client={client} filter={filter} onChanged={refresh} setFilter={setFilter} setSourceFilter={setSourceFilter} settings={settings} sourceFilter={sourceFilter} />
                             </div>
                          </header>
@@ -1846,6 +1886,10 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                             />
                         </div>
                     </section>
+                    {customOrigin && <PackageRequestDialog rows={workspaceRows} origin={customOrigin} onClose={() => setCustomOrigin(undefined)} onPlan={(request) => {
+                        setSelection({ ...request, origin: customOrigin, key: (selection?.key ?? 0) + 1 });
+                        setCustomOrigin(undefined);
+                    }} />}
                     <PackageActions client={client} onChanged={reloadEvidence} onBusyChanged={setPackageMutationBusy} onEvidenceStale={() => setEvidenceInvalid(true)} packageNames={packageNames} project={project} returnFocusReady={currentEvidence && !candidatesPending && !packageMutationBusy} selection={selection === undefined ? undefined : { ...selection, candidateSnapshot: selection.candidateSnapshot ?? candidates?.snapshot.fingerprint }} />
                 </section>
             );
@@ -1990,7 +2034,7 @@ function RepositoryTable({ client, onChanged, repositories, orderFingerprint, se
                 };
             })}
         />}
-        {selected === undefined || selectedId === undefined ? null : <RepositoryBrowser client={client} repository={selected} onChanged={onChanged}
+        {selected === undefined || selectedId === undefined ? null : <RepositoryBrowser key={selectedId} client={client} repository={selected} onChanged={onChanged}
             dialog={{ title: repositoryDisplayName(t, selected, t("Repository packages")), onClose: () => setSelectedId(undefined) }} />}
     </>;
 }
@@ -2011,17 +2055,17 @@ function RepositoryBrowser({ client, repository, onChanged, initial, dialog }: {
     const display = usePackageDisplaySettings(client, settings, () => void readSettings(), onChanged);
     const [generation, setGeneration] = useState(0);
     const selectedPackage = useRef<string | undefined>(undefined);
+    const visibleCount = useRef(0);
     const repositoryId = repository.repositoryId;
     const load = useCallback(async () => {
         if (repositoryId === undefined) throw { code: "repository_not_registered" };
         const selected = selectedPackage.current;
         const first = await client.repositoryPackages(repositoryId);
-        if (selected === undefined) return first;
         const packages = [...first.packages];
         let cursor = first.nextCursor;
-        // Refresh a displayed detail atomically through its package boundary.
+        // Keep the already displayed window when a later Core event refreshes the list.
         // Package IDs are ASCII identities ordered by Core; no version solving occurs here.
-        while (cursor !== undefined && cursor.packageId <= selected) {
+        while (cursor !== undefined && (packages.length < visibleCount.current || (selected !== undefined && cursor.packageId <= selected))) {
             const next = await client.repositoryPackages(repositoryId, cursor);
             packages.push(...next.packages);
             cursor = next.nextCursor;
@@ -2036,7 +2080,7 @@ function RepositoryBrowser({ client, repository, onChanged, initial, dialog }: {
             <RepositoryPackageCatalog client={client} repositoryId={repositoryId} initial={catalog}
                 visibility={{ groups: display.snapshot?.settings.packages.hiddenRepositoryPackages, busy: display.busy,
                     save: (hiddenRepositoryPackages) => void display.save({ hiddenRepositoryPackages }) }}
-                onSelect={(id) => { selectedPackage.current = id; }} />
+                onVisibleCount={(count) => { visibleCount.current = count; }} onSelect={(id) => { selectedPackage.current = id; }} />
         </>}</ResourcePage>;
     if (dialog) return <Dialog wide open title={dialog.title} headlineActions={refresh} actions={<DialogCloseButton variant="text">{t("Close")}</DialogCloseButton>} onClose={dialog.onClose}>
         {content}
@@ -2183,7 +2227,7 @@ export function RepositoryDetailPage({ client, navigate, repositoryId }: PagePro
             <Detail label={t("Revision")} value={String(detail.repository.revision ?? "—")} />
             <Detail label={t("Issues")} value={String(detail.repository.issues.length)} />
         </dl>
-        <LocalPageReadContext.Provider value={true}><RepositoryBrowser client={client} repository={detail.repository} onChanged={refresh} initial={catalog} /></LocalPageReadContext.Provider>
+        <LocalPageReadContext.Provider value={true}><RepositoryBrowser key={detail.repository.repositoryId} client={client} repository={detail.repository} onChanged={refresh} initial={catalog} /></LocalPageReadContext.Provider>
         <ActionDisclosure title={t("Manage repository")}><RepositoryActions client={client} onChanged={refresh} repository={detail.repository} /></ActionDisclosure>
     </>}</UtilityWorkspace>;
 }
@@ -2247,7 +2291,8 @@ export function ProjectBackupsPage({ client, navigate, projectId }: PageProps & 
 export function OperationsPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => client.operationsList(), [client]);
-    return <UtilityWorkspace table loading={<TableLoading label={t("Tasks")} headers={[t("Task"), t("Status"), t("Updated"), t("Actions")]} />} title={t(navigationLabels.taskCenter)} load={load}>{(value) => <OperationItems client={client} initial={value}>
+    return <UtilityWorkspace table loading={<TableLoading label={t("Tasks")} headers={[t("Task"), t("Status"), t("Updated"), t("Actions")]} />}
+        title={t(navigationLabels.taskCenter)} load={load} tools={() => <CoreDiagnostics client={client} navigate={navigate} />}>{(value) => <OperationItems client={client} initial={value}>
         {(operations) => operations.length === 0 ? <RouteState kind="empty" title={t("No operations yet")} /> : <UtilityTable label={t("Tasks")} headers={[t("Task"), t("Status"), t("Updated"), t("Actions")]} rows={operations.map((operation) => ({ key: operation.operationId, cells: [humanize(t, operation.kind), <span className={"state-chip state-chip--" + operation.state}>{humanize(t, operation.state)}</span>, formatTime(t, locale, operation.updatedAtMs), <NavigationButton to={"/operations/" + operation.operationId} onClick={() => navigate("/operations/" + operation.operationId)} type="button" variant="text">{t("View operation")}</NavigationButton>] }))} />}
     </OperationItems>}</UtilityWorkspace>;
 }
@@ -2367,13 +2412,14 @@ export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps
     return <>
         {operationId === undefined ? null : <OperationFollow client={client} key={operationId} onTerminal={(operation) => { setOperationTerminal(true); setCompletedOperation(operation); }} operationId={operationId} background />}
         {completedOperation?.state === "succeeded" ? <section className="utility-workspace page-surface--utility"><PageHeader title={t("Extension detail")} leading={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} /><p role="status">{t("Extension uninstalled.")}</p></section>
-        : <UtilityWorkspace changes={["extensions"]} title={t("Extension detail")} back={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} load={load}>{({ extension, mcpTools, installationSource, activationConsent }, refresh) => <>
+        : <UtilityWorkspace changes={["extensions"]} title={t("Extension detail")} back={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} load={load}>{({ extension, mcpTools, cliCommands, installationSource, activationConsent }, refresh) => <>
         <h2 className="extension-detail-identity">{extension.extensionId}</h2>
         <dl className="detail-grid"><Detail label={t("Version")} value={extension.version} /><Detail label={t("Publisher")} value={shortHash(extension.publisherFingerprint)} /><Detail label={t("Desired state")} value={humanize(t, extension.desiredState)} /><Detail label={t("Runtime")} value={humanize(t, extension.runtimeState)} /><Detail label={t("Quarantine")} value={humanize(t, extension.quarantineState)} /></dl>
         {installationSource === undefined ? null : <dl className="detail-grid extension-source-preview"><Detail label={t("Installation source")} value={installationSource.url} /><Detail label={t("Source version")} value={installationSource.version} /></dl>}
         {extension.ui?.protocol === "portable-v1" ? <NavigationButton to={`/extensions/${encodeURIComponent(extensionId)}/ui`} disabled={!canUsePortableUi || extension.desiredState !== "enabled" || extension.quarantineState === "quarantined" || (operationId !== undefined && !operationTerminal)} onClick={() => navigate(`/extensions/${encodeURIComponent(extensionId)}/ui`)} title={capabilityUnavailableTitle(canUsePortableUi, capabilities.extensionsPortableUi, t)} type="button">{t("Open Portable UI")}</NavigationButton> : null}
         <ExtensionActions client={client} extension={extension} activationConsent={activationConsent} onChanged={refresh} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} operationActive={operationId !== undefined && !operationTerminal} />
         <ExtensionToolPreview tools={mcpTools} />
+            <ExtensionToolPreview kind="cli" tools={cliCommands} />
     </>}</UtilityWorkspace>}
     </>;
 }

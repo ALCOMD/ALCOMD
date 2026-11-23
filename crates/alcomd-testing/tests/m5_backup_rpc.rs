@@ -54,6 +54,7 @@ async fn mcp_restores_a_zip_outside_the_configured_directory_and_rechecks_access
     owner
         .settings_update(
             serde_json::from_value(serde_json::json!({
+                "idempotencyKey": "backup-fixture-defaults",
                 "expectedRevision": settings.revision,
                 "update": {
                     "paths": { "backupDirectory": archive_dir.to_string_lossy(), "projectDirectory": projects.to_string_lossy() },
@@ -65,10 +66,12 @@ async fn mcp_restores_a_zip_outside_the_configured_directory_and_rechecks_access
         .await
         .expect("override backup destination within fixture");
     let project = owner
-        .project_register(
-            project.to_string_lossy().into_owned(),
-            "backup-mcp-register".to_owned(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: project.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "backup-mcp-register".to_owned(),
+        })
         .await
         .expect("register")
         .project;
@@ -474,10 +477,12 @@ fn subprocess_runs_backup_restore_until_parent_kills_it() {
         .expect("start owned test daemon");
         let mut client = connect_with_retry(config).await;
         let registered = client
-            .project_register(
-                source.to_string_lossy().into_owned(),
-                "restore-kill-source".to_owned(),
-            )
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute {
+                    path: source.to_string_lossy().into_owned(),
+                },
+                idempotency_key: "restore-kill-source".to_owned(),
+            })
             .await
             .expect("register source");
         if matches!(
@@ -489,6 +494,7 @@ fn subprocess_runs_backup_restore_until_parent_kills_it() {
             client
                 .settings_update(
                     serde_json::from_value(serde_json::json!({
+                        "idempotencyKey": "restore-fixture-defaults",
                         "expectedRevision": settings.revision,
                         "update": { "paths": { "projectDirectory": root.to_string_lossy() } }
                     }))
@@ -719,10 +725,12 @@ fn subprocess_runs_backup_until_parent_kills_it() {
         .expect("start owned test daemon");
         let mut client = connect_with_retry(config).await;
         let registered = client
-            .project_register(
-                project.to_string_lossy().into_owned(),
-                "backup-kill-register".to_owned(),
-            )
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute {
+                    path: project.to_string_lossy().into_owned(),
+                },
+                idempotency_key: "backup-kill-register".to_owned(),
+            })
             .await
             .expect("register");
         let project_id = registered.project.project_id.expect("project id");

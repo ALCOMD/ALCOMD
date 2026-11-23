@@ -12,7 +12,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use serde_json::{Value, json};
 use wasmtime::component::{Component, HasSelf, Linker};
-use wasmtime::{Config, Engine, Store};
+use wasmtime::{Config, Engine, OptLevel, Store};
 
 wasmtime::component::bindgen!({
     path: "../../specs/extensions/wit/extension-v1",
@@ -23,7 +23,16 @@ wasmtime::component::bindgen!({
 
 pub use crate::alcomd::extension::types;
 use crate::alcomd::extension::{host_data, host_projects};
-use crate::exports::alcomd::extension::guest_ui;
+mod portable {
+    wasmtime::component::bindgen!({
+        path: "../../specs/extensions/wit/extension-v1",
+        world: "portable-ui-v1",
+        imports: { default: async },
+        exports: { default: async },
+        with: { "alcomd:extension/types@1.0.0": crate::types },
+    });
+}
+use portable::exports::alcomd::extension::guest_ui;
 mod background_integration;
 mod mcp_management;
 mod mcp_runtime;
@@ -39,7 +48,7 @@ struct Arguments {
     #[arg(long)]
     component: PathBuf,
     #[arg(long)]
-    check_tools: bool,
+    check_entries: bool,
 }
 
 struct HostState {
@@ -80,18 +89,21 @@ async fn main() {
 async fn run() -> Result<()> {
     let arguments = Arguments::parse();
     validate_component_path(&arguments.component)?;
-    if arguments.check_tools {
+    if arguments.check_entries {
         use std::io::Read;
         let mut bytes = Vec::new();
-        std::io::stdin().take(65_537).read_to_end(&mut bytes)?;
-        if bytes.len() > 65_536 {
+        std::io::stdin()
+            .take((alcomd_extensions::MAX_HOST_FRAME_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > alcomd_extensions::MAX_HOST_FRAME_BYTES {
             bail!("catalogue limit");
         }
-        let engine = create_engine()?;
+        // Preflight links and type-checks the declarations without running guest code.
+        let engine = create_engine(OptLevel::None)?;
         let component = Component::from_file(&engine, &arguments.component)
             .map_err(|_| anyhow::anyhow!("component"))?;
         mcp_tools::preflight(&engine, &component, &bytes)?;
-        println!("tools-valid-v1");
+        println!("entries-valid-v1");
         return Ok(());
     }
     let mut input = std::io::stdin();
@@ -122,7 +134,7 @@ async fn run() -> Result<()> {
         },
     };
 
-    let engine = create_engine()?;
+    let engine = create_engine(OptLevel::Speed)?;
     let component = Component::from_file(&engine, &arguments.component)
         .map_err(|_| anyhow::anyhow!("component"))?;
     let store_limits = resource_limits::HostLimits::new(limits)?;
@@ -187,6 +199,7 @@ async fn run() -> Result<()> {
         .map_err(|_| anyhow::anyhow!("instantiate"))?;
     let bindings =
         ExtensionV1::new(&mut store, &instance).map_err(|_| anyhow::anyhow!("bindings"))?;
+    let ui = portable::PortableUiV1::new(&mut store, &instance).ok();
     let background = uses_background_integration
         .then(|| background_integration::Bindings::new(&mut store, &instance))
         .transpose()
@@ -197,6 +210,7 @@ async fn run() -> Result<()> {
         .map_err(|_| anyhow::anyhow!("protocol"))?;
     let result = event_loop(
         &bindings,
+        ui.as_ref(),
         background.as_ref(),
         &instance,
         &mut store,
@@ -210,6 +224,7 @@ async fn run() -> Result<()> {
 
 async fn event_loop(
     bindings: &ExtensionV1,
+    ui: Option<&portable::PortableUiV1>,
     background: Option<&background_integration::Bindings>,
     instance: &wasmtime::component::Instance,
     store: &mut Store<HostState>,
@@ -240,7 +255,24 @@ async fn event_loop(
                 #[cfg(debug_assertions)]
                 let diagnostic_started = Instant::now();
                 let result = match export.as_str() {
-                    "mcp.invoke" => mcp_tools::invoke(instance, store, input).await,
+                    "mcp.invoke" => {
+                        mcp_tools::invoke(
+                            instance,
+                            store,
+                            input,
+                            alcomd_application::ExtensionEntryKind::Mcp,
+                        )
+                        .await
+                    }
+                    "cli.invoke" => {
+                        mcp_tools::invoke(
+                            instance,
+                            store,
+                            input,
+                            alcomd_application::ExtensionEntryKind::Cli,
+                        )
+                        .await
+                    }
                     "activate" => invoke_activate(bindings, store, &input).await,
                     "deactivate" => invoke_deactivate(bindings, store, &input).await,
                     "background.tick" => {
@@ -250,10 +282,21 @@ async fn event_loop(
                         )
                         .await
                     }
-                    "ui.open" => invoke_ui_open(bindings, store, &input).await,
-                    "ui.refresh" => invoke_ui_refresh(bindings, store, &input).await,
-                    "ui.dispatch" => invoke_ui_dispatch(bindings, store, &input).await,
-                    "ui.close" => invoke_ui_close(bindings, store, &input).await,
+                    "ui.open" => {
+                        invoke_ui_open(ui.context("Portable UI ABI required")?, store, &input).await
+                    }
+                    "ui.refresh" => {
+                        invoke_ui_refresh(ui.context("Portable UI ABI required")?, store, &input)
+                            .await
+                    }
+                    "ui.dispatch" => {
+                        invoke_ui_dispatch(ui.context("Portable UI ABI required")?, store, &input)
+                            .await
+                    }
+                    "ui.close" => {
+                        invoke_ui_close(ui.context("Portable UI ABI required")?, store, &input)
+                            .await
+                    }
                     _ => bail!("protocol"),
                 };
                 #[cfg(debug_assertions)]
@@ -373,7 +416,7 @@ async fn invoke_deactivate(
 }
 
 async fn invoke_ui_open(
-    bindings: &ExtensionV1,
+    bindings: &portable::PortableUiV1,
     store: &mut Store<HostState>,
     input: &Value,
 ) -> Result<Value, HostStableError> {
@@ -388,7 +431,7 @@ async fn invoke_ui_open(
 }
 
 async fn invoke_ui_refresh(
-    bindings: &ExtensionV1,
+    bindings: &portable::PortableUiV1,
     store: &mut Store<HostState>,
     input: &Value,
 ) -> Result<Value, HostStableError> {
@@ -402,7 +445,7 @@ async fn invoke_ui_refresh(
 }
 
 async fn invoke_ui_dispatch(
-    bindings: &ExtensionV1,
+    bindings: &portable::PortableUiV1,
     store: &mut Store<HostState>,
     input: &Value,
 ) -> Result<Value, HostStableError> {
@@ -420,7 +463,7 @@ async fn invoke_ui_dispatch(
 }
 
 async fn invoke_ui_close(
-    bindings: &ExtensionV1,
+    bindings: &portable::PortableUiV1,
     store: &mut Store<HostState>,
     input: &Value,
 ) -> Result<Value, HostStableError> {
@@ -1011,9 +1054,10 @@ fn diagnostic_id() -> String {
     alcomd_application::OperationId::new().to_string()
 }
 
-fn create_engine() -> Result<Engine> {
+fn create_engine(optimization: OptLevel) -> Result<Engine> {
     let mut config = Config::new();
     config
+        .cranelift_opt_level(optimization)
         .wasm_component_model(true)
         .concurrency_support(false)
         .consume_fuel(true)

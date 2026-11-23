@@ -20,7 +20,6 @@ pub use desktop::*;
 mod m8_oauth;
 mod m8_packages;
 mod m8_project_assets;
-mod m8_repositories;
 mod m8_runtime;
 mod m8_tools;
 mod m8_transport;
@@ -36,7 +35,6 @@ mod m8_workflows;
 pub use m8_oauth::*;
 pub use m8_packages::*;
 pub use m8_project_assets::*;
-pub use m8_repositories::*;
 pub use m8_runtime::*;
 pub use m8_tools::*;
 pub use m8_transport::*;
@@ -507,6 +505,12 @@ pub struct RpcError {
 }
 
 impl RpcError {
+    pub fn external_write_outcome_unknown() -> Self {
+        Self::simple(
+            "external_write_outcome_unknown",
+            "Core cannot confirm the external effect. Inspect the affected target before explicitly retrying.",
+        )
+    }
     /// Creates an `invalid_request` error.
     #[must_use]
     pub fn invalid_request() -> Self {
@@ -1428,7 +1432,7 @@ pub struct ProjectIdParams {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectRegisterParams {
-    pub path: String,
+    pub source: ProjectSource,
     pub idempotency_key: String,
 }
 
@@ -1476,10 +1480,16 @@ pub struct RepositoryPackagesParams {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryRegisterParams {
-    pub source: RepositorySource,
+    pub preview_id: String,
     pub idempotency_key: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub credentials: Option<RepositoryCredentials>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryInspectResult {
+    pub repository: RepositorySnapshot,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_id: Option<String>,
 }
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -1763,6 +1773,10 @@ pub struct PackageUnityCompatibilityOverride {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanKind {
+    ExtensionInstall,
+    ExtensionUninstall,
+    #[serde(rename = "repositoryRegistration")]
+    RepositoryRegistration,
     Package,
     ProjectCopy,
     ProjectDeleteDirectory,
@@ -1776,9 +1790,19 @@ pub struct PlansGetParams {
     pub plan_id: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PlansGetResult {
+    ExtensionInstall {
+        plan: Box<ExtensionPlan>,
+    },
+    ExtensionUninstall {
+        plan: Box<ExtensionPlan>,
+    },
+    #[serde(rename = "repositoryRegistration")]
+    RepositoryRegistration {
+        plan: Box<RepositorySnapshot>,
+    },
     Package {
         plan: Box<PackagePlan>,
     },
@@ -2394,8 +2418,7 @@ pub struct BackupRestoreParams {
 pub struct ProjectsPlanCopyParams {
     pub source_project_id: String,
     pub expected_revision: u64,
-    pub target_parent_path: String,
-    pub target_leaf: String,
+    pub target: ProjectTarget,
     pub idempotency_key: String,
 }
 
@@ -2876,6 +2899,7 @@ pub struct UnityHubLocation {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UnityHubOpenParams {
+    pub idempotency_key: String,
     pub expected_revision: u64,
     #[serde(deserialize_with = "Option::deserialize")]
     pub expected_target_token: Option<String>,
@@ -2890,6 +2914,7 @@ impl<'de> Deserialize<'de> for UnityHubOpenParams {
         #[serde(rename_all = "camelCase", deny_unknown_fields)]
         struct Fields {
             expected_revision: u64,
+            idempotency_key: String,
             #[serde(deserialize_with = "Option::deserialize")]
             expected_target_token: Option<String>,
         }
@@ -2905,6 +2930,7 @@ impl<'de> Deserialize<'de> for UnityHubOpenParams {
             return Err(serde::de::Error::custom("invalid Unity Hub evidence guard"));
         }
         Ok(Self {
+            idempotency_key: value.idempotency_key,
             expected_revision: value.expected_revision,
             expected_target_token: value.expected_target_token,
         })
@@ -3196,6 +3222,7 @@ pub struct SettingsGetResult {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsUpdateParams {
+    pub idempotency_key: String,
     pub expected_revision: u64,
     pub update: SettingsUpdate,
 }
@@ -3597,6 +3624,7 @@ pub struct ExtensionPlan {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installation_terms: Option<ExtensionInstallationTerms>,
     pub mcp_tools: Vec<McpToolPreview>,
+    pub cli_commands: Vec<McpToolPreview>,
     pub plan_id: String,
     pub action: String,
     pub state: String,
@@ -3630,6 +3658,8 @@ pub struct ExtensionResult {
     pub installation_source: Option<ExtensionInstallationSource>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_tools: Option<Vec<McpToolPreview>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cli_commands: Option<Vec<McpToolPreview>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub activation_consent: Option<ExtensionActivationConsent>,
     pub extension: ExtensionRecord,

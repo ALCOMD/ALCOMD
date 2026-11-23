@@ -63,13 +63,13 @@ mod m8_management;
 mod m8_mcp;
 mod m8_oauth;
 mod m8_packages;
-mod m8_repositories;
 mod m8_tools;
 mod m8_workflows;
 pub use m8_packages::{
     DelegatedPackageCatalog, DelegatedPackageSource, DelegatedSourceAvailability,
 };
 mod desktop;
+mod external_write;
 mod operation_logs;
 mod project_create;
 mod project_template_jobs;
@@ -423,26 +423,26 @@ impl M3RegistryStore for StateStoreHandle {
         .await
     }
 
-    async fn replay_mcp_project_registration(
+    async fn replay_project_registration(
         &self,
         caller: PrincipalId,
         fingerprint: String,
         key: IdempotencyKey,
-    ) -> Result<Option<SyncWrite<alcomd_application::McpRegisteredProject>>, M3Error> {
+    ) -> Result<Option<SyncWrite<ProjectRecord>>, M3Error> {
         self.request_m3(move |db| m3::replay_project_registration(db, &caller, &fingerprint, &key))
             .await
     }
 
-    async fn register_mcp_project(
+    async fn register_project_receipt(
         &self,
         caller: PrincipalId,
         observation: ProjectObservation,
         fingerprint: String,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> Result<SyncWrite<alcomd_application::McpRegisteredProject>, M3Error> {
+    ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         self.request_m3(move |db| {
-            m3::register_mcp_project(db, &caller, observation, &fingerprint, &key, now_ms)
+            m3::register_project_receipt(db, &caller, observation, &fingerprint, &key, now_ms)
         })
         .await
     }
@@ -1263,26 +1263,6 @@ impl M6Store for StateStoreHandle {
     ) -> Result<ExtensionPlanRecord, M6Error> {
         self.request_worker(
             move |connection| m6::create_install_plan(connection, &owner, draft, now_ms),
-            m6::unavailable,
-        )
-        .await
-    }
-
-    async fn needs_packaged_mcp_install(&self) -> Result<bool, M6Error> {
-        self.request_worker(
-            |connection| m6::needs_packaged_mcp_install(connection),
-            m6::unavailable,
-        )
-        .await
-    }
-
-    async fn accept_packaged_mcp_install(
-        &self,
-        evidence: alcomd_application::ExtensionPackageEvidence,
-        now_ms: u64,
-    ) -> Result<Option<OperationId>, M6Error> {
-        self.request_worker(
-            move |connection| m6::accept_packaged_mcp_install(connection, evidence, now_ms),
             m6::unavailable,
         )
         .await
@@ -2125,13 +2105,27 @@ impl M5BackupStore for StateStoreHandle {
 }
 
 impl M7CopyStore for StateStoreHandle {
+    async fn replay_project_copy_plan(
+        &self,
+        owner: PrincipalId,
+        fingerprint: String,
+        key: IdempotencyKey,
+    ) -> Result<Option<ProjectCopyPlanOutcome>, M7CopyError> {
+        self.request_worker(
+            move |connection| m7_copy::replay_plan(connection, &owner, &fingerprint, &key),
+            m7_copy::unavailable,
+        )
+        .await
+    }
+
     async fn create_project_copy_plan(
         &self,
         owner: PrincipalId,
         draft: ProjectCopyPlanDraft,
+        fingerprint: String,
     ) -> Result<ProjectCopyPlanOutcome, M7CopyError> {
         self.request_worker(
-            move |connection| m7_copy::create_plan(connection, &owner, draft),
+            move |connection| m7_copy::create_plan(connection, &owner, draft, &fingerprint),
             m7_copy::unavailable,
         )
         .await

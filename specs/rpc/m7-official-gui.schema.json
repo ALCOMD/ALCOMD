@@ -84,7 +84,8 @@
             "additionalProperties": false,
             "required": [
                 "expectedRevision",
-                "expectedTargetToken"
+                "expectedTargetToken",
+                "idempotencyKey"
             ],
             "properties": {
                 "expectedRevision": {
@@ -98,6 +99,12 @@
                         "null"
                     ],
                     "pattern": "^[a-f0-9]{64}$"
+                },
+                "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[\\u0000-\\u007f]+$"
                 }
             }
         },
@@ -289,7 +296,8 @@
             "additionalProperties": false,
             "required": [
                 "expectedRevision",
-                "update"
+                "update",
+                "idempotencyKey"
             ],
             "properties": {
                 "expectedRevision": {
@@ -297,6 +305,12 @@
                 },
                 "update": {
                     "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v1.json#/$defs/partialUpdate"
+                },
+                "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[\\u0000-\\u007f]+$"
                 }
             }
         },

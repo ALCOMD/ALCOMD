@@ -78,10 +78,11 @@ pub(super) async fn dispatch(
                 )
                 .await
             {
-                Ok(value) => match plan_with_tools(value).await {
-                    Ok(plan) => success_action(request.id, rpc::ExtensionPlanResult { plan }, None),
-                    Err(e) => extension_error(request.id, e),
-                },
+                Ok(value) => success_action(
+                    request.id,
+                    rpc::ExtensionPlanResult { plan: plan(value) },
+                    None,
+                ),
                 Err(e) => extension_error(request.id, e),
             }
         }
@@ -143,7 +144,7 @@ pub(super) async fn dispatch(
                                     package_digest: consent.package_digest,
                                     targets: consent.targets,
                                 });
-                            Ok((previews(&package.manifest.id, package.mcp_tools)?, consent))
+                            Ok((package_previews(package)?, consent))
                         })
                         .await
                         .map_err(|_| app::M6Error::new(app::M6ErrorCode::Internal))??;
@@ -163,21 +164,24 @@ pub(super) async fn dispatch(
                     }
                     .await;
                     match preview {
-                        Ok((current, tools, source, activation_consent)) => success_action(
-                            request.id,
-                            rpc::ExtensionResult {
-                                installation_source: source.map(|s| {
-                                    rpc::ExtensionInstallationSource {
-                                        url: s.url,
-                                        version: s.version,
-                                    }
-                                }),
-                                extension: record(current),
-                                mcp_tools: Some(tools),
-                                activation_consent,
-                            },
-                            None,
-                        ),
+                        Ok((current, (tools, commands), source, activation_consent)) => {
+                            success_action(
+                                request.id,
+                                rpc::ExtensionResult {
+                                    installation_source: source.map(|s| {
+                                        rpc::ExtensionInstallationSource {
+                                            url: s.url,
+                                            version: s.version,
+                                        }
+                                    }),
+                                    extension: record(current),
+                                    mcp_tools: Some(tools),
+                                    cli_commands: Some(commands),
+                                    activation_consent,
+                                },
+                                None,
+                            )
+                        }
                         Err(e) => extension_error(request.id, e),
                     }
                 }
@@ -276,35 +280,11 @@ pub(super) async fn dispatch(
                 .plan_install(access, evidence, expected, fingerprint, now_ms())
                 .await
             {
-                Ok(value) => {
-                    let evidence = value.evidence.clone();
-                    let preview = tokio::task::spawn_blocking(move || {
-                        let verified = alcomd_extensions::inspect_extension_package(
-                            std::path::Path::new(&evidence.source_locator),
-                        )
-                        .map_err(|_| app::M6Error::new(app::M6ErrorCode::PlanStale))?;
-                        if verified.package_digest != evidence.package_digest
-                            || verified.manifest_digest != evidence.manifest_digest
-                            || verified.component_digest != evidence.component_digest
-                        {
-                            return Err(app::M6Error::new(app::M6ErrorCode::PlanStale));
-                        }
-                        previews(&verified.manifest.id, verified.mcp_tools)
-                    })
-                    .await;
-                    match preview {
-                        Ok(Ok(tools)) => {
-                            let mut plan = plan(value);
-                            plan.mcp_tools = tools;
-                            success_action(request.id, rpc::ExtensionPlanResult { plan }, None)
-                        }
-                        Ok(Err(e)) => extension_error(request.id, e),
-                        Err(_) => extension_error(
-                            request.id,
-                            app::M6Error::new(app::M6ErrorCode::Internal),
-                        ),
-                    }
-                }
+                Ok(value) => success_action(
+                    request.id,
+                    rpc::ExtensionPlanResult { plan: plan(value) },
+                    None,
+                ),
                 Err(error) => extension_error(request.id, error),
             }
         }
@@ -432,6 +412,7 @@ pub(super) async fn dispatch(
                     rpc::ExtensionResult {
                         installation_source: None,
                         mcp_tools: None,
+                        cli_commands: None,
                         activation_consent: None,
                         extension: record(value),
                     },
@@ -564,7 +545,7 @@ fn record(value: app::ExtensionRecord) -> rpc::ExtensionRecord {
     }
 }
 
-fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
+pub(super) fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
     rpc::ExtensionPlan {
         installation_source: value.evidence.remote_source.as_ref().map(|source| {
             rpc::ExtensionInstallationSource {
@@ -578,7 +559,18 @@ fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
                 text: terms.text,
             }
         }),
-        mcp_tools: Vec::new(),
+        mcp_tools: value
+            .evidence
+            .mcp_tools
+            .into_iter()
+            .map(entry_preview)
+            .collect(),
+        cli_commands: value
+            .evidence
+            .cli_commands
+            .into_iter()
+            .map(entry_preview)
+            .collect(),
         plan_id: value.plan_id.to_string(),
         action: value.action,
         state: value.state,
@@ -610,7 +602,7 @@ fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
     }
 }
 
-fn extension_error(id: String, source: app::M6Error) -> DispatchAction {
+pub(super) fn extension_error(id: String, source: app::M6Error) -> DispatchAction {
     let diagnostic_id = source.diagnostic_id().map(str::to_owned);
     let mut error = match source.code() {
         app::M6ErrorCode::InvalidInput => rpc::RpcError::invalid_request(),
@@ -669,52 +661,30 @@ fn hex(value: &[u8]) -> String {
     value.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn previews(
-    id: &str,
-    tools: Vec<app::ToolDeclaration>,
-) -> Result<Vec<rpc::McpToolPreview>, app::M6Error> {
-    tools
-        .into_iter()
-        .map(|tool| {
-            Ok(rpc::McpToolPreview {
-                name: app::tool_public_name(id, &tool.name),
-                title: tool.title.clone(),
-                description: tool.description.clone(),
-                required_permissions: tool.permissions(),
-                effect: serde_json::to_value(
-                    tool.effect()
-                        .map_err(|_| app::M6Error::new(app::M6ErrorCode::PackageInvalid))?,
-                )
-                .map_err(|_| app::M6Error::new(app::M6ErrorCode::Internal))?
-                .as_str()
-                .ok_or_else(|| app::M6Error::new(app::M6ErrorCode::Internal))?
-                .into(),
-            })
-        })
-        .collect()
+type EntryPreviews = (Vec<rpc::McpToolPreview>, Vec<rpc::McpToolPreview>);
+
+fn entry_preview(value: app::ExtensionEntryPreview) -> rpc::McpToolPreview {
+    rpc::McpToolPreview {
+        name: value.name,
+        title: value.title,
+        description: value.description,
+        required_permissions: value.required_permissions,
+        effect: value.effect.as_str().into(),
+    }
 }
 
-async fn plan_with_tools(
-    value: app::ExtensionPlanRecord,
-) -> Result<rpc::ExtensionPlan, app::M6Error> {
-    let evidence = value.evidence.clone();
-    let tools = tokio::task::spawn_blocking(move || {
-        let verified = alcomd_extensions::inspect_extension_package(std::path::Path::new(
-            &evidence.source_locator,
-        ))
-        .map_err(|_| app::M6Error::new(app::M6ErrorCode::PlanStale))?;
-        if verified.package_digest != evidence.package_digest
-            || verified.publisher_fingerprint != evidence.publisher_fingerprint
-        {
-            return Err(app::M6Error::new(app::M6ErrorCode::PlanStale));
-        }
-        previews(&verified.manifest.id, verified.mcp_tools)
-    })
-    .await
-    .map_err(|_| app::M6Error::new(app::M6ErrorCode::Internal))??;
-    let mut result = plan(value);
-    result.mcp_tools = tools;
-    Ok(result)
+fn package_previews(
+    package: alcomd_extensions::VerifiedExtensionPackage,
+) -> Result<EntryPreviews, app::M6Error> {
+    let tools = app::ExtensionEntryPreview::from_declarations(
+        Some(&package.manifest.id),
+        &package.mcp_tools,
+    )?;
+    let commands = app::ExtensionEntryPreview::from_declarations(None, &package.cli_commands)?;
+    Ok((
+        tools.into_iter().map(entry_preview).collect(),
+        commands.into_iter().map(entry_preview).collect(),
+    ))
 }
 
 #[cfg(test)]
@@ -804,6 +774,8 @@ mod tests {
             remote_source: None,
             required_permissions: vec!["background.run".to_owned()],
             optional_permissions: vec!["projects.read".to_owned()],
+            mcp_tools: Vec::new(),
+            cli_commands: Vec::new(),
             required_interfaces: vec![],
             optional_interfaces: vec![],
             ui_protocol: None,
@@ -881,7 +853,8 @@ mod tests {
             .expect("runtime adapter without starting a host");
         let engine =
             alcomd_extensions::ExtensionEngine::new(store.clone(), root.join("extensions"))
-                .expect("package adapter");
+                .expect("package adapter")
+                .with_tools_validator(runtime.host_executable());
         let application = app::M6Application::new(
             store.clone(),
             engine,

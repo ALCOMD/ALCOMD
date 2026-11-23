@@ -1,6 +1,6 @@
 {
     "artifact": "crates/alcomd-testing/fixtures/m8/mcp-transport-v1.wasm",
-    "sha256": "261b653375b56e4e1bbbf7a8f4d005eb019392f6b5f8f9b397a64bd37ac9ee67",
+    "sha256": "b3b9297861c780a91783711df8eceee196a70576883336952bf9668fd5c44271",
     "toolchain": "1.97.1",
     "target": "wasm32-unknown-unknown",
     "profile": "release",
@@ -16,8 +16,8 @@
         "specs/extensions/wit/mcp-transport-v1/deps/extension/host-data.wit": "2f70a251ae30d1d463faab2dee9e6baa08b277ab87d6efa4e65761ba914d7347",
         "specs/extensions/wit/mcp-transport-v1/deps/extension/host-projects.wit": "aa7fd7d38f2af28ca3606d7f70471586b134abb5a76dd4f82154bebd31a4dacb",
         "specs/extensions/wit/mcp-transport-v1/deps/extension/types.wit": "4fe1c69e2779b043f2f6ca81ca836e1e8f4132fa000f38cac256e03e9d2147bd",
-        "specs/extensions/wit/mcp-transport-v1/deps/extension/world.wit": "27f577baa5510bde52ba57a7b1179e79f61511f81d3b290665cb06b967c17ffd",
-        "specs/extensions/wit/mcp-transport-v1/deps/mcp-management/management.wit": "53520ae3dfddb2248429faf8ee5080e125b38aa4d45d70e7875bb393863fc1fd",
+        "specs/extensions/wit/mcp-transport-v1/deps/extension/world.wit": "501cd19062d5b98643c62d39f135e2e2786f93d6e535ee91af0a3e6f97d0ced4",
+        "specs/extensions/wit/mcp-transport-v1/deps/mcp-management/management.wit": "1b8a6d2c39dacc58c2e41e73b1abac1ba6eafc6e971bf18477d115fca374dec9",
         "specs/extensions/wit/mcp-transport-v1/transport.wit": "72cf59022a46984cce3221d888ed86426c73d506e7953c22ee143af4eeed0cdd"
     },
     "sourceCandidate": "MCP client management and observation interfaces for the first release"

@@ -46,6 +46,26 @@ async fn unity_migration_plan_reads_only_its_immutable_snapshots() {
     changed_project.root_path = "C:/mutated/project".to_owned();
     changed_project.unity_version = "2023.2.20f1".to_owned();
     let connection = rusqlite::Connection::open(database_path).expect("open inspection connection");
+    for column in ["project_id", "target_installation_id"] {
+        for invalid in [
+            "A0000000-0000-0000-0000-000000000000",
+            "0000000--0000-0000-0000-000000000000",
+            "g0000000-0000-0000-0000-000000000000",
+            "00000000000000000000000000000000",
+        ] {
+            let error = connection
+                .execute(
+                    &format!(
+                        "UPDATE project_unity_migration_plans SET {column}=?1 WHERE plan_id=?2"
+                    ),
+                    params![invalid, draft.plan_id.to_string()],
+                )
+                .expect_err("plan snapshot references require canonical UUIDs");
+            assert!(
+                matches!(error, rusqlite::Error::SqliteFailure(failure, _) if failure.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_CHECK)
+            );
+        }
+    }
     connection
         .execute(
             "UPDATE projects SET root_path=?1,unity_version=?2,snapshot_json=?3,revision=revision+1

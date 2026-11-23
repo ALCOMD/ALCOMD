@@ -3,6 +3,46 @@ use serde::{Deserialize, Serialize};
 
 pub const CAPABILITY_PROJECT_INVENTORY_V1: &str = "packages.project-inventory.v1";
 pub const CAPABILITY_TEMPLATE_EDIT_V1: &str = "project-templates.edit.v1";
+/// Required negotiated capability for each additional named business tool.
+pub fn mcp_operation_tool_capability(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "alcomd_subscribe_events" => crate::CAPABILITY_EVENTS_LIVE_V1,
+        "alcomd_list_events" => crate::CAPABILITY_EVENTS_REPLAY_V1,
+        "alcomd_read_logs" => crate::CAPABILITY_LOGS_READ_V1,
+        "alcomd_inspect_repository_file"
+        | "alcomd_preview_repository_export"
+        | "alcomd_export_repository_file" => crate::CAPABILITY_REPOSITORIES_LIST_FILES_V1,
+        "alcomd_import_repository_file" | "alcomd_cancel_repository_import" => {
+            crate::CAPABILITY_REPOSITORIES_LIST_IMPORT_V1
+        }
+        "alcomd_list_repositories"
+        | "alcomd_inspect_repository"
+        | "alcomd_get_repository"
+        | "alcomd_list_repository_packages" => crate::CAPABILITY_REPOSITORIES_READ_V1,
+        "alcomd_register_repository"
+        | "alcomd_refresh_repository"
+        | "alcomd_remove_repository"
+        | "alcomd_move_repository"
+        | "alcomd_set_repository_display_name"
+        | "alcomd_refresh_all_repositories"
+        | "alcomd_set_repository_credentials" => crate::CAPABILITY_REPOSITORIES_REGISTRY_V1,
+        "alcomd_check_state" => crate::CAPABILITY_STATE_CHECK_V1,
+        "alcomd_open_unity_hub" => crate::CAPABILITY_UNITY_HUB_OPEN_V1,
+        "alcomd_get_unity_launch_options" | "alcomd_launch_unity" => {
+            crate::CAPABILITY_UNITY_LAUNCH_V1
+        }
+        "alcomd_refresh_unity_installations"
+        | "alcomd_register_unity_installation"
+        | "alcomd_remove_unity_installation"
+        | "alcomd_set_project_launch_config"
+        | "alcomd_clear_project_launch_config" => crate::CAPABILITY_UNITY_MANAGE_V1,
+        "alcomd_get_unity_installation" | "alcomd_get_unity_writer_state" => {
+            crate::CAPABILITY_UNITY_READ_V1
+        }
+        _ => return None,
+    })
+}
+
 pub fn mcp_environment_tool_capability(name: &str) -> Option<&'static str> {
     Some(match name {
         "alcomd_focus_project_unity"
@@ -30,6 +70,41 @@ pub fn mcp_environment_tool_capability(name: &str) -> Option<&'static str> {
         "alcomd_create_project_template"
         | "alcomd_export_project_template"
         | "alcomd_remove_project_template" => crate::CAPABILITY_PROJECT_TEMPLATES_V1,
+        _ => return None,
+    })
+}
+
+/// Each tool requires one of the listed native capabilities.
+pub fn mcp_project_catalog_capabilities(name: &str) -> Option<&'static [&'static str]> {
+    use crate::*;
+    Some(match name {
+        "alcomd_inspect_project" => &[CAPABILITY_PROJECTS_READ_V1],
+        "alcomd_register_project"
+        | "alcomd_refresh_project"
+        | "alcomd_set_project_favorite"
+        | "alcomd_unregister_project" => &[CAPABILITY_PROJECTS_REGISTRY_V1],
+        "alcomd_create_project" => &[CAPABILITY_PROJECTS_CREATE_V1],
+        "alcomd_plan_project_copy" => &[CAPABILITY_PROJECTS_COPY_V1],
+        "alcomd_plan_project_delete_directory" | "alcomd_apply_project_delete_directory" => {
+            &[CAPABILITY_PROJECTS_DELETE_V1]
+        }
+        "alcomd_plan_project_unity_migration" | "alcomd_apply_project_unity_migration" => {
+            &[CAPABILITY_PROJECTS_UNITY_MIGRATION_V1]
+        }
+        "alcomd_get_plan" => &[
+            crate::CAPABILITY_REPOSITORIES_READ_V1,
+            CAPABILITY_EXTENSIONS_LIFECYCLE_V1,
+            CAPABILITY_PACKAGES_PLAN_V1,
+            CAPABILITY_PROJECTS_COPY_V1,
+            CAPABILITY_PROJECTS_DELETE_V1,
+            CAPABILITY_PROJECTS_UNITY_MIGRATION_V1,
+        ],
+        "alcomd_query_project_candidates" => &[CAPABILITY_PACKAGES_CANDIDATES_V1],
+        "alcomd_list_user_packages"
+        | "alcomd_get_user_package"
+        | "alcomd_enroll_user_package"
+        | "alcomd_refresh_user_package"
+        | "alcomd_remove_user_package" => &[CAPABILITY_PACKAGES_USER_PACKAGES_V1],
         _ => return None,
     })
 }

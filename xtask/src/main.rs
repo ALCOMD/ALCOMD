@@ -24,7 +24,6 @@ const REQUIRED_PATHS: &[&str] = &[
     "apps/alcomd-cli",
     "apps/alcomd-mcp",
     "apps/alcomd-updater",
-    "extensions/first-party/alcomd-extension-mcp",
     "extensions/first-party/alcomd-extension-discord",
 ];
 
@@ -227,6 +226,24 @@ fn check(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .success()
     {
         errors.push("first-release contract registry check failed".to_owned());
+    }
+    if !Command::new(python)
+        .arg(root.join("scripts/generate-project-tool-schemas.py"))
+        .arg("--check")
+        .current_dir(root)
+        .status()?
+        .success()
+    {
+        errors.push("MCP project tool schemas differ from the native contracts".to_owned());
+    }
+    if !Command::new(python)
+        .arg(root.join("scripts/derive-mcp-schemas.py"))
+        .args(["specs/mcp/operations-v1.bindings.json", "--check"])
+        .current_dir(root)
+        .status()?
+        .success()
+    {
+        errors.push("MCP operation tool schemas differ from the native contracts".to_owned());
     }
 
     for relative in PRODUCTION_ROOTS {
@@ -620,22 +637,19 @@ fn check_derived_identity(
         }
     }
 
-    for (extension, id_suffix) in [("mcp", ".extension.mcp"), ("discord", "-discord-presence")] {
-        let relative =
-            format!("extensions/first-party/alcomd-extension-{extension}/alcomd-extension.toml");
-        let manifest: toml::Value = read_toml(&root.join(&relative))?;
-        let expected_id = format!("{}{id_suffix}", product.identity.bundle_identifier);
-        if manifest["id"].as_str() != Some(&expected_id) {
-            errors.push(format!("{relative} ID does not match alcomd.product.toml"));
-        }
-        if manifest["publisher_name"].as_str() != Some(product.product.publisher_name.as_str()) {
-            errors.push(format!(
-                "{relative} publisher does not match alcomd.product.toml"
-            ));
-        }
-        if manifest["license"].as_str() != Some(LICENSE) {
-            errors.push(format!("{relative} must use {LICENSE}"));
-        }
+    let relative = "extensions/first-party/alcomd-extension-discord/alcomd-extension.toml";
+    let manifest: toml::Value = read_toml(&root.join(relative))?;
+    let expected_id = format!("{}-discord-presence", product.identity.bundle_identifier);
+    if manifest["id"].as_str() != Some(&expected_id) {
+        errors.push(format!("{relative} ID does not match alcomd.product.toml"));
+    }
+    if manifest["publisher_name"].as_str() != Some(product.product.publisher_name.as_str()) {
+        errors.push(format!(
+            "{relative} publisher does not match alcomd.product.toml"
+        ));
+    }
+    if manifest["license"].as_str() != Some(LICENSE) {
+        errors.push(format!("{relative} must use {LICENSE}"));
     }
 
     let identity_tokens = [

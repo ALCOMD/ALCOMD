@@ -1,4 +1,5 @@
 import type { BackupCreateParams, BackupRestoreParams } from "@alcomd/sdk";
+import type { PlansGetParams, PlansGetResult, ProjectSource, ProjectTarget } from "@alcomd/sdk";
 import type { ProjectsCreateParams, ProjectsCreateResult, ProjectTemplatesExportParams, ProjectTemplatesExportResult, ProjectTemplatesListResult, ProjectTemplatesSaveParams, ProjectTemplatesSaveResult, ProjectTemplatesRemoveParams, ProjectTemplatesRemoveResult } from "@alcomd/sdk";
 import type { LogsReadParams, LogsReadResult } from "@alcomd/sdk";
 import type { NativeRpcMethods } from "@alcomd/sdk";
@@ -36,11 +37,13 @@ export interface GuiRpcClient {
     clientsList(params: NativeRpcMethods["clients.list"]["params"]): Promise<NativeRpcMethods["clients.list"]["result"]>;
     clientInstancesList(params: NativeRpcMethods["clients.instances.list"]["params"]): Promise<NativeRpcMethods["clients.instances.list"]["result"]>;
     clientsDisconnect(params: NativeRpcMethods["clients.disconnect"]["params"]): Promise<NativeRpcMethods["clients.disconnect"]["result"]>;
+    getPlan(params: PlansGetParams): Promise<PlansGetResult>;
     readonly unityWindows?: GuiUnityWindows;
     subscribeEvents(request: GuiEventsRequest, receive: (message: GuiEventMessage) => void): Promise<GuiEventSubscription>;
     packageQueryProjectCandidates(params: ProjectCandidateRequest): Promise<ProjectCandidatePage>;
     systemStatus(): Promise<SystemStatus>;
-    stateCheck(idempotencyKey?: string): Promise<OperationAccepted>;
+    eventsList(afterSequence:number,limit?:number): Promise<{events:import("@alcomd/sdk").CoreEvent[]; nextSequence:number}>;
+    stateCheck(idempotencyKey: string): Promise<OperationAccepted>;
     operationsList(cursor?: OperationsListResult["nextCursor"], activeOnly?: boolean): Promise<OperationsListResult>;
     logsRead(params: LogsReadParams): Promise<LogsReadResult>;
     operationGet(operationId: string): Promise<Operation>;
@@ -59,15 +62,15 @@ export interface GuiRpcClient {
     selectUnityHub(currentPath: string | null): Promise<string | undefined>;
     unityHubOpen(expectedRevision: number, expectedTargetToken: string | null): Promise<UnityHubOpenResult>;
     openUnityHubDownload(): Promise<void>;
-    projectRegister(path: string, idempotencyKey: string): Promise<ProjectWriteResult>;
-    projectRefresh(projectId: string, expectedRevision: number, idempotencyKey?: string): Promise<ProjectWriteResult>;
+    projectRegister(source: ProjectSource, idempotencyKey: string): Promise<ProjectWriteResult>;
+    projectRefresh(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectWriteResult>;
     projectSetFavorite(projectId: string, favorite: boolean, expectedRevision: number, idempotencyKey: string): Promise<ProjectWriteResult>;
     projectUnregister(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectUnregisterResult>;
-    projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string, idempotencyKey: string): Promise<ProjectsPlanCopyResult>;
+    projectPlanCopy(sourceProjectId: string, expectedRevision: number, target: ProjectTarget, idempotencyKey: string): Promise<ProjectsPlanCopyResult>;
     projectApplyCopy(planId: string, expectedRevision: number, progress?: "inline"): Promise<ProjectsApplyCopyResult>;
     projectPlanDeleteDirectory(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectsPlanDeleteDirectoryResult>;
     projectApplyDeleteDirectory(planId: string, expectedRevision: number): Promise<ProjectsApplyDeleteDirectoryResult>;
-    repositoriesInspect(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryResult>;
+    repositoriesInspect(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryResult & {previewId?:string}>;
     selectRepositoryListFile(mode: "open" | "save", fileName?: string, currentPath?: string): Promise<string | undefined>;
     repositoryListInspectFile(path: string): Promise<RepositoryListInspection>;
     repositoryListImportFile(path: string, expectedFingerprint: string, idempotencyKey: string, overwriteExisting?: boolean): Promise<RepositoryListImportResult>;
@@ -78,7 +81,7 @@ export interface GuiRpcClient {
     repositoryGet(repositoryId: string): Promise<RepositoryResult>;
     repositoryPackages(repositoryId: string, cursor?: PackageCursor): Promise<RepositoryPackagesResult>;
     openPackageLink(url: string): Promise<void>;
-    repositoryRegister(source: RepositorySource, credentials: RepositoryCredentials | undefined, idempotencyKey: string): Promise<RepositoryWriteResult>;
+    repositoryRegister(previewId: string, idempotencyKey: string): Promise<RepositoryWriteResult>;
     repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: RepositoryCredentials | null, idempotencyKey: string): Promise<RepositoryWriteResult>;
     repositoryMove(repositoryId: string, beforeRepositoryId: string | null, expectedOrderFingerprint: string, idempotencyKey: string): Promise<RepositoryMoveResult>;
     repositorySetDisplayName(repositoryId: string, expectedRevision: number, displayName: string | null, idempotencyKey: string): Promise<RepositoryWriteResult>;
@@ -140,6 +143,24 @@ export interface GuiRpcClient {
 }
 
 class TauriGuiRpcClient implements GuiRpcClient {
+    private interruptedWrites = new Map<string, { input: string; key: string }>();
+
+    private async externalWrite<Result>(command: string, args: Record<string, unknown>, nested: boolean): Promise<Result> {
+        const input = JSON.stringify(args);
+        const interrupted = this.interruptedWrites.get(command);
+        const key = interrupted?.input === input ? interrupted.key : crypto.randomUUID();
+        this.interruptedWrites.delete(command);
+        const request = { ...args, idempotencyKey: key };
+        try {
+            return await invokeTyped<Result>(command, nested ? { params: request } : request);
+        } catch (error: unknown) {
+            if (normalizeRpcError(error).code === "daemon_unavailable") {
+                this.interruptedWrites.set(command, { input, key });
+            }
+            throw error;
+        }
+    }
+
     aiTransportSnapshot(params: NativeRpcMethods["mcp.transport.snapshot"]["params"]): Promise<NativeRpcMethods["mcp.transport.snapshot"]["result"]> {
         return invokeTyped("gui_mcp_transport_snapshot", { params });
     }
@@ -248,7 +269,7 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_repository_list_preview_export", { format });
     }
     repositoryListExportFile(targetPath: string, expectedFingerprint: string, format?: import("@alcomd/sdk").RepositoryListFormat): Promise<RepositoryListExportResult> {
-        return invokeTyped("gui_repository_list_export_file", { targetPath, expectedFingerprint, format });
+        return this.externalWrite("gui_repository_list_export_file", { targetPath, expectedFingerprint, format }, false);
     }
     packageQueryProjectCandidates(params: ProjectCandidateRequest): Promise<ProjectCandidatePage> {
         return invokeTyped("gui_package_query_project_candidates", { params });
@@ -257,7 +278,11 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_system_status", {});
     }
 
-    stateCheck(idempotencyKey: string = crypto.randomUUID()): Promise<OperationAccepted> {
+    eventsList(afterSequence:number,limit?:number): ReturnType<GuiRpcClient["eventsList"]> {
+        return invoke("gui_events_list",{afterSequence,limit});
+    }
+
+    stateCheck(idempotencyKey: string): Promise<OperationAccepted> {
         return invokeTyped("gui_state_check", { idempotencyKey });
     }
 
@@ -282,9 +307,12 @@ class TauriGuiRpcClient implements GuiRpcClient {
     }
 
     settingsUpdate(expectedRevision: number, update: SettingsUpdate): Promise<SettingsGetResult> {
-        return invokeTyped("gui_settings_update", { params: { expectedRevision, update } });
+        return this.externalWrite("gui_settings_update", { expectedRevision, update }, true);
     }
 
+    getPlan(params: PlansGetParams): Promise<PlansGetResult> {
+        return invokeTyped("gui_get_plan", { params });
+    }
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult> {
         return invokeTyped("gui_projects_inspect", { params: { path, discoveryMode } });
     }
@@ -310,18 +338,18 @@ class TauriGuiRpcClient implements GuiRpcClient {
     }
 
     unityHubOpen(expectedRevision: number, expectedTargetToken: string | null): Promise<UnityHubOpenResult> {
-        return invokeTyped("gui_unity_hub_open", { params: { expectedRevision, expectedTargetToken } });
+        return this.externalWrite("gui_unity_hub_open", { expectedRevision, expectedTargetToken }, true);
     }
 
     openUnityHubDownload(): Promise<void> {
         return invokeTyped("gui_open_unity_hub_download", { params: { idempotencyKey: crypto.randomUUID() } });
     }
 
-    projectRegister(path: string, idempotencyKey: string): Promise<ProjectWriteResult> {
-        return invokeTyped("gui_project_register", { path, idempotencyKey });
+    projectRegister(source: ProjectSource, idempotencyKey: string): Promise<ProjectWriteResult> {
+        return invokeTyped("gui_project_register", { params: { source, idempotencyKey } });
     }
 
-    projectRefresh(projectId: string, expectedRevision: number, idempotencyKey: string = crypto.randomUUID()): Promise<ProjectWriteResult> {
+    projectRefresh(projectId: string, expectedRevision: number, idempotencyKey: string): Promise<ProjectWriteResult> {
         return invokeTyped("gui_project_refresh", { projectId, expectedRevision, idempotencyKey });
     }
 
@@ -333,8 +361,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_project_unregister", { projectId, expectedRevision, idempotencyKey });
     }
 
-    projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string, idempotencyKey: string): Promise<ProjectsPlanCopyResult> {
-        return invokeTyped("gui_project_plan_copy", { params: { sourceProjectId, expectedRevision, targetParentPath, targetLeaf, idempotencyKey } });
+    projectPlanCopy(sourceProjectId: string, expectedRevision: number, target: ProjectTarget, idempotencyKey: string): Promise<ProjectsPlanCopyResult> {
+        return invokeTyped("gui_project_plan_copy", { params: { sourceProjectId, expectedRevision, target, idempotencyKey } });
     }
 
     projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult> {
@@ -349,7 +377,7 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_project_apply_delete_directory", { params: { planId, expectedRevision, idempotencyKey: planId } });
     }
 
-    repositoriesInspect(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryResult> {
+    repositoriesInspect(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryResult & {previewId?:string}> {
         return invokeTyped("gui_repositories_inspect", { params: { source, credentials } });
     }
 
@@ -369,8 +397,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_open_package_link", { url });
     }
 
-    repositoryRegister(source: RepositorySource, credentials: RepositoryCredentials | undefined, idempotencyKey: string): Promise<RepositoryWriteResult> {
-        return invokeTyped("gui_repository_register", { source, credentials, idempotencyKey });
+    repositoryRegister(previewId: string, idempotencyKey: string): Promise<RepositoryWriteResult> {
+        return invokeTyped("gui_repository_register", { previewId, idempotencyKey });
     }
 
     repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: RepositoryCredentials | null, idempotencyKey: string): Promise<RepositoryWriteResult> {

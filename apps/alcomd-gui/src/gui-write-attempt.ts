@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { GuiRpcClient } from "./rpc";
 
 type KeyedMethod =
-    | "operationCancel" | "projectRegister" | "projectSetFavorite" | "projectUnregister"
+    | "stateCheck" | "operationCancel" | "projectRegister" | "projectRefresh" | "projectSetFavorite" | "projectUnregister"
     | "projectPlanCopy" | "projectPlanDeleteDirectory" | "projectPlanUnityMigration"
     | "repositoryRegister" | "repositorySetCredentials" | "repositorySetDisplayName" | "repositoryMove"
     | "repositoryRefresh" | "repositoriesRefreshAll" | "repositoryUnregister"

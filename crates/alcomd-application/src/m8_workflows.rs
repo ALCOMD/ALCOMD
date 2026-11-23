@@ -1,5 +1,4 @@
-use crate::{PrincipalId, ProjectId, ProjectType, Revision, ToolAuthentication};
-use serde::{Deserialize, Serialize};
+use crate::{PrincipalId, ToolAuthentication};
 use std::future::Future;
 
 tokio::task_local! {
@@ -39,14 +38,4 @@ pub fn workflow_resource_owner(caller: &PrincipalId) -> PrincipalId {
     } else {
         caller.clone()
     }
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct McpRegisteredProject {
-    pub project_id: ProjectId,
-    pub revision: Revision,
-    pub display_name: Option<String>,
-    pub project_type: ProjectType,
-    pub unity_version: String,
 }

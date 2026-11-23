@@ -47,7 +47,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
     const selected = catalog?.templates.find(({ id }) => id === selection?.id);
     const staleSelection = selection !== undefined && selected?.revision !== selection.revision;
     const unity = useCreateUnityVersion(client, selected?.editorVersion, open);
-    const { directory: targetParent, setDirectory: setTargetParent, error: directoryError } = useProjectDirectory(client, open);
+    const { directory: targetParent, setDirectory: setTargetParent, error: directoryError, projectTarget } = useProjectDirectory(client, open);
     const [name, setName] = useState("");
     const [operationId, setOperationId] = useState<string>();
     const operations = useAcceptedOperations(client);
@@ -167,8 +167,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
         if (!ready) return;
         const generation = draft.current;
         const input = {
-            name: name.trim(),
-            targetParent,
+            target: projectTarget(name.trim()),
             unityVersion: unity.version.trim(),
             ...(selection === undefined ? {} : { template: selection })
         };

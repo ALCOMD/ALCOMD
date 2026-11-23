@@ -69,7 +69,7 @@ fn active_manifest_and_package_are_direct_rewrites_without_web_assets() {
 }
 
 #[test]
-fn active_wit_keeps_abi_major_one_and_requires_portable_ui() {
+fn active_wit_keeps_abi_major_one_with_optional_portable_ui() {
     let abi: Value = serde_json::from_str(ACTIVE_ABI).expect("ABI contract");
     assert_eq!(abi["abiMajor"], 1);
     assert_eq!(abi["world"], "alcomd:extension/extension-v1@1.0.0");
@@ -78,9 +78,14 @@ fn active_wit_keeps_abi_major_one_and_requires_portable_ui() {
     assert_eq!(abi["witFunctions"], "sync");
     assert_eq!(abi["componentModelAsync"], false);
     assert_eq!(abi["wasmtimeWasi"], false);
-    assert_eq!(abi["guestUiRequiredForEveryAbiV1Component"], true);
-    assert_eq!(abi["manifestUiControlsPublicationNotWorldShape"], true);
-    assert_eq!(abi["noUiGuestUsesDefaultEmptyStub"], true);
+    assert_eq!(
+        abi["exports"],
+        json!(["alcomd:extension/guest-lifecycle@1.0.0"])
+    );
+    assert_eq!(
+        abi["optionalEntryExports"]["ui"],
+        "alcomd:extension/guest-ui@1.0.0"
+    );
     assert_eq!(
         abi["preReleaseDirectRewrite"]["parallelWorldRetained"],
         false
@@ -129,8 +134,11 @@ fn active_wit_keeps_abi_major_one_and_requires_portable_ui() {
 
 #[test]
 fn review_closure_freezes_manifest_lifecycle_draft_and_security_responsibility() {
-    assert!(ACTIVE_MANIFEST_TEXT.contains("所有 ABI v1 Component 都必须实现 `guest-ui`"));
-    assert!(ACTIVE_MANIFEST_TEXT.contains("官方 SDK/reference guest提供空桩"));
+    assert!(
+        ACTIVE_MANIFEST_TEXT
+            .contains("只有声明 `[ui]` 才要求 `alcomd:extension/guest-ui@1.0.0` 导出")
+    );
+    assert!(ACTIVE_MANIFEST_TEXT.contains("每个组件都要求生命周期导出"));
     assert!(ACTIVE_MANIFEST_TEXT.contains("`background.run` 不由 `[ui]` 隐式添加"));
     assert!(PORTABLE_CONTRACT.contains("`/extensions/:extensionId/ui`"));
     assert!(PORTABLE_CONTRACT.contains("仍等于 session 当前 revision"));

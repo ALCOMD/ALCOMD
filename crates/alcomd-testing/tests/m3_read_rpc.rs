@@ -27,6 +27,10 @@ async fn directory_state_is_a_fresh_root_only_projection_without_registry_mutati
         .register_project(
             &access,
             source.to_string_lossy().into_owned(),
+            alcomd_platform::resolve_plain_storage_directory(&source)
+                .expect("fixture directory identity")
+                .1,
+            r#"{"fixture":true}"#.into(),
             IdempotencyKey::parse("directory-state-source").expect("key"),
         )
         .await
@@ -126,11 +130,20 @@ async fn operation_log_records_real_filesystem_checks_and_preserves_the_backgrou
     let cli = AccessContext::local_owner().with_actor("CLI".to_owned());
     let gui = AccessContext::local_owner().with_actor("GUI".to_owned());
     let path = project.to_string_lossy().into_owned();
+    let identity = alcomd_platform::resolve_plain_storage_directory(&project)
+        .expect("fixture directory identity")
+        .1;
     let key = IdempotencyKey::parse("real-operation-log-registration").expect("key");
     let registered = with_log_caller(
         store.clone(),
         &cli,
-        registry.register_project(&cli, path.clone(), key.clone()),
+        registry.register_project(
+            &cli,
+            path.clone(),
+            identity.clone(),
+            r#"{"fixture":true}"#.into(),
+            key.clone(),
+        ),
     )
     .await
     .expect("register fixture project");
@@ -138,7 +151,7 @@ async fn operation_log_records_real_filesystem_checks_and_preserves_the_backgrou
         with_log_caller(
             store.clone(),
             &cli,
-            registry.register_project(&cli, path, key)
+            registry.register_project(&cli, path, identity, r#"{"fixture":true}"#.into(), key)
         )
         .await
         .expect("replay")
@@ -152,6 +165,8 @@ async fn operation_log_records_real_filesystem_checks_and_preserves_the_backgrou
     let fail = registry.register_project(
         &gui,
         missing.clone(),
+        Vec::new(),
+        r#"{"fixture":true}"#.into(),
         IdempotencyKey::parse("real-operation-log-failure").expect("key"),
     );
     assert!(with_log_caller(store.clone(), &gui, fail).await.is_err());
@@ -293,10 +308,12 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
             .is_none()
     );
     let registered = client
-        .project_register(
-            project.to_string_lossy().into_owned(),
-            "m3-project-register".to_owned(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: project.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "m3-project-register".to_owned(),
+        })
         .await
         .expect("register project");
     assert_eq!(registered.project.revision, Some(1));
@@ -331,10 +348,12 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         Some(registered.project.root_path.as_str())
     );
     client
-        .project_register(
-            project.to_string_lossy().into_owned(),
-            "m3-project-register".to_owned(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: project.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "m3-project-register".to_owned(),
+        })
         .await
         .expect("replay registration");
     assert_eq!(
@@ -351,7 +370,12 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         .into_owned();
     assert!(
         log_reader
-            .project_register(missing.clone(), "m7-operation-log-failed-check".to_owned())
+            .project_register(alcomd_protocol::ProjectRegisterParams {
+                source: alcomd_protocol::ProjectSource::Absolute {
+                    path: missing.clone()
+                },
+                idempotency_key: "m7-operation-log-failed-check".to_owned()
+            })
             .await
             .is_err()
     );
@@ -464,7 +488,12 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         Some("Fixture")
     );
     let registered_repository = client
-        .repository_register(source, "m3-repository-register".to_owned())
+        .repository_register(
+            inspected_repository
+                .preview_id
+                .expect("registration preview"),
+            "m3-repository-register".to_owned(),
+        )
         .await
         .expect("register repository");
     let repository_id = registered_repository

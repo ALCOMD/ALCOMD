@@ -21,12 +21,43 @@
             ]
         },
         {
+            "name": "extension", "aliases": [],
+            "commands": [
+                {"name": "list", "aliases": []},
+                {"name": "get", "aliases": []},
+                {"name": "inspect-source", "aliases": []},
+                {"name": "plan-install", "aliases": []},
+                {"name": "plan-install-from-source", "aliases": []},
+                {"name": "apply-install", "aliases": []},
+                {"name": "plan-uninstall", "aliases": []},
+                {"name": "apply-uninstall", "aliases": []},
+                {"name": "enable", "aliases": []},
+                {"name": "disable", "aliases": []},
+                {"name": "permissions", "aliases": []},
+                {"name": "grant", "aliases": []},
+                {"name": "revoke", "aliases": []},
+                {"name": "commands", "aliases": []},
+                {"name": "run", "aliases": []}
+            ]
+        },
+        {
             "name": "system",
             "aliases": [],
             "commands": [
                 {"name": "status", "aliases": []}
             ]
         },
+        {
+            "name": "settings",
+            "aliases": [],
+            "commands": [
+                {"name": "get", "aliases": []},
+                {"name": "update", "aliases": []}
+            ]
+        },
+        {"name": "events", "aliases": [], "commands": [{"name": "list", "aliases": []}, {"name": "subscribe", "aliases": []}]},
+        {"name": "logs", "aliases": [], "commands": [{"name": "read", "aliases": []}]},
+        {"name": "state", "aliases": [], "commands": [{"name": "check", "aliases": []}]},
         {
             "name": "operation",
             "aliases": ["operations"],
@@ -53,6 +84,7 @@
                 {"name": "get", "aliases": ["info"]},
                 {"name": "register", "aliases": ["add"]},
                 {"name": "refresh", "aliases": []},
+                {"name": "set-favorite", "aliases": []},
                 {"name": "unregister", "aliases": ["remove"]}
             ]
         },
@@ -60,6 +92,14 @@
             "name": "repository",
             "aliases": ["repo"],
             "commands": [
+                {"name": "move", "aliases": []},
+                {"name": "set-display-name", "aliases": []},
+                {"name": "refresh-all", "aliases": []},
+                {"name": "inspect-list-file", "aliases": []},
+                {"name": "import-list-file", "aliases": []},
+                {"name": "cancel-list-registration", "aliases": []},
+                {"name": "preview-list-export", "aliases": []},
+                {"name": "export-list-file", "aliases": []},
                 {"name": "inspect", "aliases": []},
                 {"name": "list", "aliases": []},
                 {"name": "get", "aliases": ["info"]},
@@ -71,10 +111,25 @@
             ]
         },
         {
+            "name": "plan",
+            "aliases": [],
+            "commands": [
+                {"name": "get", "aliases": []}
+            ]
+        },
+        {
             "name": "package",
             "aliases": ["packages"],
             "commands": [
                 {"name": "inventory", "aliases": []},
+                {"name": "candidates", "aliases": []},
+                {"name": "bulk", "aliases": []},
+                {"name": "reinstall", "aliases": []},
+                {"name": "user-package list", "aliases": []},
+                {"name": "user-package get", "aliases": []},
+                {"name": "user-package enroll", "aliases": []},
+                {"name": "user-package refresh", "aliases": []},
+                {"name": "user-package remove", "aliases": []},
                 {"name": "install", "aliases": ["i"]},
                 {"name": "remove", "aliases": ["rm"]},
                 {"name": "upgrade", "aliases": []},
@@ -87,6 +142,7 @@
             "name": "unity",
             "aliases": [],
             "commands": [
+                {"name": "hub-open", "aliases": []},
                 {"name": "list", "aliases": []},
                 {"name": "get", "aliases": ["info"]},
                 {"name": "refresh", "aliases": []},

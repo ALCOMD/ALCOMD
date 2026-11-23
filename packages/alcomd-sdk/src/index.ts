@@ -52,7 +52,7 @@ export interface ClientInfo {
 }
 
 export interface ExtensionPermissionGrant {
-    permission: "background.run" | "projects.read" | "mcp.clients.read" | "mcp.clients.manage" | "mcp.connections.read" | "mcp.requests.read" | "mcp.subscription-streams.read" | "mcp.tools.provide" | "repositories.read" | "packages.read" | "packages.manage" | "operations.read" | "operations.cancel" | "unity.sessions.read" | "local-ipc.connect";
+    permission: "background.run" | "projects.read" | "mcp.clients.read" | "mcp.clients.manage" | "mcp.connections.read" | "mcp.requests.read" | "mcp.subscription-streams.read" | "repositories.read" | "packages.read" | "packages.manage" | "operations.read" | "operations.cancel" | "unity.sessions.read" | "local-ipc.connect";
     resourceKind: "Extension" | "Global" | "LocalIpcTarget";
     resourceId: string;
 }

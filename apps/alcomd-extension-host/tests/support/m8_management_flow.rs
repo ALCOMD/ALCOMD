@@ -6,6 +6,8 @@ use alcomd_protocol::{
     McpTransportStreamInput, UiFieldValue, UiSnapshot, UiSubmittedField,
 };
 
+const MANAGEMENT_FIXTURE_PROFILE: &str = "[permissions]\nrequired=[]\noptional=[\"mcp.clients.manage\",\"mcp.clients.read\",\"mcp.connections.read\",\"mcp.requests.read\",\"mcp.subscription-streams.read\"]\n[ui]\nprotocol=\"portable-v1\"\n";
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn transport_host_reads_only_current_granted_groups_and_revokes_old_ui_lease() {
     let _serial = RPC_TEST_LOCK.lock().await;
@@ -71,7 +73,10 @@ async fn transport_host_reads_only_current_granted_groups_and_revokes_old_ui_lea
         })
         .await
         .expect("current catalog");
-    assert_eq!(permissions.available_permissions.len(), 15);
+    assert_eq!(
+        permissions.available_permissions,
+        alcomd_application::EXTENSION_PERMISSIONS
+    );
     assert!(
         permissions
             .available_permissions
@@ -395,18 +400,13 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
     fs::create_dir(&runtime).expect("real runtime observation fixture");
     fs::create_dir(&data).expect("real runtime observation fixture");
     let package = fixture.path().join("runtime.alcomdextension");
-    let declarations = include_str!(
-        "../../../../extensions/first-party/alcomd-extension-mcp/alcomd-extension.toml"
-    )
-    .split_once("[permissions]")
-    .expect("current management permission declarations")
-    .1;
-    let profile = format!("[permissions]{declarations}\n[ui]\nprotocol = \"portable-v1\"\n");
     create_signed_package_with_interfaces(
         &package,
-        include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/mcp-runtime-v1.wasm"),
+        include_bytes!(
+            "../../../../crates/alcomd-testing/fixtures/m8/third-party-management-v1.wasm"
+        ),
         "Core activity fixture",
-        &profile,
+        MANAGEMENT_FIXTURE_PROFILE,
         &[
             "alcomd:mcp-management/clients@1.0.0",
             "alcomd:mcp-runtime/observations@1.0.0",
@@ -524,7 +524,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
         serde_json::to_string(&page.snapshot.document).expect("real runtime observation fixture");
     assert!(!document.contains("\"actionId\":\"activity\""));
     assert!(!document.contains(&ids[0]));
-    assert!(!document.contains("Core 连接 ·"));
+    assert!(!document.contains("connections="));
     let mut revision = owner
         .extension_permissions_list(alcomd_protocol::ExtensionPermissionsListParams {
             extension_id: extension.extension_id.clone(),
@@ -570,9 +570,9 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
             dispatch(&mut owner, &mut page, &mut sequence, activate("activity")).await;
             let document =
                 serde_json::to_string(&page.document).expect("real runtime observation fixture");
-            assert!(document.contains("Core 连接 · 2"), "{document}");
-            assert!(document.contains("Core 调用 · 1"), "{document}");
-            assert!(document.contains("读取项目列表"));
+            assert!(document.contains("connections=2"), "{document}");
+            assert!(document.contains("requests=1"), "{document}");
+            assert!(document.contains("projects.list"));
             assert!(document.contains(&ids[1][..8]));
             assert!(!document.contains("credential"));
             assert!(!document.contains("idempotency"));
@@ -598,8 +598,8 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
                 .await
                 .expect("real runtime observation fixture");
             let denied = String::from_utf8(denied).expect("real runtime observation fixture");
-            assert!(!denied.contains("Core 连接 ·"));
-            assert!(!denied.contains("Core 调用 ·"));
+            assert!(!denied.contains("connections="));
+            assert!(!denied.contains("requests="));
             let partial = daemon
                 .extension_activity_with_access(
                     narrowed(vec![
@@ -612,8 +612,8 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
                 .await
                 .expect("real runtime observation fixture");
             let partial = String::from_utf8(partial).expect("real runtime observation fixture");
-            assert!(partial.contains("Core 连接 · 2"), "{partial}");
-            assert!(!partial.contains("Core 调用 ·"));
+            assert!(partial.contains("connections=2"), "{partial}");
+            assert!(!partial.contains("requests="));
             dispatch(
                 &mut owner,
                 &mut page,
@@ -624,7 +624,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
             assert!(
                 serde_json::to_string(&page.document)
                     .expect("real runtime observation fixture")
-                    .contains("Core 调用 · 0")
+                    .contains("requests=0")
             );
             revision = owner
                 .extension_revoke_grant(ExtensionGrantParams {
@@ -660,8 +660,8 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
             dispatch(&mut owner, &mut page, &mut sequence, activate("activity")).await;
             let document =
                 serde_json::to_string(&page.document).expect("real runtime observation fixture");
-            assert!(!document.contains("Core 连接 ·"));
-            assert!(document.contains("Core 调用 · 0"));
+            assert!(!document.contains("connections="));
+            assert!(document.contains("requests=0"));
         } else {
             revision = owner
                 .extension_set_grant(ExtensionGrantParams {
@@ -687,8 +687,8 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
             dispatch(&mut owner, &mut page, &mut sequence, activate("activity")).await;
             let document =
                 serde_json::to_string(&page.document).expect("real runtime observation fixture");
-            assert!(document.contains("Core 连接 · 2"), "{document}");
-            assert!(!document.contains("Core 调用 ·"));
+            assert!(document.contains("connections=2"), "{document}");
+            assert!(!document.contains("requests="));
         }
     }
     let revision = owner
@@ -713,7 +713,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
     assert!(
         !serde_json::to_string(&page.snapshot.document)
             .expect("real runtime observation fixture")
-            .contains("Core 调用 ·")
+            .contains("requests=")
     );
     assert!(
         !serde_json::to_string(&page.snapshot.document)
@@ -748,8 +748,8 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
     let mut sequence = 0;
     dispatch(&mut owner, &mut page, &mut sequence, activate("activity")).await;
     let unavailable = serde_json::to_string(&page.document).expect("document");
-    assert!(unavailable.contains("当前没有可用的 MCP 订阅流报告。"));
-    assert!(!unavailable.contains("MCP 订阅流（适配器上报） · 0"));
+    assert!(unavailable.contains("streams unavailable"));
+    assert!(!unavailable.contains("streams=0"));
 
     let mut reporter = AlcomdClient::connect(config.with_transport_observer())
         .await
@@ -787,13 +787,10 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
     )
     .await;
     let observed = serde_json::to_string(&page.document).expect("document");
-    assert!(
-        observed.contains("MCP 订阅流（适配器上报） · 1"),
-        "{observed}"
-    );
-    assert!(observed.contains("未关联客户端 · 工具列表变更"));
-    assert!(!observed.contains("Core 调用 ·"));
-    assert!(!observed.contains("Core 连接 ·"));
+    assert!(observed.contains("streams=1"), "{observed}");
+    assert!(observed.contains("unattributed"));
+    assert!(!observed.contains("requests="));
+    assert!(!observed.contains("connections="));
     owner
         .extension_revoke_grant(ExtensionGrantParams {
             extension_id: extension.extension_id.clone(),
@@ -834,18 +831,13 @@ async fn optional_management_permissions_allow_zero_grant_start_and_restrict_dat
     fs::create_dir(&runtime).expect("runtime");
     fs::create_dir(&data).expect("data");
     let package = fixture.path().join("optional-management.alcomdextension");
-    let permissions = include_str!(
-        "../../../../extensions/first-party/alcomd-extension-mcp/alcomd-extension.toml"
-    )
-    .split_once("[permissions]")
-    .expect("actual management permission declarations")
-    .1;
-    let profile = format!("[permissions]{permissions}\n[ui]\nprotocol = \"portable-v1\"\n");
     create_signed_package_with_interfaces(
         &package,
-        include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/mcp-runtime-v1.wasm"),
+        include_bytes!(
+            "../../../../crates/alcomd-testing/fixtures/m8/third-party-management-v1.wasm"
+        ),
         "MCP management fixture",
-        &profile,
+        MANAGEMENT_FIXTURE_PROFILE,
         &[
             "alcomd:mcp-management/clients@1.0.0",
             "alcomd:mcp-runtime/observations@1.0.0",
@@ -933,10 +925,10 @@ async fn optional_management_permissions_allow_zero_grant_start_and_restrict_dat
         .await
         .expect("zero-authority real Host page");
     let restricted = serde_json::to_string(&opened.snapshot.document).expect("document");
-    assert!(restricted.contains("尚未授权读取 MCP 客户端"));
+    assert!(restricted.contains("clients unavailable"));
     assert!(restricted.contains("neutral"));
     assert!(!restricted.contains("授权后才可见的客户端"));
-    assert!(!restricted.contains("创建客户端"));
+    assert!(!restricted.contains("create client"));
     let forged = client
         .extension_ui_dispatch(ExtensionUiDispatchParams {
             session_id: opened.session.session_id,
@@ -978,7 +970,7 @@ async fn optional_management_permissions_allow_zero_grant_start_and_restrict_dat
         .expect("page after explicit read");
     let document = serde_json::to_string(&readable.snapshot.document).expect("document");
     assert!(document.contains("授权后才可见的客户端"));
-    assert!(!document.contains("创建客户端"));
+    assert!(!document.contains("create client"));
     client
         .extension_revoke_grant(ExtensionGrantParams {
             extension_id: extension.extension_id.clone(),
@@ -1007,9 +999,9 @@ async fn optional_management_permissions_allow_zero_grant_start_and_restrict_dat
         .await
         .expect("optional extension still opens after revocation");
     let document = serde_json::to_string(&restricted_again.snapshot.document).expect("document");
-    assert!(document.contains("尚未授权读取 MCP 客户端"));
+    assert!(document.contains("clients unavailable"));
     assert!(!document.contains("授权后才可见的客户端"));
-    assert!(!document.contains("创建客户端"));
+    assert!(!document.contains("create client"));
     assert_eq!(
         client
             .extension_get(extension.extension_id.clone())
@@ -1031,7 +1023,6 @@ async fn optional_management_permissions_allow_zero_grant_start_and_restrict_dat
         ExtensionRuntimeState::Stopped,
     )
     .await;
-    export_development_package(&package);
     shutdown.store(true, Ordering::Release);
     daemon.await.expect("daemon task").expect("clean shutdown");
 }
@@ -1047,7 +1038,9 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
     let package = fixture.path().join("management.alcomdextension");
     create_signed_package_with_interfaces(
         &package,
-        include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/mcp-runtime-v1.wasm"),
+        include_bytes!(
+            "../../../../crates/alcomd-testing/fixtures/m8/third-party-management-v1.wasm"
+        ),
         "MCP management fixture",
         "[permissions]\nrequired = [\"mcp.clients.read\"]\noptional = [\"mcp.clients.manage\",\"projects.read\"]\n\n[ui]\nprotocol = \"portable-v1\"\n",
         &[
@@ -1186,8 +1179,8 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         .expect("real new-world guest UI");
     let document = serde_json::to_string(&opened.snapshot.document).expect("safe document");
     assert!(document.contains("真实 Core 客户端"));
-    assert!(document.contains("查看客户端"));
-    assert!(!document.contains("创建客户端"));
+    assert!(document.contains("clients:"));
+    assert!(!document.contains("create client"));
     assert!(!document.contains("credential"));
     // Closing/reopening exercises the real Host lifetime, not a renderer fixture.
     client
@@ -1247,18 +1240,22 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         .expect("VPM");
     }
     let project = client
-        .project_register(
-            first.to_string_lossy().into_owned(),
-            "management-project".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: first.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "management-project".into(),
+        })
         .await
         .expect("register disposable project")
         .project;
     let outside = client
-        .project_register(
-            second.to_string_lossy().into_owned(),
-            "management-outside".into(),
-        )
+        .project_register(alcomd_protocol::ProjectRegisterParams {
+            source: alcomd_protocol::ProjectSource::Absolute {
+                path: second.to_string_lossy().into_owned(),
+            },
+            idempotency_key: "management-outside".into(),
+        })
         .await
         .expect("register outside fixture")
         .project;
@@ -1300,7 +1297,7 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
     assert!(
         serde_json::to_string(&snapshot.document)
             .expect("document")
-            .contains("创建客户端")
+            .contains("create client")
     );
     dispatch(
         &mut client,
@@ -1471,14 +1468,10 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         .await
         .expect("extension removal keeps global clients");
     assert_eq!(kept.items.len(), 3);
-    export_development_package(&package);
     shutdown.store(true, Ordering::Release);
     assert!(daemon.await.expect("join isolated daemon").is_ok());
 }
 
-fn export_development_package(package: &Path) {
-    export_package(package, "ALCOMD_TEST_MCP_MANAGEMENT_PACKAGE_OUTPUT");
-}
 fn export_package(package: &Path, output_environment: &str) {
     if let Some(destination) = std::env::var_os(output_environment) {
         let destination = PathBuf::from(destination);

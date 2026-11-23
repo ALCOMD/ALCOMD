@@ -36,6 +36,7 @@ export function requestErrorMessage(code: string): string {
         case "unity_hub_download_open_failed":
             return "Core could not open the Unity download page in its default browser.";
         case "internal_error":
+        case "external_write_outcome_unknown":
             return "The result could not be confirmed because of an internal error. Check Tasks before repeating a change.";
         case "permission_denied":
             return "You do not have permission for this action. Review the required access.";

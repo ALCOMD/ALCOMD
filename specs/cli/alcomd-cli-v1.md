@@ -11,7 +11,9 @@ capability 已真实实现时才可进入 help；合同中存在名称不等于�
 
 手动安装、升级或降级时，可用 `--allow-unity-incompatible` 为本次操作的目标包版本启用 Unity 兼容性例外。安装和升级须同时提供精确选择器，例如 `--version-range "=1.2.3"`。降级使用位置参数指定版本，例如 `1.2.3`。依赖包仍按项目的 Unity 版本检查。
 
-`project list`、`repository list`、`repository packages` 可将上一页的 JSON `nextCursor` 原样传给 `--cursor`。任务列表的两个游标字段成对传递；`--active-only` 选择活动任务。
+`operation list`、`project list`、`repository list`、`repository packages` 可将上一页的 JSON `nextCursor` 原样传给 `--cursor`。任务列表的游标包含时间和任务 ID；`--active-only` 选择活动任务，续页时沿用相同筛选。
+
+`settings get` 读取完整设置及修订。`settings update --expected-revision <revision> --update <JSON>` 使用同一份 Core 部分更新合同。JSON 只需包含要修改的字段，例如 `{"packages":{"showPrerelease":false}}`。修订冲突时重新读取设置，由调用者确认新的修改。回执不明时也可通过读取核实已保存的值。
 
 权威 machine-readable 工件：
 
@@ -86,3 +88,13 @@ NDJSON。普通日志不得污染任何 machine stdout。
 # Core desktop actions
 
 `desktop focus-project-unity <PROJECT_ID> --expected-revision <REVISION> --idempotency-key <KEY>` focuses the project's running Unity editor on the Core machine. `desktop open-project-directory <PROJECT_ID> --idempotency-key <KEY>` opens the registered directory. `desktop open-unity-hub-download --idempotency-key <KEY>` opens the official Unity download page. Reuse the original key and arguments to recover a lost response. Each command reports the system outcome and rejects `--dry-run`.
+
+
+## 扩展声明的 CLI 命令
+
+`extension commands [--extension-id ID] [--cursor CURSOR] [--limit LIMIT]` 列出已启用扩展签名声明的命令。`extension run EXTENSION_ID COMMAND [--arguments JSON]` 在 Core 的扩展宿主内运行该扩展的 CLI 导出。未传参数时输入为空对象。Core 会再次检查实际扩展权限和调用者身份。
+
+声明为 plan 的命令可用 `--dry-run` 获取真实计划。plan、apply、cancel 均需 `--idempotency-key`。apply 使用 `--plan-id` 及原计划修订，交互时展示实际计划，也可显式提交 `--expected-revision` 和 `--yes`。cancel 使用 `--operation-id`、`--expected-revision` 及确认。[声明 Schema](../extensions/cli-commands-v1.schema.json) · [原生 RPC](../rpc/extension-cli-commands-v1.schema.json)
+
+
+`settings update`、`unity hub-open` 和 `repository export-list-file` 要求 `--idempotency-key`。同一次操作的回执丢失时，发送原参数和原键。Hub 使用 `--expected-revision` 及设置中观察到的 `--expected-target-token`，目标为 null 时省略 token。仓库导出传入目标路径、`--expected-fingerprint`，默认原生格式，显式 `--format vcc-txt` 使用 VCC 交换格式。

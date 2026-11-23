@@ -396,7 +396,8 @@ test("Project workspace launch split menu retains launch arguments, backup navig
     await expect(group.locator(".alcomd-split-button-menu")).toHaveCSS("border-start-start-radius", "8px");
     expect(arrowBox!.height).toBe(primaryBox!.height);
     await arrow.click();
-    await expect(page.getByRole("menuitem")).toHaveCount(6);
+    await expect(page.getByRole("menuitem")).toHaveCount(7);
+    await expect(page.getByRole("menuitem", { name: "Refresh project", exact: true })).toBeVisible();
     await expect(group.locator("md-menu .menu.open")).not.toHaveClass(/animating/);
     await page.screenshot({ path: testInfo.outputPath("project-launch-menu.png"), fullPage: false });
     await page.getByRole("menuitem", { name: "Edit launch arguments", exact: true }).click();

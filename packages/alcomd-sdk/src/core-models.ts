@@ -435,6 +435,7 @@ export interface ExtensionPlan {
     installationSource?: import("./index.js").ExtensionInstallationSource;
     installationTerms?: import("./index.js").ExtensionInstallationTerms;
     mcpTools: import("./index.js").McpToolPreview[];
+    cliCommands: import("./index.js").McpToolPreview[];
     requiredPermissions: string[];
     optionalPermissions: string[];
     planId: string;
@@ -457,9 +458,12 @@ export interface ExtensionOperationResult { operationId: string; replayed: boole
 export interface ExtensionGrantResult { extensionId: string; grantRevision: number; state: string; replayed: boolean }
 
 export type PlansGetResult =
+    | { kind: "extension_install"; plan: ExtensionPlan }
+    | { kind: "extension_uninstall"; plan: ExtensionPlan }
     | { kind: "package"; plan: PackagePlan }
     | { kind: "project_copy"; plan: ProjectCopyPlan }
     | { kind: "project_delete_directory"; plan: ProjectDeletePlan }
-    | { kind: "project_unity_migration"; plan: ProjectUnityMigrationPlan };
+    | { kind: "project_unity_migration"; plan: ProjectUnityMigrationPlan }
+    | { kind: "repositoryRegistration"; plan: RepositorySnapshot };
 
 export interface PlansGetParams { kind: PlansGetResult["kind"]; planId: string }

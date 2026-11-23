@@ -12,22 +12,28 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub const CONTRACT: &str = include_str!("../../../specs/mcp/package-removal-v1.schema.json");
 const PACKAGE_CONTRACT: &str =
     include_str!("../../../specs/mcp/package-catalog-plan-v1.schema.json");
-const REPOSITORY_CONTRACT: &str = include_str!("../../../specs/mcp/repositories-v1.schema.json");
 const WORKFLOW_CONTRACT: &str = include_str!("../../../specs/mcp/project-workflows-v1.schema.json");
 const ENVIRONMENT_CONTRACT: &str = include_str!("../../../specs/mcp/environment-v1.schema.json");
 const INVENTORY_CONTRACT: &str =
     include_str!("../../../specs/mcp/project-inventory-v1.schema.json");
 const TEMPLATE_CONTRACT: &str = include_str!("../../../specs/mcp/template-edit-v1.schema.json");
 mod environment;
+mod extensions;
+mod operations;
 mod packages;
-mod repositories;
+mod project_catalog;
+mod tool_fields;
 mod workflows;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 static DIAGNOSTICS: AtomicU64 = AtomicU64::new(1);
 
 /// Static HTTP admission metadata. Discovery still uses Core's authorized directory.
 pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> {
-    let source = if packages::recognized(name) {
+    let source = if rpc::mcp_extension_management_capability(name).is_some() {
+        include_str!("../../../specs/mcp/extensions-v1.schema.json")
+    } else if rpc::mcp_project_catalog_capabilities(name).is_some() {
+        include_str!("../../../specs/mcp/project-catalog-v1.schema.json")
+    } else if packages::recognized(name) {
         PACKAGE_CONTRACT
     } else if rpc::mcp_environment_tool_capability(name) == Some(rpc::CAPABILITY_DESKTOP_ACTIONS_V1)
     {
@@ -46,8 +52,8 @@ pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> 
         == Some(rpc::CAPABILITY_CLIENTS_REGISTRY_V1)
     {
         include_str!("../../../specs/mcp/client-registry-v1.schema.json")
-    } else if repositories::recognized(name) {
-        REPOSITORY_CONTRACT
+    } else if operations::recognized(name) {
+        operations::CONTRACT
     } else if workflows::recognized(name) {
         WORKFLOW_CONTRACT
     } else if name == "alcomd_list_installed_packages" {
@@ -88,6 +94,7 @@ pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> 
             "readOnlyHint":read_only,"destructiveHint":false,"idempotentHint":read_only,"openWorldHint":false,
         }));
     }
+    entry.remove("x-alcomd-method");
     for schema in ["inputSchema", "outputSchema"] {
         let value = entry.get_mut(schema).ok_or_else(internal_protocol)?;
         *value = rpc::mcp_tool_schema(value, &contract);
@@ -131,6 +138,8 @@ fn cursor_binding<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Strin
 struct List {
     cursor: Option<Cursor>,
     limit: Option<u32>,
+    view: Option<rpc::ProjectListView>,
+    expected_view_sequence: Option<u64>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -245,6 +254,9 @@ fn parse(params: CallToolRequestParams) -> Result<Input, ErrorData> {
     let valid = match &input {
         Input::List(p) => {
             p.limit.is_none_or(|v| (1..=1000).contains(&v))
+                && p.expected_view_sequence.is_some() == (p.view.is_some() && p.cursor.is_some())
+                && p.expected_view_sequence
+                    .is_none_or(|value| value <= MAX_SAFE)
                 && p.cursor
                     .as_ref()
                     .is_none_or(|c| c.registered_at_ms <= MAX_SAFE && canonical_id(&c.project_id))
@@ -355,50 +367,19 @@ fn snake(value: Value) -> Value {
         value => value,
     }
 }
-fn project(value: rpc::ProjectSnapshot, detail: bool) -> Result<Value, Failure> {
-    let id = value
+fn project(value: rpc::ProjectSnapshot) -> Result<Value, Failure> {
+    if value
         .project_id
-        .filter(|s| canonical_id(s))
-        .ok_or(Failure::InvalidCore)?;
-    let rev = value
-        .revision
-        .filter(|v| revision(*v))
-        .ok_or(Failure::InvalidCore)?;
-    let state = value.directory_state.ok_or(Failure::InvalidCore)?;
-    let mut output = json!({
-        "project_id": id,
-        "root_path": value.root_path,
-        "revision": rev,
-        "project_type": value.project_type,
-        "unity_version": value.unity_version,
-        "directory_state": state
-    });
-    if let Some(name) = value.display_name {
-        output["display_name"] = json!(name);
+        .as_deref()
+        .is_none_or(|id| !canonical_id(id))
+        || value.revision.is_none_or(|value| !revision(value))
+        || value.directory_state.is_none()
+    {
+        return Err(Failure::InvalidCore);
     }
-    if detail {
-        output["vpm_manifest"] = json!(value.vpm_manifest);
-        output["upm_manifest"] = json!(value.upm_manifest);
-        output["direct_dependencies"] = snake(json!(value.direct_dependencies));
-        output["locked_dependencies"] = snake(json!(value.locked_dependencies));
-        output["issues"] = Value::Array(
-            value
-                .issues
-                .into_iter()
-                .map(|issue| {
-                    let mut issue_value = json!({"code":issue.code,"component":issue.component});
-                    if let Some(line) = issue.line {
-                        issue_value["line"] = json!(line);
-                    }
-                    if let Some(column) = issue.column {
-                        issue_value["column"] = json!(column);
-                    }
-                    issue_value
-                })
-                .collect(),
-        );
-    }
-    Ok(output)
+    serde_json::to_value(value)
+        .map(snake)
+        .map_err(|_| Failure::InvalidCore)
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -411,8 +392,6 @@ fn operation(mut value: rpc::Operation) -> Result<Value, Failure> {
         return Err(Failure::InvalidCore);
     }
     if value.kind != "packages.apply" {
-        // Other Core tasks share the lifecycle envelope. Expose their
-        // method-specific payloads only once they have a safe typed projection.
         if value.kind.is_empty()
             || value.kind.len() > 128
             || !value
@@ -431,23 +410,20 @@ fn operation(mut value: rpc::Operation) -> Result<Value, Failure> {
                 serde_json::to_value(value).map_err(|_| Failure::InvalidCore)?,
             ));
         }
-        value.progress = None;
-        if value.kind == "state.check" {
-            if let Some(result) = value.result.as_ref() {
-                let fields = result.as_object().ok_or(Failure::InvalidCore)?;
-                if fields.len() != 2
-                    || ["integrity", "foreignKeys"].into_iter().any(|key| {
-                        !matches!(
-                            fields.get(key).and_then(Value::as_str),
-                            Some("ok" | "issues_detected" | "issues_truncated")
-                        )
-                    })
-                {
-                    return Err(Failure::InvalidCore);
-                }
+        if value.kind == "state.check"
+            && let Some(result) = value.result.as_ref()
+        {
+            let fields = result.as_object().ok_or(Failure::InvalidCore)?;
+            if fields.len() != 2
+                || ["integrity", "foreignKeys"].into_iter().any(|key| {
+                    !matches!(
+                        fields.get(key).and_then(Value::as_str),
+                        Some("ok" | "issues_detected" | "issues_truncated")
+                    )
+                })
+            {
+                return Err(Failure::InvalidCore);
             }
-        } else {
-            value.result = None;
         }
         return Ok(snake(
             serde_json::to_value(value).map_err(|_| Failure::InvalidCore)?,
@@ -533,11 +509,16 @@ fn error(
     result
 }
 fn failure(cause: Failure) -> CallToolResult {
+    failure_with_profile(cause, None)
+}
+fn failure_with_profile(cause: Failure, profile: Option<&str>) -> CallToolResult {
     match cause {
         Failure::Remote(ClientError::Remote(e), _)
             if matches!(
                 e.code.as_str(),
-                "mcp_tool_write_outcome_unknown" | "desktop_result_unknown"
+                "mcp_tool_write_outcome_unknown"
+                    | "desktop_result_unknown"
+                    | "external_write_outcome_unknown"
             ) =>
         {
             error(
@@ -571,10 +552,23 @@ fn failure(cause: Failure) -> CallToolResult {
                 Ok(v) => v,
                 Err(_) => return failure(Failure::InvalidCore),
             };
+            let profile_allows = profile.is_some_and(|profile| {
+                static NATIVE: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+                let manifest = NATIVE.get_or_init(|| {
+                    serde_json::from_str(include_str!(
+                        "../../../specs/rpc/native-sdk-v1.methods.json"
+                    ))
+                    .unwrap_or(Value::Null)
+                });
+                manifest["errorProfiles"][profile]
+                    .as_array()
+                    .is_some_and(|codes| codes.iter().any(|code| code == &e.code))
+            });
             if !contract["$defs"]["toolError"]["properties"]["code"]["enum"]
                 .as_array()
                 .is_some_and(|codes| {
-                    codes.iter().any(|code| code == &e.code)
+                    profile_allows
+                        || codes.iter().any(|code| code == &e.code)
                         || matches!(
                             e.code.as_str(),
                             "package_candidate_evidence_stale"
@@ -652,24 +646,18 @@ pub(crate) fn interrupted(writing: bool) -> CallToolResult {
 pub async fn execute(
     client: &mut AlcomdClient,
     params: CallToolRequestParams,
+    events_config: Option<&alcomd_client::ClientConfig>,
 ) -> Result<CallToolResult, ErrorData> {
     let descriptor = match descriptor(client, params.name.as_ref()).await {
         Ok(value) => value,
         Err(error) => return Ok(failure(Failure::Remote(error, false))),
     };
-    let recovery = descriptor.is_none()
-        && params.name.starts_with("alcomd_ext_")
-        && params
-            .arguments
-            .as_ref()
-            .is_some_and(|a| a.contains_key("idempotency_key"));
-    if descriptor.as_ref().is_some_and(|d| d.origin.is_some()) || recovery {
+    if let Some(descriptor) = descriptor.as_ref().filter(|entry| entry.origin.is_some()) {
         if params.input_responses.is_some() || params.request_state.is_some() {
             return Err(invalid());
         }
         let arguments = Value::Object(params.arguments.unwrap_or_default());
-        let writing = descriptor.as_ref().is_none_or(descriptor_writes)
-            || arguments.get("idempotency_key").is_some();
+        let writing = descriptor_writes(descriptor) || arguments.get("idempotency_key").is_some();
         let value = match client
             .extension_mcp_tools_call(rpc::ExtensionMcpToolsCallParams {
                 name: params.name.into_owned(),
@@ -701,17 +689,34 @@ pub async fn execute(
         result.structured_content = Some(output);
         return Ok(result);
     }
-    if let Some(capability) = rpc::mcp_repositories_tool_capability(params.name.as_ref()) {
-        if !client.supports_capability(capability) {
-            return Err(super::unsupported_method());
-        }
-        return repositories::execute(client, params).await;
-    }
     if let Some(capability) = rpc::mcp_workflows_tool_capability(params.name.as_ref()) {
         if !client.supports_capability(capability) {
             return Err(super::unsupported_method());
         }
         return workflows::execute(client, params).await;
+    }
+    if let Some(capability) = rpc::mcp_extension_management_capability(params.name.as_ref()) {
+        if !client.supports_capability(capability) {
+            return Err(super::unsupported_method());
+        }
+        return extensions::execute(client, params).await;
+    }
+    if let Some(required) = rpc::mcp_project_catalog_capabilities(params.name.as_ref()) {
+        if !required
+            .iter()
+            .any(|capability| client.supports_capability(capability))
+        {
+            return Err(super::unsupported_method());
+        }
+        return project_catalog::execute(client, params).await;
+    }
+    if operations::recognized(params.name.as_ref()) {
+        if rpc::mcp_operation_tool_capability(params.name.as_ref())
+            .is_some_and(|cap| !client.supports_capability(cap))
+        {
+            return Err(super::unsupported_method());
+        }
+        return operations::execute(client, params, events_config).await;
     }
     if environment::recognized(params.name.as_ref()) {
         if rpc::mcp_environment_tool_capability(params.name.as_ref())
@@ -746,13 +751,17 @@ async fn execute_builtin(
     let result:Result<(Value,String,bool),Failure>=async {
         match input {
             Input::List(p) => {
-                let page=client.projects_list(p.cursor.map(|c|rpc::ProjectRegistryCursor{registered_at_ms:c.registered_at_ms,id:c.project_id,authorization_binding:c.authorization_binding}),p.limit).await.map_err(read)?;
-                let items=page.projects.into_iter().map(|p|project(p,false)).collect::<Result<Vec<_>,_>>()?;
+                let page=client.projects_list_with_view(rpc::ProjectsListParams {
+                    cursor:p.cursor.map(|c|rpc::ProjectRegistryCursor{registered_at_ms:c.registered_at_ms,id:c.project_id,authorization_binding:c.authorization_binding}),
+                    limit:p.limit,view:p.view,expected_view_sequence:p.expected_view_sequence,
+                }).await.map_err(read)?;
+                let items=page.projects.into_iter().map(project).collect::<Result<Vec<_>,_>>()?;
                 let mut data=json!({"projects":items});
+                if let Some(sequence)=page.view_sequence {data["view_sequence"]=json!(sequence);}
                 if let Some(c)=page.next_cursor {let mut cursor=json!({"registered_at_ms":c.registered_at_ms,"project_id":c.id});if let Some(binding)=c.authorization_binding{cursor["authorization_binding"]=json!(binding);}data["next_cursor"]=cursor;}
                 Ok((data,"Authorized registered projects.".into(),false))
             }
-            Input::Project(p) => Ok((project(client.project_get(p.project_id).await.map_err(read)?.project,true)?,"Registered package snapshot; planning rechecks current project files.".into(),false)),
+            Input::Project(p) => Ok((project(client.project_get(p.project_id).await.map_err(read)?.project)?,"Registered package snapshot; planning rechecks current project files.".into(),false)),
             Input::Plan(p) => {
                 let plan=client.package_plan_remove(rpc::PackagePlanRemoveParams{project_id:p.project_id,expected_revision:p.expected_revision,package_id:p.package_id}).await.map_err(write)?;
                 if plan.action!=rpc::PackagePlanAction::Remove || plan.change_set.mutations.iter().any(|m|m.kind!=rpc::PackageMutationKind::Remove || m.source.is_some()) {return Err(Failure::InvalidCore);}

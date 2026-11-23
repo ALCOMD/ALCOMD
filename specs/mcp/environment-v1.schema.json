@@ -1,8 +1,25 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.vrclearn.com/schema/mcp/environment-v1.json",
-    "title": "MCP reads of shared settings and Unity configuration",
+    "title": "MCP reads of Core status, shared settings and Unity configuration",
     "x-alcomd-tools": [
+        {
+            "name": "alcomd_get_system_status",
+            "title": "Read Core status",
+            "description": "Read the running Core version, readiness and capabilities negotiated for this connection.",
+            "inputSchema": {"type": "object", "additionalProperties": false},
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {"$ref": "#/$defs/systemStatus"},
+                    "error": {"$ref": "#/$defs/toolError"}
+                },
+                "oneOf": [{"required": ["data"]}, {"required": ["error"]}]
+            },
+            "effect": "read",
+            "requiredPermissions": []
+        },
         {
             "name": "alcomd_get_settings",
             "title": "Read ALCOMD settings",
@@ -73,6 +90,17 @@
         }
     ],
     "$defs": {
+        "systemStatus": {
+            "type": "object",
+            "properties": {
+                "product": {"const": "ALCOMD"},
+                "daemon_version": {"type": "string", "minLength": 1, "maxLength": 64},
+                "rpc_version": {"const": 1},
+                "state": {"const": "ready"},
+                "capabilities": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z0-9][a-z0-9._-]*$"}}
+            },
+            "required": ["product", "daemon_version", "rpc_version", "state", "capabilities"]
+        },
         "id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
         "directory": {"type": "string", "minLength": 1, "maxLength": 32768},
         "arguments": {"type": "array", "items": {"type": "string"}},

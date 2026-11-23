@@ -24,7 +24,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod events;
 mod m8_oauth;
-mod m8_repositories;
 #[doc(hidden)]
 pub mod sdk_stdio;
 pub use events::EventSubscription;
@@ -176,6 +175,23 @@ impl AlcomdClient {
     pub fn hello_result(&self) -> &HelloResult {
         &self.hello_result
     }
+    pub async fn extension_cli_commands_list(
+        &mut self,
+        params: alcomd_protocol::ExtensionCliCommandsListParams,
+    ) -> Result<alcomd_protocol::ExtensionCliCommandsListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_CLI_COMMANDS_LIST, params)
+            .await
+    }
+    pub async fn extension_cli_commands_invoke(
+        &mut self,
+        params: alcomd_protocol::ExtensionCliCommandsInvokeParams,
+    ) -> Result<alcomd_protocol::ExtensionMcpToolsCallResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_EXTENSIONS_CLI_COMMANDS_INVOKE,
+            params,
+        )
+        .await
+    }
     pub async fn mcp_tools_catalog(
         &mut self,
         params: alcomd_protocol::McpToolsCatalogParams,
@@ -219,30 +235,6 @@ impl AlcomdClient {
         params: alcomd_protocol::McpRuntimeSnapshotParams,
     ) -> Result<alcomd_protocol::McpRuntimeSnapshotResult, ClientError> {
         self.call(alcomd_protocol::METHOD_MCP_RUNTIME_SNAPSHOT, params)
-            .await
-    }
-
-    pub async fn mcp_project_create(
-        &mut self,
-        params: alcomd_protocol::McpProjectsCreateParams,
-    ) -> Result<alcomd_protocol::ProjectsCreateResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_MCP_PROJECTS_CREATE, params)
-            .await
-    }
-
-    pub async fn mcp_project_register(
-        &mut self,
-        params: alcomd_protocol::McpProjectsRegisterParams,
-    ) -> Result<alcomd_protocol::McpProjectsRegisterResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_MCP_PROJECTS_REGISTER, params)
-            .await
-    }
-
-    pub async fn mcp_project_plan_copy(
-        &mut self,
-        params: alcomd_protocol::McpProjectsPlanCopyParams,
-    ) -> Result<alcomd_protocol::McpProjectsCopyPlan, ClientError> {
-        self.call(alcomd_protocol::METHOD_MCP_PROJECTS_PLAN_COPY, params)
             .await
     }
 
@@ -381,12 +373,11 @@ impl AlcomdClient {
             },
             capabilities: vec![
                 alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_EXTENSION_CLI_COMMANDS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_TEMPLATE_EDIT_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),
@@ -1134,17 +1125,10 @@ impl AlcomdClient {
 
     pub async fn project_register(
         &mut self,
-        path: String,
-        idempotency_key: String,
+        params: alcomd_protocol::ProjectRegisterParams,
     ) -> Result<alcomd_protocol::ProjectWriteResult, ClientError> {
-        self.call(
-            alcomd_protocol::METHOD_PROJECTS_REGISTER,
-            alcomd_protocol::ProjectRegisterParams {
-                path,
-                idempotency_key,
-            },
-        )
-        .await
+        self.call(alcomd_protocol::METHOD_PROJECTS_REGISTER, params)
+            .await
     }
 
     pub async fn project_refresh(
@@ -1192,7 +1176,7 @@ impl AlcomdClient {
     pub async fn repository_inspect(
         &mut self,
         source: alcomd_protocol::RepositorySource,
-    ) -> Result<alcomd_protocol::RepositoryResult, ClientError> {
+    ) -> Result<alcomd_protocol::RepositoryInspectResult, ClientError> {
         self.repository_inspect_with_credentials(source, None).await
     }
 
@@ -1200,7 +1184,7 @@ impl AlcomdClient {
         &mut self,
         source: alcomd_protocol::RepositorySource,
         credentials: Option<alcomd_protocol::RepositoryCredentials>,
-    ) -> Result<alcomd_protocol::RepositoryResult, ClientError> {
+    ) -> Result<alcomd_protocol::RepositoryInspectResult, ClientError> {
         self.call(
             alcomd_protocol::METHOD_REPOSITORIES_INSPECT,
             alcomd_protocol::RepositoryInspectParams {
@@ -1245,10 +1229,12 @@ impl AlcomdClient {
         target_path: String,
         expected_fingerprint: String,
         format: alcomd_protocol::RepositoryListFormat,
+        idempotency_key: String,
     ) -> Result<alcomd_protocol::RepositoryListExportResult, ClientError> {
         self.call(
             alcomd_protocol::METHOD_REPOSITORIES_EXPORT_LIST_FILE,
             alcomd_protocol::RepositoryListExportParams {
+                idempotency_key,
                 target_path,
                 expected_fingerprint,
                 format,
@@ -1283,11 +1269,13 @@ impl AlcomdClient {
         &mut self,
         target_path: String,
         expected_fingerprint: String,
+        idempotency_key: String,
     ) -> Result<alcomd_protocol::RepositoryListExportResult, ClientError> {
         self.repository_configuration_export_file(
             target_path,
             expected_fingerprint,
             alcomd_protocol::RepositoryListFormat::Native,
+            idempotency_key,
         )
         .await
     }
@@ -1334,25 +1322,14 @@ impl AlcomdClient {
 
     pub async fn repository_register(
         &mut self,
-        source: alcomd_protocol::RepositorySource,
+        preview_id: String,
         idempotency_key: String,
-    ) -> Result<alcomd_protocol::RepositoryWriteResult, ClientError> {
-        self.repository_register_with_credentials(source, idempotency_key, None)
-            .await
-    }
-
-    pub async fn repository_register_with_credentials(
-        &mut self,
-        source: alcomd_protocol::RepositorySource,
-        idempotency_key: String,
-        credentials: Option<alcomd_protocol::RepositoryCredentials>,
     ) -> Result<alcomd_protocol::RepositoryWriteResult, ClientError> {
         self.call(
             alcomd_protocol::METHOD_REPOSITORIES_REGISTER,
             alcomd_protocol::RepositoryRegisterParams {
-                source,
+                preview_id,
                 idempotency_key,
-                credentials,
             },
         )
         .await

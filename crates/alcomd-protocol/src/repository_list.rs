@@ -89,6 +89,7 @@ pub struct RepositoryListPreviewParams {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryListExportParams {
+    pub idempotency_key: String,
     #[serde(default, skip_serializing_if = "RepositoryListFormat::is_native")]
     pub format: RepositoryListFormat,
     pub target_path: String,

@@ -18,6 +18,9 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+ed25519-dalek.workspace = true
+sha2.workspace = true
+zip.workspace = true
 alcomd-daemon = { package = "alcomd", path = "../alcomd", features = ["test-kill-gates"] }
 alcomd-platform.workspace = true
 

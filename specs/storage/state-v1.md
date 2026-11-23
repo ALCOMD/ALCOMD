@@ -2,6 +2,8 @@
 
 桌面动作使用现有任务及幂等回执表。任务类型为 `desktop.focusProjectUnity`、`desktop.openProjectDirectory` 和 `desktop.openUnityHubDownload`。Core 在同一事务中复核调用者、登记运行中的任务及 pending 回执，然后请求本机桌面。成功及失败均持久化。Core 重启时把仍在等待桌面结果的任务终结为 `desktop_result_unknown`，相同幂等键只读取结果。系统动作受理后无法取消。
 
+`settings.update`、`unity.hub.open` 和 `repositories.exportListFile` 使用现有任务、幂等回执和事件。Core 在发布 Config1、启动 Hub 或写出新文件之前，按调用者、方法、业务参数和幂等键登记运行中的任务。收到结果后，任务终态与返回值在同一事务保存。较大的设置响应在任务日志内按 UTF-8 边界分块保存。重开后，未确认的外部结果标为 `external_write_outcome_unknown`，重复请求不再次执行外部动作。
+
 Core 在新建环境中以单个 SQLite 事务执行 [初始 DDL](../../crates/alcomd-store/src/schema.sql) 并写入 `user_version=1`。结构包含当前项目、Unity 安装、仓库、包、模板、扩展与 MCP 状态，以及任务、幂等、事件和文件系统事务证据。普通 ZIP 任务使用任务与恢复日志，归档文件由 Core 按请求位置读写。
 
 Unity 迁移计划在 `project_unity_migration_plans.target_sdk_version` 可空 TEXT 列保存已选定的 SDK；不需要更换 SDK 的计划存 NULL。Core 重启后，读取计划与 Apply 复验都使用该列保存的版本。
