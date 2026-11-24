@@ -14,6 +14,7 @@ test("a lost creation reply retries the identical request after a catalog change
     await submit.click();
     await expectRequestError(dialog.getByRole("alert"), "daemon_unavailable");
     await expect(dialog.locator("#project-create-template")).toHaveJSProperty("disabled", true);
+    await expect.poll(() => page.evaluate(() => window.coreEvents.connections)).toBe(1);
     await page.evaluate(() => window.dispatchEvent(new Event("test-template-advance")));
     await expect.poll(() => page.evaluate(() => window.templateRequests.filter(({ method }) => method === "projectTemplates.list").length)).toBeGreaterThan(1);
     await submit.click();
@@ -39,9 +40,11 @@ test("catalog changes invalidate a selected revision until the user reselects", 
     };
     await chooseTemplate();
     await dialog.getByLabel("Create project name", { exact: true }).fill("Selected again");
+    const submit = dialog.getByRole("button", { name: "Create project", exact: true });
+    await expect(submit).toBeEnabled();
+    await expect.poll(() => page.evaluate(() => window.coreEvents.connections)).toBe(1);
     await page.evaluate(() => window.dispatchEvent(new Event("test-template-advance")));
     await expect(dialog.getByRole("alert")).toContainText("The selected template changed. Select it again.");
-    const submit = dialog.getByRole("button", { name: "Create project", exact: true });
     await expect(submit).toBeDisabled();
     await chooseTemplate();
     await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2022.3.22f1");

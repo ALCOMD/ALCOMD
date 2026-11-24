@@ -274,6 +274,7 @@ test("a changed base revision preserves the manual draft and requires explicit r
     const base = dialog.getByRole("combobox", { name: "Base template", exact: true });
     const choose = async () => { await base.click(); await dialog.getByRole("option", { name: /Existing fixture/ }).click(); };
     await choose();
+    await expect.poll(() => page.evaluate(() => window.coreEvents.connections)).toBe(1);
     await page.evaluate(() => window.dispatchEvent(new Event("test-template-advance")));
     await expect(dialog.getByRole("alert")).toContainText("The selected template changed. Select it again.");
     await expect(dialog.getByLabel("Display name", { exact: true })).toHaveValue("Kept manual draft");
