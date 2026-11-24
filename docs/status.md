@@ -1,6 +1,6 @@
 # 项目状态
 
-最后更新：2026-11-22
+最后更新：2026-11-24
 
 ## 当前阶段
 
@@ -10,7 +10,11 @@ Unity `6000.0.67f1` 的两个内置模板和八组迁移已完成 Windows 开发
 
 项目登记、创建和复制预演以及仓库检查、登记和移除已共用原生方法。仓库、设置、事件和 Unity 分域候选的[首发清单](../specs/first-release-contracts.json)涵盖 127 个 RPC、44 项能力和 103 个内建 MCP 工具，原生 SDK 的 116 个方法见[方法目录](../specs/rpc/native-sdk-v1.methods.json)。手动创建的模板从选定的内置或用户模板继承内容，成品独立使用。v3 派生模板迁移只生成 `2022.3.22f1` 的版本。[首发合同及验收范围](exec-plans/M11-first-release-contracts.md)
 
-**M11 实施中。** 普通 ZIP 和 Core 主机绝对路径已接通。首发 State1 和 Config1 已通过 Windows 隔离测试，涵盖正常重开、结构不符时保全文件以及设置恢复。Windows 已通过绝对路径 IPC、MCP HTTP/OAuth、Core 重开后的配置和项目对账，以及普通 ZIP 的定向验证。隔离签名 bridge 已执行暂存和回滚，真实 3.4.0 样本和跨平台验收待完成。[M11 实施计划](exec-plans/M11-v3-migration-and-zip.md)
+**M11 实施中。** 普通 ZIP、Core 主机绝对路径、State1 和 Config1 已通过 Windows 隔离验证。冻结 v3.4.0 的当前用户安装和全用户安装均已实测，全用户安装下两个账号分别导入并重开对账。Windows 当前用户的冻结更新器已在隔离环境验证 stable、beta 同频道跳转、旧钥签名 beta 下载与交接、篡改拒绝和回滚后旧版重启。独立 NTFS 卷验证了原生导入时实际空间耗尽后的回滚和重试。Ubuntu 24.04 隔离环境中的冻结 DEB 和 AppImage 均已通过默认资料、项目、仓库、模板及合成 Unity 登记与默认参数的 Linux 原生导入和重开。Windows 和 Linux 均已验证 v3 生成的 ZIP 恢复与同键重放，普通测试用户也分别通过了真实系统凭据库的合成凭据往返。完整安装交接、macOS 凭据和候选门禁仍待验收。[M11 实施计划](exec-plans/M11-v3-migration-and-zip.md)
+
+Windows 当前用户和全用户安装均已通过冻结更新器的 Stable 同频道下载、原 v3 密钥验签、范围传递、Bootstrap 暂存回滚和旧版重启。Linux 冻结 DEB 已由 dpkg 实际配置，冻结 AppImage 已从 FUSE 挂载运行。两种 Linux 范围均通过运行中拒绝迁移、临时签名载荷的原生暂存对账、回滚和旧版重启。[Windows 和 Linux 补充验收](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-windows-stable-双范围签名交接)
+
+Windows v3.3.0 已实测升级到冻结 v3.4.0，再以同一隔离账号完成签名 Stable 桥接的暂存与回滚。选择性模板导入、外部 MCP 配置补丁及回滚通过本地夹具验收。[补充证据](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-windows-v330-经冻结-v340-进入桥接)
 
 软件包默认显示预发布版，安装和升级优先兼容稳定版。CLI 和 MCP 安装、升级均可省略版本。Windows 已通过真实 Core 的候选与设置重启测试、MCP 安装升级、27 项 VPM 回归和 74 项软件包浏览器测试。[配置规范](../specs/config/settings-v1.md)
 

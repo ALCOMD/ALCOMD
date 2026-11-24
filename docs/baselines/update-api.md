@@ -5,7 +5,7 @@
 最后联网核验：2026-08-16（Asia/Shanghai）
 
 2026-11-05 组织身份修订：当前站点/服务基址为 `https://alcomd.vrclearn.com/`。
-下列旧地址、响应和摘要是冻结 v3.4.0 的历史证据；旧请求源与当前部署入口的衔接待 M11 验证。
+下列旧地址、响应和摘要是冻结 v3.4.0 的历史证据。M11 在离线 Windows Sandbox 验证了同频道跳转，覆盖 stable 无更新、beta 签名桥接下载，以及两种 Windows 安装范围下 stable 签名候选的下载和启动。实际公开更新源的部署另行验收。[M11 Windows Stable 签名交接](../exec-plans/M11-v3-migration-and-zip.md#2026-11-24-windows-stable-双范围签名交接)
 
 ## 端点
 

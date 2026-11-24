@@ -694,6 +694,186 @@ description = "以隔离资料验证 3.4.0 数据解析、签名载荷、原生�
 evidence = ["migrations/v3/app/alcomd-migrate-v3/tests", "apps/alcomd/src/native_state_import_tests.rs", "apps/alcomd-bootstrap/src/tests.rs", "apps/alcomd-updater/src/tests.rs"]
 
 [[test]]
+id = "migration.selective-templates"
+stage = "M11"
+kind = "integration"
+platforms = ["all"]
+status = "implemented"
+description = "选择性导入 VCC 工程目录及旧 ALCOM 和 ALCOMD3 Beta 模板。验证现行归档、Core 任务、同键重试、源变化和已有同标识模板的保全。"
+evidence = ["migrations/v3/app/alcomd-migrate-v3/src/selection_templates.rs", "migrations/v3/app/alcomd-migrate-v3/tests/export_bundle.rs"]
+
+[[test]]
+id = "migration.windows-published-fixture"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "冻结安装器的当前用户和机器级 Unicode 路径安装。全用户安装下两个合成账号独立导入并重开对账，覆盖真实默认资料和 v3 登记的合成项目。实际生成的 v3 ZIP 通过 CLI 恢复、逐文件比对及同键重放。冻结默认资料通过测试签名下的 Bootstrap 暂存和回滚，篡改签名在写日志前拒绝。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.windows-volume-full"
+stage = "M11"
+kind = "fault-injection"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "实际耗尽 Windows Sandbox 内独立 NTFS 卷。原生导入前保留导出检查点，回收空间后可回滚并启动新事务，保留原始 v3 资料与恢复程序哈希。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.linux-frozen-package-baseline"
+stage = "M11"
+kind = "migration"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "校验冻结 DEB 和 AppImage 摘要与 ABI。Ubuntu 24.04 独立 dpkg 根登记冻结 DEB 的解包状态和文件清单，APT 模拟解析配置计划。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md", "docs/baselines/source-lock.toml"]
+
+[[test]]
+id = "migration.linux-frozen-startup"
+stage = "M11"
+kind = "migration"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 24.04 隔离 X11 和 XDG 环境运行冻结 AppImage 的 AppRun 与独立 dpkg 根中的 DEB 主程序。验证资料生成、进程重启后的 LiteDB 哈希、桌面入口及两份默认资料的 Linux 原生导入和重开对账。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.v3-updater-original-assets"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "implemented"
+description = "用冻结版 v3.4.0 更新公钥验证三平台原始发布更新资产与签名内文件名。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md", "docs/baselines/source-lock.toml"]
+
+[[test]]
+id = "migration.windows-v3-signed-staged-handoff"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "离线 Windows 桌面 Sandbox 用冻结 v3.4.0 的当前用户安装验证已暂存的旧钥签名 beta 候选。核对更新器退出、原生暂存与回滚、旧版重新打开，以及原签名下单字节篡改拒绝。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md", "docs/baselines/source-lock.toml"]
+
+[[test]]
+id = "migration.windows-v3-private-feed-redirect"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "使用冻结 v3.4.0 和离线 Sandbox 回环 HTTPS 验证旧、新域名同频道跳转。Stable 收到 204 并保持无待安装更新。Beta 下载旧钥签名候选并暂存，重启后完成重新验签、桥接交接及回滚。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md", "docs/baselines/update-api.md"]
+
+[[test]]
+id = "migration.windows-v3-all-users-dispatch"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "通过冻结 v3.4.0 全用户安装验证原版更新器验签并以 /ALLUSERS 启动同一 beta 候选。单独调用全用户 Bootstrap 验证暂存、回滚、HKLM 登记保全和 v3 主窗口重开。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.windows-v3-stable-candidate-preflight"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "离线运行外层未签名的 Stable 路径候选，验证 /CURRENTUSER 与 /ALLUSERS 对应的 Bootstrap 暂存及回滚。缺少夹具或参数超出合同时拒绝。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.windows-v3-stable-signed-handoff"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "两个独立离线桌面 Sandbox 使用冻结 v3.4.0 从同频道 HTTPS 跳转下载同一个旧钥签名 Stable 候选。核对重启重新验签、两种范围参数贯通 Bootstrap、暂存对账回滚、原安装登记保全和旧版重新打开。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md", "docs/baselines/update-api.md"]
+
+[[test]]
+id = "migration.windows-v330-staged-chain"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "同一隔离 Windows Sandbox 中用 v3.3.0 原版暂存更新安装公开签名的 v3.4.0，保留登记、LiteDB 摘要和测试偏好，并用已签名 Stable 候选将实际升级后的资料暂存为 v4 后回滚。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.linux-frozen-appimage-fuse"
+stage = "M11"
+kind = "migration"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "在 Ubuntu 24.04 隔离用户和挂载命名空间从冻结 AppImage 原文件运行，核对 FUSE 挂载、进程映像、重开后的 SHA-256，以及生成资料的原生导入和重开对账。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md", "docs/baselines/source-lock.toml"]
+
+[[test]]
+id = "migration.linux-frozen-deb-configured"
+stage = "M11"
+kind = "migration"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "独立 Ubuntu 24.04 根实际配置冻结 DEB，核对 dpkg 文件所有权、发布文件摘要、普通用户运行与重开后的 LiteDB 摘要。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md", "docs/baselines/source-lock.toml"]
+
+[[test]]
+id = "migration.linux-frozen-signed-stage-rollback"
+stage = "M11"
+kind = "migration"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "独立 Ubuntu 24.04 根用临时签名的真实 Linux 组件，验证已配置 DEB 和从 FUSE 运行的冻结 AppImage。覆盖运行中拒绝、按安装范围原生暂存和对账、回滚、源与包登记保全和旧版重启。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.linux-frozen-business-records"
+stage = "M11"
+kind = "migration"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "冻结 AppImage 和 DEB 各自写入项目、无认证仓库及派生模板。Linux 原生导入和重开核对关键字段，验证不相容模板跳过、真实 v3 ZIP 经 Unix IPC 在配置目录外恢复、文件 SHA-256 及幂等回执。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.linux-unity-registration"
+stage = "M11"
+kind = "migration"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "冻结 AppImage 与 DEB 从隔离 Unity Hub 配置写入测试 Editor 登记。原生导入与重开核对路径、版本、Hub 来源和中文参数或显式空列表。缺少测试 Editor 时暂存拒绝，发布目标保持不存在。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.windows-synthetic-vault-transfer"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "Windows Sandbox 的标准用户和 LocalSystem 分别通过真实 Credential Manager 转移合成仓库凭据及重开对账，覆盖未授权拒绝、导出与目标脱敏、源保全及精确清理测试条目。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.linux-synthetic-vault-transfer"
+stage = "M11"
+kind = "migration"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 24.04 普通用户的私有 D-Bus 会话通过真实 GNOME Keyring 与 secret-tool 转移合成仓库凭据。验证未授权拒绝、包和目标只保留引用、源保全及精确清理。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.macos-frozen-package-baseline"
+stage = "M11"
+kind = "migration"
+platforms = ["macos-aarch64"]
+status = "implemented"
+description = "静态核对冻结 DMG 和更新归档哈希、归档内的 app bundle 标识、版本及 arm64 Mach-O。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md", "docs/baselines/source-lock.toml"]
+
+[[test]]
 id = "migration.fixture-chain"
 stage = "M11"
 kind = "migration"
@@ -702,12 +882,22 @@ status = "blocked"
 description = "从受支持旧版升级到 3.4.0，再以脱敏 Fixture 执行完整 v4 迁移并核对记录与文件。"
 
 [[test]]
+id = "migration.linux-native-stage-faults"
+stage = "M11"
+kind = "fault-injection"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 24.04 普通用户于私有 16 MiB tmpfs 验证真实 ENOSPC 和目录无写权限时的 Core 暂存拒绝；释放空间后以同一包重试并核对原件和导出哈希。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
 id = "migration.failure-injection"
 stage = "M11"
 kind = "fault-injection"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
 description = "在每个迁移阶段注入终止、重启、磁盘满、权限和签名失败，Commit 前恢复完整 v3。"
+evidence = ["apps/alcomd-bootstrap/src/tests.rs", "apps/alcomd-updater/src/tests.rs", "docs/exec-plans/M11-v3-migration-and-zip.md"]
 
 [[test]]
 id = "migration.zero-residue"
@@ -1007,8 +1197,9 @@ id = "migration.external-config-patch"
 stage = "M11"
 kind = "fault-injection"
 platforms = ["all"]
-status = "blocked"
-description = "精确 patch Codex/Claude/Cursor 条目并在冲突或故障时 byte-equivalent 回滚，不改其他 server、字段或注释。"
+status = "implemented"
+description = "隔离环境用配对快照确认 Codex、Claude Code、Cursor 的精确旧条目；验证只删除该条目、其他配置字节保全、第三方冲突拒绝与中断后逐字节回滚。"
+evidence = ["migrations/v3/app/alcomd-migrate-v3/tests/external_mcp_preview.rs"]
 
 [[test]]
 id = "updater.bridge-recovery"
