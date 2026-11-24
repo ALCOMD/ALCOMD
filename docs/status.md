@@ -8,6 +8,8 @@
 
 Windows 11 Sandbox 的当前用户和全用户夹具已验证 Core 安装登记、外部 CLI 冷启动、账号隔离和卸载保留状态。Ubuntu 22.04 x86_64 隔离环境已原生编译七个发行组件，产物最高要求 `GLIBC_2.34`。[Windows 登记及 Ubuntu 构建记录](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-core-安装登记)
 
+Windows 全用户安装夹具已验证普通账号从稳定 CLI 首次启动、独立登记、四个 CLI 并发接入单个 Core，以及签名篡改拒绝。官方 Release GUI 的首次启动仍待复验。[Windows 全用户首次启动验收](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-全用户安装首次启动)
+
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。

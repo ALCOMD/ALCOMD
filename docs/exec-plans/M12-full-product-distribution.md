@@ -181,3 +181,11 @@ Windows 11 Sandbox 在签名夹具中打开实际 Tauri 窗口，检测到 WebVi
 同一 SHA 的 Windows Server 2025 和 Ubuntu 22.04 Hosted 均通过。两端完成整仓检查、外部原生 SDK 消费者、CLI 冷启动、Release 与 Tauri 构建和 762 项 Chromium。Ubuntu 编译产物最高要求 `GLIBC_2.34`。[Windows Hosted](https://github.com/ALCOMD/ALCOMD/actions/runs/45479474031/job/138748426712) · [Ubuntu Hosted](https://github.com/ALCOMD/ALCOMD/actions/runs/45479474031/job/138748427300)
 
 同一 SHA 仅重跑 macOS 15 arm64。该轮取得运行器，`Check` 执行到 `xtask` 时 5 个分发夹具报路径并非普通目录。测试将带链接祖先的系统临时路径传给生产目录校验。macOS 的 Chromium、仓库外 SDK 验收和后续构建未执行。[macOS Hosted 第二次尝试](https://github.com/ALCOMD/ALCOMD/actions/runs/45479474031/job/138798375951)
+
+### 2026-11-25 Windows 全用户安装首次启动
+
+`25afa078` 接通官方 Windows 入口。没有登记且 IPC 尚未就绪时，受保护的稳定 CLI 和版本化 GUI 可调用同一运行目录中的 Bootstrap。Bootstrap 核验已安装载荷，Core 在当前账号下初始化并发布登记后服务 IPC。独立 SDK 继续按登记定位 Core，沿用五秒就绪预算。
+
+Windows 11 Sandbox 使用 Inno 6.5.4、合成签名和 Release Bootstrap，安装包 SHA-256 为 `2d75f526a149b8b213c35a0eeee4067c53f558b5fa1a1fed2bbff21a200f0d90`。全用户部署未写入安装账号的资料。签名篡改后，普通账号的资料目录保持空白。恢复有效签名后，普通账号首次运行 `bin/alcomd-cli.exe` 收到 `ready` 并发布本账号的登记。另一普通账号的四个并发 CLI 均在约 1.4 秒内收到 `ready`，按 SID 观察到一个 Core。Windows 客户端与平台库的 91 项测试通过，3 项沿用既有跳过。
+
+同一夹具的 Debug GUI 在隔离会话中没有启动 WebView2 渲染器，未触发首次登记。官方 Release GUI 的首次启动、连接和卸载流程仍须复验。

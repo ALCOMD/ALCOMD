@@ -1159,6 +1159,15 @@ description = "候选 5d58b43b 同 SHA 通过本地整仓检查、Windows 和 Ub
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", ".github/workflows/ci.yml"]
 
 [[test]]
+id = "distribution.windows-machine-cli-first-use-fixture"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "Windows 11 Sandbox 的全用户合成签名 Inno 包通过普通账号稳定 CLI 首次启动、独立登记、四个 CLI 并发接入单个 Core 和签名损坏时资料目录保持空白。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "crates/alcomd-platform/src/core_installation.rs"]
+
+[[test]]
 id = "distribution.cli-integration"
 stage = "M12"
 kind = "system"
