@@ -9,7 +9,7 @@ export function parseRepositoryLink(input: string): RepositoryLinkDraft | undefi
     if (input.length > 16 * 1024) return undefined;
     try {
         const link = new URL(input);
-        if (link.protocol !== "vcc:" || link.host !== "vpm" || link.pathname !== "/addRepo"
+        if (!["vcc:", "alcom:"].includes(link.protocol) || link.host !== "vpm" || link.pathname !== "/addRepo"
             || link.username || link.password) return undefined;
 
         const urls = link.searchParams.getAll("url");

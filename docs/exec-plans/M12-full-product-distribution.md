@@ -29,7 +29,7 @@
 - 「关联」集中展示本机链接协议和文件格式的默认处理器状态，迁入 VCC 偏好以及由 Core 管理的 Unity Hub、Editor 安装和默认参数，移除重复的全局 Unity 页面。未来由 Core 执行的 Blender 工作流沿用 Core 配置归属。安装和卸载仍负责已批准的系统入口，按阶段 2 用正式安装包验收。
 - Linux GUI 直接使用 Tauri 已锁定的 `gio 0.18.4`（MIT）读取桌面处理器和文件 MIME 类型。替代方案是调用桌面环境命令或解析用户配置，结果更依赖发行版和桌面环境。随 Tauri 升级统一调整 gtk-rs 版本。macOS GUI 使用 objc2 同系列的 `objc2-uniform-type-identifiers 0.3.2`（可按 MIT 使用）将扩展名转换为系统内容类型。macOS 12 起由 AppKit 查询，macOS 11 通过平台层使用 Launch Services。替代方案是创建临时文件或在所有版本使用已弃用的查询接口。该绑定依赖 macOS 系统框架，原生验证随该平台发行验收。
 - Windows 提供系统默认应用设置入口。Windows 和 Linux AppImage 提供现有 VCC 登记操作。系统默认应用、VCC 登记和 Core 保存的 VCC 偏好分别展示。
-- 读取 vrc-get／ALCOM 的 `alcom://`、`.alcomrepositories` 和 `.alcomtemplate` 默认处理器状态。
+- 读取 vrc-get／ALCOM 的 `alcom://`、`.alcomrepositories` 和 `.alcomtemplate` 默认处理器状态。GUI 接收 `alcom://vpm/addRepo` 和这两种本机文件，沿用仓库预览、批量导入和模板确认流程。macOS 应用包声明 ALCOM 协议，导入两种文件的类型标识，并声明自身为备用查看器。Windows 和 Linux 的正式包登记归阶段 2。
 - 2026-11-25 所有者批准独立支持 vrc-get 公开的 ALCOM 模板交换格式。Core 接受 ALCOM 当前导出的 1.0 JSON 声明，依 Unity 范围选择最高兼容的已登记内置基础模板，或使用本账号已导入的对应自定义基础模板。合并同名 VPM 依赖的约束，沿用现行模板事务保存为原生归档。包含外部 `.unitypackage` 路径的模板无法完整转换，拒绝导入。ALCOMD3 的迁移格式仍由隔离迁移工具处理。[上游 1.0 格式](https://github.com/vrc-get/vrc-get/blob/gui-v1.2.0-beta.3/vrc-get-gui/src/templates/alcom_template.md)
 - Windows GUI 构建、定向 Clippy 和无登记协议／文件类型的 Shell 查询测试通过。前端生产构建及 296 项相关 Chromium 回归通过，覆盖 VCC 偏好、平台操作、关联状态、原深链确认流程、Unity 管理和旧路由移除。macOS arm64 GUI 交叉检查通过。Ubuntu 24.04 WSL 用独立 XDG 配置核对了 GIO 的协议和按扩展名的文件查询。Linux GUI 交叉检查因宿主缺少 Linux 目标的 pkg-config 和 sysroot，在既有 `libdbus-sys` 构建时中止。Linux 和 macOS 的实际桌面、正式安装包系统登记及文件双击打开归发行验收。
 

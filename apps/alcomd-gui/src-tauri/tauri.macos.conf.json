@@ -2,8 +2,26 @@
     "plugins": {
         "deep-link": {
             "desktop": {
-                "schemes": ["vcc"]
+                "schemes": ["vcc", "alcom"]
             }
         }
+    },
+    "bundle": {
+        "fileAssociations": [
+            {
+                "ext": ["alcomrepositories"],
+                "name": "ALCOM Repository List",
+                "contentTypes": ["com.anatawa12.vrc-get.alcomrepositories"],
+                "role": "Viewer",
+                "rank": "Alternate"
+            },
+            {
+                "ext": ["alcomtemplate"],
+                "name": "ALCOM Project Template",
+                "contentTypes": ["com.anatawa12.vrc-get.alcomtemplate"],
+                "role": "Viewer",
+                "rank": "Alternate"
+            }
+        ]
     }
 }

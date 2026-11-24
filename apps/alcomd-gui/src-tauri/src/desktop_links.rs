@@ -1,4 +1,8 @@
-use std::{collections::VecDeque, sync::Mutex};
+use std::{
+    collections::VecDeque,
+    path::{Component, Path},
+    sync::Mutex,
+};
 
 use tauri::{AppHandle, Emitter, Manager, State, Url};
 
@@ -14,6 +18,8 @@ pub(crate) enum DesktopLink {
     VccRepository { link: String },
     Repository { url: String },
     Extension { url: String },
+    RepositoryList { path: String },
+    TemplateFile { path: String },
 }
 
 impl DesktopLink {
@@ -21,8 +27,11 @@ impl DesktopLink {
         if input.len() > MAX_LINK_BYTES || input.contains('|') {
             return None;
         }
+        if let Some(file) = Self::parse_file(&input) {
+            return Some(file);
+        }
         let outer = Url::parse(&input).ok()?;
-        if outer.scheme() == "vcc" {
+        if matches!(outer.scheme(), "vcc" | "alcom") {
             return (outer.host_str() == Some("vpm")
                 && outer.path() == "/addRepo"
                 && outer.username().is_empty()
@@ -74,6 +83,48 @@ impl DesktopLink {
             }),
             _ => None,
         }
+    }
+
+    fn parse_file(input: &str) -> Option<Self> {
+        let from_url;
+        let path = if input.starts_with("file:") {
+            let url = Url::parse(input).ok()?;
+            if !matches!(url.host_str(), None | Some("localhost"))
+                || url.query().is_some()
+                || url.fragment().is_some()
+            {
+                return None;
+            }
+            from_url = url.to_file_path().ok()?;
+            &from_url
+        } else {
+            Path::new(input)
+        };
+        if !path.is_absolute()
+            || path.components().any(|part| part == Component::ParentDir)
+            || path.to_str()?.chars().any(char::is_control)
+        {
+            return None;
+        }
+        #[cfg(windows)]
+        if !matches!(
+            path.components().next(),
+            Some(Component::Prefix(prefix))
+                if matches!(prefix.kind(), std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_))
+        ) {
+            return None;
+        }
+        if path.extension()?.eq_ignore_ascii_case("alcomrepositories") {
+            return Some(Self::RepositoryList {
+                path: path.to_str()?.to_owned(),
+            });
+        }
+        if path.extension()?.eq_ignore_ascii_case("alcomtemplate") {
+            return Some(Self::TemplateFile {
+                path: path.to_str()?.to_owned(),
+            });
+        }
+        None
     }
 }
 
@@ -151,6 +202,33 @@ pub(crate) fn gui_take_desktop_link(links: State<'_, DesktopLinks>) -> Option<De
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_urls_and_absolute_paths_dispatch_only_supported_alcom_formats() {
+        let root = std::env::temp_dir();
+        let list = root.join("ALCOM 仓库.alcomrepositories");
+        let template = root.join("ALCOM template.ALCOMTEMPLATE");
+        assert!(
+            DesktopLink::parse(Url::from_file_path(&list).expect("file URL").to_string())
+                == Some(DesktopLink::RepositoryList {
+                    path: list.to_string_lossy().into_owned()
+                })
+        );
+        assert!(
+            DesktopLink::parse(template.to_string_lossy().into_owned())
+                == Some(DesktopLink::TemplateFile {
+                    path: template.to_string_lossy().into_owned()
+                })
+        );
+        assert!(DesktopLink::parse("relative.alcomtemplate".into()).is_none());
+        assert!(
+            DesktopLink::parse("file://other.example/share/file.alcomtemplate".into()).is_none()
+        );
+        assert!(DesktopLink::parse("https://example.test/file.alcomrepositories".into()).is_none());
+        assert!(
+            DesktopLink::parse("alcom://vpm/removeRepo?url=https://example.test".into()).is_none()
+        );
+    }
 
     #[test]
     fn product_links_accept_only_add_routes_and_preserve_the_source_address() {

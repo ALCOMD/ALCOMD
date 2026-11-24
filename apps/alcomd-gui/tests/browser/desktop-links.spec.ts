@@ -74,3 +74,44 @@ test("a link waits until an unsaved extension view is saved", async ({ page }) =
     await expect(dialog).toBeVisible();
     await expect(page.locator("md-dialog[open]").getByRole("textbox", { name: "Repository URL", exact: true })).toHaveValue("https://repository.test/deferred.json");
 });
+
+test("ALCOM links and files open their native confirmation flows in order", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/projects&resource-lifecycle=1&desktop-link-fixture=empty");
+    const url = "https://repository.test/alcom.json";
+    const link = new URL("alcom://vpm/addRepo");
+    link.searchParams.set("url", url);
+    link.searchParams.append("headers[]", "Authorization:fixture");
+    const repositoryList = "C:/fixture/Project sources.alcomrepositories";
+    const template = "C:/fixture/Unity project.alcomtemplate";
+    await activate(page, { kind: "vccRepository", link: link.href });
+    await activate(page, { kind: "repositoryList", path: repositoryList });
+    await activate(page, { kind: "templateFile", path: template });
+    const dialog = page.locator("md-dialog[open]");
+    await expect(page.getByRole("dialog", { name: "Add repository", exact: true })).toBeVisible();
+    const add = dialog;
+    await expect(add.getByRole("textbox", { name: "Repository URL", exact: true })).toHaveValue(url);
+    await expect(add.getByRole("textbox", { name: "Header name", exact: true })).toHaveValue("Authorization");
+    expect(await page.evaluate(() => window.resourceRequests.filter(({ method }) => method === "repositories.inspect"))).toEqual([]);
+    await add.getByRole("button", { name: "Cancel", exact: true }).click();
+
+    await expect(page.getByRole("dialog", { name: "Import list", exact: true })).toBeVisible();
+    const list = dialog;
+    await expect(list.getByRole("textbox", { name: "Repository list file", exact: true })).toBeVisible();
+    const listRequests = () => page.evaluate(() => window.resourceRequests.filter(({ method }) => method.endsWith("ListFile")));
+    expect(await listRequests()).toEqual([]);
+    await list.getByRole("button", { name: "Confirm", exact: true }).click();
+    await expect(list.getByRole("button", { name: "Add 3 repositories", exact: true })).toBeEnabled();
+    expect(await listRequests()).toEqual([{ method: "repositories.inspectListFile", params: { path: repositoryList } }]);
+    await list.getByRole("button", { name: "Add 3 repositories", exact: true }).click();
+    await expect(list.getByRole("button", { name: "Close", exact: true })).toBeVisible();
+    expect((await listRequests()).map(({ method }) => method)).toEqual(["repositories.inspectListFile", "repositories.importListFile"]);
+    await list.getByRole("button", { name: "Close", exact: true }).click();
+
+    await expect(page.getByRole("dialog", { name: "Import template", exact: true })).toBeVisible();
+    const importTemplate = dialog;
+    await expect(importTemplate.getByRole("textbox", { name: "Template file", exact: true })).toBeVisible();
+    const saves = () => page.evaluate(() => window.templateRequests.filter(({ method }) => method === "projectTemplates.save"));
+    expect(await saves()).toEqual([]);
+    await importTemplate.getByRole("button", { name: "Confirm", exact: true }).click();
+    await expect.poll(saves).toMatchObject([{ method: "projectTemplates.save", params: { source: { kind: "file", sourceFile: template } } }]);
+});

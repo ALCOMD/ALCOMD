@@ -28,6 +28,9 @@ fn windows_single_instance_forwards_repository_link() {
         "alcomd://extensions/add?url=https%3A%2F%2Fcold.test%2Fsource.json";
     const WARM_REPOSITORY: &str =
         "alcomd://repositories/add?url=https%3A%2F%2Fwarm.test%2Findex.json";
+    const ALCOM_REPOSITORY: &str = "alcom://vpm/addRepo?url=https%3A%2F%2Falcom.test%2Findex.json";
+    const ALCOM_LIST: &str = r"C:\ALCOM fixture\example.alcomrepositories";
+    const ALCOM_TEMPLATE: &str = r"C:\ALCOM fixture\example.alcomtemplate";
 
     if let Some(directory) = std::env::var_os(ENV) {
         let directory = PathBuf::from(directory);
@@ -126,6 +129,18 @@ fn windows_single_instance_forwards_repository_link() {
             json!({ "kind": "extension", "url": "https://cold.test/source.json" }),
             WARM_REPOSITORY,
             json!({ "kind": "repository", "url": "https://warm.test/index.json" }),
+        ),
+        (
+            ALCOM_REPOSITORY,
+            json!({ "kind": "vccRepository", "link": ALCOM_REPOSITORY }),
+            ALCOM_LIST,
+            json!({ "kind": "repositoryList", "path": ALCOM_LIST }),
+        ),
+        (
+            ALCOM_TEMPLATE,
+            json!({ "kind": "templateFile", "path": ALCOM_TEMPLATE }),
+            ALCOM_REPOSITORY,
+            json!({ "kind": "vccRepository", "link": ALCOM_REPOSITORY }),
         ),
     ] {
         let mut primary = launch(cold);

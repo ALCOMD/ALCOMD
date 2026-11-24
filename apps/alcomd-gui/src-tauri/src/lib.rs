@@ -426,8 +426,12 @@ async fn gui_select_repository_list_file(
         &mode,
         file_name.as_deref(),
         current_path.as_deref(),
-        "ALCOMD repositories (*.alcomdrepositories, *.txt)",
-        &[alcomd_protocol::REPOSITORY_CONFIGURATION_EXTENSION, "txt"],
+        "Repository lists (*.alcomdrepositories, *.alcomrepositories, *.txt)",
+        &[
+            alcomd_protocol::REPOSITORY_CONFIGURATION_EXTENSION,
+            "alcomrepositories",
+            "txt",
+        ],
     )
 }
 
@@ -443,8 +447,8 @@ async fn gui_select_project_template_file(
         &mode,
         file_name.as_deref(),
         current_path.as_deref(),
-        "ALCOMD template (*.alcomdtemplate)",
-        &["alcomdtemplate"],
+        "Project templates (*.alcomdtemplate, *.alcomtemplate)",
+        &["alcomdtemplate", "alcomtemplate"],
     )
 }
 

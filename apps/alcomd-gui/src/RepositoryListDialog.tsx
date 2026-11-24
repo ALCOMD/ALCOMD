@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RepositoryListImportItem, RepositoryListInspection, RepositoryListPreview, RepositoryListExportResult, RepositoryListFormat, RpcError } from "@alcomd/sdk";
 import type { GuiRpcClient } from "./rpc";
 import { RegisterRepositoryPanel, useActionScope } from "./CoreActions";
-import { Button, Checkbox, Dialog, DialogCloseButton, MenuItem, Progress, TextField } from "./Material";
+import { Button, Checkbox, Dialog, DialogCloseButton, MenuItem, PathField, Progress, TextField } from "./Material";
 import { FilePicker } from "./FilePicker";
 import { SplitButton } from "./SplitButton";
 import { UtilityActionDialog } from "./UtilityActionDialog";
@@ -42,11 +42,13 @@ export function RepositoryToolbar({ client, onChanged }: { client: GuiRpcClient;
 
 const safeError = (caught: unknown): RpcError => ({ code: typeof caught === "object" && caught !== null && "code" in caught && typeof caught.code === "string" ? caught.code : "internal_error", message: "Repository list request failed" });
 
-function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcClient; onChanged(): void; onClose(): void }) {
+export function ImportRepositoryList({ client, initialPath, onChanged, onClose }: {
+    client: GuiRpcClient; initialPath?: string; onChanged?(): void; onClose(): void;
+}) {
     const { t } = useTranslation();
     const events = useCoreEvents();
     const current = useActionScope(client);
-    const [path, setPath] = useState("");
+    const [path, setPath] = useState(initialPath ?? "");
     const [choosing, setChoosing] = useState(false);
     const [preview, setPreview] = useState<{ path: string; inspection: RepositoryListInspection }>();
     const [results, setResults] = useState<RepositoryListImportItem[]>();
@@ -114,8 +116,8 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
             end();
             if (current()) {
                 setFinished(unacknowledgedImport.current === undefined);
-                if (native && events) events.invalidate("repositories", true);
-                else onChanged();
+                if (events && (native || onChanged === undefined)) events.invalidate("repositories", true);
+                else onChanged?.();
             }
         }
     };
@@ -156,9 +158,11 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     return <Dialog wide={inspection !== undefined} open dismissible={!busy && !choosing} title={t("Import list")} onClose={onClose} actions={actions}>
         {inspection ? null : <>
             <p>{t("Import an ALCOMD repository configuration file or a legacy text list. Configuration files also restore names, ordering and package switches. Other repositories are kept.")}</p>
-            <FilePicker client={client} kind="file" choosePath={() => client.selectRepositoryListFile("open", undefined, path)} disabled={busy}
-                label={t("Repository list file")} value={path} onChoosingChange={setChoosing}
-                onPathChange={(next) => { setPath(next); setError(undefined); }} />
+            {initialPath === undefined
+                ? <FilePicker client={client} kind="file" choosePath={() => client.selectRepositoryListFile("open", undefined, path)} disabled={busy}
+                    label={t("Repository list file")} value={path} onChoosingChange={setChoosing}
+                    onPathChange={(next) => { setPath(next); setError(undefined); }} />
+                : <PathField label={t("Repository list file")} value={path} readOnly />}
         </>}
         {error ? <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
         {inspection ? <>

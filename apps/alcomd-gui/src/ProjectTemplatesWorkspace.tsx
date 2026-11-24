@@ -14,6 +14,7 @@ import { UtilityWorkspace } from "./UtilityWorkspace";
 import type { ProjectSnapshot, ProjectsListResult } from "./core-models";
 import { displayPath } from "./display-path";
 import { useTranslation } from "./i18n";
+import { useCoreEvents } from "./core-events-ui";
 import { navigationLabels } from "./navigation-labels";
 import { normalizeRequestError, requestErrorMessage } from "./request-errors";
 import type { GuiRpcClient } from "./rpc";
@@ -34,6 +35,13 @@ const sourceLabels = {
     file: "Import template",
     project: "Create template from project"
 };
+
+export function ImportDesktopTemplate({ client, path, onClose }: { client: GuiRpcClient; path: string; onClose(): void }) {
+    const events = useCoreEvents();
+    return <TemplateDialog client={client} open origin={{ current: null }} initialPath={path}
+        selection={{ kind: "save", source: "file" }} catalog={{ templates: [] }}
+        onChanged={() => events?.invalidate("templates", true)} onClose={onClose} />;
+}
 
 export function ProjectTemplatesWorkspace({ client, navigation }: { client: GuiRpcClient; navigation: ReactNode }) {
     const { t } = useTranslation();
@@ -111,7 +119,7 @@ function TemplateRowActions({ onSelect, template }: { onSelect(selection: Select
     </div>;
 }
 
-function TemplateDialog({ client, onChanged, onClose, open, origin, selection, catalog }: {
+function TemplateDialog({ client, onChanged, onClose, open, origin, selection, catalog, initialPath }: {
     client: GuiRpcClient;
     onChanged(): void;
     onClose(): void;
@@ -119,6 +127,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
     origin: DialogOrigin;
     selection: Selection;
     catalog: ProjectTemplatesListResult;
+    initialPath?: string;
 }) {
     const { t } = useTranslation();
     const canReadDetail = useCapability(capabilities.templateEdit);
@@ -137,7 +146,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
     const [baseValid, setBaseValid] = useState(false);
     const [includeAssets, setIncludeAssets] = useState(false);
     const [lockPackageVersions, setLockPackageVersions] = useState(false);
-    const [sourceFile, setSourceFile] = useState("");
+    const [sourceFile, setSourceFile] = useState(initialPath ?? "");
     const [destinationFile, setDestinationFile] = useState("");
     const [destinationHint, setDestinationHint] = useState("");
     const [fileName, setFileName] = useState(record === undefined ? "" : record.id + ".alcomdtemplate");
@@ -360,7 +369,8 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
                             <Select disabled={formDisabled} label={t("Template source")} onChange={(value) => setSource(value as SourceKind)}
                                 options={Object.entries(sourceLabels).map(([value, label]) => ({ value, label: t(label) }))} value={source} />
                         </>}
-                        {importing ? <FilePicker client={client} kind="file" disabled={formDisabled} label={t("Template file")} value={sourceFile}
+                        {importing && initialPath !== undefined ? <PathField label={t("Template file")} value={sourceFile} readOnly />
+                            : importing ? <FilePicker client={client} kind="file" disabled={formDisabled} label={t("Template file")} value={sourceFile}
                             choosePath={() => client.selectProjectTemplateFile("open", undefined, sourceFile)} onChoosingChange={setChoosing}
                             onPathChange={(path) => { setSourceFile(path); setError(undefined); }} />
                             : source === "file" ? <div className="project-target-picker">

@@ -3,6 +3,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ExtensionInstallPanel, RegisterRepositoryPanel } from "./CoreActions";
 import { UtilityActionDialog } from "./UtilityActionDialog";
+import { ImportRepositoryList } from "./RepositoryListDialog";
+import { ImportDesktopTemplate } from "./ProjectTemplatesWorkspace";
 import { currentDialogSurface, subscribeDialogSurface } from "./dialog-surface";
 import { useTranslation } from "./i18n";
 import { parseRepositoryLink, type RepositoryLinkDraft } from "./repository-link";
@@ -11,7 +13,9 @@ import type { GuiRpcClient } from "./rpc";
 export type DesktopLink =
     | { kind: "vccRepository"; link: string }
     | { kind: "repository"; url: string }
-    | { kind: "extension"; url: string };
+    | { kind: "extension"; url: string }
+    | { kind: "repositoryList"; path: string }
+    | { kind: "templateFile"; path: string };
 
 export interface DesktopLinkInbox {
     take(): Promise<DesktopLink | null>;
@@ -23,7 +27,7 @@ export const nativeDesktopLinks: DesktopLinkInbox | undefined = isTauri() ? {
     listen: (available) => getCurrentWindow().listen("alcomd-desktop-link-available", available),
 } : undefined;
 
-type LinkDraft = { kind: "repository"; initial: RepositoryLinkDraft } | { kind: "extension"; url: string };
+type LinkDraft = { kind: "repository"; initial: RepositoryLinkDraft } | Extract<DesktopLink, { kind: "extension" | "repositoryList" | "templateFile" }>;
 
 export function DesktopLinkDialog({ client, inbox, blocked }: { client: GuiRpcClient; inbox: DesktopLinkInbox; blocked: boolean }) {
     const { t } = useTranslation();
@@ -61,7 +65,7 @@ export function DesktopLinkDialog({ client, inbox, blocked }: { client: GuiRpcCl
                     if (previousRead !== undefined) continue;
                     return;
                 }
-                if (link.kind === "extension") {
+                if (link.kind === "extension" || link.kind === "repositoryList" || link.kind === "templateFile") {
                     setDraft(link);
                     return;
                 }
@@ -77,6 +81,12 @@ export function DesktopLinkDialog({ client, inbox, blocked }: { client: GuiRpcCl
     }, [arrival, blocked, draft, inbox, surface]);
 
     if (draft === undefined) return null;
+    if (draft.kind === "repositoryList") {
+        return <ImportRepositoryList client={client} initialPath={draft.path} onClose={() => setDraft(undefined)} />;
+    }
+    if (draft.kind === "templateFile") {
+        return <ImportDesktopTemplate client={client} path={draft.path} onClose={() => setDraft(undefined)} />;
+    }
     return <UtilityActionDialog title={t(draft.kind === "repository" ? "Add repository" : "Install extension")} onClose={() => setDraft(undefined)}>
         {draft.kind === "repository"
             ? <RegisterRepositoryPanel client={client} initial={draft.initial} />
