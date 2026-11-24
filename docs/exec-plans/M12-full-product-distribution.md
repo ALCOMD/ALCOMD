@@ -177,3 +177,7 @@ Windows 11 Sandbox 在签名夹具中打开实际 Tauri 窗口，检测到 WebVi
 ### 2026-11-25 首批工程候选门禁
 
 签名候选 `5d58b43b` 的干净检出通过本地整仓、前端、SDK 和 762 项 Chromium。推送前逐笔验签 8 笔提交，远端 `main` 快进到该候选。四项 CodeQL 已通过。同一候选的 macOS 15 arm64 Hosted 首次尝试因运行器容量取消，启动前无测试步骤运行。[CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45479473999) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45479474031) · [macOS 首次尝试](https://github.com/ALCOMD/ALCOMD/actions/runs/45479474031/job/138748427086)
+
+同一 SHA 的 Windows Server 2025 和 Ubuntu 22.04 Hosted 均通过。两端完成整仓检查、外部原生 SDK 消费者、CLI 冷启动、Release 与 Tauri 构建和 762 项 Chromium。Ubuntu 编译产物最高要求 `GLIBC_2.34`。[Windows Hosted](https://github.com/ALCOMD/ALCOMD/actions/runs/45479474031/job/138748426712) · [Ubuntu Hosted](https://github.com/ALCOMD/ALCOMD/actions/runs/45479474031/job/138748427300)
+
+同一 SHA 仅重跑 macOS 15 arm64。该轮取得运行器，`Check` 执行到 `xtask` 时 5 个分发夹具报路径并非普通目录。测试将带链接祖先的系统临时路径传给生产目录校验。macOS 的 Chromium、仓库外 SDK 验收和后续构建未执行。[macOS Hosted 第二次尝试](https://github.com/ALCOMD/ALCOMD/actions/runs/45479474031/job/138798375951)

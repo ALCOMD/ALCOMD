@@ -1150,6 +1150,15 @@ status = "blocked"
 description = "验证 staging、二进制、扩展、安装器元数据、应用层签名/摘要、可选平台签名状态与更新 Manifest 的产品版本、目标和组件清单一致。"
 
 [[test]]
+id = "distribution.engineering-candidate-windows-linux"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64", "linux-x86_64"]
+status = "implemented"
+description = "候选 5d58b43b 同 SHA 通过本地整仓检查、Windows 和 Ubuntu 22.04 Hosted、外部 SDK 验证和四项 CodeQL。三处 Chromium 各通过 762 项。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", ".github/workflows/ci.yml"]
+
+[[test]]
 id = "distribution.cli-integration"
 stage = "M12"
 kind = "system"
