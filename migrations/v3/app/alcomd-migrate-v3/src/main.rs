@@ -22,6 +22,10 @@ const STATE_LIMIT: u64 = 32 * 1024 * 1024;
 const MANIFEST_LIMIT: u64 = 1024 * 1024;
 const ATTACHMENTS_LIMIT: u64 = 1024 * 1024 * 1024;
 
+// Windows fixtures share the operating-system user's named pipe.
+#[cfg(all(test, windows))]
+static SELECTION_IPC_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Read a stopped ALCOMD3 3.4.0 data root into v4 migration staging.
 #[derive(Parser)]
 #[command(name = "alcomd-migrate-v3", version, about)]

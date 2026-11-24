@@ -583,6 +583,8 @@ mod tests {
             McpClientMutationParams, McpClientsCreateParams, UserPackageEnrollParams,
             UserPackagesListParams,
         };
+        #[cfg(windows)]
+        let _ipc_guard = crate::SELECTION_IPC_LOCK.lock().await;
         let root = std::env::temp_dir()
             .canonicalize()
             .expect("temp directory")

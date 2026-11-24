@@ -350,6 +350,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn vcc_template_is_imported_through_core_without_replacing_an_existing_record()
     -> Result<()> {
+        #[cfg(windows)]
+        let _ipc_guard = crate::SELECTION_IPC_LOCK.lock().await;
         // Use the same short root as the other real IPC fixtures on macOS.
         #[cfg(target_os = "macos")]
         let temporary_root = PathBuf::from("/private/tmp");
