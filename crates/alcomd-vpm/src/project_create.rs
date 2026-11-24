@@ -6,10 +6,11 @@ use std::sync::Arc;
 
 use alcomd_application::ProjectTemplateChanges;
 use alcomd_application::{
-    OperationId, ProjectCreateAdapter, ProjectCreateError, ProjectCreateErrorCode,
-    ProjectCreateInput, ProjectCreatePackages, ProjectCreateWork, ProjectObservation,
-    ProjectRecord, ProjectTemplateDeclaration, ProjectTemplateJobRequest, ProjectTemplateSource,
-    RepositoryArchivePinStore, ResolverCatalog, ResourceKey, ResourceLockCoordinator, Revision,
+    ExternalProjectTemplate, OperationId, ProjectCreateAdapter, ProjectCreateError,
+    ProjectCreateErrorCode, ProjectCreateInput, ProjectCreatePackages, ProjectCreateWork,
+    ProjectObservation, ProjectRecord, ProjectTemplateDeclaration, ProjectTemplateJobRequest,
+    ProjectTemplateSource, RepositoryArchivePinStore, ResolverCatalog, ResourceKey,
+    ResourceLockCoordinator, Revision,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -166,6 +167,21 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
 
     fn builtin_templates(&self) -> Result<Vec<ProjectTemplateDeclaration>, ProjectCreateError> {
         self.templates.builtins()
+    }
+
+    fn read_external_template(
+        &self,
+        source_file: &str,
+    ) -> Result<Option<ExternalProjectTemplate>, ProjectCreateError> {
+        self.templates.read_external_template(source_file)
+    }
+
+    fn materialize_external_template(
+        &self,
+        input: ExternalProjectTemplate,
+        base: ProjectTemplateDeclaration,
+    ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
+        self.templates.materialize_external_template(input, base)
     }
 
     fn prune_template_archives(
@@ -852,6 +868,80 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn alcom_exchange_template_is_normalized_to_an_independent_native_archive() {
+        let fixture = Fixture::new();
+        let engine = ProjectCreateEngine::new(
+            FixturePinStore,
+            VpmReader::new().expect("reader"),
+            fixture.root.join("data/cache"),
+        )
+        .expect("create engine with separate private storage");
+        let source = fixture.root.join("shared.alcomtemplate");
+        let input = serde_json::json!({
+            "$type": "com.anatawa12.vrc-get.custom-template",
+            "formatVersion": "1.0",
+            "displayName": "ALCOM shared fixture",
+            "id": "example.alcom.shared",
+            "base": "com.anatawa12.vrc-get.vrchat.avatars",
+            "unityVersion": "2022.x.x",
+            "vpmDependencies": {"com.example.extra": "^1.0.0"}
+        });
+        let bytes = serde_json::to_vec(&input).expect("exchange template JSON");
+        fs::write(&source, &bytes).expect("exchange input");
+        let source_path = source.to_str().expect("absolute fixture path");
+        let parsed = engine
+            .read_external_template(source_path)
+            .expect("read external")
+            .expect("recognized format");
+        assert_eq!(parsed.base_ids.len(), 1);
+        let base = engine
+            .builtin_templates()
+            .expect("builtins")
+            .into_iter()
+            .find(|template| template.id == parsed.base_ids[0])
+            .expect("compatible base");
+        let declaration = engine
+            .materialize_external_template(parsed, base)
+            .expect("native template");
+        assert_eq!(declaration.name, "ALCOM shared fixture");
+        assert_eq!(declaration.editor_version.as_deref(), Some("2022.3.22f1"));
+        assert!(
+            declaration
+                .dependencies
+                .iter()
+                .any(|entry| entry.package_id == "com.example.extra")
+        );
+        let native = fixture.root.join("shared.alcomdtemplate");
+        let path = native.to_str().expect("native export path");
+        let operation = OperationId::new();
+        engine
+            .export_template(&declaration, path, operation)
+            .expect("export native archive");
+        engine
+            .finish_template_export(path, operation)
+            .expect("finish native export");
+        let restored = engine
+            .prepare_template(
+                ProjectTemplateSource::File {
+                    source_file: path.into(),
+                },
+                None,
+                None,
+            )
+            .expect("read back as a native template");
+        assert_eq!(restored, declaration);
+        assert_eq!(fs::read(&source).expect("source remains readable"), bytes);
+        let mut input = input;
+        input["unityPackages"] = serde_json::json!(["/private/attachment.unitypackage"]);
+        fs::write(
+            &source,
+            serde_json::to_vec(&input).expect("input with external attachment"),
+        )
+        .expect("attachment fixture");
+        assert!(engine.read_external_template(source_path).is_err());
     }
 
     #[test]

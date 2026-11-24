@@ -51,6 +51,16 @@ pub struct ProjectTemplateDependency {
     pub version_range: String,
 }
 
+/// A template decoded from an external exchange format, before its base is resolved.
+pub struct ExternalProjectTemplate {
+    pub id: String,
+    pub name: String,
+    pub base_ids: Vec<String>,
+    pub unity_range: alcomd_domain::vpm_range::VpmRange,
+    pub blank_editor: Option<String>,
+    pub dependencies: Vec<ProjectTemplateDependency>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -496,6 +506,23 @@ pub trait ProjectCreateAdapter: Clone + Send + Sync + 'static {
         project: Option<ProjectRecord>,
         base: Option<ProjectTemplateDeclaration>,
     ) -> Result<ProjectTemplateDeclaration, ProjectCreateError>;
+
+    fn read_external_template(
+        &self,
+        _source_file: &str,
+    ) -> Result<Option<ExternalProjectTemplate>, ProjectCreateError> {
+        Ok(None)
+    }
+
+    fn materialize_external_template(
+        &self,
+        _input: ExternalProjectTemplate,
+        _base: ProjectTemplateDeclaration,
+    ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
+        Err(ProjectCreateError::new(
+            ProjectCreateErrorCode::InvalidInput,
+        ))
+    }
 
     fn builtin_templates(&self) -> Result<Vec<ProjectTemplateDeclaration>, ProjectCreateError>;
 
@@ -1143,10 +1170,41 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
                     None
                 };
                 let _archive_write = self.template_archive_writes.lock().await;
-                let declaration = template_io(move || {
-                    adapter.prepare_template(source, project, work.base_declaration)
-                })
-                .await?;
+                let external = if let ProjectTemplateSource::File { source_file } = &source {
+                    let source_file = source_file.clone();
+                    let reader = adapter.clone();
+                    template_io(move || reader.read_external_template(&source_file)).await?
+                } else {
+                    None
+                };
+                let declaration = if let Some(input) = external {
+                    let owner = crate::workflow_resource_owner(&work.owner);
+                    let mut base = None;
+                    for base_id in &input.base_ids {
+                        match self
+                            .store
+                            .project_template_get(owner.clone(), base_id.clone())
+                            .await
+                        {
+                            Ok(record) => {
+                                base = Some(record.declaration);
+                                break;
+                            }
+                            Err(error) if error.code() == ProjectCreateErrorCode::TemplateStale => {
+                            }
+                            Err(error) => return Err(error),
+                        }
+                    }
+                    let base = base.ok_or_else(|| {
+                        ProjectCreateError::new(ProjectCreateErrorCode::TemplateStale)
+                    })?;
+                    template_io(move || adapter.materialize_external_template(input, base)).await?
+                } else {
+                    template_io(move || {
+                        adapter.prepare_template(source, project, work.base_declaration)
+                    })
+                    .await?
+                };
                 let result = self
                     .store
                     .project_template_job_finish_save(id, declaration, now_ms()?)

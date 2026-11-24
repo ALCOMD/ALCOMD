@@ -60,7 +60,15 @@ impl RepositoryListFiles for RepositoryListFileAdapter {
                 .take(REPOSITORY_LIST_MAX_BYTES as u64 + 1)
                 .read_to_end(&mut bytes)
                 .map_err(|_| Error("repository_list_io_error"))?;
-            parse_list(&bytes, &snapshot)
+            let inspection = parse_list(&bytes, &snapshot)?;
+            if path
+                .extension()
+                .is_some_and(|value| value.eq_ignore_ascii_case("alcomrepositories"))
+                && inspection.format != RepositoryListFormat::Legacy
+            {
+                return Err(Error("repository_list_invalid"));
+            }
+            Ok(inspection)
         })
         .await
         .map_err(|_| Error("repository_list_io_error"))?

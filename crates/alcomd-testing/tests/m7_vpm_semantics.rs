@@ -1841,6 +1841,77 @@ async fn unity6_creation_checks_prerelease_visibility_before_writing_the_project
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn alcom_template_import_resolves_bases_and_persists_native_templates() {
+    let f = fixture("alcom-templates", empty(), Vec::new(), None).await;
+    let engine = alcomd_vpm::ProjectCreateEngine::new(
+        f.store.clone(),
+        f.reader.clone(),
+        f.directory.join("data").join("cache"),
+    )
+    .expect("project create engine");
+    let app = ProjectCreateApplication::with_locks(
+        f.store.clone(),
+        engine,
+        Arc::new(ResourceLockCoordinator::default()),
+    );
+    app.seed_builtin_templates()
+        .await
+        .expect("built-in templates");
+    let access = AccessContext::local_owner();
+    for (id, base, name) in [
+        (
+            "com.example.base",
+            "com.anatawa12.vrc-get.blank",
+            "ALCOM base",
+        ),
+        ("com.example.derived", "com.example.base", "ALCOM derived"),
+    ] {
+        let source_file = f.directory.join(format!("{id}.alcomtemplate"));
+        fs::write(
+            &source_file,
+            serde_json::to_vec(&json!({
+                "$type": "com.anatawa12.vrc-get.custom-template",
+                "formatVersion": "1.0",
+                "id": id,
+                "displayName": name,
+                "base": base,
+                "unityVersion": "2022.x"
+            }))
+            .expect("ALCOM file"),
+        )
+        .expect("write ALCOM file");
+        let accepted = app
+            .save_template(
+                &access,
+                ProjectTemplateSource::File {
+                    source_file: source_file.to_string_lossy().into_owned(),
+                },
+                None,
+                key(id),
+            )
+            .await
+            .expect("start template import");
+        let completed = wait_for_operation(&f, accepted.operation_id).await;
+        assert_eq!(completed.state, OperationState::Succeeded, "{completed:?}");
+        fs::remove_file(source_file).expect("remove external input");
+        let templates = app
+            .list_templates(&access, None, None)
+            .await
+            .expect("persisted templates");
+        let saved = templates
+            .templates
+            .iter()
+            .find(|template| template.declaration.name == name)
+            .expect("imported template");
+        assert!(!saved.locked);
+        assert_eq!(
+            saved.declaration.editor_version.as_deref(),
+            Some("2022.3.22f1")
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn default_package_plans_follow_the_visible_version_preference() {
     let f = fixture(
         "version-preference",

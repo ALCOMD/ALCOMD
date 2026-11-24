@@ -6,8 +6,8 @@ use std::time::SystemTime;
 
 use alcomd_application::ProjectTemplateChanges;
 use alcomd_application::{
-    OperationId, ProjectCreateError, ProjectCreateErrorCode, ProjectRecord,
-    ProjectTemplateDeclaration, ProjectTemplateDependency, ProjectTemplateSource,
+    ExternalProjectTemplate, M3ErrorCode, OperationId, ProjectCreateError, ProjectCreateErrorCode,
+    ProjectRecord, ProjectTemplateDeclaration, ProjectTemplateDependency, ProjectTemplateSource,
     canonical_unity_version, valid_project_template_id,
 };
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,10 @@ use alcomd_domain::vpm_range::VpmRange;
 
 const LIMITS: ArchiveLimits = ArchiveLimits::package();
 const TEMPLATE_EXTENSION: &str = "alcomdtemplate";
+const ALCOM_FORMAT: &str = "com.anatawa12.vrc-get.custom-template";
+const ALCOM_TEMPLATE_LIMIT: usize = 256 * 1024;
+const AVATAR_TEMPLATES: &str = include_str!("../../../specs/templates/vrchat-avatars.json");
+const WORLD_TEMPLATES: &str = include_str!("../../../specs/templates/vrchat-worlds.json");
 const ROOTS: [&str; 3] = ["Assets", "Packages", "ProjectSettings"];
 const UPM: &str = "Packages/manifest.json";
 const VPM: &str = "Packages/vpm-manifest.json";
@@ -348,10 +352,7 @@ impl TemplateArchiveStore {
             template_metadata(alcomd_application::BLANK_PROJECT_TEMPLATE_ID, "Blank")?,
         )?;
         result.push(self.publish_inventory(blank)?);
-        for input in [
-            include_str!("../../../specs/templates/vrchat-avatars.json"),
-            include_str!("../../../specs/templates/vrchat-worlds.json"),
-        ] {
+        for input in [AVATAR_TEMPLATES, WORLD_TEMPLATES] {
             let family: BuiltinFamily =
                 serde_json::from_str(input).map_err(|error| invalid().with_source(error))?;
             let kind = family
@@ -416,6 +417,113 @@ impl TemplateArchiveStore {
             }
         }
         Ok(result)
+    }
+
+    pub(crate) fn read_external_template(
+        &self,
+        source_file: &str,
+    ) -> Result<Option<ExternalProjectTemplate>, ProjectCreateError> {
+        let path = Path::new(source_file);
+        if !path
+            .extension()
+            .is_some_and(|suffix| suffix.eq_ignore_ascii_case("alcomtemplate"))
+        {
+            return Ok(None);
+        }
+        let (path, expected) = self.attachment_source(path)?;
+        let bytes = read_bounded_stamped(&path, &expected, ALCOM_TEMPLATE_LIMIT)?;
+        let value = crate::parse_bounded_json(&bytes, M3ErrorCode::ProjectManifestInvalid)
+            .map_err(|error| invalid().with_source(error))?;
+        let input: AlcomTemplate =
+            serde_json::from_value(value).map_err(|error| invalid().with_source(error))?;
+        if input.format != ALCOM_FORMAT || input.format_version != "1.0" {
+            return Err(invalid_at(&path, "unsupported ALCOM template format"));
+        }
+        if !input.unity_packages.is_empty() {
+            return Err(invalid_at(
+                &path,
+                "ALCOM template references external Unity packages",
+            ));
+        }
+        let id = match input.id {
+            Some(value) => alcom_template_id(&value)?,
+            None => format!(
+                "com.vrclearn.alcomd.import.alcom.anon.{}",
+                digest_hex(&Sha256::digest(&bytes))
+            ),
+        };
+        validate_metadata(&id, input.display_name.trim())?;
+        let unity_range = VpmRange::parse(input.unity_version.as_deref().unwrap_or("*"))
+            .map_err(|error| invalid().with_source(error))?;
+        let mut blank_editor = None;
+        let base_ids = match input.base.as_str() {
+            "com.anatawa12.vrc-get.vrchat.avatars" => {
+                compatible_builtin_variants(AVATAR_TEMPLATES, &unity_range)?
+                    .into_iter()
+                    .map(|(_, id, _)| id)
+                    .collect()
+            }
+            "com.anatawa12.vrc-get.vrchat.worlds" => {
+                compatible_builtin_variants(WORLD_TEMPLATES, &unity_range)?
+                    .into_iter()
+                    .map(|(_, id, _)| id)
+                    .collect()
+            }
+            "com.anatawa12.vrc-get.blank" => {
+                blank_editor = compatible_builtin_variants(AVATAR_TEMPLATES, &unity_range)?
+                    .into_iter()
+                    .next()
+                    .map(|(_, _, editor)| editor);
+                vec![alcomd_application::BLANK_PROJECT_TEMPLATE_ID.to_owned()]
+            }
+            base => vec![alcom_template_id(base)?],
+        };
+        if base_ids.is_empty() || base_ids.contains(&id) {
+            return Err(invalid_at(&path, "ALCOM template has no compatible base"));
+        }
+        Ok(Some(ExternalProjectTemplate {
+            id,
+            name: input.display_name,
+            base_ids,
+            unity_range,
+            blank_editor,
+            dependencies: input
+                .vpm_dependencies
+                .into_iter()
+                .map(|(package_id, version_range)| ProjectTemplateDependency {
+                    package_id,
+                    version_range,
+                })
+                .collect(),
+        }))
+    }
+
+    pub(crate) fn materialize_external_template(
+        &self,
+        mut input: ExternalProjectTemplate,
+        base: ProjectTemplateDeclaration,
+    ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
+        let editor = base
+            .editor_version
+            .clone()
+            .or(input.blank_editor)
+            .ok_or_else(invalid)?;
+        if !input.unity_range.matches(&editor_triplet(&editor)?, false) {
+            return Err(ProjectCreateError::new(
+                ProjectCreateErrorCode::DependencyUnsatisfied,
+            ));
+        }
+        for dependency in &mut input.dependencies {
+            if let Some(inherited) = base
+                .dependencies
+                .iter()
+                .find(|item| item.package_id == dependency.package_id)
+            {
+                dependency.version_range =
+                    intersect_ranges(&inherited.version_range, &dependency.version_range)?;
+            }
+        }
+        self.manual(input.id, input.name, editor, input.dependencies, base)
     }
 
     fn manual(
@@ -1224,6 +1332,93 @@ struct TemplateMetadata {
     display_name: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AlcomTemplate {
+    #[serde(rename = "$type")]
+    format: String,
+    format_version: String,
+    display_name: String,
+    id: Option<String>,
+    base: String,
+    unity_version: Option<String>,
+    #[serde(rename = "updateDate")]
+    _update_date: Option<String>,
+    #[serde(default)]
+    vpm_dependencies: BTreeMap<String, String>,
+    #[serde(default)]
+    unity_packages: Vec<String>,
+}
+
+fn alcom_template_id(id: &str) -> Result<String, ProjectCreateError> {
+    if id.is_empty()
+        || id.len() > 256
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        return Err(invalid());
+    }
+    Ok(format!(
+        "com.vrclearn.alcomd.import.alcom.id.{}",
+        digest_hex(&Sha256::digest(id))
+    ))
+}
+
+fn editor_triplet(editor: &str) -> Result<semver::Version, ProjectCreateError> {
+    editor
+        .split(|character: char| !character.is_ascii_digit() && character != '.')
+        .next()
+        .ok_or_else(invalid)?
+        .parse()
+        .map_err(|error| invalid().with_source(error))
+}
+
+fn compatible_builtin_variants(
+    json: &str,
+    range: &VpmRange,
+) -> Result<Vec<(semver::Version, String, String)>, ProjectCreateError> {
+    let family: BuiltinFamily =
+        serde_json::from_str(json).map_err(|error| invalid().with_source(error))?;
+    let mut variants = Vec::new();
+    for variant in family.variants {
+        let version = editor_triplet(&variant.editor_version)?;
+        if range.matches(&version, false) {
+            let id = format!("{}.{}", family.id, version.major);
+            variants.push((version, id, variant.editor_version));
+        }
+    }
+    variants.sort_by(|left, right| right.0.cmp(&left.0));
+    Ok(variants)
+}
+
+fn intersect_ranges(inherited: &str, requested: &str) -> Result<String, ProjectCreateError> {
+    let inherited = VpmRange::parse(inherited)
+        .map_err(|error| invalid().with_source(error))?
+        .canonical();
+    let requested = VpmRange::parse(requested)
+        .map_err(|error| invalid().with_source(error))?
+        .canonical();
+    let parts = inherited.split(" || ");
+    let combinations =
+        parts.flat_map(|base| requested.split(" || ").map(move |extra| (base, extra)));
+    let mut result = String::new();
+    for (base, extra) in combinations {
+        if !result.is_empty() {
+            result.push_str(" || ");
+        }
+        result.push_str(base);
+        result.push(' ');
+        result.push_str(extra);
+        if result.len() > alcomd_domain::vpm_range::MAX_RANGE_BYTES {
+            return Err(invalid());
+        }
+    }
+    VpmRange::parse(&result)
+        .map(|range| range.canonical())
+        .map_err(|error| invalid().with_source(error))
+}
+
 fn template_metadata(id: &str, name: &str) -> Result<Vec<u8>, ProjectCreateError> {
     validate_metadata(id, name.trim())?;
     serde_json::to_vec(&TemplateMetadata {
@@ -1654,11 +1849,19 @@ fn make_stamp(path: &Path, metadata: Metadata) -> Result<Stamp, ProjectCreateErr
 
 fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, ProjectCreateError> {
     let expected = stamp(path, false)?;
+    read_bounded_stamped(path, &expected, limit)
+}
+
+fn read_bounded_stamped(
+    path: &Path,
+    expected: &Stamp,
+    limit: usize,
+) -> Result<Vec<u8>, ProjectCreateError> {
     if expected.len > limit as u64 {
         return Err(invalid_at(path, "template metadata exceeds its size limit"));
     }
     let mut bytes = Vec::new();
-    copy_stamped(path, &expected, &mut bytes)?;
+    copy_stamped(path, expected, &mut bytes)?;
     Ok(bytes)
 }
 
@@ -1720,12 +1923,11 @@ fn digest_file(path: &Path) -> Result<String, ProjectCreateError> {
 
     let mut hash = DigestWriter(Sha256::new());
     copy_stamped(path, &expected, &mut hash)?;
-    Ok(hash
-        .0
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
+    Ok(digest_hex(&hash.0.finalize()))
+}
+
+fn digest_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn new_file(path: &Path) -> Result<File, ProjectCreateError> {

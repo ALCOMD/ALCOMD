@@ -80,6 +80,13 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
         .repository_list_inspect_file(input.to_str().expect("path").into())
         .await
         .expect("inspect list");
+    let alcom_list = fixture.0.join("input.alcomrepositories");
+    fs::write(&alcom_list, &input_bytes).expect("ALCOM exchange file");
+    let alcom_inspection = client
+        .repository_list_inspect_file(alcom_list.to_str().expect("ALCOM path").into())
+        .await
+        .expect("inspect ALCOM repository list");
+    assert_eq!(alcom_inspection.fingerprint, inspected.fingerprint);
     assert_eq!(
         inspected
             .entries
