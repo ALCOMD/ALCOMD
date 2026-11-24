@@ -7923,7 +7923,6 @@
                                     "backup_source_changed",
                                     "backup_target_exists",
                                     "backup_target_invalid",
-                                    "backup_archive_invalid",
                                     "backup_restore_recovery_required",
                                     "extension_manifest_invalid",
                                     "extension_package_invalid",

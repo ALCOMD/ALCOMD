@@ -948,7 +948,6 @@
             "properties": {
                 "code": {
                     "enum": [
-                        "backup_archive_invalid",
                         "backup_archive_limit_exceeded",
                         "backup_integrity_mismatch",
                         "backup_not_found",
