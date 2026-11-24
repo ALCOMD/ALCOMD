@@ -289,6 +289,32 @@ mod tests {
         }
         assert!(deb.join("deb-root/DEBIAN/control").is_file());
         assert!(appimage.join("AppDir/AppRun").is_file());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+
+            let fixture = format!("{}-dist-fixture", product.product.technical_name);
+            let runtime_path = format!("usr/lib/{fixture}/runtime/{}", candidate.version);
+            for tree in [deb.join("deb-root"), appimage.join("AppDir")] {
+                let runtime = tree.join(&runtime_path);
+                for (file, mode) in [
+                    (runtime.clone(), 0o755),
+                    (runtime.join(&product.binaries.cli), 0o755),
+                    (runtime.join(MANIFEST_NAME), 0o644),
+                    (runtime.join(SIGNATURE_NAME), 0o644),
+                ] {
+                    assert_eq!(file.metadata()?.permissions().mode() & 0o7777, mode);
+                }
+            }
+            let app_dir = appimage.join("AppDir");
+            for (file, mode) in [
+                (app_dir.join("AppRun"), 0o755),
+                (app_dir.join(format!("{fixture}.desktop")), 0o644),
+                (deb.join("deb-root/DEBIAN/control"), 0o644),
+            ] {
+                assert_eq!(file.metadata()?.permissions().mode() & 0o7777, mode);
+            }
+        }
         fs::write(stage.join("LICENSE"), b"modified fixture")?;
         let output = output_root.join("tampered");
         assert!(

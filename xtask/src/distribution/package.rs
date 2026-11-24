@@ -83,6 +83,15 @@ pub(super) fn export(
         Format::Appimage => export_appimage(root, layout, &fixture, &manifest_digest)?,
         Format::Deb => export_deb(layout, &fixture, &candidate.version)?,
     }
+    #[cfg(unix)]
+    match format {
+        Format::Inno => {}
+        Format::Appimage => {
+            let tree = layout.join("AppDir");
+            set_unix_package_modes(&tree, &runtime, product, Some(&tree.join("AppRun")))?;
+        }
+        Format::Deb => set_unix_package_modes(&layout.join("deb-root"), &runtime, product, None)?,
+    }
 
     ensure!(
         resolve_plain_storage_directory(&parent)?.1 == identity,
@@ -92,6 +101,37 @@ pub(super) fn export(
     publish_path_no_replace(layout, &destination)?;
     sync_directory(&parent)?;
     println!("Prepared {format:?} packing inputs for fixture runtime {manifest_digest}");
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_unix_package_modes(
+    directory: &Path,
+    runtime: &Path,
+    product: &ProductConfig,
+    launcher: Option<&Path>,
+) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    fs::set_permissions(directory, fs::Permissions::from_mode(0o755))?;
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        let path = entry.path();
+        if kind.is_dir() {
+            set_unix_package_modes(&path, runtime, product, launcher)?;
+        } else {
+            ensure!(kind.is_file(), "unexpected entry in Linux package layout");
+            let name = entry.file_name();
+            let executable = launcher == Some(path.as_path())
+                || (directory == runtime
+                    && super::runtime_binaries(product)
+                        .iter()
+                        .any(|binary| name == *binary));
+            let mode = if executable { 0o755 } else { 0o644 };
+            fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
+        }
+    }
     Ok(())
 }
 
@@ -137,11 +177,6 @@ fn export_appimage(
     let script =
         format!("#!/bin/sh\nprintf '%s\\n' 'ALCOMD packaging fixture {manifest_digest}'\n");
     publish_file(&app, "AppRun", script.as_bytes())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        fs::set_permissions(app.join("AppRun"), fs::Permissions::from_mode(0o755))?;
-    }
     let desktop = format!(
         "[Desktop Entry]\nType=Application\nName=ALCOMD Packaging Fixture\nExec=AppRun\nIcon={fixture}\nCategories=Development;\nTerminal=true\nNoDisplay=true\n"
     );
