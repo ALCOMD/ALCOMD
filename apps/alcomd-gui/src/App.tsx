@@ -37,7 +37,7 @@ import { AppNotifications } from "./app-notifications";
 import { AppNotificationOutlet } from "./AppNotifications";
 import { CoreEventsProvider, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
-import { AboutPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, primePackageWorkspaceRead, routePreloadRead, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
+import { AboutPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, primePackageWorkspaceRead, routePreloadRead, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UserPackagesPage } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageHeader } from "./PageHeader";
 import { PageLoadingState } from "./LoadingState";
@@ -78,7 +78,6 @@ type Route =
     | { kind: "repository-detail"; repositoryId: string }
     | { kind: "templates" }
     | { kind: "user-packages" }
-    | { kind: "unity" }
     | { kind: "operations" }
     | { kind: "logs" }
     | { kind: "operation-detail"; operationId: string }
@@ -540,7 +539,6 @@ function RouteContent({
         case "repository-detail": return <CapabilityRoute required={[capabilities.repositoriesRead]}><RepositoryDetailPage {...props} repositoryId={route.repositoryId} /></CapabilityRoute>;
         case "templates": return <TemplatesPage {...props} />;
         case "user-packages": return <CapabilityRoute required={[capabilities.packagesUserPackages]}><UserPackagesPage {...props} /></CapabilityRoute>;
-        case "unity": return <CapabilityRoute required={[capabilities.unityRead]}><UnityPage {...props} /></CapabilityRoute>;
         case "operations": return <CapabilityRoute required={[capabilities.operations]}><OperationsPage {...props} /></CapabilityRoute>;
         case "logs": return <CapabilityRoute required={[capabilities.logsRead]}><OperationLogsRoute client={props.client} /></CapabilityRoute>;
         case "operation-detail": return <CapabilityRoute required={[capabilities.operations]}><OperationDetailPage {...props} operationId={route.operationId} /></CapabilityRoute>;
@@ -918,7 +916,6 @@ function readRoute(pathname: string, search = ""): Route {
             case "repositories": return { kind: "repositories" };
             case "templates": return { kind: "templates" };
             case "user-packages": return { kind: "user-packages" };
-            case "unity": return { kind: "unity" };
             case "operations": return { kind: "operations" };
             case "logs": return { kind: "logs" };
             case "extensions": return { kind: "extensions" };
@@ -953,7 +950,6 @@ function routePath(route: Route): string {
         case "repository-detail": return `/repositories/${encodeURIComponent(route.repositoryId)}`;
         case "templates": return "/templates";
         case "user-packages": return "/user-packages";
-        case "unity": return "/unity";
         case "operations": return "/operations";
         case "logs": return "/logs";
         case "operation-detail": return `/operations/${encodeURIComponent(route.operationId)}`;
@@ -980,7 +976,6 @@ function routeSection(route: Route): string {
         case "operation-detail": return "tasks";
         case "extension-detail":
         case "extension-ui": return "extensions";
-        case "unity":
         case "settings": return "settings";
         case "about": return "about";
         default: return route.kind;

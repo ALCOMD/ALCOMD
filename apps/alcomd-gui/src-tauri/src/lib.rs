@@ -8,6 +8,7 @@ use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 mod ai_clients;
+mod desktop_associations;
 mod desktop_links;
 mod events;
 mod native_clients;
@@ -1812,7 +1813,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             desktop_links::gui_take_desktop_link,
-            repository_links::gui_vcc_registration_available,
+            desktop_associations::gui_desktop_associations,
+            desktop_associations::gui_open_default_apps_settings,
             repository_links::gui_register_vcc_links,
             window_state::gui_window_state_configure,
             gui_system_status,

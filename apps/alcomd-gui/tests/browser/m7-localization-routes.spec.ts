@@ -17,7 +17,7 @@ const languages = [
             { path: "/repositories", title: "资源", role: "button", control: "添加存储库" },
             { path: "/user-packages", title: "资源", role: "button", control: "添加文件夹" },
             { path: "/templates", title: "资源", role: "button", control: "创建模板" },
-            { path: "/unity", title: "设置", role: "button", control: "管理安装" },
+            { path: "/settings", title: "设置", role: "button", control: "手动选择" },
             { path: "/extensions", title: "扩展", role: "button", control: "安装扩展" },
             { path: "/operations", title: "任务", role: "heading", control: "暂无任务" },
             { path: "/about", title: "关于", role: "heading", control: "许可证" }
@@ -29,7 +29,7 @@ const languages = [
             { path: "/repositories", title: "パッケージ&テンプレート", role: "button", control: "リポジトリを追加" },
             { path: "/user-packages", title: "パッケージ&テンプレート", role: "button", control: "フォルダーを登録" },
             { path: "/templates", title: "パッケージ&テンプレート", role: "button", control: "テンプレートを作成" },
-            { path: "/unity", title: "設定", role: "button", control: "インストールを管理" },
+            { path: "/settings", title: "設定", role: "button", control: "手動で選択" },
             { path: "/extensions", title: "拡張機能", role: "button", control: "拡張機能をインストール" },
             { path: "/operations", title: "タスク", role: "heading", control: "タスクはまだありません" },
             { path: "/about", title: "このアプリについて", role: "heading", control: "ライセンス" }
@@ -48,7 +48,7 @@ const englishRoutes: RouteExpectation[] = [
     { path: "/repositories", title: "Resources", role: "button", control: "Add repository" },
     { path: "/user-packages", title: "Resources", role: "button", control: "Enroll folder" },
     { path: "/templates", title: "Resources", role: "button", control: "Create template" },
-    { path: "/unity", title: "Settings", role: "button", control: "Manage installations" },
+    { path: "/settings", title: "Settings", role: "button", control: "Manually select" },
     { path: "/extensions", title: "Extensions", role: "button", control: "Install extension" },
     { path: "/operations", title: "Tasks", role: "heading", control: "No operations yet" },
     { path: "/about", title: "About", role: "heading", control: "Licenses" }
@@ -111,6 +111,7 @@ for (const language of languages) {
 
         for (const route of language.routes) {
             await visitFixtureRoute(page, route.path);
+            if (route.path === "/settings") await selectSettingsSection(page, "associations");
             await expect(page.getByRole("heading", { level: 1, name: route.title, exact: true })).toBeVisible();
             await expect(page.getByRole(route.role, { name: route.control, exact: true })).toBeVisible();
             await expect(page.locator("html")).toHaveAttribute("lang", language.locale);
@@ -128,6 +129,7 @@ for (const language of languages) {
 
         for (const route of englishRoutes) {
             await visitFixtureRoute(page, route.path);
+            if (route.path === "/settings") await selectSettingsSection(page, "associations");
             await expect(page.getByRole("heading", { level: 1, name: route.title, exact: true })).toBeVisible();
             await expect(page.getByRole(route.role, { name: route.control, exact: true })).toBeVisible();
             await assertExternalFixtureText(page, route.path);
@@ -181,9 +183,9 @@ async function assertExternalFixtureText(page: Page, path: string) {
     } else if (path === "/templates") {
         await expect(page.getByRole("table")).toContainText("VRChat Avatars 2022");
         await expect(page.getByRole("table")).toContainText("com.vrclearn.alcomd.templates.vrchat.avatars.2022");
-    } else if (path === "/unity") {
+    } else if (path === "/settings") {
         await expect(page.getByRole("table")).toContainText("2022.3.22f1");
-        await expect(page.getByRole("table")).toContainText("x86_64");
+        await expect(page.getByRole("table")).toContainText("<private-editor>");
     } else if (path === "/extensions") {
         await expect(page.locator(".extension-card h4").filter({ hasText: /^com\.vrclearn\.discord$/ })).toBeVisible();
     } else if (path === "/about") {

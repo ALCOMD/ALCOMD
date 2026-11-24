@@ -1,6 +1,5 @@
 import { CoreDiagnostics } from "./CoreDiagnostics";
 import { useGuiWrite } from "./gui-write-attempt";
-import { unityInstallationSourceLabel } from "./unity-installation-source";
 import { ExtensionToolPreview } from "./ExtensionPermissions";
 import { Translated, useTranslation } from "./i18n";
 import { productFamily } from "@alcomd/ui";
@@ -49,7 +48,6 @@ import type {
     RegistryCursor,
     RepositoryCursor,
     RepositorySnapshot,
-    UnityInstallation,
     UnityLaunchOptionsResult,
     UserPackageRecord,
     SettingsGetResult
@@ -69,7 +67,6 @@ import {
     ProjectUnityWorkspaceActions,
     RepositoryActions,
     useActionScope,
-    UnityRegistryActions
 } from "./CoreActions";
 import { DesktopList, TableLoading, type DesktopListColumn } from "./DesktopList";
 import { NavigationButton } from "./NavigationButton";
@@ -281,7 +278,6 @@ export function routePreloadRead(client: GuiRpcClient, events: CoreEvents, path:
         case "/user-packages": return has(capabilities.packagesUserPackages) ? { scopes: ["user-packages"], load: (signal) => listAllUserPackages(client, signal) } : undefined;
         case "/templates": return has(capabilities.projectTemplates) ? { scopes: ["templates"], load: () => client.projectTemplatesList() } : undefined;
         case "/settings": return { scopes: [], load: () => client.settingsGet() };
-        case "/unity": return has(capabilities.unityRead) ? { scopes: ["unity"], load: (signal) => loadAllUnityInstallations(client, signal) } : undefined;
         case "/operations": return has(capabilities.operations) ? { scopes: ["operations"], load: () => client.operationsList() } : undefined;
         case "/logs": return has(capabilities.logsRead) ? { scopes: ["operation-log"], key: String(events.metadata("operation-log", "sequence", "")), load: () => readInitialOperationLogs(client, events) } : undefined;
         case "/extensions": return has(capabilities.extensionsLifecycle) ? { scopes: ["extensions"], load: () => client.extensionsList() } : undefined;
@@ -2094,13 +2090,6 @@ function ResourceNavigation({ current, navigate }: { current: string; navigate(p
     return <nav aria-label={t("Resources")} className="resource-navigation"><SegmentedButtons preload label={t("Resource sections")} value={current} onChange={navigate} options={[{ value: "/repositories", label: t("Repositories") }, { value: "/user-packages", label: t("User Packages"), disabled: !canUseUserPackages, title: capabilityUnavailableTitle(canUseUserPackages, capabilities.packagesUserPackages, t) }, { value: "/templates", label: t("Templates") }]} /></nav>;
 }
 
-function UtilityNavigation({ current, kind, navigate }: { current: string; kind: "settings"; navigate(path: string): void }) {
-    const { t, locale } = useTranslation();
-    const unity = useCapability(capabilities.unityRead);
-    const items = [{ path: "/settings", label: t("Preferences") }, { path: "/unity", label: t("Unity installations") }];
-    return <nav aria-label={t("Settings sections")} className="resource-navigation"><SegmentedButtons preload label={t("Settings sections")} value={current} onChange={navigate} options={items.map(({ path, label }) => ({ value: path, label, disabled: path === "/unity" && !unity }))} /></nav>;
-}
-
 function ActionDisclosure({ children, title }: { children: ReactNode; title: string }) {
     const [open, setOpen] = useState(false);
     return <section className="utility-disclosure"><Button aria-haspopup="dialog" onClick={() => setOpen(true)} type="button" variant="tonal">{title}</Button>{open ? <UtilityActionDialog title={title} onClose={() => setOpen(false)}>{children}</UtilityActionDialog> : null}</section>;
@@ -2242,12 +2231,6 @@ export function TemplatesPage({ client, navigate }: PageProps) {
     return <ProjectTemplatesWorkspace client={client} navigation={navigation} />;
 }
 
-export function UnityPage({ client, navigate }: PageProps) {
-    const { t, locale } = useTranslation();
-    const load = useCallback(() => loadAllUnityInstallations(client), [client]);
-    return <UtilityWorkspace table loading={<TableLoading label={t("Unity installations")} headers={[t("Version"), t("Architecture"), t("Source"), t("Installation")]} />} changes={["unity"]} title={t(navigationLabels.settings)} load={load} navigation={<UtilityNavigation current="/unity" kind="settings" navigate={navigate} />} action={{ label: t("Manage installations"), render: (installations, refresh) => <UnityRegistryActions client={client} installations={installations} onChanged={refresh} /> }}>{(installations) => <>{installations.length === 0 ? <RouteState kind="empty" title={t("No Unity installations registered")} /> : <UtilityTable label={t("Unity installations")} headers={[t("Version"), t("Architecture"), t("Source"), t("Installation")]} rows={installations.map((item) => ({ key: item.installationId, cells: [item.unityVersion, item.architecture, t(unityInstallationSourceLabel(item.sourceKind)), item.installationId] }))} />}</>}</UtilityWorkspace>;
-}
-
 export function ProjectUnityPage({ afterMigrationOpen = false, client, navigate, projectId }: PageProps & { afterMigrationOpen?: boolean; projectId: string }) {
     const { t, locale } = useTranslation();
     const load = useCallback(async () => {
@@ -2261,18 +2244,6 @@ export function ProjectUnityPage({ afterMigrationOpen = false, client, navigate,
         return { project, launchConfig, launchOptions, writer };
     }, [client, projectId]);
     return <UtilityWorkspace changes={["projects", "unity"]} title={t("Project Unity")} back={<BackTo label={t("Project packages")} navigate={navigate} path={`/projects/${projectId}/packages`} />} load={load}>{({ project, launchConfig, launchOptions, writer }, refresh) => <><dl className="detail-grid"><Detail label={t("Project Unity version")} value={project.unityVersion} /><Detail label={t("Exact installations")} value={String(launchOptions.exactMatchingInstallations.length)} /><Detail label={t("Writer observation")} value={writer?.state ?? t("Unknown")} /><Detail label={t("Arguments")} value={launchConfig.config.revision === 0 ? t("Use global defaults") : t("{count} arguments", { count: launchConfig.effectiveArguments.length })} /><Detail label={t("Observed")} value={writer === undefined ? "—" : formatTime(t, locale, writer.checkedAtMs)} /></dl><ProjectUnityActions navigate={navigate} afterMigrationOpen={afterMigrationOpen} client={client} launchConfig={launchConfig} launchOptions={launchOptions} onChanged={refresh} project={project} /></>}</UtilityWorkspace>;
-}
-
-async function loadAllUnityInstallations(client: GuiRpcClient, signal?: AbortSignal): Promise<UnityInstallation[]> {
-    const installations: UnityInstallation[] = [];
-    let cursor: string | undefined;
-    do {
-        checkPreload(signal);
-        const page = await client.unityInstallationsList(cursor);
-        installations.push(...page.installations);
-        cursor = page.nextCursor;
-    } while (cursor !== undefined);
-    return installations;
 }
 
 export function ProjectBackupsPage({ client, navigate, projectId }: PageProps & { projectId: string }) {

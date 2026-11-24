@@ -12,6 +12,23 @@ fn main() {
         .as_str()
         .expect("product URI scheme");
     println!("cargo:rustc-env=ALCOMD_URI_SCHEME={uri_scheme}");
+    let desktop_id = product["identity"]["linux_desktop_id"]
+        .as_str()
+        .expect("product Linux desktop ID");
+    println!("cargo:rustc-env=ALCOMD_LINUX_DESKTOP_ID={desktop_id}");
+    for (field, variable) in [
+        (
+            "repository_list_extension",
+            "ALCOMD_REPOSITORY_LIST_EXTENSION",
+        ),
+        ("template_extension", "ALCOMD_TEMPLATE_EXTENSION"),
+        ("extension_extension", "ALCOMD_EXTENSION_EXTENSION"),
+    ] {
+        let value = product["formats"][field]
+            .as_str()
+            .expect("product file extension");
+        println!("cargo:rustc-env={variable}={value}");
+    }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         // The headless native test links the Windows GUI runtime, which needs
         // Common Controls v6. Tauri supplies its own manifest for the app.

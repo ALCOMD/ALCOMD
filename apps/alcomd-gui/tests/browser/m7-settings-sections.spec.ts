@@ -18,14 +18,14 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
         }
         const t = createTranslator(locale);
         navigation = page.getByRole("navigation", { name: t("Settings sections"), exact: true });
-        const labels = [t("General"), "Unity", t("Appearance"), t("Clients")];
+        const labels = [t("General"), t("Associations"), t("Appearance"), t("Clients")];
         await expect(navigation.getByRole("button")).toHaveText(labels);
         await expect(navigation.locator(".os-scrollbar")).toHaveCount(0);
         await expect(navigation).toHaveCSS("overflow", "visible");
         const writes = await page.evaluate(() => window.settingsRequests.length);
         const path = page.locator("#settings-projectDirectory");
         const original = await path.elementHandle();
-        const regions = [[t("Projects"), t("Backups"), t("Network")], [t("Unity Hub Path"), t("Unity installations"), t("Default Unity launch arguments")], [t("Appearance"), t("Window"), t("Theme")], [t("Client programs"), t("AI clients")]];
+        const regions = [[t("Projects"), t("Backups"), t("Network")], [t("Desktop associations"), t("Unity Hub Path"), t("Unity installations"), t("Default Unity launch arguments")], [t("Appearance"), t("Window"), t("Theme")], [t("Client programs"), t("AI clients")]];
         await expect(page.getByRole("region", { name: t("Packages"), exact: true, includeHidden: true })).toHaveCount(0);
         for (let index = 0; index < labels.length; index++) {
             await navigation.getByRole("button").nth(index).click();
@@ -57,7 +57,7 @@ test("changing settings groups keeps field instances and serializes edits made b
     const original = await page.locator("#settings-projectDirectory").elementHandle();
     const value = "D:\\Projects after switching";
     await path.fill(value);
-    await navigation.getByRole("button", { name: "Unity", exact: true }).click();
+    await navigation.getByRole("button", { name: "Associations", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
     await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
     await page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true }).click();
@@ -74,7 +74,7 @@ test("Settings groups remain keyboard reachable in an 800px desktop window", asy
     await page.goto("/browser-harness.html?route=/settings&state=ready");
     const navigation = page.getByRole("navigation", { name: "Settings sections", exact: true });
     await navigation.getByRole("button", { name: "General", exact: true }).focus();
-    for (const name of ["Unity", "Appearance"]) {
+    for (const name of ["Associations", "Appearance"]) {
         await page.keyboard.press("Tab");
         const button = navigation.getByRole("button", { name, exact: true });
         await expect(button).toBeFocused();
@@ -84,4 +84,10 @@ test("Settings groups remain keyboard reachable in an 800px desktop window", asy
         expect(box.x + box.width).toBeLessThanOrEqual(800);
     }
     await expect(page.getByRole("form", { name: "Theme", exact: true })).toBeVisible();
+});
+
+test("the obsolete global Unity route no longer opens a second settings page", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/unity");
+    await expect(page.getByRole("heading", { name: "Page not found", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Manage installations", exact: true })).toHaveCount(0);
 });

@@ -12,7 +12,7 @@ pub(crate) struct VccRegistration {
     applied: Mutex<Option<bool>>,
 }
 
-fn registration_available(app: &AppHandle) -> bool {
+pub(crate) fn registration_available(app: &AppHandle) -> bool {
     #[cfg(target_os = "linux")]
     {
         app.env().appimage.is_some()
@@ -28,7 +28,7 @@ fn automatic_registration_allowed(available: bool, development: bool, suppressed
     available && !development && !suppressed
 }
 
-fn registration_suppressed() -> bool {
+pub(crate) fn registration_suppressed() -> bool {
     std::env::var_os("ALCOMD_DISABLE_VCC_REGISTRATION").is_some()
 }
 
@@ -126,11 +126,6 @@ fn set_registration(app: &AppHandle, enabled: bool) -> Result<(), &'static str> 
         let _ = (app, enabled);
         Err("vcc_registration_unavailable")
     }
-}
-
-#[tauri::command]
-pub(crate) fn gui_vcc_registration_available(app: AppHandle) -> bool {
-    registration_available(&app) && !registration_suppressed()
 }
 
 #[tauri::command]

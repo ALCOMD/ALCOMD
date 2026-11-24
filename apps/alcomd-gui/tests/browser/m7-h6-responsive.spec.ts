@@ -96,7 +96,7 @@ for (const width of [320, 640, 800, 1024, 1280]) {
 test("H7 outer page scrolling avoids a nested scrollbar at the viewport center", async ({ page }) => {
     await page.setViewportSize({ width: 640, height: 800 });
     await openHarness(page, "/settings");
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     const body = page.locator(".utility-workspace-body");
     await body.evaluate(element => {
         const target = document.createElement("button");

@@ -9,12 +9,15 @@ use std::{
 
 use windows_sys::Win32::{
     Foundation::{
-        ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_NO_MORE_ITEMS, ERROR_PATH_NOT_FOUND,
-        ERROR_SUCCESS, ERROR_UNSUPPORTED_TYPE,
+        ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_NO_ASSOCIATION, ERROR_NO_MORE_ITEMS,
+        ERROR_PATH_NOT_FOUND, ERROR_SUCCESS, ERROR_UNSUPPORTED_TYPE, S_OK,
     },
     System::Registry::{
         HKEY, HKEY_CURRENT_USER, KEY_READ, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ, RegCloseKey,
         RegDeleteTreeW, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW,
+    },
+    UI::Shell::{
+        ASSOCF_INIT_IGNOREUNKNOWN, ASSOCF_IS_PROTOCOL, ASSOCSTR_EXECUTABLE, AssocQueryStringW,
     },
 };
 
@@ -24,6 +27,42 @@ fn wide(value: &str) -> Vec<u16> {
 
 fn missing(status: u32) -> bool {
     matches!(status, ERROR_FILE_NOT_FOUND | ERROR_PATH_NOT_FOUND)
+}
+
+/// Reads the current shell handler, including the logged-in user's default selection.
+pub fn default_association_executable(
+    name: &str,
+    protocol: bool,
+) -> io::Result<Option<std::path::PathBuf>> {
+    use std::os::windows::ffi::OsStringExt;
+
+    let mut output = vec![0_u16; 32_768];
+    let mut length = output.len() as u32;
+    let name = wide(name);
+    let flags = ASSOCF_INIT_IGNOREUNKNOWN | if protocol { ASSOCF_IS_PROTOCOL } else { 0 };
+    // SAFETY: The association name is terminated and the output buffer is writable for length units.
+    let result = unsafe {
+        AssocQueryStringW(
+            flags,
+            ASSOCSTR_EXECUTABLE,
+            name.as_ptr(),
+            null(),
+            output.as_mut_ptr(),
+            &mut length,
+        )
+    };
+    if result == S_OK && length > 1 && (length as usize) <= output.len() {
+        return Ok(Some(
+            std::ffi::OsString::from_wide(&output[..length as usize - 1]).into(),
+        ));
+    }
+    // AssocQueryString reports Win32 errors as HRESULT_FROM_WIN32.
+    if result == (0x8007_0000 | ERROR_NO_ASSOCIATION) as i32 {
+        return Ok(None);
+    }
+    Err(io::Error::other(format!(
+        "shell association query failed ({result:#x})"
+    )))
 }
 
 fn matches_default(key: &str, value: &str) -> io::Result<bool> {
@@ -178,6 +217,20 @@ mod tests {
             .args(args)
             .output()
             .expect("Windows registry tool")
+    }
+
+    #[test]
+    fn unregistered_protocol_and_extension_have_no_default_executable() {
+        let name = "alcomd-association-reader-unregistered-fixture";
+        assert_eq!(
+            default_association_executable(name, true).expect("query unregistered protocol"),
+            None
+        );
+        assert_eq!(
+            default_association_executable(&format!(".{name}"), false)
+                .expect("query unregistered file extension"),
+            None
+        );
     }
 
     #[test]

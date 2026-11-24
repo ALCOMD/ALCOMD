@@ -128,7 +128,7 @@ test("copying a project starts at its displayed target and reuses a newly select
 
 test("Unity Hub selection starts at an unsaved draft and cancellation leaves it untouched", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings&hub-picker=cancel");
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     const region = page.getByRole("region", { name: "Unity Hub Path", exact: true });
     const field = region.getByRole("textbox", { name: "Unity Hub Path", exact: true });
     const currentPath = "D:\\Unsaved Hub\\Unity Hub.exe";

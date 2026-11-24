@@ -35,7 +35,7 @@ test("reads and successful favorite changes stay quiet, failures persist without
 test("manual refresh uses one bottom-right outlet and pauses expiry while focused", async ({ page }) => {
     await page.clock.install();
     await page.goto("/browser-harness.html?route=/settings");
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     const before = await page.locator("main").boundingBox();
     await page.getByRole("button", { name: "Discover and refresh", exact: true }).click();
     await expect(notice(page)).toContainText("Completed: Discover and refresh");
@@ -149,7 +149,7 @@ for (const failure of [false, true]) {
 
 test("hover pauses success dismissal and dismiss restores the previous keyboard focus", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings");
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     const refresh = page.getByRole("button", { name: "Discover and refresh", exact: true });
     await refresh.click();
     await expect(notice(page)).toBeVisible();
@@ -185,7 +185,7 @@ test("a task notification survives navigation and fits a narrow dark viewport", 
 for (const locale of ["zh-CN", "ja-JP"] as const) {
     test(`notification and dismissal labels are translated in ${locale}`, async ({ page }) => {
         await page.goto(`/browser-harness.html?route=/settings&locale=${locale}`);
-        await selectSettingsSection(page, "unity");
+        await selectSettingsSection(page, "associations");
         const refreshName = locale === "zh-CN" ? "查找并刷新" : "検出して更新";
         await page.getByRole("button", { name: refreshName, exact: true }).click();
         const region = page.getByRole("region", { name: locale === "zh-CN" ? "应用内通知" : "通知", exact: true });

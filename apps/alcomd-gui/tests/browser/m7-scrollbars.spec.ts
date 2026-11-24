@@ -36,13 +36,12 @@ test("all shared lists and page scrollers use the application scrollbar theme", 
         ["/repositories/00000000-0000-4000-8000-000000000102", "ready"],
         ["/user-packages", "package-user-source"],
         ["/templates", "ready"],
-        ["/unity", "ready"],
         ["/settings", "ready"],
         ["/operations", "ready"],
     ];
     for (const [route, state] of routes) {
         await page.goto(`/browser-harness.html?route=${encodeURIComponent(route!)}&state=${state}`);
-        if (route === "/settings") await selectSettingsSection(page, "unity");
+        if (route === "/settings") await selectSettingsSection(page, "associations");
         const list = page.locator(".desktop-list-viewport").first();
         await expect(list.locator("tbody tr").first()).toBeVisible();
         await page.mouse.move(1439, 899);

@@ -1,12 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { selectActionMenuItem } from "./material-menu-actions";
 import { expectRequestError } from "./request-error-assertions";
+import { selectSettingsSection } from "./settings-sections";
 test.use({ viewport: { width: 1280, height: 800 } });
 
 for (const state of ["ready", "empty"]) {
     test(`loaded ${state} Unity installations survive a failed reconnect read without a page notice`, async ({ page }) => {
         await page.goto(`/browser-harness.html?route=/settings&state=${state}`);
-        await page.getByRole("navigation", { name: "Settings sections", exact: true }).getByRole("button", { name: "Unity", exact: true }).click();
+        await selectSettingsSection(page, "associations");
         const region = page.getByRole("region", { name: "Unity installations", exact: true });
         if (state === "empty") await expect(region.getByText("No Unity installations registered", { exact: true })).toBeVisible();
         else await expect(region.getByRole("table").locator("tbody tr")).toHaveCount(1);
@@ -97,20 +98,23 @@ for (const mode of ["custom", "direct"] as const) {
 }
 
 for (const failure of [false, true]) {
-    test(`VCC registration ${failure ? "failure" : "success"} adds no page notice`, async ({ page }) => {
+    test(`VCC registration ${failure ? "reports failure inline" : "updates the registered state"}`, async ({ page }) => {
         await page.goto(`/browser-harness.html?route=/settings&vcc-settings-fixture=1${failure ? "&vcc-registration-error=1" : ""}`);
-        const region = page.getByRole("region", { name: "VCC links", exact: true });
+        await selectSettingsSection(page, "associations");
+        const region = page.getByRole("region", { name: "Link protocols", exact: true });
         const register = region.getByRole("button", { name: "Register ALCOMD for VCC links", exact: true });
         await expect(register).toBeEnabled();
-        const content = await region.innerText();
-        const bounds = await region.boundingBox();
         for (let attempt = 1; attempt <= 2; attempt++) {
             await register.click();
             await expect.poll(() => page.evaluate(() => window.resourceRequests.filter(({ method }) => method === "gui_register_vcc_links").length)).toBe(attempt);
             await expect(register).toBeEnabled();
-            await expect(region).toHaveText(content, { useInnerText: true });
-            expect(await region.boundingBox()).toEqual(bounds);
-            await expect(region.locator('[role="alert"], [role="status"]')).toHaveCount(0);
+            if (failure) await expect(region.getByRole("alert")).toHaveText("VCC link registration failed.");
+            else {
+                await expect(region.getByRole("alert")).toHaveCount(0);
+                await expect(region.getByText("ALCOMD is registered", { exact: true })).toBeVisible();
+            }
+            await expect(region.locator(".settings-row").filter({ has: page.getByText("vcc://", { exact: true }) })).toContainText("Another app is the default");
+            await expect(page.locator(".reminder-floating")).toHaveCount(0);
             await expect(page.getByRole("dialog")).toHaveCount(0);
         }
     });

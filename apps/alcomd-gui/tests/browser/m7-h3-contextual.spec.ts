@@ -129,7 +129,7 @@ test("an unknown backup creation does not start a second task or label closing a
 
 test("Settings Unity errors stay with the action and a corrected registration succeeds without a popup", async ({ page }) => {
     await open(page, "/settings", "h3-unity-register-error=1");
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     const host = page.getByRole("region", {name:"Unity installations",exact:true});
     const choose = host.getByRole("button", {name:"Manually select",exact:true});
     await choose.click();

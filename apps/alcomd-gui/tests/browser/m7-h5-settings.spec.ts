@@ -44,7 +44,7 @@ test("H5 autosave preserves a failed intent across navigation and retries in Set
     await expect(feedback).toBeVisible();
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText(H5_SETTINGS_SECRET);
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await selectSettingsSection(page, "appearance");
     await expect(page.locator(".utility-workspace-toolbar")).toBeVisible();
     await navigation(page, "Projects").click();
@@ -137,7 +137,7 @@ test("dismissing an unknown theme result still permits shared settings Retry", a
 test("H5 Hub unknown reply preserves original picker input and reconciles before any further write", async ({ page }) => {
     await openSettings(page);
     await fail(page, "settings.update", "internal_error", true);
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await hub(page).getByRole("button", { name: "Select", exact: true }).click();
     const retryHub = hub(page).getByRole("button", { name: "Retry", exact: true });
     await expect(retryHub).toBeVisible();
@@ -154,7 +154,7 @@ test("H5 Hub unknown reply preserves original picker input and reconciles before
 test("H5 confirmed Hub save remains accepted when Editor discovery reports a separate failure", async ({ page }) => {
     await openSettings(page);
     await fail(page, "unity.installations.refresh", "internal_error");
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await hub(page).getByRole("button", { name: "Select", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "unity.installations.refresh").length)).toBe(1);
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
@@ -170,7 +170,7 @@ test("H5 confirmed Hub save remains accepted when Editor discovery reports a sep
 test("H5 Auto detect read failure does not claim an unknown save or submit a settings write", async ({ page }) => {
     await openSettings(page);
     await fail(page, "settings.get", "daemon_unavailable");
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await hub(page).getByRole("button", { name: "Auto detect", exact: true }).click();
     const retryHub = hub(page).getByRole("button", { name: "Retry", exact: true });
     await expect(retryHub).toBeVisible();

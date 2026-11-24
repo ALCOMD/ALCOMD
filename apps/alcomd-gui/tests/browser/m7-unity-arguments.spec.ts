@@ -13,7 +13,7 @@ const writes = (page: Page) => page.evaluate(() => window.settingsRequests);
 async function openSettings(page: Page, query: Record<string, string> = {}) {
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.goto(`/browser-harness.html?${new URLSearchParams({ route: "/settings", ...query })}`);
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await expect(defaultsSection(page)).toBeVisible();
 }
 async function editDefaults(page: Page) {

@@ -31,7 +31,7 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
         const original = await checkbox.elementHandle();
         await checkbox.check();
         await expect.poll(() => page.evaluate(() => window.h5Settings.commits.filter((request) => request.update.window !== undefined).length)).toBe(1);
-        await selectSettingsSection(page, "unity");
+        await selectSettingsSection(page, "associations");
         await expect(region).toHaveCount(0);
         await selectSettingsSection(page, "appearance");
         await expect(checkbox).toBeChecked();
@@ -57,7 +57,7 @@ test("failed window preference keeps the intent and uses explicit Retry after ch
     await expect(feedback).toBeVisible();
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.h5Settings.commits)).toEqual([]);
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await selectSettingsSection(page, "appearance");
     await expect(checkbox).toBeChecked();
     await feedback.click();

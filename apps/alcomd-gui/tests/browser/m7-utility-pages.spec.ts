@@ -11,7 +11,6 @@ const listRoutes = [
     ["Repository packages", "/repositories/00000000-0000-4000-8000-000000000102", "ready"],
     ["User Packages", "/user-packages", "package-user-source"],
     ["Templates", "/templates", "ready"],
-    ["Unity installations", "/unity", "ready"],
     ["Unity installations", "/settings", "ready"],
     ["Tasks", "/operations", "ready"],
     ["Logs", "/logs", "ready"]
@@ -25,7 +24,7 @@ for (const width of [1280, 1440]) {
             await test.step(`${label} ${route}`, async () => {
                 await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=${state}`);
                 await page.mouse.move(0, 0);
-                if (route === "/settings") await selectSettingsSection(page, "unity");
+                if (route === "/settings") await selectSettingsSection(page, "associations");
                 if (route === "/logs") await page.evaluate(() => window.fixtureLogs.replace([{
                     sequence: 1, actor: "CLI", entryId: "11111111-1111-4111-8111-111111111111",
                     executionId: "22222222-2222-4222-8222-222222222222", occurredAtMs: 1793937600000,
@@ -282,14 +281,14 @@ test("Settings uses shared sections and Logs uses the Core operation log with Ma
     await navigationItem(page, "Settings").click();
     await expectHeading(page, "Settings");
     const sections = page.getByRole("navigation", { name: "Settings sections", exact: true });
-    await expect(sections.getByRole("button")).toHaveText(["General", "Unity", "Appearance", "Clients"]);
+    await expect(sections.getByRole("button")).toHaveText(["General", "Associations", "Appearance", "Clients"]);
     await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Projects", "Backups", "Network"]);
     await expect(page.getByRole("region", { name: "Packages", exact: true, includeHidden: true })).toHaveCount(0);
     await expect(page.getByRole("region", { name: "System information", exact: true })).toHaveCount(0);
     await selectSettingsSection(page, "appearance");
     await expect(page.getByRole("form", { name: "Theme", exact: true })).toBeVisible();
-    await selectSettingsSection(page, "unity");
-    await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Unity Hub Path", "Unity installations", "Default Unity launch arguments"]);
+    await selectSettingsSection(page, "associations");
+    await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Desktop associations", "Unity Hub Path", "Unity installations", "Default Unity launch arguments"]);
     const installations = page.getByRole("table", { name: "Unity installations", exact: true });
     await expect(installations.getByRole("columnheader")).toHaveText(["Version", "Path", "Source", "Actions"]);
     await expect(page.getByRole("button", { name: "Discover and refresh", exact: true })).toBeVisible();
@@ -316,8 +315,7 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
     const cases = [
         ["/repositories", "Add repository", "Repository URL", "https://example.invalid/preserved.json"],
         ["/templates", "Create template", "Template ID", "com.example.preserved"],
-        ["/extensions", "Install extension", "Extension source URL", "https://example.invalid/preserved.json"],
-        ["/unity", "Manage installations", "Unity executable", "C:\\Fixture\\Unity.exe"]
+        ["/extensions", "Install extension", "Extension source URL", "https://example.invalid/preserved.json"]
     ] as const;
     for (const [route, title, field, value] of cases) {
         await openHarness(page, route);
@@ -410,7 +408,6 @@ test("utility desktop evidence includes the full application window", async ({ p
         ["user-packages", "/user-packages", "Resources"],
         ["templates", "/templates", "Resources"],
         ["settings", "/settings", "Settings"],
-        ["unity", "/unity", "Settings"],
         ["backups", "/projects/00000000-0000-4000-8000-000000000101/backups", "Backups"],
         ["tasks", "/operations", "Tasks"],
         ["task", "/operations/00000000-0000-4000-8000-000000000105", "Operation detail"],

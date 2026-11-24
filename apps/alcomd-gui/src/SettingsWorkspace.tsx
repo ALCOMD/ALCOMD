@@ -33,7 +33,7 @@ interface SettingsWorkspaceProps {
     onApplied(value: SettingsGetResult): void;
 }
 
-type SettingsCategory = "general" | "unity" | "appearance" | "clients";
+type SettingsCategory = "general" | "associations" | "appearance" | "clients";
 
 export function SettingsWorkspace({ client, settingsWriter, onApplied }: SettingsWorkspaceProps) {
     const { t } = useTranslation();
@@ -55,7 +55,7 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied }: Setting
                 <SegmentedButtons label={t("Settings sections")} value={category} onChange={(value) => setCategory(value as SettingsCategory)}
                     options={[
                         { value: "general", label: t("General") },
-                        { value: "unity", label: "Unity" },
+                        { value: "associations", label: t("Associations") },
                         { value: "appearance", label: t("Appearance") },
                         { value: "clients", label: t("Clients") }
                     ]} />
@@ -67,10 +67,6 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied }: Setting
                 return (
                 <div className="settings-workspace">
                     {category === "clients" ? <><NativeClientsSettings client={client} /><AiClientsSettings client={client} /></> : null}
-                    {isTauri() ? <VccLinkRegistration hidden={category !== "general"}
-                        enabled={settings.integrations.handleVccLinks}
-                        disabled={saving.saving || saving.failed}
-                        onChange={(handleVccLinks) => settingsWriter.change({ integrations: { handleVccLinks } })} /> : null}
                     <SettingsSection title={t("Projects")} hidden={category !== "general"} actions={<SettingsResetButton title={t("Projects")} disabled={!canManageProjects || saving.saving || saving.failed || (!projectDirty && settings.paths.projectDirectory === null && settings.projects.autoDiscover)} onRestore={async () => {
                         await settingsWriter.restoreDefaults({ paths: { projectDirectory: null }, projects: { autoDiscover: true } },
                             { paths: { projectDirectory: accepted.settings.paths.projectDirectory }, projects: { autoDiscover: accepted.settings.projects.autoDiscover } });
@@ -97,7 +93,12 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied }: Setting
                         <Checkbox checked={settings.backups.includeLibrary} label={t("Keep Library cache by default")}
                             onChange={(includeLibrary) => settingsWriter.change({ backups: { includeLibrary } })} />
                     </SettingsSection>
-                    <div className="settings-unity-group" hidden={category !== "unity"}>
+                    <DesktopAssociationSections hidden={category !== "associations"}
+                        enabled={settings.integrations.handleVccLinks}
+                        acceptedEnabled={accepted.settings.integrations.handleVccLinks}
+                        disabled={saving.saving || saving.failed}
+                        onChange={(handleVccLinks) => settingsWriter.change({ integrations: { handleVccLinks } })} />
+                    <div className="settings-unity-group" role="group" aria-label="Unity" hidden={category !== "associations"}>
                         <UnityHubSettingsSection client={client} settingsWriter={settingsWriter} snapshot={snapshot} onInstallationsChanged={() => setUnityGeneration((value) => value + 1)} />
                         <Suspense fallback={<SettingsSection title={t("Unity installations")}><TableLoading label={t("Unity installations")} columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }]} /></SettingsSection>}>
                             <UnitySettingsSection client={client} initialRead={initialUnity} externalGeneration={unityGeneration} />
@@ -163,37 +164,113 @@ function NetworkProxySettings({ hidden, proxy, settingsWriter, disabled }: {
     </SettingsSection>;
 }
 
-function VccLinkRegistration({ hidden, enabled, disabled, onChange }: {
-    hidden: boolean; enabled: boolean; disabled: boolean; onChange(enabled: boolean): void;
+type AssociationHandler = "alcomd" | "other" | "none" | "unknown";
+interface DesktopAssociation {
+    id: string;
+    value: string;
+    handler: AssociationHandler;
+}
+interface DesktopAssociations {
+    protocols: DesktopAssociation[];
+    files: DesktopAssociation[];
+    canRegisterVcc: boolean;
+    vccRegistered: boolean | null;
+    canOpenDefaultApps: boolean;
+}
+
+function DesktopAssociationSections({ hidden, enabled, acceptedEnabled, disabled, onChange }: {
+    hidden: boolean; enabled: boolean; acceptedEnabled: boolean; disabled: boolean; onChange(enabled: boolean): void;
 }) {
     const { t } = useTranslation();
-    const [available, setAvailable] = useState(false);
+    const desktop = isTauri();
+    const [snapshot, setSnapshot] = useState<DesktopAssociations>();
+    const [revision, setRevision] = useState(0);
+    const [readFailed, setReadFailed] = useState(false);
+    const [feedback, setFeedback] = useState("");
     const [busy, setBusy] = useState(false);
+    const refresh = useCallback(() => setRevision((value) => value + 1), []);
     useEffect(() => {
+        if (hidden || !desktop) return;
         let active = true;
-        void invoke<boolean>("gui_vcc_registration_available").then((value) => {
-            if (active) setAvailable(value);
-        }, () => {});
+        void invoke<DesktopAssociations>("gui_desktop_associations").then((value) => {
+            if (!active) return;
+            setSnapshot(value);
+            setReadFailed(false);
+        }, () => {
+            if (!active) return;
+            setSnapshot(undefined);
+            setReadFailed(true);
+        });
         return () => { active = false; };
-    }, []);
-    const register = async () => {
+    }, [acceptedEnabled, desktop, hidden, revision]);
+    useEffect(() => {
+        if (hidden || !desktop) return;
+        window.addEventListener("focus", refresh);
+        return () => window.removeEventListener("focus", refresh);
+    }, [desktop, hidden, refresh]);
+    const perform = async (action: "register" | "defaultApps") => {
         setBusy(true);
+        setFeedback("");
         try {
-            await invoke("gui_register_vcc_links");
+            await invoke(action === "register" ? "gui_register_vcc_links" : "gui_open_default_apps_settings");
+            if (action === "register") refresh();
         } catch {
-            // This action has no result surface; keep the original control available for retry.
+            setFeedback(action === "register" ? "VCC link registration failed." : "Default apps settings could not be opened.");
         } finally {
             setBusy(false);
         }
     };
-    if (!available) return null;
-    return <SettingsSection title={t("VCC links")} hidden={hidden}>
-        <Checkbox checked={enabled} disabled={disabled || busy} label={t("Handle VCC links")}
-            onChange={onChange} />
-        {enabled ? <div className="settings-row">
-            <Button disabled={disabled || busy} onClick={() => void register()} type="button">{t("Register ALCOMD for VCC links")}</Button>
-        </div> : null}
+
+    if (!desktop) return <SettingsSection title={t("Desktop associations")} hidden={hidden}>
+        <p className="field-hint">{t("Desktop association status is available in the desktop app.")}</p>
     </SettingsSection>;
+
+    return <>
+        <SettingsSection title={t("Link protocols")} hidden={hidden} actions={<>
+            <Button onClick={refresh} type="button" variant="text">{t("Refresh association status")}</Button>
+            {snapshot?.canOpenDefaultApps ? <Button disabled={busy} onClick={() => void perform("defaultApps")} type="button" variant="text">{t("Open default apps settings")}</Button> : null}
+        </>}>
+            {snapshot === undefined ? (readFailed
+                ? <p role="alert">{t("Desktop association status could not be read.")}</p>
+                : <p role="status">{t("Checking desktop associations…")}</p>)
+                : <AssociationList entries={snapshot.protocols} vccRegistered={snapshot.vccRegistered} />}
+            {snapshot?.canRegisterVcc ? <div className="settings-row" role="group" aria-label={t("VCC links")}>
+                <Checkbox checked={enabled} disabled={disabled || busy} label={t("Handle VCC links")} onChange={onChange} />
+                {enabled ? <Button disabled={disabled || busy} onClick={() => void perform("register")} type="button">{t("Register ALCOMD for VCC links")}</Button> : null}
+            </div> : null}
+            {feedback === "" ? null : <p role="alert">{t(feedback)}</p>}
+        </SettingsSection>
+        <SettingsSection title={t("File associations")} hidden={hidden}>
+            {snapshot === undefined ? null : <AssociationList entries={snapshot.files} />}
+        </SettingsSection>
+    </>;
+}
+
+function AssociationList({ entries, vccRegistered }: { entries: DesktopAssociation[]; vccRegistered?: boolean | null }) {
+    const { t } = useTranslation();
+    const labels: Record<string, string> = {
+        alcom: t("ALCOM (vrc-get)"),
+        repositoryList: t("Repository list"),
+        template: t("Project template"),
+        extension: t("Extension package"),
+        alcomRepositoryList: t("ALCOM repository list"),
+        alcomTemplate: t("ALCOM project template")
+    };
+    const handlers: Record<AssociationHandler, string> = {
+        alcomd: t("ALCOMD is the default"),
+        other: t("Another app is the default"),
+        none: t("No default app"),
+        unknown: t("Default app could not be verified")
+    };
+    return <dl className="settings-association-list" aria-live="polite">
+        {entries.map(({ id, value, handler }) => <div className="settings-row" key={id}>
+            <dt>{labels[id] === undefined ? null : <span>{labels[id]}</span>} <code>{value}</code></dt>
+            <dd>
+                <span>{handlers[handler]}</span>
+                {id === "vcc" && vccRegistered != null ? <small>{vccRegistered ? t("ALCOMD is registered") : t("ALCOMD is not registered")}</small> : null}
+            </dd>
+        </div>)}
+    </dl>;
 }
 
 function SettingsSection({ title, children, actions, sectionRef, onBlur, hidden, className }: {

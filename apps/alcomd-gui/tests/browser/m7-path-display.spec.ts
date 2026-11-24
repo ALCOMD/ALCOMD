@@ -49,7 +49,7 @@ test("settings show supplied paths without rewriting them or sending edits on fo
     await directory.fill("C:\\Projects2");
     await directory.fill("C:\\Projects");
     await directory.press("Enter");
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     const hubField = page.locator("#settings-unity-hub-path").getByRole("textbox");
     await expect(hubField).toHaveValue("C:\\Tools\\Unity Hub.exe");
     await hubField.focus();
@@ -61,7 +61,7 @@ test("settings show supplied paths without rewriting them or sending edits on fo
 
 test("Unity installation rows and full-path tooltips show drive and network labels", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings&state=unity-multiple&windows-paths=1");
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     const table = page.getByRole("table", { name: "Unity installations", exact: true });
     await expect(table.getByTitle(editorPath, { exact: true })).toHaveText(editorPath);
     await expect(table.getByTitle(networkEditor, { exact: true })).toHaveText(networkEditor);

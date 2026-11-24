@@ -114,7 +114,7 @@ test("keyboard refresh still gives feedback with reduced motion", async ({ page 
 
 test("a real Unity discovery refresh uses the circular feedback", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings&unity-discovery-hold=1");
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     const button = page.getByRole("region", { name: "Unity installations", exact: true }).locator("md-filled-button").filter({ hasText: "Discover and refresh" });
     await expect(button).toBeVisible();
     await button.click();

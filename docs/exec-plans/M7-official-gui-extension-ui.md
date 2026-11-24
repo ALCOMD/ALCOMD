@@ -229,7 +229,7 @@ GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `r
 
 桌面 `vcc://vpm/addRepo` 激活复用现有添加对话框与 Core 检查、登记，收到链接只预填，用户确认前不联网。Windows 和 Linux 由系统以进程参数交付 URI，Tauri `single-instance` 直接转发至原生队列。macOS 通过应用包声明和系统 Open URL 事件交付。应用只向主窗口发无内容唤醒信号，原始 URI 不写入日志或路由。替代方案是分别维护三平台的 URI 注册和激活转发，涉及额外 OS IPC 与权限边界。采用官方插件增加两项桌面依赖及相应的供应链维护，绑定 Tauri 2。开发验证保留原 `vcc` 默认处理器。
 
-**v3 注册偏好（已获所有者批准）。** [设置规范](../../specs/config/settings-v1.md) 默认开启 `settings.integrations.handleVccLinks`。Windows 正式构建启动时从 Core 取得已接受的偏好，通过 Tauri `deep-link` 注册用户级处理器。Linux AppImage 登记桌面处理器并更新 MIME 缓存，系统保留默认应用选择。Windows 关闭时只移除能确认属于当前 ALCOMD 可执行文件的用户级登记，Linux 移除本应用的桌面处理器。设置常规页提供开关，开启时保留手动注册入口。开发构建跳过自动应用，设置 `ALCOMD_DISABLE_VCC_REGISTRATION` 的隔离会话禁用系统注册操作。
+**v3 注册偏好（已获所有者批准）。** [设置规范](../../specs/config/settings-v1.md) 默认开启 `settings.integrations.handleVccLinks`。Windows 正式构建启动时从 Core 取得已接受的偏好，通过 Tauri `deep-link` 注册用户级处理器。Linux AppImage 登记桌面处理器并更新 MIME 缓存，系统保留默认应用选择。Windows 关闭时只移除能确认属于当前 ALCOMD 可执行文件的用户级登记，Linux 移除本应用的桌面处理器。设置「关联」页提供开关，开启时保留手动注册入口。开发构建跳过自动应用，设置 `ALCOMD_DISABLE_VCC_REGISTRATION` 的隔离会话禁用系统注册操作。
 
 **v3 请求头发送规则（已获所有者批准）。** 索引与 ZIP 首跳直接附加请求头，ZIP 可以与索引不同源。重定向换协议、主机或端口时，按 v3 使用的 Reqwest 0.13.4 移除 `Authorization`、`Cookie`、`Cookie2`、`Proxy-Authorization` 和 `WWW-Authenticate`，后续跳不重新附加。自定义头继续发送，HTTP 可收到明文。无发布方摘要的 ZIP 可经 HTTP(S) 首次下载并固定摘要。移除公开 `allowedOrigins` 字段及相应 GUI 输入，认证仓库导出使用含请求头的 VCC 链接。旧凭据格式失效，认证仓库需重新输入凭据。
 

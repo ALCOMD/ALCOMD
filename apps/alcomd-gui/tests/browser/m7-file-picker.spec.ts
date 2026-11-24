@@ -69,7 +69,7 @@ for (const action of ["disabled", "mounted"] as const) {
 
 test("Unity Hub uses an inline path field and select button", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings");
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     const section = page.locator(".settings-section").filter({ has: page.locator("#settings-unity-hub-path") });
     await expect(page.locator(".file-picker")).toHaveCount(0);
     await section.getByRole("button", { name: "Select", exact: true }).click();
@@ -77,13 +77,11 @@ test("Unity Hub uses an inline path field and select button", async ({ page }) =
 });
 
 for (const entry of [
-    { route: "/unity", action: "Manage installations", label: "Unity executable", path: "C:/Editors/Unity.exe" },
     { route: "/extensions", label: "Extension package", path: "C:/fixture/test.alcomdextension" },
     { route: "/repositories", action: "Add repository", label: "Local manifest path", path: "C:/fixture/repository.json" }
 ]) {
     test(`${entry.label} uses only inline controls with a working native chooser`, async ({ page }) => {
         await page.goto(`/browser-harness.html?route=${entry.route}`);
-        if (entry.route === "/unity") await selectSettingsSection(page, "unity");
         if (entry.route === "/extensions") {
             await openLocalExtensionInstall(page);
         } else {

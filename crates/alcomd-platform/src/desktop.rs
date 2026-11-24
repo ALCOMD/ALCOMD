@@ -37,6 +37,37 @@ pub trait DesktopDriver: Send + Sync {
 
 pub struct SystemDesktop;
 
+/// Queries the default application for a content type on macOS 11, before AppKit exposed it.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+pub fn macos_application_for_content_type(
+    identifier: &objc2_foundation::NSString,
+) -> Option<objc2::rc::Retained<objc2_foundation::NSURL>> {
+    use std::ffi::c_void;
+
+    #[link(name = "CoreServices", kind = "framework")]
+    unsafe extern "C" {
+        fn LSCopyDefaultApplicationURLForContentType(
+            content_type: *const c_void,
+            roles: u32,
+            error: *mut *mut c_void,
+        ) -> *mut c_void;
+    }
+    const ALL_ROLES: u32 = u32::MAX;
+    // SAFETY: NSString and NSURL bridge to CFString and CFURL. The input stays live during
+    // the query. The Copy result is retained and transfers ownership to Retained.
+    unsafe {
+        objc2::rc::Retained::from_raw(
+            LSCopyDefaultApplicationURLForContentType(
+                std::ptr::from_ref(identifier).cast(),
+                ALL_ROLES,
+                std::ptr::null_mut(),
+            )
+            .cast(),
+        )
+    }
+}
+
 impl DesktopDriver for SystemDesktop {
     fn focus_unity(&self, project_root: &Path) -> Result<(), DesktopError> {
         #[cfg(windows)]

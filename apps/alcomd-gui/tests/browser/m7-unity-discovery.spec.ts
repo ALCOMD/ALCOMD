@@ -6,7 +6,7 @@ const section = (page: Page) => page.getByRole("region", {name:"Unity installati
 async function open(page: Page, query = "h3-unity-discovery=1") {
     await page.setViewportSize({width:1280,height:800});
     await page.goto(`/browser-harness.html?route=/settings&${query}`);
-    await selectSettingsSection(page,"unity");
+    await selectSettingsSection(page,"associations");
     await expect(section(page).getByRole("button",{name:"Discover and refresh",exact:true})).toBeVisible();
     await expect(section(page).getByRole("button",{name:"Manually select",exact:true})).toBeVisible();
     await expect(page.getByRole("button",{name:"Manage installations",exact:true})).toHaveCount(0);

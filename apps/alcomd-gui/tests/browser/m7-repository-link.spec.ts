@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { selectSettingsSection } from "./settings-sections";
 
 test("repository links prefill the shared review, queue and require explicit registration", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects&resource-lifecycle=1&repository-link-fixture=1");
@@ -55,11 +56,20 @@ test("duplicate request headers in a repository link must be corrected before re
 
 test("VCC handling defaults on and saves a narrow preference without using the OS", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings&vcc-settings-fixture=1");
-    const card = page.getByRole("region", { name: "VCC links", exact: true });
+    const card = page.getByRole("region", { name: "Link protocols", exact: true });
+    await expect(card).toBeHidden();
+    await selectSettingsSection(page, "associations");
     const enabled = card.getByRole("checkbox", { name: "Handle VCC links", exact: true });
     const register = card.getByRole("button", { name: "Register ALCOMD for VCC links", exact: true });
     await expect(enabled).toBeChecked();
     await expect(register).toBeEnabled();
+    await expect(card.getByText("ALCOMD is not registered", { exact: true })).toBeVisible();
+    await expect(card.locator(".settings-row").filter({ has: page.getByText("vcc://", { exact: true }) })).toContainText("Another app is the default");
+    const files = page.getByRole("region", { name: "File associations", exact: true });
+    await expect(files.locator("dt")).toContainText([".alcomdrepositories", ".alcomdtemplate", ".alcomdextension", ".alcomrepositories", ".alcomtemplate"]);
+    await expect(files.locator("dd")).toHaveText(["No default app", "ALCOMD is the default", "Default app could not be verified", "Another app is the default", "No default app"]);
+    await card.getByRole("button", { name: "Open default apps settings", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter(({ method }) => method === "gui_open_default_apps_settings").length)).toBe(1);
     await enabled.uncheck();
     await expect(register).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
@@ -71,4 +81,18 @@ test("VCC handling defaults on and saves a narrow preference without using the O
         { integrations: { handleVccLinks: false } },
         { integrations: { handleVccLinks: true } },
     ]);
+});
+
+test("platforms with read-only associations still show the local status", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/settings&vcc-settings-fixture=read-only");
+    await selectSettingsSection(page, "associations");
+    const protocols = page.getByRole("region", { name: "Link protocols", exact: true });
+    const alcom = protocols.locator(".settings-row").filter({ has: page.getByText("alcom://", { exact: true }) });
+    await expect(alcom).toContainText("ALCOM (vrc-get)");
+    await expect(alcom).toContainText("Another app is the default");
+    await expect(protocols.getByRole("checkbox", { name: "Handle VCC links" })).toHaveCount(0);
+    await expect(protocols.getByRole("button", { name: "Open default apps settings" })).toHaveCount(0);
+    const files = page.getByRole("region", { name: "File associations", exact: true });
+    await expect(files).toContainText("ALCOM repository list");
+    await expect(files).toContainText("ALCOM project template");
 });

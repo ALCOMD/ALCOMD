@@ -143,7 +143,7 @@ test("Settings retry reconnects shared capabilities before restoring utility and
 
     await page.evaluate(() => window.dispatchEvent(new Event("test-daemon-online")));
     await page.getByRole("button", { name: "Retry", exact: true }).click();
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await expect(page.getByRole("button", { name: "Discover and refresh", exact: true })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Manually select", exact: true })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Download Unity Hub", exact: true })).toBeEnabled();
@@ -185,7 +185,7 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         return { left: bounds.left - canvas.left, top: bounds.top - canvas.top };
     });
     await logHeaderGeometryDiagnostics(page, "projects-baseline", projectsHeaderGeometry);
-    const sidebarRoutes = new Set(["/", "/projects", "/repositories", "/user-packages", "/templates", "/unity", "/operations", "/extensions", "/settings", "/about"]);
+    const sidebarRoutes = new Set(["/", "/projects", "/repositories", "/user-packages", "/templates", "/operations", "/extensions", "/settings", "/about"]);
     const routes = [
         ["/", "Projects"],
         ["/projects", "Projects"],
@@ -197,7 +197,6 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         ["/user-packages", "Resources"],
         ["/repositories/00000000-0000-4000-8000-000000000102", "Repository"],
         ["/templates", "Resources"],
-        ["/unity", "Settings"],
         ["/operations", "Tasks"],
         ["/operations/00000000-0000-4000-8000-000000000105", "Operation detail"],
         ["/extensions", "Extensions"],

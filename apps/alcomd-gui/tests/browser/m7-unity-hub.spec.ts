@@ -7,7 +7,7 @@ const requests = (page: Page, method: string) => page.evaluate((name) => window.
 async function open(page: Page, query = "") {
     await page.setViewportSize({ width: 1400, height: 800 });
     await page.goto(`/browser-harness.html?route=/settings&${query}`);
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await expect(section(page).getByRole("button", { name: "Select", exact: true })).toBeVisible();
 }
 const settingsNavigationTarget = (page: Page) => page.locator(".utility-workspace-toolbar nav.resource-navigation").getByRole("button").first();
@@ -34,7 +34,7 @@ test("Hub selection saves one narrow update, refreshes once and survives navigat
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Settings$/ }) }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeVisible();
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await expect.poll(() => value(page)).toBe(path);
     expect(await section(page).locator("md-outlined-text-field").evaluate((element) => (element as HTMLElement & { readOnly: boolean }).readOnly)).toBe(false);
 });
@@ -74,7 +74,7 @@ test("an old picker result cannot save after leaving and reopening Settings", as
     await navigation("Projects").click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await navigation("Settings").click();
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await expect(section(page).getByRole("button", { name: "Select", exact: true })).toBeEnabled();
     await page.evaluate(() => window.dispatchEvent(new Event("test-hub-picker-ready")));
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
@@ -347,7 +347,7 @@ test("a blur commit queues once behind an unrelated ordinary settings write", as
     await selectSettingsSection(page, "appearance");
     await page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(1);
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await input(page).fill(path);
     await settingsNavigationTarget(page).focus();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
@@ -506,7 +506,7 @@ test("an old download decision cannot open a browser after the Settings visit en
     await navigation("Projects").click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await navigation("Settings").click();
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await expect(section(page).getByRole("button", { name: "Download Unity Hub", exact: true })).toBeEnabled();
     await page.evaluate(() => window.dispatchEvent(new Event("test-hub-open-ready")));
     expect(await requests(page, "openUnityHubDownload")).toBe(0);

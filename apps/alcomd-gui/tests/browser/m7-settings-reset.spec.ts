@@ -7,7 +7,7 @@ const dialog = (page: Page) => page.locator("md-dialog[open]");
 
 test("six cards have title-row resets disabled at defaults and the two Unity exceptions retain their actions", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings&h3=1&backup-compression=level5");
-    for (const [category, names] of [["general", ["Projects", "Backups"]], ["unity", ["Default Unity launch arguments"]], ["appearance", ["Appearance", "Window", "Theme"]]] as const) {
+    for (const [category, names] of [["general", ["Projects", "Backups"]], ["associations", ["Default Unity launch arguments"]], ["appearance", ["Appearance", "Window", "Theme"]]] as const) {
         await selectSettingsSection(page, category);
         for (const name of names) {
             const region = card(page, name);
@@ -28,7 +28,7 @@ test("six cards have title-row resets disabled at defaults and the two Unity exc
             await expect(button).toBeDisabled();
         }
     }
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     for (const name of ["Unity Hub Path", "Unity installations"]) await expect(reset(card(page, name))).toHaveCount(0);
     expect(await page.evaluate(() => window.settingsRequests.map((request) => request.update))).toEqual([{ locale: "system" }]);
 });

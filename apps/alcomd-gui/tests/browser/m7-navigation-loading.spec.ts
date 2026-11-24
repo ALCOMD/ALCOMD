@@ -496,7 +496,7 @@ test("Settings shows other sections while only Unity installations are loading, 
     await expect(page.locator(".route-content .projects-page")).toBeHidden();
     await expect(page.getByRole("region", { name: "Projects", exact: true })).toBeVisible();
     await expect(page.locator(".page-loading-state")).toHaveCount(0);
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await page.clock.runFor(160);
     await expect(page.getByRole("table", { name: "Unity installations", exact: true }).locator("thead")).toBeVisible();
     await expect(page.getByRole("table", { name: "Unity installations", exact: true }).getByRole("progressbar")).toBeVisible();
@@ -555,7 +555,7 @@ test("Settings never requests repository visibility data across its sections", a
     await navigation(page, "Settings").click();
     await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeFocused();
     await expect(page.locator('table[aria-label="Unity installations"] tbody tr')).toHaveCount(1);
-    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "associations");
     await expect(page.getByRole("table", { name: "Unity installations", exact: true }).locator("tbody tr")).toHaveCount(1);
     for (const section of ["appearance", "general"] as const) await selectSettingsSection(page, section);
     await expect(page.getByRole("region", { name: "Projects", exact: true })).toBeVisible();

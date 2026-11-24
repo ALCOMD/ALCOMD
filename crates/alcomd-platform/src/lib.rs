@@ -91,7 +91,7 @@ pub use windows_unity_window::{
     focus_unity_window, foreground_process_id,
 };
 #[cfg(windows)]
-pub use windows_url_handler::unregister_owned_url_handler;
+pub use windows_url_handler::{default_association_executable, unregister_owned_url_handler};
 
 #[cfg(unix)]
 pub use unix::{

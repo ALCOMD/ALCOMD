@@ -31,5 +31,14 @@ tauri-plugin-dialog.workspace = true
 tauri-plugin-deep-link = "=2.4.10"
 tauri-plugin-single-instance = "=2.4.5"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+gio = "=0.18.4"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "=0.6.4", default-features = false, features = ["std"] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSWorkspace", "objc2-uniform-type-identifiers"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSBundle", "NSString", "NSURL"] }
+objc2-uniform-type-identifiers = { version = "=0.3.2", default-features = false, features = ["std", "UTType"] }
+
 [lints]
 workspace = true

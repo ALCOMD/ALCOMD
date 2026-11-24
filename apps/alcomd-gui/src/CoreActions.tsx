@@ -19,7 +19,6 @@ import type {
     ProjectUnityLaunchConfigResult,
     ProjectUnityMigrationPlan,
     RepositorySnapshot,
-    UnityInstallation,
     UnityLaunchOptionsResult
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
@@ -429,63 +428,6 @@ function PackageChangeDescription({ mutation, name }: { mutation: PackageMutatio
     if (mutation.fromVersion == null) return <p><Translated message="Install {package} ({version})." values={{ ...values, version: mutation.toVersion }} /></p>;
     if (mutation.fromVersion === mutation.toVersion) return <p><Translated message="Reinstall {package} ({version})." values={{ ...values, version: mutation.toVersion }} /></p>;
     return <p><Translated message="Change {package}: {versions}." values={{ ...values, versions: `${mutation.fromVersion} → ${mutation.toVersion}` }} /></p>;
-}
-
-export function UnityRegistryActions({ client, installations, onChanged }: ActionProps & { installations: UnityInstallation[] }) {
-    const { t } = useTranslation();
-    const available = useCapability(capabilities.unityManage);
-    const [path, setPath] = useState("");
-    const [remove, setRemove] = useState<UnityInstallation>();
-    const [confirmRemove, setConfirmRemove] = useState(false);
-    const writeRequest = useGuiWrite(client, confirmRemove, path);
-    const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const pending = useRef(false);
-    const isCurrent = useActionScope(client);
-    useUtilityDialogBusy(feedback.busy);
-    const mutate = async (action: "register" | "refresh" | "remove") => {
-        if (!available || pending.current || (action === "remove" && remove === undefined)) return;
-        pending.current = true; setFeedback({ busy: true });
-        try {
-            if (action === "register") { await writeRequest("unityInstallationRegister", path); setPath(""); }
-            else if (action === "refresh") await writeRequest("unityInstallationsRefresh");
-            else { await writeRequest("unityInstallationRemove", remove!.installationId, remove!.revision); setRemove(undefined); setConfirmRemove(false); }
-            if (!isCurrent()) return;
-            setFeedback({ busy: false });
-            onChanged?.();
-        } catch (caught: unknown) { if (isCurrent()) setFeedback({ busy: false, error: safeError(caught) }); }
-        finally { pending.current = false; }
-    };
-    const chooseFile = async () => {
-        if (pending.current) return;
-        pending.current = true;
-        setFeedback({ busy: true });
-        try {
-            const selected = await client.selectFile("unityEditor", path);
-            if (isCurrent()) {
-                if (selected !== undefined) setPath(selected);
-                setFeedback(INITIAL_FEEDBACK);
-            }
-        } catch (caught) { if (isCurrent()) setFeedback({ busy: false, error: safeError(caught) }); }
-        finally { pending.current = false; }
-    };
-    return <ActionSection title={confirmRemove ? t("Remove Unity installation") : t("Manage Unity installations")}>
-        {confirmRemove && remove !== undefined ? <>
-            <p><Translated message="Remove {name} from the list?" values={{ name: <strong>Unity {remove.unityVersion}</strong> }} /></p>
-            <p>{t("Only the ALCOMD registry entry is removed. The editor remains installed.")}</p>
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button className="material-button--danger" disabled={!available || feedback.busy} onClick={() => void mutate("remove")} type="button">{t("Remove installation")}</Button></div>
-        </> : <>
-            <form onSubmit={(event) => { event.preventDefault(); void mutate("register"); }}>
-                <div className="project-target-picker">
-                    <PathField disabled={feedback.busy} id="unity-executable" label={t("Unity executable")} maxLength={1024} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
-                    <Button disabled={feedback.busy} onClick={() => void chooseFile()} type="button" variant="tonal">{t("Select")}</Button>
-                </div>
-                <div className="action-row"><Button disabled={!available || feedback.busy || path.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="submit">{t("Register")}</Button><LoadingButton disabled={!available || feedback.busy} onClick={() => mutate("refresh")} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="button" variant="tonal">{t("Discover and refresh")}</LoadingButton></div>
-            </form>
-            {installations.length === 0 ? null : <Select aria-label={t("Installation to remove")} disabled={feedback.busy} label={t("Remove installation")} onChange={(next) => setRemove(installations.find((item) => item.installationId === next))} options={[{ label: t("Select an installation"), value: "" }, ...installations.map((item) => ({ label: "Unity " + item.unityVersion + " · " + item.architecture, value: item.installationId }))]} value={remove?.installationId ?? ""} />}
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button className="material-button--danger" disabled={!available || remove === undefined || feedback.busy} onClick={() => { setConfirmRemove(true); setFeedback(INITIAL_FEEDBACK); }} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="button" variant="text">{t("Review removal")}</Button></div>
-        </>}
-        <MutationFeedback client={client} errorTitle={feedback.error?.code === "unity_version_unverified" ? t("Unity Editor version could not be verified.") : feedback.error?.code === "unity_installation_invalid" ? t("Unity installation could not be validated.") : undefined} feedback={feedback} />
-    </ActionSection>;
 }
 
 export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, onClose, projectId }: ActionProps & { launchConfig?: ProjectUnityLaunchConfigResult; onClose(): void; projectId: string }) {

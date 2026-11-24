@@ -1948,12 +1948,35 @@ const settingsClient = query.has("h5-settings") ? withH5SettingsClient(utilities
 window.fixtureCore = withBrowserCoreEvents(settingsClient);
 if (query.has("vcc-settings-fixture")) {
     const { mockIPC, mockWindows } = await import("@tauri-apps/api/mocks");
+    const readOnly = query.get("vcc-settings-fixture") === "read-only";
+    let vccRegistered = false;
     mockWindows("main");
     mockIPC((command) => {
-        if (command === "gui_vcc_registration_available") return true;
+        if (command === "gui_desktop_associations") return {
+            protocols: [
+                { id: "alcomd", value: "alcomd://", handler: "alcomd" },
+                { id: "vcc", value: "vcc://", handler: "other" },
+                { id: "alcom", value: "alcom://", handler: "other" }
+            ],
+            files: [
+                { id: "repositoryList", value: ".alcomdrepositories", handler: "none" },
+                { id: "template", value: ".alcomdtemplate", handler: "alcomd" },
+                { id: "extension", value: ".alcomdextension", handler: "unknown" },
+                { id: "alcomRepositoryList", value: ".alcomrepositories", handler: "other" },
+                { id: "alcomTemplate", value: ".alcomtemplate", handler: "none" }
+            ],
+            canRegisterVcc: !readOnly,
+            vccRegistered,
+            canOpenDefaultApps: !readOnly
+        };
+        if (command === "gui_open_default_apps_settings") {
+            window.resourceRequests.push({ method: command, params: {} });
+            return undefined;
+        }
         if (command === "gui_register_vcc_links") {
             window.resourceRequests.push({ method: command, params: {} });
             if (query.has("vcc-registration-error")) throw new Error("Fixture registration failed");
+            vccRegistered = true;
             return undefined;
         }
         if (command === "gui_window_state_configure") return undefined;
