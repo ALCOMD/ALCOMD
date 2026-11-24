@@ -19,6 +19,7 @@
 - 发布者：`VRCLearn`
 - 系统标识 / Bundle ID：`com.vrclearn.alcomd`
 - Windows AUMID：`vrclearn.ALCOMD`
+- Windows Inno Setup AppId：`{D8D9EB1C-93FA-48FD-8D83-3AD9F28028B4}`
 - 数据目录：`ALCOMD`
 - 当前站点：`https://alcomd.vrclearn.com/`
 
@@ -26,7 +27,8 @@
 
 此次组织身份替换同步派生的第一方扩展 ID 和 Windows IPC 命名空间，不保留旧 v4 身份别名。
 GUI 在创建窗口前从产品配置派生并显式设置 Windows 进程 AUMID，失败即停止启动。
-Inno Setup AppId 仍待 M12 单独确定；安装器创建的快捷方式须使用同一 AUMID。
+2026-11-25 所有者批准 Windows Inno Setup AppId。当前用户和所有用户安装沿用同一个永久值，
+并从产品清单生成。安装器创建的快捷方式须使用同一 AUMID。[M12 阶段 0 发行合同](../exec-plans/M12-stage-0-release-contract.md)
 
 ## 结果
 

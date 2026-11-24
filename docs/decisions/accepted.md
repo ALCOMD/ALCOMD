@@ -44,3 +44,4 @@
 | A-040 | 2026-11-05 所有者明确批准首次公开发布前将个人身份统一为组织：发布者/自有作者及版权声明为VRCLearn，Bundle/Tauri/Linux desktop ID为com.vrclearn.alcomd，声明Windows AUMID为vrclearn.ALCOMD，当前网站/服务基址为https://alcomd.vrclearn.com/。同步第一方派生扩展ID、Windows IPC命名空间及v4 Schema引用；原A-001/A-003及ADR0001原位修订，不增加旧v4别名。v3冻结请求源/迁移输入、历史证据及真实机器身份保留；更新时必须成套停旧换新，禁止新旧Core对同一数据目录并行。Inno AppId及原生AUMID显式接入不由声明变更冒充完成，不新增RPC形状、权限、Schema版本或依赖。 |
 | A-041 | GUI、CLI 和认证后的 MCP 客户端通过相同 Core 用例执行同一业务操作。Core 记录实际调用者并校验认证、撤销、资源和任务归属。扩展按公开权限及沙箱执行，扩展 projects.read 限于获准的安全摘要。 |
 | A-042 | M10 原生 RPC 以系统账号为信任边界。官方及外部原生 GUI 和 CLI 使用同一按用户隔离的端点与本机所有者权限，无配对、应用凭据或逐应用撤销。Core 对两者执行相同的业务验证。MCP 使用连接凭据和真实 Principal 取得相同业务权限，扩展使用各自的授权。 |
+| A-043 | 2026-11-25 所有者批准 M12 阶段 0。永久 Windows Inno AppId 为 `{D8D9EB1C-93FA-48FD-8D83-3AD9F28028B4}`，由产品清单派生并用于两种安装范围。安装布局、Core 登记事务、v4 更新声明、频道及卸载归属按冻结合同实施。macOS 原生验收延期，公开发版采用 A-017。[M12 阶段 0 发行合同](../exec-plans/M12-stage-0-release-contract.md) |

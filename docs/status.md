@@ -1,8 +1,10 @@
 # 项目状态
 
-最后更新：2026-11-24
+最后更新：2026-11-25
 
 ## 当前阶段
+
+**M12 阶段 0 已批准，阶段 1 正在实施。** 永久 Windows AppId、安装和登记布局、v4 更新声明及卸载归属已冻结。`cargo xtask dist` 已支持运行组件构建、清单验签和测试打包输入。Inno EXE、AppImage 和 DEB 测试包均已生成并复验解包内容。正式产品打包和客户端安装生命周期仍待验收。macOS 原生验收按所有者决定延期，公开发版仍按 A-017 的三平台四格式条件审批。[M12 实施计划与审批矩阵](exec-plans/M12-full-product-distribution.md) · [阶段 0 冻结合同](exec-plans/M12-stage-0-release-contract.md)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 
@@ -51,6 +53,7 @@ M8 冻结候选为 `622cb62a`，Windows、Ubuntu 和 CodeQL 已通过。macOS �
 | Unity 项目版本迁移 | [Unity 版本迁移合同](exec-plans/M7-unity-project-version-stop-a.md) |
 | GUI 与公开 RPC 用例对照 | [M7 GUI RPC 覆盖](exec-plans/M7-gui-rpc-coverage.md) |
 | Discord 第一方扩展（M9 已完成） | [M9 实施顺序、公共合同与验收记录](exec-plans/M9-discord-first-party-extension.md) |
+| 正式安装、完整产品更新、卸载与发行 | [M12 实施计划和审批边界](exec-plans/M12-full-product-distribution.md)、[发行测试矩阵](testing/release-matrix.md) |
 
 ## 剩余边界与下一停止点
 

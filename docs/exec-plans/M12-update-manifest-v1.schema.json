@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "M12 approved v1 contract for the authenticated update response.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest",
+    "signature"
+  ],
+  "properties": {
+    "manifest": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 43691,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "signature": {
+      "$ref": "#/$defs/signature"
+    }
+  },
+  "$defs": {
+    "signature": {
+      "type": "string",
+      "minLength": 128,
+      "maxLength": 128,
+      "pattern": "^[a-f0-9]{128}$"
+    },
+    "digest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "productId",
+        "channel",
+        "target",
+        "format",
+        "version",
+        "serial",
+        "issuedAt",
+        "expiresAt",
+        "asset",
+        "payloadManifestSha256"
+      ],
+      "properties": {
+        "schema": {
+          "const": 1
+        },
+        "productId": {
+          "const": "com.vrclearn.alcomd"
+        },
+        "channel": {
+          "enum": [
+            "stable",
+            "beta"
+          ]
+        },
+        "target": {
+          "enum": [
+            "x86_64-pc-windows-msvc",
+            "x86_64-unknown-linux-gnu",
+            "aarch64-apple-darwin"
+          ]
+        },
+        "format": {
+          "enum": [
+            "inno",
+            "appimage",
+            "dmg"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 80,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+)(\\.[0-9A-Za-z-]+)*)?$"
+        },
+        "serial": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "asset": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "url",
+            "bytes",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            },
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://",
+              "maxLength": 2048
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 536870912
+            },
+            "sha256": {
+              "$ref": "#/$defs/digest"
+            }
+          }
+        },
+        "payloadManifestSha256": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "target": {
+              "const": "x86_64-pc-windows-msvc"
+            },
+            "format": {
+              "const": "inno"
+            }
+          }
+        },
+        {
+          "properties": {
+            "target": {
+              "const": "x86_64-unknown-linux-gnu"
+            },
+            "format": {
+              "const": "appimage"
+            }
+          }
+        },
+        {
+          "properties": {
+            "target": {
+              "const": "aarch64-apple-darwin"
+            },
+            "format": {
+              "const": "dmg"
+            }
+          }
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "channel": {
+                "const": "stable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "version": {
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

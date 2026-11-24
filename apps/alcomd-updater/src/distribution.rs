@@ -1,0 +1,380 @@
+//! Offline validation for a complete v4 runtime on a supported release target.
+
+use std::collections::BTreeSet;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::Path;
+
+use anyhow::{Context, ensure};
+use ed25519_dalek::{Signature, VerifyingKey};
+use semver::Version;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+use super::{
+    MANIFEST_LIMIT, MAX_FILES, PRODUCT, Product, RUNTIME_BINARY_ROLES, SignedFile,
+    check_payload_size, collect_files, decode_hex, hash_exact, read_limited, release_trust,
+    verify_files,
+};
+
+pub const MANIFEST_NAME: &str = "product-payload.json";
+pub const SIGNATURE_NAME: &str = "product-payload.sig";
+pub const SIGNATURE_DOMAIN: &[u8] = b"ALCOMD product payload v1\0";
+const LICENSE: &str = "LICENSE";
+const NOTICES: &str = "THIRD_PARTY_NOTICES.md";
+const DISCORD_PACKAGE: &str = "extensions/discord.alcomdextension";
+const FIXTURE_COMMIT: &str = "0000000000000000000000000000000000000000";
+const DIRECTORIES: &[&str] = &["extensions", "licenses"];
+const WINDOWS_SIDECARS: &[&str] = &[
+    "vcruntime140.dll",
+    "vcruntime140_1.dll",
+    "WebView2Loader.dll",
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, clap::ValueEnum)]
+pub enum Target {
+    #[value(name = "x86_64-pc-windows-msvc")]
+    #[serde(rename = "x86_64-pc-windows-msvc")]
+    Windows,
+    #[value(name = "x86_64-unknown-linux-gnu")]
+    #[serde(rename = "x86_64-unknown-linux-gnu")]
+    Linux,
+    #[value(name = "aarch64-apple-darwin")]
+    #[serde(rename = "aarch64-apple-darwin")]
+    MacOs,
+}
+
+impl Target {
+    pub fn executable_suffix(self) -> &'static str {
+        match self {
+            Self::Windows => ".exe",
+            Self::Linux | Self::MacOs => "",
+        }
+    }
+}
+
+pub struct Candidate {
+    pub target: Target,
+    pub version: Version,
+    pub source_commit: String,
+}
+
+impl Candidate {
+    fn validate(&self, purpose: Purpose) -> anyhow::Result<()> {
+        ensure!(
+            self.version.major == 4 && self.version.build.is_empty(),
+            "product payload version must be in the v4 release series without build metadata"
+        );
+        ensure!(
+            self.source_commit.len() == 40
+                && self.source_commit.bytes().all(is_lower_hex)
+                && (self.source_commit == FIXTURE_COMMIT) == (purpose == Purpose::Fixture),
+            "invalid product payload source commit"
+        );
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Purpose {
+    Release,
+    Fixture,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Payload {
+    schema: u32,
+    product_id: String,
+    target: Target,
+    version: Version,
+    source_commit: String,
+    purpose: Purpose,
+    files: Vec<SignedFile>,
+}
+
+/// Produces the exact bytes to validate and sign for an already populated runtime directory.
+pub fn prepare_release(
+    root: &Path,
+    candidate: &Candidate,
+    discord_sha256: &str,
+) -> anyhow::Result<Vec<u8>> {
+    ensure!(
+        discord_sha256.len() == 64 && discord_sha256.bytes().all(is_lower_hex),
+        "pinned Discord package digest must be a lowercase SHA-256"
+    );
+    prepare(root, candidate, Purpose::Release, Some(discord_sha256))
+}
+
+/// Verifies a complete runtime against the public trust compiled into the release tooling.
+pub fn verify_release(root: &Path, candidate: &Candidate) -> anyhow::Result<[u8; 32]> {
+    Ok(verify(root, candidate, Purpose::Release, &release_trust()?)?.manifest_sha256)
+}
+
+pub struct VerifiedRuntime {
+    pub manifest_sha256: [u8; 32],
+    files: BTreeSet<String>,
+}
+
+impl VerifiedRuntime {
+    pub fn files(&self) -> impl Iterator<Item = &str> {
+        self.files.iter().map(String::as_str)
+    }
+}
+
+/// Checks the same file and signature rules with a caller-supplied development trust anchor.
+pub fn verify_fixture(
+    root: &Path,
+    candidate: &Candidate,
+    key: &VerifyingKey,
+) -> anyhow::Result<VerifiedRuntime> {
+    verify(root, candidate, Purpose::Fixture, key)
+}
+
+/// Produces a synthetic manifest. The release verifier rejects this purpose.
+pub fn prepare_fixture(root: &Path, candidate: &Candidate) -> anyhow::Result<Vec<u8>> {
+    prepare(root, candidate, Purpose::Fixture, None)
+}
+
+fn prepare(
+    root: &Path,
+    candidate: &Candidate,
+    purpose: Purpose,
+    discord_sha256: Option<&str>,
+) -> anyhow::Result<Vec<u8>> {
+    candidate.validate(purpose)?;
+    let (root, identity) = alcomd_platform::resolve_plain_storage_directory(root)?;
+    let product: Product = toml::from_str(PRODUCT)?;
+    let paths = observe(&root)?;
+    ensure!(
+        !paths.contains(MANIFEST_NAME) && !paths.contains(SIGNATURE_NAME),
+        "staging manifest or signature already exists"
+    );
+    let executables = validate_layout(&product, candidate.target, &paths)?;
+    let mut total = 0_u64;
+    let mut files = Vec::with_capacity(paths.len());
+    for path in paths {
+        let (mut file, _) = alcomd_platform::open_plain_file(&root.join(&path))?;
+        let size = file.metadata()?.len();
+        ensure!(size > 0, "empty product payload file");
+        check_payload_size(&mut total, size)?;
+        if executables.contains(&path) {
+            check_executable_header(&mut file, candidate.target)?;
+        }
+        let sha256 = format_digest(&hash_exact(file, size)?);
+        ensure!(
+            path != DISCORD_PACKAGE || discord_sha256.is_none_or(|expected| sha256 == expected),
+            "staged Discord package does not match the pinned digest"
+        );
+        files.push(SignedFile { path, size, sha256 });
+    }
+    ensure!(
+        alcomd_platform::resolve_plain_storage_directory(&root)?.1 == identity,
+        "product payload directory changed during preparation"
+    );
+    let payload = Payload {
+        schema: 1,
+        product_id: product.identity.bundle_identifier,
+        target: candidate.target,
+        version: candidate.version.clone(),
+        source_commit: candidate.source_commit.clone(),
+        purpose,
+        files,
+    };
+    let mut bytes = serde_json::to_vec_pretty(&payload)?;
+    bytes.push(b'\n');
+    ensure!(
+        bytes.len() as u64 <= MANIFEST_LIMIT,
+        "product payload manifest exceeds its size limit"
+    );
+    Ok(bytes)
+}
+
+fn verify(
+    root: &Path,
+    candidate: &Candidate,
+    purpose: Purpose,
+    key: &VerifyingKey,
+) -> anyhow::Result<VerifiedRuntime> {
+    candidate.validate(purpose)?;
+    let (root, identity) = alcomd_platform::resolve_plain_storage_directory(root)?;
+    let bytes = read_limited(&root.join(MANIFEST_NAME), MANIFEST_LIMIT)?;
+    let signature = read_limited(&root.join(SIGNATURE_NAME), 128)?;
+    let signature = std::str::from_utf8(&signature)?;
+    ensure!(
+        signature.bytes().all(is_lower_hex),
+        "invalid product payload signature encoding"
+    );
+    let signature = Signature::from_bytes(&decode_hex(signature)?);
+    let mut message = SIGNATURE_DOMAIN.to_vec();
+    message.extend_from_slice(&bytes);
+    key.verify_strict(&message, &signature)
+        .context("product payload signature is invalid")?;
+
+    let payload: Payload = serde_json::from_slice(&bytes)?;
+    let product: Product = toml::from_str(PRODUCT)?;
+    ensure!(
+        payload.schema == 1
+            && payload.product_id == product.identity.bundle_identifier
+            && payload.target == candidate.target
+            && payload.version == candidate.version
+            && payload.source_commit == candidate.source_commit
+            && payload.purpose == purpose,
+        "product payload does not match the candidate"
+    );
+    ensure!(
+        payload
+            .files
+            .iter()
+            .all(|file| file.size > 0 && file.sha256.bytes().all(is_lower_hex)),
+        "invalid product payload file metadata"
+    );
+
+    let observed = observe(&root)?;
+    let content_paths = observed
+        .iter()
+        .filter(|path| ![MANIFEST_NAME, SIGNATURE_NAME].contains(&path.as_str()))
+        .cloned()
+        .collect();
+    let executables = validate_layout(&product, candidate.target, &content_paths)?;
+    verify_files(
+        &root,
+        payload.files,
+        observed,
+        [MANIFEST_NAME, SIGNATURE_NAME],
+        |path, file| {
+            if executables.contains(path) {
+                check_executable_header(file, candidate.target)?;
+            }
+            Ok(())
+        },
+    )?;
+    ensure!(
+        alcomd_platform::resolve_plain_storage_directory(&root)?.1 == identity,
+        "product payload directory changed during verification"
+    );
+    Ok(VerifiedRuntime {
+        manifest_sha256: Sha256::digest(bytes).into(),
+        files: content_paths,
+    })
+}
+
+fn observe(root: &Path) -> anyhow::Result<BTreeSet<String>> {
+    let mut paths = BTreeSet::new();
+    collect_files(root, root, 0, &mut paths, Some(DIRECTORIES))?;
+    Ok(paths)
+}
+
+fn validate_layout(
+    product: &Product,
+    target: Target,
+    paths: &BTreeSet<String>,
+) -> anyhow::Result<BTreeSet<String>> {
+    let mut executables = BTreeSet::new();
+    for &role in RUNTIME_BINARY_ROLES {
+        let base = product
+            .binaries
+            .get(role)
+            .context("missing product binary role")?;
+        executables.insert(format!("{base}{}", target.executable_suffix()));
+    }
+    ensure!(
+        executables.is_subset(paths)
+            && paths.contains(LICENSE)
+            && paths.contains(NOTICES)
+            && paths.contains(DISCORD_PACKAGE),
+        "missing required product component"
+    );
+    ensure!(paths.len() <= MAX_FILES, "too many product payload files");
+    let mut names = BTreeSet::new();
+    for path in paths {
+        ensure!(
+            names.insert(path.to_ascii_lowercase()),
+            "duplicate product payload path"
+        );
+        if target == Target::Windows && WINDOWS_SIDECARS.contains(&path.as_str()) {
+            executables.insert(path.clone());
+        }
+        ensure!(
+            executables.contains(path)
+                || matches!(path.as_str(), LICENSE | NOTICES | DISCORD_PACKAGE)
+                || is_license_path(path),
+            "unexpected product payload component"
+        );
+    }
+    Ok(executables)
+}
+
+fn is_license_path(path: &str) -> bool {
+    let Some(stem) = path
+        .strip_prefix("licenses/")
+        .and_then(|name| name.strip_suffix(".txt"))
+    else {
+        return false;
+    };
+    if stem.is_empty()
+        || !stem
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'))
+    {
+        return false;
+    }
+    let upper = stem.to_ascii_uppercase();
+    !matches!(upper.as_str(), "NUL" | "CON" | "PRN" | "AUX")
+        && !["COM", "LPT"].iter().any(|prefix| {
+            upper
+                .strip_prefix(prefix)
+                .is_some_and(|number| number.len() == 1 && number.as_bytes()[0].is_ascii_digit())
+        })
+}
+
+fn check_executable_header(file: &mut File, target: Target) -> anyhow::Result<()> {
+    #[cfg(unix)]
+    if target != Target::Windows {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = file.metadata()?.permissions().mode();
+        ensure!(
+            mode & 0o100 != 0 && mode & 0o6022 == 0,
+            "unsafe or non-executable product file mode"
+        );
+    }
+    let mut header = [0; 64];
+    file.read_exact(&mut header)
+        .context("truncated product executable header")?;
+    let matches = match target {
+        Target::Windows if header.starts_with(b"MZ") => {
+            let offset = u64::from(u32::from_le_bytes(header[60..64].try_into()?));
+            ensure!(
+                (64..=1024 * 1024).contains(&offset),
+                "invalid product PE header offset"
+            );
+            file.seek(SeekFrom::Start(offset))?;
+            let mut pe = [0; 26];
+            file.read_exact(&mut pe)?;
+            pe.starts_with(b"PE\0\0\x64\x86") && pe[24..26] == [0x0b, 0x02]
+        }
+        Target::Linux => header.starts_with(b"\x7fELF\x02\x01\x01") && header[18..20] == [62, 0],
+        Target::MacOs => header.starts_with(&[0xcf, 0xfa, 0xed, 0xfe, 12, 0, 0, 1]),
+        Target::Windows => false,
+    };
+    ensure!(
+        matches,
+        "product executable header does not match the target"
+    );
+    file.rewind()?;
+    Ok(())
+}
+
+fn is_lower_hex(byte: u8) -> bool {
+    byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
+}
+
+pub fn format_digest(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let mut formatted = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(formatted, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    formatted
+}

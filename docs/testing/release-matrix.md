@@ -2,6 +2,10 @@
 
 状态：产品、打包与平台技术基线已由 A-024/A-025 批准；实现与真实机器证据待完成
 
+2026-11-25 按所有者决定延期 macOS 原生验收。Windows 和 Linux 可先走隔离验收，公开 4.0.0 沿用 A-017。实施顺序、签名和生产放行见 [M12 实施计划](../exec-plans/M12-full-product-distribution.md)。
+
+已用合成签名完成三目标离线验签和 Windows 实际运行文件的暂存核对。四个完整包及对应客户端验收继续按下表追踪。[阶段 1 运行载荷证据](../exec-plans/M12-full-product-distribution.md#阶段-1-运行载荷)
+
 ## 产品发行单元
 
 ALCOMD 是一个基于 Rust 的本地应用平台，其官方 GUI 使用 Tauri 构建。
@@ -90,7 +94,8 @@ M0 的 Windows Server 2025 hosted 与开发机编译不构成上述客户端运�
 
 - ALCOMD3 3.4.0 是最后一个受支持的 v3 迁移入口版本，不执行完整 v4 替换迁移。
 - 更早公开 v3.x 必须先通过旧更新链升级到 3.4.0。
-- 3.4.0 从标准更新 API 发现、验签并启动 v4 bridge installer；它只在启动被接受后退出。
+- Windows 3.4.0 从冻结更新 API 发现、验签并启动 v4 bridge installer。Windows 旧版在启动被接受后退出。
+- AppImage 和 macOS 使用用户主动启动的独立 bridge。公共旧源须验证相应客户端不会执行原位替换式更新。DEB 由包管理器交接程序文件，数据迁移按账号执行。
 - v4 bridge installer 安装完整 v4 产品，并包含或调用 `alcomd-bootstrap` 完成迁移协调、健康
   检查、清理与回滚。
 - 不支持的旧 v3.x 直接启动 bridge 时必须安全拒绝并提示先升级到 3.4.0。

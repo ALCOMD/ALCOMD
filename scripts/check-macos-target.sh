@@ -25,10 +25,14 @@ for command_name in file lipo otool; do
     }
 done
 
-for binary_name in "${EXPECTED_BINARIES[@]}"; do
-    binary_path="$RELEASE_DIRECTORY/$binary_name"
+if [[ "$#" == 0 ]]; then
+    for binary_name in "${EXPECTED_BINARIES[@]}"; do
+        set -- "$@" "$RELEASE_DIRECTORY/$binary_name"
+    done
+fi
+for binary_path in "$@"; do
     if [[ ! -f "$binary_path" ]]; then
-        echo "Expected M0 executable '$binary_path' is missing." >&2
+        echo "Expected executable '$binary_path' is missing." >&2
         exit 1
     fi
 

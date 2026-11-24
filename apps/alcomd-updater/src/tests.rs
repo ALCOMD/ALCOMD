@@ -26,10 +26,9 @@ fn hexadecimal(bytes: &[u8]) -> String {
 
 fn sign_candidate(root: &Path, key: &SigningKey, channel: Channel, target: &str) {
     let product: Product = toml::from_str(PRODUCT).expect("user product metadata");
-    let files = RUNTIME_BINARY_ROLES
-        .iter()
+    let files = bridge_binary_roles()
         .map(|role| {
-            let binary = product.binaries.get(*role).expect("binary name");
+            let binary = product.binaries.get(role).expect("binary name");
             let name = format!("{binary}{}", std::env::consts::EXE_SUFFIX);
             let data = name.as_bytes();
             fs::write(root.join(&name), data).expect("fixture binary");

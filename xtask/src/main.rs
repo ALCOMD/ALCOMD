@@ -7,6 +7,8 @@ use std::process::Command;
 
 use serde::Deserialize;
 
+mod distribution;
+
 const LICENSE: &str = "AGPL-3.0-only";
 const FORBIDDEN_PRODUCTION_TOKENS: &[&str] = &["com.cqmhv.", "CQMHV", "alcomd3-mcp", "ALCOMD3.exe"];
 const PRODUCTION_ROOTS: &[&str] = &["apps", "crates", "extensions", "packages", "sdk"];
@@ -115,7 +117,11 @@ const MEMBERS: &[Member] = &[
             "alcomd-protocol",
         ],
     ),
-    ("xtask", "xtask", &[]),
+    (
+        "xtask",
+        "xtask",
+        &["alcomd-extensions", "alcomd-platform", "alcomd-updater"],
+    ),
 ];
 
 #[derive(Deserialize)]
@@ -139,6 +145,7 @@ struct Product {
 struct Identity {
     bundle_identifier: String,
     windows_aumid: String,
+    windows_app_id: String,
     uri_scheme: String,
     data_directory: String,
 }
@@ -164,6 +171,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "check" => check(&root),
         "tree" => print_tree(&root),
         "component" => encode_component(),
+        "dist" => Ok(distribution::run(&root)?),
         other => Err(format!("unknown xtask command: {other}").into()),
     }
 }
@@ -465,6 +473,11 @@ fn check_product(product: &ProductConfig, errors: &mut Vec<String>) {
             "windows_aumid",
             product.identity.windows_aumid.as_str(),
             "vrclearn.ALCOMD",
+        ),
+        (
+            "windows_app_id",
+            product.identity.windows_app_id.as_str(),
+            "{D8D9EB1C-93FA-48FD-8D83-3AD9F28028B4}",
         ),
         ("uri_scheme", product.identity.uri_scheme.as_str(), "alcomd"),
         (

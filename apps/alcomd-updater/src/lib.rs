@@ -10,6 +10,8 @@ use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+pub mod distribution;
+
 const MANIFEST: &str = "bridge-payload.json";
 const SIGNATURE: &str = "bridge-payload.sig";
 const PRODUCT: &str = include_str!("../../../alcomd.product.toml");
@@ -48,7 +50,7 @@ struct Payload {
     files: Vec<SignedFile>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct SignedFile {
     path: String,
@@ -64,8 +66,11 @@ const RUNTIME_BINARY_ROLES: &[&str] = &[
     "extension_host",
     "bootstrap",
     "updater",
-    "migration_v3",
 ];
+
+fn bridge_binary_roles() -> impl Iterator<Item = &'static str> {
+    RUNTIME_BINARY_ROLES.iter().copied().chain(["migration_v3"])
+}
 
 /// Immutable authority for one host-specific, digest-checked and signed staging directory.
 #[derive(Debug)]
@@ -167,53 +172,25 @@ fn verify_payload(
             && (channel == Channel::Beta || payload.version.pre.is_empty()),
         "staged payload does not match the product, version series, host target or channel"
     );
-    ensure!(
-        payload.files.len() <= MAX_FILES,
-        "staged payload exceeds its file limit"
-    );
-
     let mut observed = BTreeSet::new();
-    collect_files(&root, &root, 0, &mut observed)?;
-    let mut registered = BTreeSet::from([MANIFEST.to_owned(), SIGNATURE.to_owned()]);
-    let mut folded_names = BTreeSet::from([MANIFEST.to_owned(), SIGNATURE.to_owned()]);
-    let mut total = 0_u64;
-    let mut file_digests = BTreeMap::new();
-    for entry in payload.files {
-        ensure!(valid_relative(&entry.path), "invalid staged payload path");
-        ensure!(
-            folded_names.insert(entry.path.to_ascii_lowercase())
-                && registered.insert(entry.path.clone()),
-            "duplicate staged payload path"
-        );
-        total = total
-            .checked_add(entry.size)
-            .context("staged payload exceeds its size limit")?;
-        ensure!(
-            entry.size <= MAX_ENTRY && total <= MAX_CONTENT,
-            "staged payload exceeds its size limit"
-        );
-        let expected = decode_hex(&entry.sha256)?;
-        let (file, _) = alcomd_platform::open_plain_file(&root.join(&entry.path))?;
-        ensure!(
-            hash_exact(file, entry.size)? == expected,
-            "staged payload file hash mismatch"
-        );
-        file_digests.insert(entry.path, expected);
-    }
-    ensure!(
-        observed == registered,
-        "unlisted or missing staged payload files"
-    );
+    collect_files(&root, &root, 0, &mut observed, None)?;
+    let file_digests = verify_files(
+        &root,
+        payload.files,
+        observed,
+        [MANIFEST, SIGNATURE],
+        |_, _| Ok(()),
+    )?;
 
     let mut binaries = BTreeMap::new();
-    for &role in RUNTIME_BINARY_ROLES {
+    for role in bridge_binary_roles() {
         let base = product
             .binaries
             .get(role)
             .context("required binary name missing from product identity")?;
         let name = format!("{base}{}", std::env::consts::EXE_SUFFIX);
         ensure!(
-            registered.contains(&name),
+            file_digests.contains_key(&name),
             "staged payload is missing a required product binary"
         );
         binaries.insert(role.to_owned(), PathBuf::from(name));
@@ -230,6 +207,55 @@ fn verify_payload(
         binaries,
         file_digests,
     })
+}
+
+fn verify_files(
+    root: &Path,
+    files: Vec<SignedFile>,
+    mut observed: BTreeSet<String>,
+    metadata: [&str; 2],
+    inspect: impl Fn(&str, &mut fs::File) -> anyhow::Result<()>,
+) -> anyhow::Result<BTreeMap<String, [u8; 32]>> {
+    ensure!(
+        files.len() <= MAX_FILES && metadata.iter().all(|name| observed.remove(*name)),
+        "staged payload has too many files or missing metadata"
+    );
+    let mut folded_names = metadata
+        .map(str::to_ascii_lowercase)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let mut total = 0_u64;
+    let mut digests = BTreeMap::new();
+    for entry in files {
+        ensure!(valid_relative(&entry.path), "invalid staged payload path");
+        ensure!(
+            folded_names.insert(entry.path.to_ascii_lowercase()),
+            "duplicate staged payload path"
+        );
+        ensure!(observed.remove(&entry.path), "missing staged payload file");
+        check_payload_size(&mut total, entry.size)?;
+        let expected = decode_hex(&entry.sha256)?;
+        let (mut file, _) = alcomd_platform::open_plain_file(&root.join(&entry.path))?;
+        inspect(&entry.path, &mut file)?;
+        ensure!(
+            hash_exact(file, entry.size)? == expected,
+            "staged payload file hash mismatch"
+        );
+        digests.insert(entry.path, expected);
+    }
+    ensure!(observed.is_empty(), "unlisted staged payload files");
+    Ok(digests)
+}
+
+fn check_payload_size(total: &mut u64, size: u64) -> anyhow::Result<()> {
+    *total = total
+        .checked_add(size)
+        .context("staged payload exceeds its size limit")?;
+    ensure!(
+        size <= MAX_ENTRY && *total <= MAX_CONTENT,
+        "staged payload exceeds its size limit"
+    );
+    Ok(())
 }
 
 fn valid_relative(path: &str) -> bool {
@@ -250,6 +276,7 @@ fn collect_files(
     directory: &Path,
     depth: usize,
     output: &mut BTreeSet<String>,
+    allowed_directories: Option<&[&str]>,
 ) -> anyhow::Result<()> {
     ensure!(
         depth < MAX_PATH_DEPTH,
@@ -263,11 +290,18 @@ fn collect_files(
             .strip_prefix(root)?
             .to_str()
             .context("staged payload path is not Unicode")?;
+        #[cfg(windows)]
         let relative = relative.replace('\\', "/");
+        #[cfg(not(windows))]
+        let relative = relative.to_owned();
         ensure!(valid_relative(&relative), "invalid staged payload path");
         let attributes = entry.file_type()?;
         if attributes.is_dir() {
-            collect_files(root, &path, depth + 1, output)?;
+            ensure!(
+                allowed_directories.is_none_or(|dirs| dirs.contains(&relative.as_str())),
+                "unexpected staged payload directory"
+            );
+            collect_files(root, &path, depth + 1, output, allowed_directories)?;
         } else {
             // Reparse points and special files are rejected by the same no-follow check.
             alcomd_platform::open_plain_file(&path)?;

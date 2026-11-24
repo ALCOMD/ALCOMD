@@ -9,8 +9,16 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+alcomd-extensions.workspace = true
+alcomd-platform.workspace = true
+alcomd-updater.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+ed25519-dalek.workspace = true
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile = "3.27"
 toml.workspace = true
 wit-component.workspace = true
 

@@ -11,6 +11,7 @@ version = "4.0.0-alpha.0"
 [identity]
 bundle_identifier = "com.vrclearn.alcomd"
 windows_aumid = "vrclearn.ALCOMD"
+windows_app_id = "{D8D9EB1C-93FA-48FD-8D83-3AD9F28028B4}"
 uri_scheme = "alcomd"
 linux_desktop_id = "com.vrclearn.alcomd"
 data_directory = "ALCOMD"

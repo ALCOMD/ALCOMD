@@ -31,23 +31,28 @@ version_greater_than() {
 }
 
 highest="0.0"
-for binary_name in "${EXPECTED_BINARIES[@]}"; do
-    binary_path="$RELEASE_DIRECTORY/$binary_name"
+if [[ "$#" == 0 ]]; then
+    for binary_name in "${EXPECTED_BINARIES[@]}"; do
+        set -- "$@" "$RELEASE_DIRECTORY/$binary_name"
+    done
+fi
+for binary_path in "$@"; do
     if [[ ! -f "$binary_path" ]]; then
-        echo "Expected M0 executable '$binary_path' is missing." >&2
+        echo "Expected executable '$binary_path' is missing." >&2
         exit 1
     fi
     if ! file "$binary_path" | grep -q 'ELF'; then
-        echo "Expected M0 executable '$binary_path' is not an ELF file." >&2
+        echo "Expected executable '$binary_path' is not an ELF file." >&2
         exit 1
     fi
 
+    version_info="$(readelf --version-info "$binary_path")"
     while IFS= read -r version; do
         if version_greater_than "$version" "$highest"; then
             highest="$version"
         fi
     done < <(
-        readelf --version-info "$binary_path" |
+        printf '%s\n' "$version_info" |
             grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' |
             sed 's/^GLIBC_//' |
             sort -Vu

@@ -1,172 +1,139 @@
-# M12：完整产品发行、安装与更新
+# M12 完整产品安装、更新、卸载与发行
 
-状态：后续计划；M-1 人工批准及前置里程碑完成前不得执行
+2026-11-25 所有者批准阶段 0 的永久身份和发行合同，进入阶段 1。正式签名、远端写入和发行各有独立审批点。[阶段 0 冻结合同](M12-stage-0-release-contract.md)
 
-## 目标
+## 1. 目标与交接
 
-实现由 ALCOMD 自己控制的跨平台完整产品发行流水线，以：
+从干净的签名源码候选执行 `cargo xtask dist --target <target>`，构建、验证并打包可独立运行的完整产品。用户可首次安装、从已发布的 v3.4.0 迁移、更新整套 v4、恢复中断的操作，以及按范围卸载。验收证据追溯到同一源码 SHA 和各格式的实际文件 SHA-256。
 
-```text
-cargo xtask dist --target <target>
-```
+- M-1 审计已完成。M11 的 Windows/Linux 原生迁移与候选 `fb6b0455` 的 Windows/Ubuntu Hosted 门禁及 CodeQL 已通过。M12 复用迁移账本、核对逻辑和冻结样本，验收实际安装包与包管理器的交接。[M11 实施记录](M11-v3-migration-and-zip.md)
+- 按所有者决定延期 macOS 原生验收。Windows 与 Linux 的合同、实现和隔离验收可以先推进。保留 macOS 构建和包静态检查设计，等运行器与 Apple Silicon 客户端可用再分别取证。A-017 仍要求三平台四格式才能公开发 4.0.0。若拟先公开 Windows/Linux，需单独批准发行范围变更、平台声明和频道策略。
+- 阶段 1 复用 Updater 的限额、无跟随文件校验、Ed25519 和 SHA-256，以及既有扩展包验签。分发工具复用工作区依赖和锁文件，使用已锁定的 `tempfile` 创建同卷暂存与合成夹具，避免自行维护临时路径和创建失败后的清理。共享文件校验可减少离线检查和后续安装校验之间的差异，桥接与普通发行仍各自校验完整载荷合同。Bootstrap 已能暂存、核对和提交 v3 资料，Core 安装登记已有安全读取器。M12 补齐构建打包、登记写入、正常 v4 下载与替换、安装范围转换、卸载和发行流程。
+- 沿用产品清单的技术身份、首发 v1 合同和 Core 唯一状态写入者。Tauri 负责 GUI 构建，并可作为受控打包子工具。旧解析器仅进入独立临时迁移产物。Python/.NET、Loopback API、PKG、RPM、Flatpak、Snap 按现行路线留在 4.0.0 发行范围之外。[架构与发行基线](../architecture/ALCOMD-V4.md#22-更新与发行) · [ADR 0015](../adr/0015-platform-product-packaging.md)
 
-构建、收集、验证和打包目标平台所需的全部 release-blocker 组件，生成强制的 ALCOMD
-应用层签名/摘要，并产出 Windows
-Inno Setup EXE、macOS DMG、Linux AppImage 与 DEB。安装、更新、迁移、CLI 集成与卸载必须
-遵守 A-024 和 ADR 0015。
+## 2. 实施顺序与完成条件
 
-ALCOMD 是一个基于 Rust 的本地应用平台，其官方 GUI 使用 Tauri 构建。Tauri 构建
-`alcomd-gui`，并可在适合的平台参与打包；这不是全面禁止 Tauri Bundler。它必须作为
-`cargo xtask dist` 控制的底层工具，不得定义完整产品组成、安装生命周期、更新或迁移。
+| 阶段 | 实施内容 | 进入下一步的条件 |
+| --- | --- | --- |
+| 0 合同冻结 | 提交 AppId、目录及入口图、登记事务、更新 Schema、信任和频道规则、卸载资产归属、发版清单与风险 | 人工批准本计划和待冻结合同。Windows/Linux 隔离环境、平台样本和构建工具来源已登记 |
+| 1 完整构建 | 实现统一 staging、版本推导、组件核验、平台适配和合成签名。生成离线候选 | 干净 checkout 可构建，坏载荷被拒，产物清单可复验 |
+| 2 安装与卸载 | 接入 Windows 双范围、AppImage、DEB，维护登记、CLI 和系统入口，并实现安装修复与精确清理 | 真机或独立完整客户端虚拟机通过初装、启动、修复、范围转换和卸载矩阵 |
+| 3 整产品更新 | 接通 updater、Bootstrap 与平台适配，完成 v4→v4 同频道、故障恢复与包管理器边界 | 同一候选各适用平台通过真实更新、失败恢复、断电与资料保全 |
+| 4 发布版交接 | 从冻结 3.4.0 启动完整 bridge 或进入受控包管理器交接，按账号迁移与核对，并补齐 macOS 所需证据 | 真实平台、实际产物和真实冻结版通过，审批清单中的清理收据齐全 |
+| 5 发版演练与生效 | 候选冻结、签名、隔离发布演练、复检公开通道和停止机制 | 同 SHA 门禁与包摘要一致，独立人工批准公开资产和频道生效 |
 
-## 前置条件
+每阶段在 ExecPlan 记录候选、差异、失败、回退与复验。新增生产依赖先记录用途、替代方案、维护风险和许可证。涉及公共 RPC、数据库 Schema、权限名、Extension API 或迁移删除清单时先提交差异与证据，获批后实施。
 
-- M-1 已由项目所有者人工批准，且 `m1_complete` 的变更另行审查。
-- M0 至 M11 的适用实现和合同测试已完成。
-- A-025 已关闭 O-003，目标平台最低系统、运行库与构建基础镜像已冻结。
-- 永久 Windows AppId、应用层更新签名/轮换和真实发布端点已人工批准。Windows Authenticode
-  与 Apple Developer ID/notarization 当前不是前置条件；以后启用时必须另行批准身份和流程。
-- v3.4.0 到 v4 bridge、bootstrap journal、Health Check、Commit marker 与恢复合同已冻结。
+## 3. 构建、产物与安装登记
 
-## 非目标
+- 构建目标为 `x86_64-pc-windows-msvc`、`x86_64-unknown-linux-gnu` 和 `aarch64-apple-darwin`。Linux 目标产生 AppImage 和 DEB。阶段 0 的产出包括目标和组件清单、允许的辅助资产、签名输入与输出、源提交和制品摘要的对照。用坏版本、缺组件、意外文件、错误权限、路径逃逸、重复条目及错误目标的负样本执行拒绝验证。
+- `dist` 根据源提交、`alcomd.product.toml`、锁文件及固定工具链构建 daemon、GUI、CLI、MCP、Extension Host、Bootstrap、Updater 和获批的第一方扩展。单独校验第三方运行库、权限、许可证、源码获取方式及扩展 API 范围。Discord 沿用第一方签名/加载合同，新装默认禁用，旧状态按 M11 迁移与授权。
+- 分别生成构建清单、待签字节、签名材料附属件以及最终资产清单。记录源码 SHA、版本、目标、工具及依赖、各资产尺寸与 SHA-256、应用层验签结果、平台签名状态和授权的文件角色。实现 `dist --check` 或等价离线 fixture 路径，使用隔离测试密钥。正式配置缺少可信公钥、必需签名、组件或许可证时构建门禁失败。当前 Authenticode、Developer ID、公证标记为按现行策略未要求。实际系统警告仍纳入验收。
+- 复用 `core-installation-v1`。每用户登记只写规范、受控、可验证的版本化运行目录，按产品身份派生 Core 名称。Bootstrap/平台适配器在产品初始化和健康检查完成后原子切换登记与公开入口，失败恢复上一有效登记，卸载按确切所有权失效。复用同用户 IPC、链接与权限检查、单实例和 5 秒就绪预算。升级期间外部 Node/Rust SDK 尝试启动时应连接已就绪的实例，或收到可处理的未就绪错误。测试缺失登记、失效登记、并发首次连接和空闲后重启。
+- 机器级安装由特权适配器维护程序与机器入口。各账号在自己的身份下初始化和切换登记、资料与凭据。未登录的其他账号保持原状，下一次启动时依据获批的机器安装记录重新校验并初始化。卸载后待处理账号的旧登记应无法启动已移除的 Core。以真实标准用户和与其不同的 UAC 管理员账号验收。
+- 发布版本与渠道是阶段 0 提案的参数。使用候选源码标识与明确批准的首发版本，构建程序和包管理器元数据校验版本一致。开发仓库当前版本与旧测试资产只用于验证。v3 bridge 需要的临时迁移器和冻结版命名签名工件只随专用交接产物交付。
 
-- 不把 Tauri GUI bundle 改名后当作完整产品。
-- 不在安装脚本中实现数据库、Unity 项目或业务迁移。
-- 不让 Tauri Updater成为完整产品的权威更新器。
-- 不把 PKG、RPM、Flatpak 或 Snap 作为 4.0.0 blocker。
-- 不在开发或 PR 验证中使用真实生产签名密钥、notarization 凭据或更新发布权限。
-- 不让 Python/.NET SDK 或可选 Loopback API 扩大 4.0.0 发行范围；初始布局和合同只需保留
-  以后兼容增加的空间。
+## 4. 平台安装与卸载矩阵
 
-## 影响范围
+| 平台/格式 | 实现边界 | 放行所需的客户端证据 |
+| --- | --- | --- |
+| Windows x86_64 · 单个 Inno Setup EXE | 默认不提权，安装到 `%LOCALAPPDATA%\Programs\ALCOMD\`。显式选择所有用户才请求提升，安装到 `%ProgramFiles%\ALCOMD\`。永久 AppId 单独冻结。只把对应作用域的 `bin\alcomd-cli.exe` 所在目录加入 PATH，Inno 管理卸载登记、快捷方式、AUMID、协议和获批文件关联。 | Windows 10 22H2 和 Windows 11 各验证真实下载、SmartScreen、WebView2 渲染、托盘、默认及非 ASCII 自定义路径、两种安装范围、双向转换和拒绝/取消 UAC。测试已装 Evergreen、缺失时在线 Bootstrapper、离线 Standalone 和失败恢复。记录依赖来源、签名与摘要。验证两个账号资料隔离、无双活实例、重复安装/修复、PATH 与系统项的拥有权、升级和卸载。 |
+| Ubuntu 22.04 x86_64 · AppImage | 便携文件移动可重新定位。提案使用按用户、版本管理且可核验的持久运行目录供 Core 冷启动。FUSE 临时挂载仅服务便携应用运行。GUI 显式操作可建立 `~/.local/bin/alcomd-cli`，稳定入口绑定当前已核验的应用实例。 | 真实 AppImage 挂载运行、首次初始化、跨目录移动、CLI 修复/移除、外部 SDK 冷启动、便携更新及中断恢复。验证旧 AppImage 可启动和未知同名文件保全。覆盖 Ubuntu 22.04 和较新 Ubuntu 运行冒烟。 |
+| Ubuntu 22.04 amd64 · DEB | `/usr/bin/alcomd-cli` 和内部版本目录由包管理器拥有。应用提示或交给包管理器完成程序更新，用户态 Bootstrap 处理各账号的数据。维护脚本只协调包和系统入口，具备幂等性。 | 以真实 `apt/dpkg` 验证安装、依赖、重装、升级、移除与 purge。注入解包/配置中断，验证包管理器恢复、资料保全及重新登记。若正式提供 APT 仓库，另验证归档认证、频道和撤回。独立下载 DEB 也核对发布清单与摘要。 |
+| macOS arm64 · DMG | `ALCOMD.app` 包含完整载荷，`MACOSX_DEPLOYMENT_TARGET=11.0`。拖入 Applications 后逐账号初始化，CLI 仅从 GUI 显式启用。延期保留验收项。 | 在 Apple Silicon 设备测试未公证的真实下载和 Gatekeeper 用户路径、挂载/拖入、首次启动、Keychain、CLI 重定位、整套更新、卸载及回滚。Hosted 构建与 Mach-O 静态证据另记录。 |
 
-本计划获批后可修改：
+Windows 双范围互斥和自定义根按现行基线实施。转换前检查机器与发起账号的安装实例，计划明确旧作用域及新作用域。其他账号的资料、登记和入口需要具备确切归属与批准才能操作。冲突实例归属、当前程序占用或作用域无法确认时，安全拒绝或等待可重试状态。在唯一活动版本和健康状态确定后再清理旧入口。[Windows 安装器基线](../baselines/windows-installer-options.md) · [Inno 安装模式](https://jrsoftware.org/inno-setup/documentation/topic_admininstallmode.htm) · [Microsoft WebView2 分发](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution)
 
-```text
-xtask/ 中的 dist 模块
-distribution/ 中的平台打包定义与受控脚本
-安装/更新/CLI 集成所需的 application 用例与适配器
-.github/workflows/ 中的发行、应用层签名与平台安装测试
-更新 Manifest Schema、契约快照与 Fixture
-docs/testing/*
-docs/status.md
-docs/exec-plans/M12-full-product-distribution.md
-```
+Linux 在 Ubuntu 22.04 构建，逐个核对发行 ELF 和本地动态库，最高要求 `GLIBC_2.35`。冻结 v3.4.0 Linux 样本的 `GLIBC_2.39` 交接使用 Ubuntu 24.04 合适环境另验。DEB 由包管理器接管程序文件，保留已核验的旧包与可执行恢复流程。在下载/依赖/解包/配置失败或中断时验收实际 `dpkg` 状态，恢复后用完整版本重新核对。AppImage 与 DEB 相遇时验证安装归属及入口冲突，避免对另一格式拥有的文件或数据进行替换。[Debian 维护脚本政策](https://www.debian.org/doc/debian-policy/ch-maintainerscripts.html)
 
-生产代码、公共 RPC、权限、数据库 Schema 或更新合同如需变化，必须在对应里程碑取得人工
-审批，不能以“打包需要”为由绕过架构边界。
+### 卸载、所有权与验收快照
 
-## 全产品 staging 合同
+- 默认卸载停止当前实例的相关进程，清理明确拥有的程序、安装登记、快捷方式、CLI 入口、PATH 项、协议/关联及临时更新文件。保留其他安装、共享运行库、第三方关联及用户自定义内容。若用户或第三方已接管同名入口，按现场归属保留。AppImage/DMG 覆盖显式移除集成及系统直接移除本体后的失效处理。DEB `remove`/`purge` 管理软件包自己的系统资源。
+- 用户数据默认保留。清理个人设置、托管缓存、运行日志、凭据及外部 MCP 客户端条目时，提案列出具体账号、实例、精确对象、数据影响和恢复源，并单独确认。保留 Unity 工程、备份、用户模板、外部目录、第三方资源和未证实归属的文件。路径换向、链接/重解析点、归属或摘要变化时拒绝清理。
+- 安装前、提交后与卸载后对照进程、文件、路径权限、注册表/桌面项、凭据引用、CLI、MCP 与各账号的数据快照。对比全新 v4 加等价数据的结果。零残留判据限定为已验明并获准清理的产品或旧版实例。用户数据和第三方的预期保留项按内容摘要与拥有者核对。[已批准实例边界](../../migrations/v3/artifacts.toml)
 
-每个 target 的 staging Manifest 至少固定：
+## 5. 正常更新与 v3 桥接
 
-- 产品版本、target triple、构建来源与可复现输入。
-- daemon、GUI、CLI、MCP、扩展宿主、bootstrap、updater 和第一方扩展的必需清单。
-- 公开 `bin` 与内部 `runtime` 边界、文件模式、运行库、许可证和资产来源。
-- 每个组件的版本、摘要、应用层签名状态、可选平台签名状态与允许的入口。
-- 禁止旧内部身份、缺失 release-blocker、意外调试文件和秘密材料。
+### v4 → v4
 
-`xtask dist` 必须先完成 staging 验证，再调用平台打包工具；任一组件缺失或版本不一致时不
-得生成看似成功的最终资产。
+1. Updater 读取经批准的 stable/beta 端点，用有界输入验证产品、目标、版本、格式和当前渠道。提案为应用层签名覆盖元数据、资产尺寸和摘要，冻结签名域、信任锚标识、HTTPS 地址与重定向、文件规模、有效期及过期响应/重放规则。拒绝跨平台、错误范围、篡改、版本回退和格式不符。stable 不接收预发布，beta 切回 stable 需要用户显式选择并遵守版本推进规则。覆盖无更新、非 2xx、错误响应类型、响应丢失、过期元数据和不完整下载，核对已有完整安装可继续使用。初次安装的人工校验方式与自动更新共用正式签名清单。
+2. 下载到隔离临时位置并核对签名和摘要，发布前再次核验同一文件身份。Bootstrap 取得更新锁、协调 GUI/Core/CLI/MCP/Host 的活跃进程、保护已接受任务并记账。存好完整旧程序、旧登记与允许恢复的本机状态，准备新版本并做健康检查，然后持久化提交意图、切换入口和重开验证。
+3. 提交前自动保全或恢复前一完整版本。提交意图之后依据同一事务恢复到经验证的完整版本。失败时使用经确认的恢复包与配套状态。遇到无法由旧版本安全读取的数据，保留数据和恢复线索，明确阻止盲目降级。拒绝同时运行不兼容的两套 Core。清理旧程序按专用所有权和保留窗口执行。Windows 更新走完整 Inno 包，AppImage 使用同卷便携替换，DMG 的整产品替换延期实测，DEB 留给包管理器。
+4. 用同一候选衍生两个测试版本，实测检查、下载、取消、部分写入、重复请求、响应丢失、原子提交、重启恢复及旧版本重开。各持久阶段覆盖断电或进程终止、占用、权限、磁盘满与签名错误，另测同时启动 CLI、多个 MCP 和扩展时的状态治理。不因没有历史公开 v4 而加入开发格式兼容逻辑。
 
-## 实施阶段
+### v3.4.0 → v4
 
-### 1. dist 骨架与确定性 staging
+- Windows 从冻结更新器验证完整 bridge 的实际下载、旧钥验签以及原安装范围传递，保留白名单参数并验证未知参数。验证 v3.3.0 先经原渠道到 3.4.0。分别核对当前用户、全用户、多个登录账号、UAC 取消和旧版恢复。若使用冻结 updater 的别名文件名，按冻结规则签名并纳入资产清单。核对 Windows 256 MiB 下载上限与 WebView2 离线方案，超出时提交方案差异审批。
+- AppImage 和延期的 macOS 使用用户主动启动的独立 bridge，先保全旧版可执行源，再独立暂存 v4。冻结的 macOS/AppImage 自动更新会原地替换旧版，故公共旧 feed 的响应设计必须显式验证这些客户端不会误进入覆盖式桥接。DEB 以包管理器交接程序，按账号运行数据迁移。无适用资产时验证实际客户端提示，并核对 stable/beta 共用服务与按平台响应的缓存隔离。[冻结更新 API](../baselines/update-api.md)
+- 复用 M11 签名的发布候选健康报告和逐账号本机核对。签名报告绑定候选载荷摘要与平台、安装范围、已执行的 Core RPC/GUI/CLI/MCP/第一方扩展证据。逐账号核对导出摘要、数据内容、记录数与重开结果，资料保留在本机。用户批准迁移范围后进入 Bootstrap 提交。清理针对另行确认的旧实例。真实业务数据、路径、凭据或旧 token 不进入发行报告。
+- 默认沿用现有 v3 应用层签名钥处理冻结桥接。v4 首发沿用既定密钥选择，阶段 0 核对冻结指纹、v4 载荷与健康证明验证公钥，以及两种签名格式的实际互操作。需要变化时以明确证据进入单独换钥审批。开发与 Hosted 用合成密钥。正式签名只在获批准的隔离流程签发已核对的准确字节。公开退出策略允许暂停推送或恢复上一兼容频道指针，已安装用户的程序/资料恢复走正式恢复流程。
 
-1. 新增版本化 dist Manifest 与 target 配置。
-2. 构建 Rust Workspace 组件、GUI 前端和第一方扩展。
-3. 使用 Tauri 编译 `alcomd-gui`，仅提取受清单允许的 GUI 产物。
-4. 收集完整组件并校验版本、摘要、权限、许可证和身份。
-5. 提供不使用真实应用层私钥的 `--check`/fixture 路径供 CI 验证，不伪造正式签名成功；
-   Authenticode/Developer ID 未启用时必须明确标记为 `not-required`，不能伪装成已签名。
+## 6. 放行证据与公开发行顺序
 
-### 2. Windows Inno Setup
+1. 按 [发行测试矩阵](../testing/release-matrix.md) 与 [结构化测试计划](../testing/test-plan.toml) 逐项执行。保留整仓 Rust/前端/Chromium、外部 Node/Rust 消费者、三平台 Hosted CI 和 CodeQL 同一 SHA 门禁。真机/完整客户端虚拟机以实际发行包补齐快捷方式、协议/关联、真实 WebView、键盘焦点、主题、高对比和缩放。覆盖 Windows Narrator、Linux 可用读屏器及延期的 macOS VoiceOver。记录实际测试系统、安装范围、版本、包摘要、阶段结果和可追溯的最小证据。
+2. 冻结候选和发行清单。为四种实际安装包、更新 Manifest、桥接资产与第一方扩展生成对应签名/摘要和许可证资料。从干净机器重新下载、验签、安装并核对。用于实测的资产与提交批准的发布资产应具有同一摘要。重打包或重签后重新执行受影响验证。
+3. 先在隔离发行位置验证上传、下载、恢复和停止机制。提交负责人、资产列表、公开地址、版本/tag、各平台状态、发布说明、健康报告及恢复演练证据。获批后创建正式 tag 和发布记录，上传已冻结的资产，核对下载字节与签名。候选 tag/发布方式按批准策略执行。
+4. 获得单独放行后切换更新频道和旧入口。先以已批准的 beta 或限定人群部署，观察约定窗口，复核可用率、签名拒绝、迁移/提交失败、旧版可重开和用户数据保全。稳定频道需要单独放行。监控信号、观察期、负责人、阈值和停止动作在发版前冻结。出现错误频道/版本、摘要不符、状态损坏或无法恢复的迁移时立即停止该频道推进，保存证据，核对恢复指针并复验冻结客户端的实际响应。
+5. 公开前验证隐私保护。保留脱敏流水线、摘要、失败分类与恢复证据，使用隔离数据验证普通错误、更新界面、支持日志和迁移报告。遥测服务、真实更新端点及第三方服务写入各按审批矩阵执行。
 
-1. 由统一 staging 生成单个 `ALCOMD_<version>_windows_x86_64_setup.exe`。
-2. 当前用户为默认无提升模式，安装至 `%LOCALAPPDATA%\Programs\ALCOMD\`；所有用户模式只
-   在明确选择后请求 UAC，安装至 `%ProgramFiles%\ALCOMD\`。
-3. 两范围互斥，支持双向受控转换和失败回滚。
-4. `bin/alcomd-cli.exe` 是唯一 PATH 入口；`runtime/` 组件不公开。
-5. Inno 负责部署、卸载、快捷方式、协议/文件关联和启动 bootstrap；所有业务迁移由
-   bootstrap/迁移用例负责。
-6. Windows 正式测试 Windows 10 22H2 与 Windows 11，不增加主动拒绝更旧 Windows 的
-   应用级门槛；WebView2 Evergreen 覆盖在线 Bootstrapper 与离线 Standalone Installer。
-7. 当前不要求 Authenticode；测试必须覆盖未签名安装器的下载、SmartScreen 提示、启动和
-   应用层更新验签。
-8. M0 的 Windows Server hosted 与开发机 compile-only 结果不属于客户端运行证据；在 Win10
-   22H2/Win11 实际安装并启动完整产品，验证 WebView2 渲染、托盘、注册表、用户数据路径、
-   更新、升级和卸载后，才可关闭 `platform.windows-client-runtime` deferred 项。
+## 7. 审批矩阵
 
-### 3. macOS DMG
+| 审批点 | 需要所有者确认 | 获批可执行范围 |
+| --- | --- | --- |
+| 实施与合同冻结 | 本计划、永久 Windows AppId、最终身份与布局、AppImage 持久运行目录、登记所有权和事务、更新/频道/恢复合同、卸载清单的政策 | 在现有主工作树实现和本地检查，使用合成密钥和合成资料。公共合同、权限或生产依赖的变化另行审查 |
+| 真实客户端隔离验收 | 可用 Windows 10/11、Ubuntu 与日后的 Mac 测试入口，隔离账号、样本、允许的故障注入、项目/备份只读副本、实际客户端的管理员操作 | 在所列隔离环境安装、升级、卸载、回滚与清理测试。用户日常系统与旧资料写入单独批准 |
+| 正式签名及密钥策略 | 旧钥指纹对应、正式工具与签名身份、权限、旋转/吊销与应急流程、候选源码 SHA、未签输入与预期发布的准确摘要 | 仅签批准的候选资产、更新元数据与平台健康报告。Authenticode、Developer ID/notarization 若启用另批 |
+| 清理真实旧实例 | 确切机器与账号、实例归属、对象列表、备份/恢复源、凭据与外部配置影响、需要移动的用户目录 | 按已批准清单执行，归属或内容漂移时停止对应清理 |
+| Git 和外部环境操作 | 签名提交与远端快进的范围，CI 所需远端操作、隔离托管位置与账号、上传范围 | 按获批引用、目标和动作执行。GitHub 设置、Secrets、真实更新端点与签名材料沿用仓库既有禁止边界 |
+| 公开标签和发行资产 | 版本/tag、GitHub Release、资产、签名、发布说明、可公开平台、M12 真机与 CI 证据。明确授权创建 tag、上传和公开各项操作 | 创建获批的 tag、上传准确资产并公开所批准的发行记录。macOS 未验收时拟分平台提前发版需先修订 A-017 |
+| 生产分批上线和应急恢复 | 具体新旧域名、stable/beta 分流、阶段、人群、恢复源、阈值、观察期、操作人及停推授权 | 仅执行已批准的频道变更。生产操作由所有者或其明确授权的发布者执行。恢复、撤回或变更超过预批准范围时另批 |
 
-1. 以 `MACOSX_DEPLOYMENT_TARGET=11.0` 生成包含完整 arm64 组件的 `ALCOMD.app` 与
-   `ALCOMD_<version>_macos_aarch64.dmg`，不增加额外应用级 OS 版本门槛。
-2. 当前允许未做 Developer ID 签名/notarization；真实机器验证 Gatekeeper 警告、用户启动
-   路径和升级。未来启用平台签名时再执行嵌套签名、notarization 与 stapling。
-3. 拖入 Applications 不修改 shell；GUI 中的显式操作负责创建或移除稳定 CLI 入口。
-4. 首次启动由 bootstrap 协调 v3 迁移和健康检查。
+**M12 工程验收完成条件**为四种完整产品产物、对应平台的真实客户端生命周期验收、同 SHA 门禁、签名与可验证恢复证据均齐全，并已同步状态、合同快照与结构化测试记录。**公开发行完成条件**为对应审批已落实，公开下载的制品已验签并与清单一致，已获准生效的频道已验证响应并完成观察。
 
-### 4. Linux AppImage 与 DEB
+## 进度记录
 
-1. AppImage 包含便携运行所需完整组件；用户可主动创建 `~/.local/bin/alcomd-cli`，移动
-   AppImage 后入口必须可修复且不得静默指向旧路径。
-2. DEB 将 `alcomd-cli` 安装到 `/usr/bin`，内部程序置于受管理目录，程序文件升级与卸载
-   完全服从包管理器所有权。
-3. AppImage self-update 与 DEB package-manager update 使用同一产品版本/签名合同，但不得
-   互相覆盖对方拥有的文件。
-4. 两种格式都在 Ubuntu 22.04 x86_64 基线构建；逐个扫描 ELF，最高所需 glibc 符号不得
-   超过 `GLIBC_2.35`。
+- 2026-08-16 建立后续 ExecPlan。
+- 2026-11-25 整理完整实施顺序、平台验收和审批矩阵。按所有者决定延期 macOS 原生验收，继续按 A-017 记录正式发版条件。
+- 2026-11-25 所有者批准阶段 0 的永久 Windows AppId、安装与登记布局、v4 更新 Schema 和卸载归属规则。[阶段 0 冻结合同](M12-stage-0-release-contract.md)
 
-### 5. 完整产品更新与 v4 bridge
+## 阶段 1 运行载荷
 
-1. `alcomd-updater` 验证更新 Manifest、目标、版本、ALCOMD 应用层完整包签名/摘要与组件清单；
-   不得把 Authenticode、Developer ID 或 notarization 当作唯一真实性来源。
-2. `alcomd-bootstrap` 协调停止、journal、替换、迁移、健康检查、Commit、恢复和清理。
-3. Windows 使用应用层验签的完整 Inno 包；macOS 使用应用层验签的完整产品替换流程；
-   AppImage 使用便携更新；DEB 只通过包管理器更新程序文件。
-4. v3.4.0 只发现、验签并启动 v4 bridge installer；bridge 安装完整 v4 并包含或调用
-   bootstrap，不得把完整迁移责任回推给 v3.4.0。
-5. v4 首发默认沿用 v3 的应用层更新签名密钥。桥接安装包沿用冻结 v3 更新器要求的签名格式，
-   v4 载荷和平台健康报告按 v4 合同签发。若密钥保管、可用性或签名工具出现具体障碍，
-   记录证据并交所有者决定是否换钥。首次正式签名和发布仍按独立审批点执行。
+`cargo xtask dist --target <target> --build --staging <new-directory> --source-sha <full-commit> --discord-package <archive> --discord-sha256 <sha256>` 在匹配目标的原生系统上构建七个程序。它用已配置的 Git 信任验证源码签名，核对干净工作树、锁文件和已固定摘要的第一方 Discord 包，再发布同卷暂存的运行目录。Linux、macOS 原生构建还执行现有的系统版本门禁。工作区内的暂存路径须放在忽略的目录。每次构建使用产品清单中的版本。
 
-### 6. 发行与故障测试
+`--prepare --staging <directory> --source-sha <full-commit> --discord-sha256 <sha256>` 可为单独构建的运行目录生成待签清单。此入口核对目录内容、目标与第一方扩展，构建来源由构建记录证明。清单绑定版本、目标、源提交、完整文件集合、大小和 SHA-256。签名输入由 `ALCOMD product payload v1`、一个 NUL 字节以及 `product-payload.json` 的准确字节组成。`product-payload.sig` 是 128 个小写十六进制字符。正式 `--check` 以构建时注入的发布公钥验证准确字节，再核对每个文件。
 
-执行 `docs/testing/test-plan.toml` 中全部 `distribution.*`、`installer.*`、
-`updater.full-product-atomic`、迁移与 residue 测试。真实机器覆盖安装、升级、范围转换、CLI、
-协议/文件关联、多用户、进程占用、磁盘满、提升取消、重启、签名失败和每个恢复阶段。
+`--check --fixture` 创建并校验一次性夹具。`--prepare --fixture --staging <directory>` 可用公开合成密钥暂存真实的开发二进制，随后用 `--check --fixture --staging <directory>` 复验。合成载荷有独立用途标记和全零源提交，正式验签路径拒绝。普通运行载荷要求产品许可证和第三方声明，排除 v3 迁移器与 Loopback API。Windows 专用辅助库仅接受清单允许的文件名。
 
-M12 同时拥有真实目标客户端的辅助技术 runtime 验收：
+平台封装、外部发行资产清单与签名、干净签名候选验收仍按阶段 1 继续。安装登记、卸载与 v4 下载更新分别按后续任务接入。
 
-- Windows 10/11 安装后的 Windows Narrator minimum smoke；
-- macOS 实际 DMG/App 启动后的 VoiceOver minimum smoke；
-- Ubuntu 22.04 实际 AppImage/DEB 启动后的可用 screen-reader minimum smoke；
-- 真实 WebView2/WebKitGTK/WKWebView 中的键盘、焦点、缩放、high-contrast/平台主题与辅助技术互操作。
+2026-11-25 Windows 上完成离线验证。三个目标的合成载荷通过。用 M11 已编译的七个 Windows 程序、两个 VC 运行库与 Discord 包组成合成签名载荷，复验清单摘要 `e1089401c7801b5e00722311bb0b35e399383353d65e1942cc9df44827624ab6`。重复准备保持原清单，修改文件后拒绝，恢复原字节后再次通过。发行构建拒绝当前未提交工作树，在拒绝时未创建目标目录。Bootstrap、Platform、Updater 和 xtask 共 85 项通过，4 项沿用既有跳过。Ubuntu 24.04 WSL 下 glibc 门禁接受要求 2.34 的 ELF，并拒绝要求 2.38 的 ELF。
 
-这些测试保持 `planned`/`blocked` 直到真实客户端证据到位；Hosted compile/build、Playwright Chromium DOM automation、
-截图或单一平台结果不能替代。M7 只负责 Web frontend semantic/accessibility automation 与一次交互桌面视觉/键盘签收。
+M9 留存的第一方 Discord 测试包通过扩展验签、固定摘要与产品清单字段核对，错误摘要被拒绝。本机 Git 使用 M11 留存的公开签署人清单对当前 HEAD 完成一次性验签。
 
-## 验收标准
+上一轮 Windows 开发工作树的七个 Release 程序均已编译，Tauri GUI 采用 no-bundle 构建。将新编程序、已验签的 Discord 测试包和许可证文件放入含中文及空格的目录后，合成载荷准备与再次验签均通过，清单 SHA-256 为 `015f1bb87d6215bf8a6852d7c9c2de216d416c117f8f2b3b735e60a0667ec5f5`。正式验证入口在构建未配置发布公钥时拒绝。同轮 Linux x86_64、macOS arm64 的 Updater 与 xtask 交叉静态检查通过。
 
-- 四种主要格式均从同一版本化 staging 合同产生并包含完整必需组件。
-- Windows 只有一个主 EXE 资产，两个安装范围互斥且可恢复转换。
-- 三个平台只公开 `alcomd-cli`，入口安装、升级、重定位和卸载无越权或残留。
-- Tauri GUI bundle 未被任何文档、Manifest 或更新器当作完整产品。
-- updater/bootstrap/平台包对完整产品版本和组件集合达成一致，故障注入可恢复。
-- 应用层签名/摘要、安装、升级、卸载与 residue 测试在真实目标系统通过；当前未启用的
-  Authenticode/Developer ID/notarization 明确标为非 blocker，并验证对应系统警告路径。
-- Narrator、VoiceOver 与 Linux screen reader 在对应真实发布客户端完成 minimum smoke；结果按平台分别记录，不把
-  Playwright/Hosted runner evidence 描述为平台辅助技术认证。
-- 所有公开 Schema、快照、ExecPlan 进度和 `docs/status.md` 已更新，并再次停在人工发布审批点。
+### 原生格式的测试包
 
-## 人工审批点
+`cargo xtask dist --target <target> --package-layout --fixture --staging <signed-fixture> --format <inno|appimage|deb> --output <new-directory>` 仅导出测试身份的打包输入。工具按签名清单复制，复核副本签名和摘要，再同卷发布完整布局，目标已存在则拒绝。
 
-- 开始实现前批准永久 Windows AppId、四种格式的最终身份和目录布局。
-- 接入应用层签名前批准密钥保管、权限、轮换、离线/托管签名和应急撤销流程；未来启用
-  Authenticode 或 Developer ID/notarization 时再单独批准平台身份与凭据流程。
-- 首次 bridge rollout 前批准 v3.4.0 更新响应、分批策略、恢复源和停止条件。
-- 任何真实发布、tag、上传、notarization 或第三方系统写入都需要单独明确授权。
+- Windows 对输出目录内的 `fixture.iss` 执行 `ISCC.exe`。测试包使用独立 AppId、当前用户权限和空白目标目录。安装程序只写测试载荷，无快捷方式、注册表、卸载登记及自动启动。
+- Linux AppImage 对 `AppDir` 使用 `ARCH=x86_64 appimagetool --no-appstream --runtime-file <verified-runtime> AppDir <fixture.AppImage>`。测试入口打印载荷清单 SHA-256。Linux 原生导出保留运行文件权限，跨文件系统准备时在隔离的 Linux 暂存中设置正确模式后打包。
+- Linux DEB 对 `deb-root` 执行 `dpkg-deb --root-owner-group --build deb-root <fixture.deb>`。测试包使用 `alcomd-dist-fixture` 包名及其专用内部目录。按 Debian 版本格式生成预发布版本，验证时用 `dpkg-deb --extract`。
 
-## 进度日志
+工具来源和核验记录如下。它们用于开发验收，生产运行时无需携带这些工具。
 
-- 2026-08-16：M-1 只建立本后续 ExecPlan；未实现安装器、dist、签名或发行资产，未修改机器环境。
+| 工具 | 核对的 SHA-256 |
+| --- | --- |
+| [Inno Setup 6.5.4](https://github.com/jrsoftware/issrc/releases/tag/is-6_5_4) | `fa73bf47a4da250d185d07561c2bfda387e5e20db77e4570004cf6a133cc10b1`，Authenticode 签署者为 Pyrsys B.V. |
+| [appimagetool x86_64，11d54c9](https://github.com/AppImage/appimagetool/releases/tag/continuous) | `e8c1169c4af66c3184d7ee110713d4be04befe671fa358e2c1591ee840553b03` |
+| [AppImage Type 2 x86_64 runtime](https://github.com/AppImage/type2-runtime/releases/tag/continuous) | `617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46` |
+
+Windows 用实际编译的七个运行程序生成 Inno 测试 EXE。仅向隔离工作目录展开，第二次展开到原目录被拒绝，原载荷再次验签通过。Ubuntu 24.04 WSL 中，AppImage 与 DEB 使用由 `/usr/bin/true` 生成的七个 ELF 测试文件验证容器流程。AppImage 启动测试入口并打印摘要，DEB 元数据为 `alcomd-dist-fixture 4.0.0~alpha.0-1 amd64`，两种包解出相同签名清单 `cc35d4888e7e80d4ea0d002cb81b11615247f04131bf1c383f8c7f3328b4a27f`。外层测试包摘要如下。
+
+| 格式 | SHA-256 |
+| --- | --- |
+| Inno EXE | `a81861d460d76326e93b684b000f3673fa39286614b51624f98e2c19d0e2dd4c` |
+| AppImage | `7d3f2f8018cc7aa9884046998d58268c2cf0846c1eac15880870ee9fe9ad0f49` |
+| DEB | `f7157fec77ae5fb5bc1b5dbf148d6e668a55a0e958c6e864b49f4268b19b794f` |
+
+产品安装包的身份、启动登记、集成入口和生命周期按阶段 2 实施。Linux 产品构建及客户端验证仍需 Ubuntu 22.04。三平台四格式的公开放行按 A-017。

@@ -716,7 +716,8 @@ Inno Setup、DMG、AppImage 或 DEB 工具链，生成应用层签名/摘要与 
 
 扩展独立版本化，通过 Extension API 范围决定兼容性。
 
-Windows Inno Setup 的新 AppId 在发行实现前单独冻结，不能复用 v3 身份，也不能随未来品牌变化。
+Windows Inno Setup 从产品清单读取 v4 永久 AppId `{D8D9EB1C-93FA-48FD-8D83-3AD9F28028B4}`。
+当前用户和所有用户安装、后续版本及品牌变化都沿用该值。[M12 阶段 0 发行合同](../exec-plans/M12-stage-0-release-contract.md)
 
 ## 23. 安全与测试门槛
 

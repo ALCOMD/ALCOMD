@@ -7291,8 +7291,16 @@ dependencies = [
 name = "xtask"
 version = "4.0.0-alpha.0"
 dependencies = [
+ "alcomd-extensions",
+ "alcomd-platform",
+ "alcomd-updater",
+ "anyhow",
+ "clap",
+ "ed25519-dalek",
+ "semver",
  "serde",
  "serde_json",
+ "tempfile",
  "toml 1.1.4+spec-1.1.0",
  "wit-component",
 ]

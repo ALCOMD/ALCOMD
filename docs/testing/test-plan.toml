@@ -1112,6 +1112,25 @@ kind = "distribution"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
 description = "cargo xtask dist 为每个目标收集完整 release-blocker 组件，拒绝缺失组件、意外文件、单一 GUI bundle 充当发行物、错误权限与许可证缺口。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution.rs", "apps/alcomd-updater/src/distribution.rs"]
+
+[[test]]
+id = "distribution.offline-payload-verification"
+stage = "M12"
+kind = "contract"
+platforms = ["windows-x86_64"]
+status = "passed"
+description = "Windows 上运行三目标合成载荷验签，用本轮编译的七个 Windows 运行程序复验带空格和中文的暂存路径。拒绝改动文件、覆盖清单以及从未提交工作树构建发行候选。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution.rs"]
+
+[[test]]
+id = "distribution.native-fixture-containers"
+stage = "M12"
+kind = "distribution"
+platforms = ["windows-x86_64", "linux-x86_64"]
+status = "passed"
+description = "在 Windows 和 Ubuntu 24.04 WSL 生成独立的 Inno EXE、AppImage 和 DEB 测试包并解包复验签名。Windows 载荷为实际编译程序，Linux 使用真实 ELF 充当各组件的合成载荷。验证 Windows 拒绝覆盖既有目标、AppImage 打印签名清单摘要、DEB 元数据正确。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/package.rs"]
 
 [[test]]
 id = "distribution.version-coherence"
