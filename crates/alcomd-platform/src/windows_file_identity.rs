@@ -14,7 +14,7 @@ use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_ID_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ,
     FILE_SHARE_WRITE, FILE_STANDARD_INFO, FileIdInfo, FileStandardInfo,
-    GetFileInformationByHandleEx, OPEN_EXISTING,
+    GetFileInformationByHandleEx, GetFinalPathNameByHandleW, OPEN_EXISTING, VOLUME_NAME_NONE,
 };
 
 /// Authoritative identity of one filesystem object on the current Windows machine.
@@ -55,6 +55,25 @@ pub fn file_identity(path: &Path) -> io::Result<WindowsFileIdentity> {
 
 pub(crate) fn file_identity_from_file(file: &std::fs::File) -> io::Result<WindowsFileIdentity> {
     identity_from_handle(file.as_raw_handle())
+}
+
+/// Checks the object itself, rather than treating a drive-letter alias as a volume root.
+pub(crate) fn is_volume_root(file: &std::fs::File) -> io::Result<bool> {
+    let mut name = [0_u16; 2];
+    // SAFETY: file owns the live handle. The writable buffer is exactly two
+    // UTF-16 code units. Longer paths yield the required buffer length.
+    let length = unsafe {
+        GetFinalPathNameByHandleW(
+            file.as_raw_handle().cast(),
+            name.as_mut_ptr(),
+            name.len() as u32,
+            VOLUME_NAME_NONE,
+        )
+    };
+    if length == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(length == 1 && name == [u16::from(b'\\'), 0])
 }
 
 fn identity_from_handle(handle: HANDLE) -> io::Result<WindowsFileIdentity> {

@@ -312,6 +312,25 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn windows_volume_root_check_distinguishes_an_ordinary_directory() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
+
+        let profile = crate::local_app_data_directory().expect("test profile");
+        let root = profile.ancestors().last().expect("volume root");
+        let open = |path: &Path| {
+            std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+                .open(path)
+                .expect("directory handle")
+        };
+        assert!(crate::windows::is_volume_root(&open(root)).expect("volume-relative path"));
+        assert!(!crate::windows::is_volume_root(&open(&profile)).expect("volume-relative path"));
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn windows_install_registration_is_idempotent_and_preserves_other_owners_and_data() {
         use std::fs;
 

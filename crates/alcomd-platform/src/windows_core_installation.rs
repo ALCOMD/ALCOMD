@@ -42,7 +42,7 @@ pub(crate) fn validate_registration_parent(path: &Path) -> io::Result<()> {
     // Other users may create new folders in some volume roots. No ancestor
     // may allow them to replace the existing path being followed.
     let ancestors = directories.components().skip(2);
-    check_directory(&directory, &current_sid, REPLACE_ACCESS)?;
+    check_directory(&directory, &current_sid, REPLACE_ACCESS, true)?;
     for component in ancestors {
         let Component::Normal(name) = component else {
             return Err(untrusted());
@@ -53,7 +53,7 @@ pub(crate) fn validate_registration_parent(path: &Path) -> io::Result<()> {
         } else {
             REPLACE_ACCESS
         };
-        check_directory(&directory, &current_sid, mask)?;
+        check_directory(&directory, &current_sid, mask, false)?;
     }
 
     Ok(())
@@ -78,7 +78,7 @@ fn open_checked_file(path: &Path, access: u32) -> io::Result<File> {
     Ok(file)
 }
 
-fn check_directory(path: &Path, current_sid: &str, mask: u32) -> io::Result<()> {
+fn check_directory(path: &Path, current_sid: &str, mask: u32, drive_root: bool) -> io::Result<()> {
     let directory = OpenOptions::new()
         .access_mode(READ_CONTROL | FILE_READ_ATTRIBUTES)
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
@@ -88,6 +88,16 @@ fn check_directory(path: &Path, current_sid: &str, mask: u32) -> io::Result<()> 
     if !metadata.is_dir() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(untrusted());
     }
+    let mask = if drive_root {
+        if !super::is_volume_root(&directory)? {
+            return Err(untrusted());
+        }
+        // A volume root has no parent entry to delete. FILE_DELETE_CHILD still
+        // governs the ability to replace the first component of our path.
+        mask & !DELETE
+    } else {
+        mask
+    };
     validate_installation_dacl(directory.as_raw_handle().cast(), current_sid, mask)
 }
 
