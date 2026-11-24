@@ -20,16 +20,13 @@ use super::{
 pub const MANIFEST_NAME: &str = "product-payload.json";
 pub const SIGNATURE_NAME: &str = "product-payload.sig";
 pub const SIGNATURE_DOMAIN: &[u8] = b"ALCOMD product payload v1\0";
+pub const WINDOWS_CRT_FILE: &str = "vcruntime140.dll";
 const LICENSE: &str = "LICENSE";
 const NOTICES: &str = "THIRD_PARTY_NOTICES.md";
 const DISCORD_PACKAGE: &str = "extensions/discord.alcomdextension";
 const FIXTURE_COMMIT: &str = "0000000000000000000000000000000000000000";
 const DIRECTORIES: &[&str] = &["extensions", "licenses"];
-const WINDOWS_SIDECARS: &[&str] = &[
-    "vcruntime140.dll",
-    "vcruntime140_1.dll",
-    "WebView2Loader.dll",
-];
+const WINDOWS_SIDECARS: &[&str] = &[WINDOWS_CRT_FILE, "vcruntime140_1.dll", "WebView2Loader.dll"];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, clap::ValueEnum)]
 pub enum Target {
@@ -99,12 +96,29 @@ pub fn prepare_release(
     root: &Path,
     candidate: &Candidate,
     discord_sha256: &str,
+    windows_crt_sha256: Option<&str>,
 ) -> anyhow::Result<Vec<u8>> {
     ensure!(
         discord_sha256.len() == 64 && discord_sha256.bytes().all(is_lower_hex),
         "pinned Discord package digest must be a lowercase SHA-256"
     );
-    prepare(root, candidate, Purpose::Release, Some(discord_sha256))
+    ensure!(
+        match windows_crt_sha256 {
+            Some(digest) =>
+                candidate.target == Target::Windows
+                    && digest.len() == 64
+                    && digest.bytes().all(is_lower_hex),
+            None => candidate.target != Target::Windows,
+        },
+        "Windows release requires a pinned lowercase SHA-256 for {WINDOWS_CRT_FILE}"
+    );
+    prepare(
+        root,
+        candidate,
+        Purpose::Release,
+        Some(discord_sha256),
+        windows_crt_sha256,
+    )
 }
 
 /// Verifies a complete runtime against the public trust compiled into the release tooling.
@@ -134,7 +148,7 @@ pub fn verify_fixture(
 
 /// Produces a synthetic manifest. The release verifier rejects this purpose.
 pub fn prepare_fixture(root: &Path, candidate: &Candidate) -> anyhow::Result<Vec<u8>> {
-    prepare(root, candidate, Purpose::Fixture, None)
+    prepare(root, candidate, Purpose::Fixture, None, None)
 }
 
 fn prepare(
@@ -142,6 +156,7 @@ fn prepare(
     candidate: &Candidate,
     purpose: Purpose,
     discord_sha256: Option<&str>,
+    windows_crt_sha256: Option<&str>,
 ) -> anyhow::Result<Vec<u8>> {
     candidate.validate(purpose)?;
     let (root, identity) = alcomd_platform::resolve_plain_storage_directory(root)?;
@@ -151,7 +166,7 @@ fn prepare(
         !paths.contains(MANIFEST_NAME) && !paths.contains(SIGNATURE_NAME),
         "staging manifest or signature already exists"
     );
-    let executables = validate_layout(&product, candidate.target, &paths)?;
+    let executables = validate_layout(&product, candidate.target, purpose, &paths)?;
     let mut total = 0_u64;
     let mut files = Vec::with_capacity(paths.len());
     for path in paths {
@@ -160,12 +175,21 @@ fn prepare(
         ensure!(size > 0, "empty product payload file");
         check_payload_size(&mut total, size)?;
         if executables.contains(&path) {
-            check_executable_header(&mut file, candidate.target)?;
+            check_executable_header(
+                &mut file,
+                candidate.target,
+                WINDOWS_SIDECARS.contains(&path.as_str()),
+            )?;
         }
         let sha256 = format_digest(&hash_exact(file, size)?);
         ensure!(
             path != DISCORD_PACKAGE || discord_sha256.is_none_or(|expected| sha256 == expected),
             "staged Discord package does not match the pinned digest"
+        );
+        ensure!(
+            path != WINDOWS_CRT_FILE
+                || windows_crt_sha256.is_none_or(|expected| sha256 == expected),
+            "staged {WINDOWS_CRT_FILE} does not match the pinned digest"
         );
         files.push(SignedFile { path, size, sha256 });
     }
@@ -237,7 +261,7 @@ fn verify(
         .filter(|path| ![MANIFEST_NAME, SIGNATURE_NAME].contains(&path.as_str()))
         .cloned()
         .collect();
-    let executables = validate_layout(&product, candidate.target, &content_paths)?;
+    let executables = validate_layout(&product, candidate.target, purpose, &content_paths)?;
     verify_files(
         &root,
         payload.files,
@@ -245,7 +269,7 @@ fn verify(
         [MANIFEST_NAME, SIGNATURE_NAME],
         |path, file| {
             if executables.contains(path) {
-                check_executable_header(file, candidate.target)?;
+                check_executable_header(file, candidate.target, WINDOWS_SIDECARS.contains(&path))?;
             }
             Ok(())
         },
@@ -269,6 +293,7 @@ fn observe(root: &Path) -> anyhow::Result<BTreeSet<String>> {
 fn validate_layout(
     product: &Product,
     target: Target,
+    purpose: Purpose,
     paths: &BTreeSet<String>,
 ) -> anyhow::Result<BTreeSet<String>> {
     let mut executables = BTreeSet::new();
@@ -285,6 +310,12 @@ fn validate_layout(
             && paths.contains(NOTICES)
             && paths.contains(DISCORD_PACKAGE),
         "missing required product component"
+    );
+    ensure!(
+        target != Target::Windows
+            || purpose != Purpose::Release
+            || paths.contains(WINDOWS_CRT_FILE),
+        "missing required {WINDOWS_CRT_FILE} in the Windows release"
     );
     ensure!(paths.len() <= MAX_FILES, "too many product payload files");
     let mut names = BTreeSet::new();
@@ -329,7 +360,7 @@ fn is_license_path(path: &str) -> bool {
         })
 }
 
-fn check_executable_header(file: &mut File, target: Target) -> anyhow::Result<()> {
+fn check_executable_header(file: &mut File, target: Target, dll: bool) -> anyhow::Result<()> {
     #[cfg(unix)]
     if target != Target::Windows {
         use std::os::unix::fs::PermissionsExt as _;
@@ -352,7 +383,10 @@ fn check_executable_header(file: &mut File, target: Target) -> anyhow::Result<()
             file.seek(SeekFrom::Start(offset))?;
             let mut pe = [0; 26];
             file.read_exact(&mut pe)?;
-            pe.starts_with(b"PE\0\0\x64\x86") && pe[24..26] == [0x0b, 0x02]
+            let characteristics = u16::from_le_bytes(pe[22..24].try_into()?);
+            pe.starts_with(b"PE\0\0\x64\x86")
+                && pe[24..26] == [0x0b, 0x02]
+                && (characteristics & 0x2000 != 0) == dll
         }
         Target::Linux => header.starts_with(b"\x7fELF\x02\x01\x01") && header[18..20] == [62, 0],
         Target::MacOs => header.starts_with(&[0xcf, 0xfa, 0xed, 0xfe, 12, 0, 0, 1]),

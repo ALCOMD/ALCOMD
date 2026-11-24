@@ -57,6 +57,12 @@ struct Arguments {
     /// Pinned SHA-256 of the first-party extension archive.
     #[arg(long, conflicts_with_all = ["fixture", "check"])]
     discord_sha256: Option<String>,
+    /// The x64 VC runtime DLL from a licensed Visual Studio redistributable directory.
+    #[arg(long, requires_all = ["build", "windows_crt_sha256"])]
+    windows_crt: Option<PathBuf>,
+    /// Pinned SHA-256 of the exact app-local Windows VC runtime DLL.
+    #[arg(long, conflicts_with_all = ["fixture", "check"])]
+    windows_crt_sha256: Option<String>,
 }
 
 pub fn run(root: &Path) -> anyhow::Result<()> {
@@ -78,6 +84,7 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
         return Ok(());
     }
     let path = std::path::absolute(args.staging.context("staging directory is required")?)?;
+    let crt_pin = args.windows_crt_sha256.as_deref();
     if args.package_layout {
         let output = std::path::absolute(args.output.context("package output is required")?)?;
         package::export(
@@ -93,6 +100,11 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
             args.discord_package
                 .context("Discord package is required")?,
         )?;
+        let crt_source = args.windows_crt.map(std::path::absolute).transpose()?;
+        ensure!(
+            crt_source.is_some() == crt_pin.is_some(),
+            "supply both --windows-crt and --windows-crt-sha256 for the Windows build"
+        );
         build::runtime(
             root,
             &path,
@@ -102,6 +114,7 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
             args.discord_sha256
                 .as_deref()
                 .context("Discord digest is required")?,
+            crt_source.as_deref().zip(crt_pin),
         )?;
     } else if args.fixture {
         let key = SigningKey::from_bytes(&FIXTURE_KEY);
@@ -120,7 +133,7 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
             .as_deref()
             .context("Discord digest is required for release preparation")?;
         let (staging, identity) = alcomd_platform::resolve_plain_storage_directory(&path)?;
-        let bytes = prepare_release(&staging, &candidate, digest)?;
+        let bytes = prepare_release(&staging, &candidate, digest, crt_pin)?;
         build::verify_discord_package(
             root,
             &staging.join("extensions/discord.alcomdextension"),
@@ -229,6 +242,7 @@ fn synthetic_executable(target: Target) -> [u8; 90] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alcomd_updater::distribution::WINDOWS_CRT_FILE;
 
     fn fixture(target: Target) -> anyhow::Result<(tempfile::TempDir, Candidate)> {
         let product: ProductConfig = toml::from_str(include_str!("../../alcomd.product.toml"))?;
@@ -352,15 +366,30 @@ mod tests {
         let archive = fs::File::open(root.path().join("extensions/discord.alcomdextension"))?;
         let size = archive.metadata()?.len();
         let hash = format_digest(&alcomd_updater::hash_exact(archive, size)?);
-        assert!(prepare_release(root.path(), &candidate, &hash).is_err());
+        let mut dll = synthetic_executable(Target::Windows);
+        dll[87] = 0x20;
+        let crt = root.path().join(WINDOWS_CRT_FILE);
+        fs::write(&crt, dll)?;
+        let crt_hash = format_digest(&alcomd_updater::hash_exact(fs::File::open(&crt)?, 90)?);
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(&crt_hash)).is_err());
         candidate.source_commit = "1".repeat(40);
-        prepare_release(root.path(), &candidate, &hash)?;
-        assert!(prepare_release(root.path(), &candidate, &"1".repeat(64)).is_err());
+        prepare_release(root.path(), &candidate, &hash, Some(&crt_hash))?;
+        assert!(prepare_release(root.path(), &candidate, &hash, None).is_err());
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(&"1".repeat(64))).is_err());
+        assert!(
+            prepare_release(root.path(), &candidate, &"1".repeat(64), Some(&crt_hash)).is_err()
+        );
+        fs::remove_file(&crt)?;
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(&crt_hash)).is_err());
+        fs::write(&crt, synthetic_executable(Target::Windows))?;
+        let non_dll = format_digest(&alcomd_updater::hash_exact(fs::File::open(&crt)?, 90)?);
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(&non_dll)).is_err());
+        fs::write(crt, dll)?;
         let cli = root.path().join("alcomd-cli.exe");
         fs::write(&cli, synthetic_executable(Target::Linux))?;
-        assert!(prepare_release(root.path(), &candidate, &hash).is_err());
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(&crt_hash)).is_err());
         fs::remove_file(cli)?;
-        assert!(prepare_release(root.path(), &candidate, &hash).is_err());
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(&crt_hash)).is_err());
         Ok(())
     }
 }

@@ -3,7 +3,9 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::process::Command;
 
-use alcomd_updater::distribution::{Candidate, Target, prepare_release};
+use alcomd_updater::distribution::{
+    Candidate, Target, WINDOWS_CRT_FILE, format_digest, prepare_release,
+};
 use anyhow::{Context, ensure};
 use clap::ValueEnum;
 
@@ -16,6 +18,7 @@ pub(super) fn runtime(
     candidate: &Candidate,
     extension: &Path,
     extension_digest: &str,
+    windows_crt: Option<(&Path, &str)>,
 ) -> anyhow::Result<()> {
     let target = candidate
         .target
@@ -30,6 +33,10 @@ pub(super) fn runtime(
                 Target::MacOs => cfg!(target_os = "macos"),
             },
         "build the product runtime on the matching operating system and architecture"
+    );
+    ensure!(
+        (candidate.target == Target::Windows) == windows_crt.is_some(),
+        "the Windows build requires an app-local VC runtime file and its SHA-256"
     );
     check_source_commit(root, &candidate.source_commit)?;
     let signature = Command::new("git")
@@ -63,6 +70,16 @@ pub(super) fn runtime(
     let packaged = extensions.join("discord.alcomdextension");
     copy_component(extension, &packaged)?;
     verify_discord_package(root, &packaged, extension_digest)?;
+    if let Some((source, digest)) = windows_crt {
+        let path = staged.join(WINDOWS_CRT_FILE);
+        copy_component(source, &path)?;
+        let (file, _) = alcomd_platform::open_plain_file(&path)?;
+        let size = file.metadata()?.len();
+        ensure!(
+            format_digest(&alcomd_updater::hash_exact(file, size)?) == digest,
+            "app-local VC runtime does not match the pinned SHA-256"
+        );
+    }
 
     let build_cache = root.join("target");
     alcomd_platform::prepare_storage_directory(&build_cache)?;
@@ -91,7 +108,12 @@ pub(super) fn runtime(
         &staged.join("THIRD_PARTY_NOTICES.md"),
     )?;
     alcomd_platform::sync_directory(&extensions)?;
-    let bytes = prepare_release(staged, candidate, extension_digest)?;
+    let bytes = prepare_release(
+        staged,
+        candidate,
+        extension_digest,
+        windows_crt.map(|(_, digest)| digest),
+    )?;
     publish_manifest(staged, &bytes)?;
     check_source_commit(root, &candidate.source_commit)?;
     ensure!(
@@ -189,7 +211,12 @@ fn run(
     command.env("MACOSX_DEPLOYMENT_TARGET", "11.0");
     let status = command
         .current_dir(root)
-        .env("CARGO_TARGET_DIR", build_root)
+        // Tauri interpolates OUT_DIR into a permission glob. Use the existing
+        // ordinary spelling of the same verified directory for child tools.
+        .env(
+            "CARGO_TARGET_DIR",
+            alcomd_platform::external_filesystem_path(build_root).as_os_str(),
+        )
         .status()
         .with_context(|| format!("could not start {description}"))?;
     ensure!(status.success(), "{description} failed ({status})");

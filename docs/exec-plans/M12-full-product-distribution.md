@@ -102,6 +102,10 @@ Linux 在 Ubuntu 22.04 构建，逐个核对发行 ELF 和本地动态库，最�
 
 `--prepare --staging <directory> --source-sha <full-commit> --discord-sha256 <sha256>` 可为单独构建的运行目录生成待签清单。此入口核对目录内容、目标与第一方扩展，构建来源由构建记录证明。清单绑定版本、目标、源提交、完整文件集合、大小和 SHA-256。签名输入由 `ALCOMD product payload v1`、一个 NUL 字节以及 `product-payload.json` 的准确字节组成。`product-payload.sig` 是 128 个小写十六进制字符。正式 `--check` 以构建时注入的发布公钥验证准确字节，再核对每个文件。
 
+对 Windows Release 程序的 PE 导入检查确认六个组件依赖 `vcruntime140.dll`。Windows `--build` 接收来自 Visual Studio x64 再发行目录的 `--windows-crt <dll> --windows-crt-sha256 <sha256>`，复制到七个程序所在目录。`--prepare` 接收相同的 `--windows-crt-sha256`，并核对已暂存文件。Windows 发行验证要求同目录存在签名清单覆盖的 x64 DLL。隔离候选选用 Microsoft 签名的 14.44.35211.0，SHA-256 为 `d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066`。[Microsoft 再发行规则](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files)
+
+Windows 发行构建为 Cargo 和 Tauri 提供已核验为同一对象的普通路径。Tauri 的权限文件枚举使用 glob，Windows 扩展路径中的问号会使该轮枚举遗漏 Core 权限。构建继续校验现有的 GUI 权限合同。[Tauri 权限路径问题](https://github.com/tauri-apps/tauri/issues/11950)
+
 `--check --fixture` 创建并校验一次性夹具。`--prepare --fixture --staging <directory>` 可用公开合成密钥暂存真实的开发二进制，随后用 `--check --fixture --staging <directory>` 复验。合成载荷有独立用途标记和全零源提交，正式验签路径拒绝。普通运行载荷要求产品许可证和第三方声明，排除 v3 迁移器与 Loopback API。Windows 专用辅助库仅接受清单允许的文件名。
 
 平台封装、外部发行资产清单与签名、干净签名候选验收仍按阶段 1 继续。安装登记、卸载与 v4 下载更新分别按后续任务接入。

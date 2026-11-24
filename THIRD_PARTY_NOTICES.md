@@ -22,6 +22,10 @@ ALCOMD v4 自有代码统一使用 `AGPL-3.0-only`，但第三方依赖与资产
 
 构建依赖的许可证记录由 Cargo 与 npm lockfile 保留，发行前必须生成完整依赖清单。
 
+Windows x64 发行载荷随程序放置 Microsoft Visual C++ 运行库 `vcruntime140.dll`。
+该文件取自 Visual Studio 的可再发行目录，保持原始字节并受 Microsoft Software License Terms 约束。
+[Microsoft Visual C++ 再发行说明](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files)
+
 Official GUI 容器自绘滚动条使用 `overlayscrollbars 2.17.0`（MIT），来源为
 `https://github.com/KingSora/OverlayScrollbars`，版权及许可原文见该仓库的 `LICENSE`；
 版本与完整性摘要固定在 `package-lock.json`，未引入 v3 的滚动条源码。
