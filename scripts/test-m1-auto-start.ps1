@@ -1,9 +1,11 @@
+param([string]$BinDirectory = ".\target\debug")
+
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
 Set-Location (Resolve-Path (Join-Path $PSScriptRoot ".."))
-$daemonPath = (Resolve-Path -LiteralPath ".\target\debug\alcomd.exe").Path
-$cliPath = (Resolve-Path -LiteralPath ".\target\debug\alcomd-cli.exe").Path
+$daemonPath = (Resolve-Path -LiteralPath (Join-Path $BinDirectory "alcomd.exe")).Path
+$cliPath = (Resolve-Path -LiteralPath (Join-Path $BinDirectory "alcomd-cli.exe")).Path
 $existing = @(
     Get-Process -Name "alcomd" -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -eq $daemonPath }
@@ -31,6 +33,7 @@ function Get-TestDaemons {
         ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
 }
 Assert-TestDataDirectory
+$arguments = @("--data-dir", ('"' + $dataDirectory + '"'), "--json", "system", "status")
 $outputs = @(
     (Join-Path $env:TEMP "alcomd-m1-$token-1.out"),
     (Join-Path $env:TEMP "alcomd-m1-$token-1.err"),
@@ -40,13 +43,13 @@ $outputs = @(
 
 try {
     $first = Start-Process -FilePath $cliPath `
-        -ArgumentList @("--data-dir", $dataDirectory, "--json", "system", "status") `
+        -ArgumentList $arguments `
         -RedirectStandardOutput $outputs[0] `
         -RedirectStandardError $outputs[1] `
         -PassThru `
         -WindowStyle Hidden
     $second = Start-Process -FilePath $cliPath `
-        -ArgumentList @("--data-dir", $dataDirectory, "--json", "system", "status") `
+        -ArgumentList $arguments `
         -RedirectStandardOutput $outputs[2] `
         -RedirectStandardError $outputs[3] `
         -PassThru `
@@ -54,6 +57,11 @@ try {
     $first.WaitForExit()
     $second.WaitForExit()
     if ($first.ExitCode -ne 0 -or $second.ExitCode -ne 0) {
+        foreach ($path in $outputs[1], $outputs[3]) {
+            Get-Content -LiteralPath $path -Tail 10 | ForEach-Object {
+                Write-Host ($_.Replace($dataDirectory, "<fixture-data>").Replace($temporaryRoot, "<temporary-root>"))
+            }
+        }
         throw "Concurrent CLI startup failed: $($first.ExitCode), $($second.ExitCode)."
     }
 
