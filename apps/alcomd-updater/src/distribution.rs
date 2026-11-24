@@ -1,6 +1,6 @@
 //! Offline validation for a complete v4 runtime on a supported release target.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -122,18 +122,35 @@ pub fn prepare_release(
 }
 
 /// Verifies a complete runtime against the public trust compiled into the release tooling.
-pub fn verify_release(root: &Path, candidate: &Candidate) -> anyhow::Result<[u8; 32]> {
-    Ok(verify(root, candidate, Purpose::Release, &release_trust()?)?.manifest_sha256)
+pub fn verify_release(root: &Path, candidate: &Candidate) -> anyhow::Result<VerifiedRuntime> {
+    verify(root, candidate, Purpose::Release, &release_trust()?)
 }
 
 pub struct VerifiedRuntime {
     pub manifest_sha256: [u8; 32],
-    files: BTreeSet<String>,
+    file_digests: BTreeMap<String, [u8; 32]>,
 }
 
 impl VerifiedRuntime {
     pub fn files(&self) -> impl Iterator<Item = &str> {
-        self.files.iter().map(String::as_str)
+        self.file_digests.keys().map(String::as_str)
+    }
+
+    /// Verifies a regular file copied to a separate entry point against the signed runtime file.
+    pub fn verify_copy(&self, relative: &str, path: &Path) -> anyhow::Result<()> {
+        let expected = self
+            .file_digests
+            .get(relative)
+            .context("file is not in the verified product payload")?;
+        let (file, _) = alcomd_platform::open_plain_file(path)?;
+        let size = file.metadata()?.len();
+        let mut total = 0;
+        check_payload_size(&mut total, size)?;
+        ensure!(
+            hash_exact(file, size)? == *expected,
+            "file copy does not match the signed product payload"
+        );
+        Ok(())
     }
 }
 
@@ -262,7 +279,7 @@ fn verify(
         .cloned()
         .collect();
     let executables = validate_layout(&product, candidate.target, purpose, &content_paths)?;
-    verify_files(
+    let file_digests = verify_files(
         &root,
         payload.files,
         observed,
@@ -280,7 +297,7 @@ fn verify(
     );
     Ok(VerifiedRuntime {
         manifest_sha256: Sha256::digest(bytes).into(),
-        files: content_paths,
+        file_digests,
     })
 }
 

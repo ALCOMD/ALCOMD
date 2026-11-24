@@ -35,8 +35,8 @@ struct Arguments {
     /// Verify the manifest signature and the entire staged runtime.
     #[arg(long)]
     check: bool,
-    /// Export native packager inputs for a signed local fixture.
-    #[arg(long, requires_all = ["fixture", "staging", "format", "output"])]
+    /// Export signed Windows product inputs or native test fixture inputs.
+    #[arg(long, requires_all = ["staging", "format", "output"])]
     package_layout: bool,
     #[arg(long, value_enum, requires = "package_layout")]
     format: Option<package::Format>,
@@ -55,13 +55,13 @@ struct Arguments {
     #[arg(long, requires = "build")]
     discord_package: Option<PathBuf>,
     /// Pinned SHA-256 of the first-party extension archive.
-    #[arg(long, conflicts_with_all = ["fixture", "check"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout"])]
     discord_sha256: Option<String>,
     /// The x64 VC runtime DLL from a licensed Visual Studio redistributable directory.
     #[arg(long, requires_all = ["build", "windows_crt_sha256"])]
     windows_crt: Option<PathBuf>,
     /// Pinned SHA-256 of the exact app-local Windows VC runtime DLL.
-    #[arg(long, conflicts_with_all = ["fixture", "check"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout"])]
     windows_crt_sha256: Option<String>,
 }
 
@@ -94,6 +94,7 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
             &product,
             &candidate,
             args.format.context("package format is required")?,
+            args.fixture,
         )?;
     } else if args.build {
         let extension = std::path::absolute(
@@ -146,8 +147,11 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
         publish_manifest(&staging, &bytes)?;
         println!("Prepared {MANIFEST_NAME} for {}", candidate.version);
     } else {
-        let digest = verify_release(&path, &candidate)?;
-        println!("Verified runtime manifest {}", format_digest(&digest));
+        let verified = verify_release(&path, &candidate)?;
+        println!(
+            "Verified runtime manifest {}",
+            format_digest(&verified.manifest_sha256)
+        );
     }
     Ok(())
 }
@@ -275,7 +279,8 @@ mod tests {
                 &inno,
                 &product,
                 &candidate,
-                package::Format::Inno
+                package::Format::Inno,
+                true,
             )
             .is_err()
         );
@@ -284,8 +289,10 @@ mod tests {
             (&deb, package::Format::Deb),
             (&appimage, package::Format::Appimage),
         ] {
-            package::export(&root, &stage, name, &product, &candidate, format)?;
-            assert!(package::export(&root, &stage, name, &product, &candidate, format).is_err());
+            package::export(&root, &stage, name, &product, &candidate, format, true)?;
+            assert!(
+                package::export(&root, &stage, name, &product, &candidate, format, true).is_err()
+            );
         }
         assert!(deb.join("deb-root/DEBIAN/control").is_file());
         assert!(appimage.join("AppDir/AppRun").is_file());
@@ -324,7 +331,8 @@ mod tests {
                 &output,
                 &product,
                 &candidate,
-                package::Format::Deb
+                package::Format::Deb,
+                true,
             )
             .is_err()
         );
@@ -345,6 +353,18 @@ mod tests {
         let (root, mut candidate) = fixture(Target::Windows)?;
         let correct = SigningKey::from_bytes(&[37; 32]).verifying_key();
         let wrong = SigningKey::from_bytes(&[38; 32]).verifying_key();
+        let verified = verify_fixture(root.path(), &candidate, &correct)?;
+        verified.verify_copy("LICENSE", &root.path().join("LICENSE"))?;
+        assert!(
+            verified
+                .verify_copy("LICENSE", &root.path().join("THIRD_PARTY_NOTICES.md"))
+                .is_err()
+        );
+        assert!(
+            verified
+                .verify_copy("ABSENT", &root.path().join("LICENSE"))
+                .is_err()
+        );
         assert!(verify_fixture(root.path(), &candidate, &wrong).is_err());
         candidate.version.patch += 1;
         assert!(verify_fixture(root.path(), &candidate, &correct).is_err());

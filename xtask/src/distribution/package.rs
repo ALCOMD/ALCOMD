@@ -4,7 +4,8 @@ use std::path::Path;
 
 use alcomd_platform::{publish_path_no_replace, resolve_plain_storage_directory, sync_directory};
 use alcomd_updater::distribution::{
-    Candidate, MANIFEST_NAME, SIGNATURE_NAME, Target, format_digest, verify_fixture,
+    Candidate, MANIFEST_NAME, SIGNATURE_NAME, Target, VerifiedRuntime, WINDOWS_CRT_FILE,
+    format_digest, verify_fixture, verify_release,
 };
 use anyhow::{Context, ensure};
 use clap::ValueEnum;
@@ -26,6 +27,7 @@ pub(super) fn export(
     product: &ProductConfig,
     candidate: &Candidate,
     format: Format,
+    for_fixture: bool,
 ) -> anyhow::Result<()> {
     let target = match format {
         Format::Inno => Target::Windows,
@@ -35,9 +37,20 @@ pub(super) fn export(
         candidate.target == target,
         "package format does not match target"
     );
+    ensure!(
+        for_fixture || format == Format::Inno,
+        "release layout export is available for Windows Inno packaging"
+    );
     let (source, _) = resolve_plain_storage_directory(source)?;
-    let key = SigningKey::from_bytes(&FIXTURE_KEY).verifying_key();
-    let verified = verify_fixture(&source, candidate, &key)?;
+    let verify = |path: &Path| {
+        if for_fixture {
+            let key = SigningKey::from_bytes(&FIXTURE_KEY).verifying_key();
+            verify_fixture(path, candidate, &key)
+        } else {
+            verify_release(path, candidate)
+        }
+    };
+    let verified = verify(&source)?;
     let name = output
         .file_name()
         .context("package layout must have a name")?;
@@ -74,14 +87,18 @@ pub(super) fn export(
         copy_component(&source.join(relative), &path)?;
     }
     ensure!(
-        verify_fixture(&runtime, candidate, &key)?.manifest_sha256 == verified.manifest_sha256,
+        verify(&runtime)?.manifest_sha256 == verified.manifest_sha256,
         "package copy does not match verified runtime identity"
     );
     let manifest_digest = format_digest(&verified.manifest_sha256);
-    match format {
-        Format::Inno => export_inno(layout, &fixture, &version)?,
-        Format::Appimage => export_appimage(root, layout, &fixture, &manifest_digest)?,
-        Format::Deb => export_deb(layout, &fixture, &candidate.version)?,
+    if for_fixture {
+        match format {
+            Format::Inno => export_inno(layout, &fixture, &version)?,
+            Format::Appimage => export_appimage(root, layout, &fixture, &manifest_digest)?,
+            Format::Deb => export_deb(layout, &fixture, &candidate.version)?,
+        }
+    } else {
+        export_windows_bin(layout, &runtime, product, &verified)?;
     }
     #[cfg(unix)]
     match format {
@@ -100,7 +117,30 @@ pub(super) fn export(
     sync_directory(layout)?;
     publish_path_no_replace(layout, &destination)?;
     sync_directory(&parent)?;
-    println!("Prepared {format:?} packing inputs for fixture runtime {manifest_digest}");
+    let purpose = if for_fixture { "fixture" } else { "release" };
+    println!("Prepared {format:?} packing inputs for {purpose} runtime {manifest_digest}");
+    Ok(())
+}
+
+fn export_windows_bin(
+    layout: &Path,
+    runtime: &Path,
+    product: &ProductConfig,
+    verified: &VerifiedRuntime,
+) -> anyhow::Result<()> {
+    let bin = layout.join("bin");
+    fs::create_dir(&bin)?;
+    let cli = format!(
+        "{}{}",
+        product.binaries.cli,
+        Target::Windows.executable_suffix()
+    );
+    for relative in [cli.as_str(), WINDOWS_CRT_FILE] {
+        let output = bin.join(relative);
+        copy_component(&runtime.join(relative), &output)?;
+        verified.verify_copy(relative, &output)?;
+    }
+    sync_directory(&bin)?;
     Ok(())
 }
 
