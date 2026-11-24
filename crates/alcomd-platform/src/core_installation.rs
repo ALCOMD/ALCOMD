@@ -45,10 +45,7 @@ pub fn registered_core_executable(config: &DataConfig) -> io::Result<Option<Path
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     };
-    let mut data = Vec::new();
-    file.take((MAX_RUNTIME_PATH_BYTES + 2) as u64)
-        .read_to_end(&mut data)?;
-    let runtime = parse_runtime_directory(&data)?;
+    let runtime = read_runtime_directory(&file)?;
     #[cfg(unix)]
     let runtime = crate::unix::validate_absolute_runtime_path(&runtime)?;
     let candidate = runtime.join(CORE_EXECUTABLE_NAME);
@@ -61,6 +58,22 @@ pub fn registered_core_executable(config: &DataConfig) -> io::Result<Option<Path
     })?;
     Ok(Some(candidate))
 }
+
+fn read_runtime_directory(file: &std::fs::File) -> io::Result<PathBuf> {
+    let mut data = Vec::new();
+    file.take((MAX_RUNTIME_PATH_BYTES + 2) as u64)
+        .read_to_end(&mut data)?;
+    parse_runtime_directory(&data)
+}
+
+#[cfg(windows)]
+#[path = "windows_installation_registration.rs"]
+mod registration;
+#[cfg(windows)]
+pub use registration::{
+    check_windows_core_registration, publish_windows_core_registration,
+    remove_windows_core_registration, windows_installation_runtime,
+};
 
 fn parse_runtime_directory(data: &[u8]) -> io::Result<PathBuf> {
     let line = data
@@ -295,5 +308,67 @@ mod tests {
         fs::remove_file(registration).expect("remove registration");
         fs::remove_dir(data).expect("remove data");
         fs::remove_dir(root).expect("remove root");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_install_registration_is_idempotent_and_preserves_other_owners_and_data() {
+        use std::fs;
+
+        let root = crate::local_app_data_directory()
+            .expect("native profile")
+            .join(format!(
+                "alcomd-install-registration-{}-{}",
+                std::process::id(),
+                timestamp()
+            ));
+        let data = root.join("data");
+        let pending = root.join("runtime").join(env!("CARGO_PKG_VERSION"));
+        let other_runtime = root.join("other");
+        for directory in [&data, &pending, &other_runtime] {
+            fs::create_dir_all(directory).expect("isolated directory");
+        }
+        for runtime in [&pending, &other_runtime] {
+            fs::write(runtime.join(CORE_EXECUTABLE_NAME), "test executable").expect("fixture");
+        }
+        let preserved = data.join("state.db");
+        fs::write(&preserved, "synthetic state").expect("fixture");
+        let runtime = windows_installation_runtime(&pending.join(CORE_EXECUTABLE_NAME))
+            .expect("trusted versioned runtime");
+        let other_runtime = fs::canonicalize(other_runtime).expect("other canonical path");
+        let config = DataConfig::isolated(data);
+        let registration = core_installation_registration(&config).expect("registration path");
+
+        assert!(!check_windows_core_registration(&config, &runtime).expect("absent pointer"));
+        publish_windows_core_registration(&config, &runtime).expect("publish new pointer");
+        let identity = crate::file_identity(&registration).expect("published file identity");
+        publish_windows_core_registration(&config, &runtime).expect("repeat publication");
+        assert_eq!(
+            crate::file_identity(&registration).expect("same identity"),
+            identity
+        );
+        assert_eq!(
+            registered_core_executable(&config).expect("launchable registration"),
+            Some(runtime.join(CORE_EXECUTABLE_NAME))
+        );
+        assert!(publish_windows_core_registration(&config, &other_runtime).is_err());
+        assert!(remove_windows_core_registration(&config, &other_runtime).is_err());
+        assert_eq!(
+            crate::file_identity(&registration).expect("still present"),
+            identity
+        );
+        let alias = root.join("registration-link");
+        fs::hard_link(&registration, &alias).expect("linked registration");
+        assert!(remove_windows_core_registration(&config, &runtime).is_err());
+        assert!(registration.exists() && alias.exists());
+        fs::remove_file(alias).expect("remove isolated fixture link");
+        remove_windows_core_registration(&config, &runtime).expect("unregister matching pointer");
+        remove_windows_core_registration(&config, &runtime).expect("repeat removal");
+        assert!(!registration.exists());
+        assert_eq!(
+            fs::read_to_string(preserved).expect("data survives"),
+            "synthetic state"
+        );
+        fs::remove_dir_all(root).expect("remove isolated fixture");
     }
 }

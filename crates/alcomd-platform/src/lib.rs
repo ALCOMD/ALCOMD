@@ -24,6 +24,11 @@ mod unity_registration;
 pub use core_installation::{
     CORE_EXECUTABLE_NAME, core_installation_registration, registered_core_executable,
 };
+#[cfg(windows)]
+pub use core_installation::{
+    check_windows_core_registration, publish_windows_core_registration,
+    remove_windows_core_registration, windows_installation_runtime,
+};
 pub use credential_vault::{delete_credential, read_credential, write_credential};
 pub use external_path::external_filesystem_path;
 pub use storage_directories::{

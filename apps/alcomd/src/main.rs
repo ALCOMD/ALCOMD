@@ -22,6 +22,9 @@ enum Command {
     ImportNativeState(NativeStage),
     #[command(hide = true)]
     CheckNativeState(NativeStage),
+    #[cfg(windows)]
+    #[command(hide = true)]
+    RegisterInstallation,
 }
 
 #[derive(Debug, Args)]
@@ -63,6 +66,19 @@ async fn main() -> anyhow::Result<()> {
             Command::CheckNativeState(stage) => {
                 alcomd::check_native_state(&stage.bundle, &stage.data_dir, stage.discord_options())
                     .await?
+            }
+            #[cfg(windows)]
+            Command::RegisterInstallation => {
+                anyhow::ensure!(
+                    arguments.runtime_dir.is_none(),
+                    "invalid Windows installation endpoint"
+                );
+                let data = arguments
+                    .data_dir
+                    .map(alcomd_platform::DataConfig::isolated)
+                    .unwrap_or_default();
+                alcomd::register_windows_installation(data).await?;
+                return Ok(());
             }
         };
         println!("{}", serde_json::to_string(&receipt)?);

@@ -22,6 +22,21 @@ enum Command {
         #[arg(long)]
         work_directory: PathBuf,
     },
+    #[cfg(windows)]
+    /// Initialize the current user's Core and publish its installed runtime registration.
+    RegisterInstalledCore(InstallCoreArguments),
+    #[cfg(windows)]
+    /// Remove the current user's registration when it belongs to this installed runtime.
+    UnregisterInstalledCore(InstallCoreArguments),
+}
+
+#[cfg(windows)]
+#[derive(Debug, Args)]
+struct InstallCoreArguments {
+    #[arg(long)]
+    source_sha: String,
+    #[arg(long, hide = true)]
+    data_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -59,6 +74,20 @@ fn main() -> anyhow::Result<()> {
             rollback_v3(&work_directory)?;
             println!("Uncommitted migration staging discarded");
             return Ok(());
+        }
+        #[cfg(windows)]
+        Command::RegisterInstalledCore(arguments) => {
+            return alcomd_bootstrap::register_installed_core(
+                arguments.source_sha,
+                arguments.data_dir.as_deref(),
+            );
+        }
+        #[cfg(windows)]
+        Command::UnregisterInstalledCore(arguments) => {
+            return alcomd_bootstrap::unregister_installed_core(
+                arguments.source_sha,
+                arguments.data_dir.as_deref(),
+            );
         }
     };
     let MigrateArguments {

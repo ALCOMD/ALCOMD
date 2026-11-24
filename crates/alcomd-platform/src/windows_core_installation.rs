@@ -17,11 +17,15 @@ use super::file_link_count;
 use super::security::{current_user_sid_string, is_fixed_drive, validate_installation_dacl};
 
 pub(crate) fn open_registration(path: &Path) -> io::Result<File> {
-    open_checked_file(path, true)
+    open_checked_file(path, FILE_READ_DATA)
+}
+
+pub(crate) fn open_registration_for_removal(path: &Path) -> io::Result<File> {
+    open_checked_file(path, FILE_READ_DATA | DELETE)
 }
 
 pub(crate) fn validate_core_executable(path: &Path) -> io::Result<()> {
-    open_checked_file(path, false).map(drop)
+    open_checked_file(path, 0).map(drop)
 }
 
 const REPLACE_ACCESS: u32 =
@@ -29,7 +33,7 @@ const REPLACE_ACCESS: u32 =
 const MODIFY_ACCESS: u32 =
     REPLACE_ACCESS | FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA;
 
-fn open_checked_file(path: &Path, read: bool) -> io::Result<File> {
+pub(crate) fn validate_registration_parent(path: &Path) -> io::Result<()> {
     let root = local_drive_root(path)?;
     let mut directory = root;
     let directories = path.parent().ok_or_else(untrusted)?;
@@ -52,8 +56,14 @@ fn open_checked_file(path: &Path, read: bool) -> io::Result<File> {
         check_directory(&directory, &current_sid, mask)?;
     }
 
+    Ok(())
+}
+
+fn open_checked_file(path: &Path, access: u32) -> io::Result<File> {
+    validate_registration_parent(path)?;
+    let current_sid = current_user_sid_string()?;
     let file = OpenOptions::new()
-        .access_mode(READ_CONTROL | FILE_READ_ATTRIBUTES | if read { FILE_READ_DATA } else { 0 })
+        .access_mode(READ_CONTROL | FILE_READ_ATTRIBUTES | access)
         .share_mode(FILE_SHARE_READ)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
         .open(path)?;

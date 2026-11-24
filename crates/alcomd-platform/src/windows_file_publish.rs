@@ -3,6 +3,7 @@
 
 use std::io;
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::io::AsRawHandle;
 use std::path::Path;
 
 pub(crate) fn publish_path_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
@@ -34,4 +35,29 @@ pub(crate) fn publish_path_no_replace(source: &Path, destination: &Path) -> io::
     } else {
         Ok(())
     }
+}
+
+/// Deletes the file identified by an already authorized, exclusively held handle.
+pub(crate) fn delete_open_file(file: std::fs::File) -> io::Result<()> {
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_DISPOSITION_INFO, FileDispositionInfo, SetFileInformationByHandle,
+    };
+
+    let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+    // SAFETY: the caller owns the live file handle opened with DELETE access.
+    // The initialized disposition is valid for the duration of this call.
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle().cast(),
+            FileDispositionInfo,
+            (&raw const disposition).cast(),
+            std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    // Closing this non-delete-shared handle completes deletion.
+    drop(file);
+    Ok(())
 }

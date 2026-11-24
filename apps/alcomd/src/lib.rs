@@ -237,15 +237,7 @@ where
         Arc::new(storage_platform::PlatformStorageDirectories),
     )
     .await?;
-    applications
-        .m3
-        .recover_repository_credentials()
-        .await
-        .map_err(|_| {
-            BindError::Io(std::io::Error::other(
-                "repository credential recovery unavailable",
-            ))
-        })?;
+    recover_startup_credentials(&applications).await?;
     let mut initial_repository_sync =
         builtin_repositories::start(&applications.store, &applications.m3).await?;
     let result = run_listener(
@@ -257,6 +249,36 @@ where
     .await;
     initial_repository_sync.shutdown().await;
     result.map_err(BindError::Io)
+}
+
+/// Initializes and checks the selected user's store before publishing the Windows install.
+#[cfg(windows)]
+pub async fn register_windows_installation(data: DataConfig) -> Result<(), BindError> {
+    let runtime = alcomd_platform::windows_installation_runtime(&std::env::current_exe()?)?;
+    if alcomd_platform::check_windows_core_registration(&data, &runtime)? {
+        return Ok(());
+    }
+    let (_listener, applications) = initialize_daemon_with_directories(
+        IpcConfig::default(),
+        data.clone(),
+        Arc::new(storage_platform::PlatformStorageDirectories),
+    )
+    .await?;
+    recover_startup_credentials(&applications).await?;
+    alcomd_platform::publish_windows_core_registration(&data, &runtime)?;
+    Ok(())
+}
+
+async fn recover_startup_credentials(applications: &Applications) -> Result<(), BindError> {
+    applications
+        .m3
+        .recover_repository_credentials()
+        .await
+        .map_err(|_| {
+            BindError::Io(io::Error::other(
+                "repository credential recovery unavailable",
+            ))
+        })
 }
 
 async fn initialize_daemon_with_directories(
