@@ -20,7 +20,7 @@ GUI、CLI 和 MCP 的入口、对应 Core 用例及自动化测试见[绝对路�
 - State1 由一份初始 DDL 直接创建。已存在的数据库按当前标识、版本和结构识别，输入未通过现行结构校验时，在启用 WAL 或恢复前保全原文件。
 - 生命周期和数据边界见 [State1](../../specs/storage/state-v1.md) 与 [Config1](../../specs/config/settings-v1.md)。
 - Config1 使用当前完整 JSON/TOML 合同中的生效字段。设置按现行 TOML 文档读取和写入。Core 在打开数据库后执行持久任务恢复，打开任何一侧前同时预检数据库与配置。
-- 已撤销的备份登记、归档清单、恢复计划、MCP 逐路径审批、开发数据升级和旧模板文件自动清理从生产路径移除。保留通用任务、幂等回执、项目登记及恢复所需的文件系统日志。
+- 已撤销的备份登记、归档清单、恢复计划、MCP 逐路径审批、开发数据升级和旧模板文件自动清理从生产路径移除。删除旧恢复计划遗留的未使用错误名，并同步 RPC、MCP 和派生项目工具 Schema。保留通用任务、幂等回执、项目登记及恢复所需的文件系统日志。
 - 公共变更影响测试期 v4 客户端和数据。协议 major 仍为 1，ZIP 和 MCP 工作流通过更新后的 capability 协商。
 
 ## v3 迁移和删除边界
@@ -32,7 +32,7 @@ GUI、CLI 和 MCP 的入口、对应 Core 用例及自动化测试见[绝对路�
 - Bootstrap 对恢复源、健康检查、提交点和中断恢复写持久记录。提交前的失败应能恢复到 v3 可启动状态。提交后只可清理清单中经过验证与另行授权的确切实例。现有 [v3 实例清单](../../migrations/v3/artifacts.toml) 保持观测和审批证据，未确认条目保持原位。
 - 本机 bridge 校验签名载荷并在同卷暂存目录完成导出、导入、Core 重开对账和独占发布。发布之前还需要绑定候选载荷与安装范围的签名平台验收报告。用户侧重新验证数据包和本地状态摘要，无须逐账号签名。开发构建使用合成密钥测试失败路径和恢复，正式签名材料另行授权。
 - `alcomd-import` 只定义当前原生数据包。Core 依赖此类型包和已有 SHA-256 实现。独立迁移器复用平台的无链接读取、持久写入和当前用户凭据库。Bootstrap/Updater 复用平台的路径身份、目录持久化和原子发布。依赖均来自整仓现有锁定版本，避免重复实现平台校验；模块边界由 `cargo xtask check` 验证。
-- 选择性导入使用同一原生 SDK 向运行中的 Core 提交明确选择的内容。支持 VCC 与旧 ALCOM 的项目、Unity 登记、无认证仓库和本地包，以及三个来源的已识别设置、主题和模板。模板申请绑定源内容摘要，存档转换产物使用固定暂存目录恢复同键操作。已有不同内容的同标识模板保持原样。真实脱敏样本仍待复验。通过既有用例复用幂等、revision、路径校验与现有记录保护，无需新增公共方法。
+- 选择性导入使用同一原生 SDK 向运行中的 Core 提交明确选择的内容。支持 VCC 与旧 ALCOM 的项目、Unity 登记、无认证仓库和本地包，以及三个来源的已识别设置、主题和模板。模板申请绑定源内容摘要，存档转换产物使用固定暂存目录恢复同键操作。已有不同内容的同标识模板保持原样。官方 VCC 及旧 ALCOM 生成的默认资料已复验，ALCOMD3 2.1.0 Beta 的真实资料仍待复验。通过既有用例复用幂等、revision、路径校验与现有记录保护，无需新增公共方法。
 
 ## 首发包版本偏好
 
@@ -148,4 +148,49 @@ GUI、CLI 和 MCP 的入口、对应 Core 用例及自动化测试见[绝对路�
 
 - 在离线 Windows Sandbox 安装已发布的 v3.3.0。其原版更新器从暂存入口验签并实际启动公开签名的 v3.4.0 安装器。结果保留当前用户安装登记、LiteDB 摘要和带中文及空格的测试 Unity 启动参数。v3.4.0 成功打开主窗口。
 - 同一沙盒中，从升级后的实际测试资料导出，确认启动参数进入原生数据。冻结 v3.4.0 使用上文的已签名 Stable 隔离候选完成重新验签及桥接。Core 重开核对 1 份设置、1 份 Discord 偏好和 2 条扩展偏好，回滚保留旧资料和程序摘要，v3.4.0 再次打开主窗口。
-- 此次覆盖两次真实暂存更新及隔离资料的桥接回滚。代表性工程的 v3/v4 GUI 差分与迁移提交仍待验收。
+- 此次覆盖两次真实暂存更新及隔离资料的桥接回滚。后续合成 Unity 工程的原生桌面对照和迁移提交见下文。
+
+### 2026-11-24 Windows 双范围原生数据提交
+
+- 在两个独立的离线 Windows Sandbox 中，以冻结 v3.4.0 分别执行当前用户安装和全用户安装。由冻结版登记合成 Unity 工程并生成 ZIP。真实 v3 和 v4 桌面均列出该工程，Core 和 CLI 核对工程及 Unity `2022.3.22f1`，认证 MCP 返回同一项工程。
+- 从同一份已验证导出独立创建用于健康检查的资料。核验签名 Discord 包的身份，并确认其在实际 Extension Host 中运行。待提交状态的文件与目录身份保持不变。
+- 两份开发载荷分别使用一次性测试密钥。篡改健康签名时目标保持不存在。有效健康证明通过后发布原生数据，重试得到已提交结果。旧程序、源资料及工程文件摘要一致。全用户载荷摘要为 `1a81d6f5e1c6239f2b2f623d7a9d00ec64f383544a2469a5d630826eb66b43cc`，当前用户载荷摘要为 `fe8d9ee3592ca266ef45127455faa441af0b257797c460e8ff1e5d81feeb006b`。
+- 两种范围各在独立沙盒中提交后运行经摘要核实的配对 v3 卸载器。对应范围的 v3 程序和卸载登记被移除，原资料、未知用户文件、安装目录中的无关文件、第三方 VCC 协议关联和合成工程均保持原样。提交后的 v4 状态均可由实际 Core 重开并读出工程。当前用户清理复验使用的一次性签名载荷摘要为 `a0782d8a95ad24b925fc95d03df654cc02e2ad67058dd6b461d5936fce09d0e5`。真实用户实例的清理由后续获批的安装交接执行。
+
+### 2026-11-24 实际 v3 ZIP 的三端原生恢复
+
+- 在全新离线 Windows Sandbox 中，从备份配置目录之外读取冻结 v3.4.0 生成的普通 ZIP，SHA-256 为 `9ace39c217aedb30bbb462d54decc8e95320eac22249bb2befbcecef72ec1c87`。源及三个新项目路径均包含空格和中文，GUI 通过实际恢复对话框输入绝对路径，CLI 和认证 MCP 通过各自公开入口提交。
+- 三端分别发布到指定位置，四个文件逐一核对 SHA-256，源 ZIP 保持一致。GUI 显示成功任务和打开项目按钮。CLI 同键重试返回同一任务，MCP 两个并发同键请求只接受一次并返回同一任务。
+
+### 2026-11-24 Linux 双范围原生数据提交
+
+- 在 Ubuntu 24.04 chroot 真实运行已配置的冻结 DEB 和 FUSE 挂载的冻结 AppImage。两份合成资料均包含一项工程、一项仓库、一份模板和一份设置。CLI 核对工程和 Unity 版本，实际 WebKitGTK 桌面显示工程路径和操作，认证 MCP 查询返回同一工程，第一方 Discord 在实际 Host 中运行。
+- 两种范围使用同一份一次性签名载荷，清单 SHA-256 为 `5deab8a937555fdd2b2a2d2b4c2cab8079a29ac3817d12a5e65180e1241d1ae0`。篡改健康签名时拒绝发布，真实健康证明通过后完成原生数据提交，重试返回原提交。冻结资料树、恢复程序和工程文件保持原样。测试密钥已清除。
+- 此轮完成 AppImage 与 DEB 的数据提交验证。正式应用接管与包管理器部署归 M12。
+
+### 2026-11-24 官方 VCC 与旧 ALCOM 选择性导入
+
+- 验证 Windows VCC 2.4.5 安装器的 VRCHAT INC Authenticode 签名和 SHA-256 `98b057aa78a8768c2b1587ced9f212cff2b5d80c95feba9c43c5e347b1c4fb91`。在全新离线 Sandbox 实际安装、启动并生成默认资料。通过预览摘要在实际 Core 应用项目、资源、设置和模板四个选择。默认设置产生变更，项目、资源和模板均为空，源文件 SHA-256 保持一致。非空模板仍由独立合成夹具覆盖。
+- 在 Ubuntu 24.04 隔离环境启动发布的 ALCOM `gui-v1.1.8` DEB 中的应用，包 SHA-256 为 `11ec00c57ae9e83d920998152c37a34816b9d8f3fbc616455b5593b994047402`。应用生成 VCC 共用资料布局。设置、主题和模板预览通过。设置和主题在实际 Core 使用原摘要重复应用，源文件 SHA-256 保持一致。
+- ALCOMD3 Beta 选择器基于已发布的 2.1.0 Beta 资料布局。实测较新的 3.3.0-beta.2 生成 3.x 资料布局，按现行选择合同拒绝。2.1.0 Beta 的正向覆盖来自合成夹具，尚未找到可核实的真实样本。
+
+### 2026-11-24 签名候选门禁
+
+- 签名候选 `5b8a031be9a139790d6089ebdc649ddd8c040f76` 通过本机 `scripts/check.ps1`，其中整仓 Rust 通过 1,077 项、跳过 23 项既有忽略测试。Chromium 通过 762 项。四项 CodeQL 均通过同一 SHA。Rust 分析结果数与候选前主分支一致，主分支仍打开的四项均在本次候选之前创建。[CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45311501014)
+- `216f31de` 的 Hosted Windows 外部 SDK 首次冷启动超时，macOS 的模板 IPC 夹具超出 Unix 套接字地址长度限制。`5b8a031b` 让 macOS 夹具使用已有的短临时目录约定。Windows 该轮通过相同的外部 SDK 冷启动检查，5 秒预算保持原样。[第一轮 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45305751250) · [第二轮 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45311500674)
+- `5b8a031b` 的 macOS 与 Ubuntu Hosted CI 通过。该轮 Windows Hosted 整仓测试发现两个迁移夹具同时绑定当前用户的命名管道。本机复现后，为这两个夹具复用现有测试的互斥方式。四项迁移测试按原断言并行复验十轮，通过 40 次。[Windows 失败日志](https://github.com/ALCOMD/ALCOMD/actions/runs/45311500674/job/138168078126)
+- `d0b029eb54e651a627d0d082739d49e4b4074872` 同时包含上述夹具修复与首发 Schema 清理。本机整仓 Rust 通过 1,077 项，23 项为既有忽略测试，Chromium 通过 762 项。核对两笔新增提交的 SSH 签名后，普通快进推送至主仓 `main`。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45319529471) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45319528999)
+- `d0b029eb` 的 Windows Hosted 外部消费者并发冷启动再次超过 5 秒。该轮直接启动同一测试 Core 时约 2.3 秒就绪。`aebeffbc4ad371c194fe2b37d4b257d06f5d06c5` 改用优化构建在 Windows 暂存 Core 及随 npm 安装的 helper，并保留 5 秒运行时预算和全部既有验收断言。[Windows SDK 日志](https://github.com/ALCOMD/ALCOMD/actions/runs/45319529471/job/138194435096)
+- 在离线 Windows Sandbox 验证该候选的优化包。默认来宾盘因允许其他主体写入而被拒，随后将合成资料和运行目录放在权限受控的独立 NTFS 测试卷上。仓库外的 Node 和 Rust 消费者从真实安装登记连续并发冷启动三次，每轮两者都连接到同一 Core 实例。三轮从启动消费者到均成功返回的用时为 1,871、891 和 907 毫秒。来宾资料位置测试后复原。
+- `aebeffbc` 在准确源码上通过优化构建、npm 打包、本机整仓 Rust 1,077 项和 Chromium 762 项，23 项为既有忽略测试。SSH 复验后已普通快进推送至主仓 `main`。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45323637023) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45323637650)
+- `aebeffbc` 的优化 Windows Core 在 Hosted 直接启动约 1.6 秒就绪。登记后的并发冷启动仍超时，且清理时仍有 SQLite 文件被占用。`b9f2d3e9f4a339a039442142617b167d923e537c` 增加客户端侧 Windows 启动协调，同一账号的一组并发 SDK 连接仅由一个客户端尝试拉起。Core 继续使用既有单实例锁，客户端保留 5 秒期限。夹具清理前额外核对确切进程已退出。[Windows SDK 日志](https://github.com/ALCOMD/ALCOMD/actions/runs/45323637023/job/138207822372)
+- `b9f2d3e9` 的优化包在独立 NTFS 测试卷上复验缺失或失效登记拒绝，Node 和 Rust 连续三轮并发冷启动分别用时 628、876 和 617 毫秒。每轮确认一个 Core 进程、同一实例、事件保持期间直连和断开后空闲退出。本机同一 SHA 通过整仓 Rust 1,078 项和 Chromium 762 项，23 项为既有忽略测试。签名候选已普通快进推送。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45328483608) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45328483263)
+- `b9f2d3e9` 的 Windows Hosted 仓库外 SDK 测试通过，覆盖真实登记、并发冷启动、运行中直连、空闲重启及包业务流程。开发态 CLI 并发启动也通过本机隔离验证，两个客户端只发现一个 Core。[Windows Hosted](https://github.com/ALCOMD/ALCOMD/actions/runs/45328483608/job/138223678594)
+- 四项 CodeQL 均通过 `b9f2d3e9`。已上传的 Rust、JavaScript/TypeScript、Python、Actions 分析结果数分别为 6、0、0、0，与候选前主分支一致。[CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45328483263)
+- `b9f2d3e9` 的 Windows Server 2025 x86_64、Ubuntu 22.04 x86_64 和 macOS 15 arm64 Hosted CI 全部通过。同一 SHA 各平台都完成仓库外 SDK、整仓检查、发布模式构建和 762 项 Chromium。Windows Hosted 开发态并发启动确认一个 Core 实例。[三平台 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45328483608)
+
+### 原生验收缺口
+
+- 当前缺少可连接的 Apple Silicon 隔离桌面。冻结 DMG 真实挂载与启动、实际 Keychain 凭据转移、签名独立桥接提交及回滚后旧版重开仍待执行。
+- ALCOMD3 2.1.0 Beta 及专用 `ALCOM` 目录缺少可核实的真实样本。现有合成数据验证继续覆盖这些选择性导入路径。逐平台的完整持久阶段故障矩阵也仍待完成。
+- Windows 签名桥接已使用原 v3 更新密钥验证。本轮新增隔离载荷使用一次性测试密钥，现有旧钥签名无需重签。

@@ -4,7 +4,7 @@
 
 v3 派生模板只转换 Unity `2022.3.22f1` 的工程内容。模板和基底链都允许该版本时，导入生成一份独立模板。只允许其他版本的派生项保留在源目录，`inventory` 和 `export` 通过标准错误报告跳过数量。已经归档的独立工程保留其实际 Unity 版本。
 
-先退出 v3.4.0，再向工具提供已确认属于该安装的绝对数据目录。源目录和项目保持原位。`inventory` 只输出记录数量。`export` 将摘要清单、原生状态和转换后的模板归档写入当前用户私有暂存父目录下一个此前不存在的目录。Bootstrap 核验桥接载荷和平台健康报告的签名，并协调数据暂存、Core 重开对账、提交和回滚。冻结更新器及各平台安装交接仍待验收。
+先退出 v3.4.0，再向工具提供已确认属于该安装的绝对数据目录。源目录和项目保持原位。`inventory` 只输出记录数量。`export` 将摘要清单、原生状态和转换后的模板归档写入当前用户私有暂存父目录下一个此前不存在的目录。Bootstrap 核验桥接载荷和平台健康报告的签名，并协调数据暂存、Core 重开对账、提交和回滚。Windows 冻结更新器已验证原 v3 密钥签名交接。Windows 两种安装范围、Linux AppImage 和 DEB 已验证隔离原生数据提交。[M11 验收记录](../../docs/exec-plans/M11-v3-migration-and-zip.md#2026-11-24-windows-stable-双范围签名交接)
 
 ```text
 alcomd-migrate-v3 inventory --source-root <绝对的已确认源目录>
@@ -60,6 +60,6 @@ alcomd-migrate-v3 select --source alcomd3-beta --source-root <绝对源目录> -
 - `theme` 按当前修订更新外观模式。`settings` 和 `theme` 均保留导入字段之外的设置。
 - `templates` 从 VCC 的 `Templates/` 工程目录或旧 ALCOM、Beta 的 `vrc-get/templates/` 导入。只登记当前 Core 支持的模板，已有不同内容的同标识模板保留原样。存档模板 Apply 需要提供源目录之外的 `--staging-directory <绝对目录>`。重试复用该目录和原摘要，等任务结束后可清理转换副本。
 
-登记使用独立业务事务和固定的幂等键。应用中断时已接受的新增会保留，可以用仍匹配的摘要继续。三个来源的真实脱敏样本验收仍待完成。直接升级的原生包继续限定 `sourceVersion` 为 `3.4.0`。
+登记使用独立业务事务和固定的幂等键。应用中断时已接受的新增会保留，可以用仍匹配的摘要继续。官方 VCC 和使用 VCC 共用目录的旧 ALCOM 已通过默认资料复验。专用 `ALCOM` 目录和 ALCOMD3 2.1.0 Beta 的真实样本仍待补验。直接升级的原生包继续限定 `sourceVersion` 为 `3.4.0`。[选择性导入记录](../../docs/exec-plans/M11-v3-migration-and-zip.md#2026-11-24-官方-vcc-与旧-alcom-选择性导入)
 
 [冻结的选择性导入定义](https://github.com/ALCOMD/ALCOMD3/blob/4aa98ae4f18d42c10137278997180dbede991e88/vrc-get-gui/src/commands/environment/legacy_import.rs) · [冻结的旧数据根定义](https://github.com/ALCOMD/ALCOMD3/blob/4aa98ae4f18d42c10137278997180dbede991e88/alcomd3-app-paths/src/lib.rs)

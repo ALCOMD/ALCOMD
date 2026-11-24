@@ -874,12 +874,84 @@ description = "静态核对冻结 DMG 和更新归档哈希、归档内的 app b
 evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md", "docs/baselines/source-lock.toml"]
 
 [[test]]
+id = "migration.macos-native-health-commit"
+stage = "M11"
+kind = "migration"
+platforms = ["macos-aarch64"]
+status = "blocked"
+description = "在可用的 Apple Silicon 隔离桌面挂载冻结 DMG，启动旧版并核对实际 Keychain 转移、独立桥接数据提交、回滚后旧版重开。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
 id = "migration.fixture-chain"
 stage = "M11"
 kind = "migration"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
 description = "从受支持旧版升级到 3.4.0，再以脱敏 Fixture 执行完整 v4 迁移并核对记录与文件。"
+
+[[test]]
+id = "migration.windows-native-health-commit"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "离线 Sandbox 的冻结 v3.4.0 当前用户和全用户安装分别以合成工程核对实际两代桌面、Core、CLI、认证 MCP 和第一方 Host，经过临时签名证明拒绝篡改、提交原生数据并恢复同事务。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.windows-isolated-precise-cleanup"
+stage = "M11"
+kind = "snapshot"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "已提交的离线当前用户与全用户沙盒分别运行经核实的配对 v3 卸载器，验证确切程序与对应登记移除、第三方关联和未知资料保留，以及 v4 提交状态重开。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.windows-v3-zip-three-clients"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "在全新离线 Sandbox 从配置目录之外用实际 GUI、CLI 和认证 MCP 恢复冻结 v3 生成的普通 ZIP，核对三个绝对目标和四个文件摘要、GUI 成功任务、CLI 与 MCP 同键回执。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "native-sdk.windows-coordinated-startup"
+stage = "M11"
+kind = "integration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "隔离安装登记下由仓库外的 Node 与 Rust 并发冷启动至一个 Core，验证 5 秒期限、运行中直连、失效登记拒绝及空闲重启。本机离线 Sandbox 和签名候选的 Hosted SDK 任务均已通过。"
+evidence = ["scripts/test-native-sdk-hosted.mjs", "docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.signed-candidate-hosted"
+stage = "M11"
+kind = "system"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "implemented"
+description = "签名候选 b9f2d3e9 的三平台 Hosted CI、仓库外 SDK、每平台 762 项 Chromium 与四项 CodeQL 同 SHA 通过。"
+evidence = [".github/workflows/ci.yml", "docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.linux-native-health-commit"
+stage = "M11"
+kind = "migration"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 24.04 离线 chroot 使用实际冻结 AppImage 和已配置 DEB，以同一临时签名载荷核对原生 GUI、CLI、认证 MCP、Host、健康签名拒绝、数据提交和已提交状态恢复。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.selection-published-vcc-alcom"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64", "linux-x86_64"]
+status = "implemented"
+description = "官方 VCC 2.4.5 和旧 ALCOM 1.1.8 在隔离环境生成默认资料，选择性预览及应用经真实 Core 验证，原文件摘要保持一致。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
 
 [[test]]
 id = "migration.linux-native-stage-faults"
