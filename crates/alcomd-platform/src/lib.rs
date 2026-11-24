@@ -97,7 +97,7 @@ pub use unix::{
 pub use unix_local_ipc::{UnixIpcIdentity, connect_verified_local_socket};
 #[cfg(windows)]
 pub use windows::{
-    DaemonInstance, IpcListener, IpcStream, WindowsFileIdentity, connect,
+    CoreStartupGuard, DaemonInstance, IpcListener, IpcStream, WindowsFileIdentity, connect,
     connect_verified_local_pipe, endpoint_display, file_identity, file_link_count,
     local_app_data_directory, start_core_process, state_database_path,
 };

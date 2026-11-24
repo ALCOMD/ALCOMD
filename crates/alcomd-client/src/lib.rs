@@ -1526,6 +1526,8 @@ async fn connect_with_policy(config: &ClientConfig) -> Result<IpcStream, ClientE
     let ipc = config.ipc_config();
     let deadline = Instant::now() + START_TIMEOUT;
     let mut started = false;
+    #[cfg(windows)]
+    let mut startup_guard = None;
     loop {
         match alcomd_platform::connect(&ipc).await {
             Ok(stream) => return Ok(stream),
@@ -1534,6 +1536,16 @@ async fn connect_with_policy(config: &ClientConfig) -> Result<IpcStream, ClientE
                     return Err(ClientError::StartTimeout);
                 }
                 if is_endpoint_absent(&error) && config.start_daemon && !started {
+                    #[cfg(windows)]
+                    if startup_guard.is_none() {
+                        startup_guard = alcomd_platform::CoreStartupGuard::try_acquire()
+                            .map_err(ClientError::StartDaemon)?;
+                        if startup_guard.is_none() {
+                            tokio::time::sleep(RETRY_INTERVAL).await;
+                        }
+                        // Recheck the endpoint after claiming the right to start Core.
+                        continue;
+                    }
                     spawn_daemon(config)?;
                     started = true;
                 }

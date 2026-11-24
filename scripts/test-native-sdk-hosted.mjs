@@ -153,6 +153,15 @@ function assertStopped() {
     const result = rustProbe("probe-running");
     assert.equal(result.status, 1, "Expected no accessible Core on the fixture endpoint.");
     assert.match(result.stderr, /did not become ready within five seconds/);
+    if (windows) {
+        // An initializing Core can hold SQLite files before publishing its pipe.
+        const count = Number(success(run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `
+            $core = @(Get-Process -Name alcomd -ErrorAction SilentlyContinue |
+                Where-Object { $_.Path -eq $env:ALCOMD_SDK_FIXTURE_CORE_PATH })
+            Write-Output $core.Count
+        `], { capture: true, env: { ...fixtureEnvironment, ALCOMD_SDK_FIXTURE_CORE_PATH: daemon } }), "Locate staged Core processes").trim());
+        assert.equal(count, 0, "The staged Core process still owns the fixture profile.");
+    }
 }
 
 async function assertIdleExit() {

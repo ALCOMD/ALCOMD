@@ -33,6 +33,24 @@ pub(crate) use local_ipc::verify_publisher as verify_program_publisher;
 pub(crate) use local_ipc::{client_process_id, client_process_image};
 pub use security::start_core_process;
 
+/// Coordinates the current user's native clients while one launches Core.
+pub struct CoreStartupGuard {
+    _lock: security::WindowsInstanceGuard,
+}
+
+impl CoreStartupGuard {
+    /// Claims the launch attempt or observes another client already launching.
+    pub fn try_acquire() -> io::Result<Option<Self>> {
+        let sid = security::current_user_sid_string()?;
+        let name = format!(r"Local\{}.{sid}.startup-v1", env!("ALCOMD_BUNDLE_ID"));
+        match security::acquire_instance_mutex(&name) {
+            Ok(lock) => Ok(Some(Self { _lock: lock })),
+            Err(BindError::AlreadyRunning) => Ok(None),
+            Err(BindError::Io(error)) => Err(error),
+        }
+    }
+}
+
 /// A connected Windows Named Pipe endpoint.
 pub enum IpcStream {
     Server(NamedPipeServer),
@@ -229,6 +247,24 @@ fn reject_runtime_override(config: &IpcConfig) -> io::Result<()> {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn simultaneous_clients_can_claim_only_one_startup_attempt() {
+        let first = CoreStartupGuard::try_acquire()
+            .expect("claim Core startup")
+            .expect("one active launch attempt");
+        assert!(
+            CoreStartupGuard::try_acquire()
+                .expect("observe claim")
+                .is_none()
+        );
+        drop(first);
+        assert!(
+            CoreStartupGuard::try_acquire()
+                .expect("claim released launch")
+                .is_some()
+        );
+    }
 
     #[tokio::test]
     async fn native_rpc_connect_checks_the_pipe_dacl_before_use() {
