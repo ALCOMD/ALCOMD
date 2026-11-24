@@ -1596,7 +1596,7 @@ fn daemon_command(config: &ClientConfig) -> Result<Command, ClientError> {
                 command
             }
             None if config.require_installation => return Err(ClientError::DaemonPathUnavailable),
-            None => Command::new(sibling_daemon_path()?),
+            None => default_daemon_command()?,
         }
     };
     command.env_remove(MCP_CREDENTIAL_ENVIRONMENT_KEY);
@@ -1611,6 +1611,23 @@ fn daemon_command(config: &ClientConfig) -> Result<Command, ClientError> {
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     Ok(command)
+}
+
+fn default_daemon_command() -> Result<Command, ClientError> {
+    #[cfg(windows)]
+    if let Some(bootstrap) = alcomd_platform::windows_installation_bootstrap(
+        &std::env::current_exe().map_err(ClientError::StartDaemon)?,
+    )
+    .map_err(ClientError::StartDaemon)?
+    {
+        let runtime = bootstrap
+            .parent()
+            .ok_or(ClientError::DaemonPathUnavailable)?;
+        let mut command = Command::new(&bootstrap);
+        command.arg("start-installed-core").current_dir(runtime);
+        return Ok(command);
+    }
+    Ok(Command::new(sibling_daemon_path()?))
 }
 
 fn sibling_daemon_path() -> Result<PathBuf, ClientError> {

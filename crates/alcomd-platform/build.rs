@@ -11,6 +11,7 @@ fn main() {
     let mut gui = None;
     let mut cli = None;
     let mut mcp = None;
+    let mut bootstrap = None;
     for line in text.lines().map(str::trim) {
         if line.starts_with('[') {
             section = line;
@@ -26,6 +27,7 @@ fn main() {
             ("[binaries]", "gui") => &mut gui,
             ("[binaries]", "cli") => &mut cli,
             ("[binaries]", "mcp") => &mut mcp,
+            ("[binaries]", "bootstrap") => &mut bootstrap,
             _ => continue,
         };
         assert!(field.is_none(), "duplicate product metadata key");
@@ -56,6 +58,7 @@ fn main() {
         ("GUI_NAME", gui),
         ("CLI_NAME", cli),
         ("MCP_NAME", mcp),
+        ("BOOTSTRAP_NAME", bootstrap),
     ] {
         println!(
             "cargo:rustc-env=ALCOMD_{key}={}",

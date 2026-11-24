@@ -17,17 +17,57 @@ use crate::{DataConfig, publish_path_no_replace, resolve_plain_storage_directory
 pub fn windows_installation_runtime(executable: &Path) -> io::Result<PathBuf> {
     let parent = executable.parent().ok_or_else(invalid_registration)?;
     let (runtime, _) = resolve_plain_storage_directory(parent)?;
-    if runtime.file_name().and_then(|name| name.to_str()) != Some(env!("CARGO_PKG_VERSION"))
-        || runtime
-            .parent()
-            .and_then(Path::file_name)
-            .and_then(|name| name.to_str())
-            != Some("runtime")
-    {
+    if !is_versioned_runtime(&runtime) {
         return Err(invalid_registration());
     }
     validate_core_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
     Ok(runtime)
+}
+
+/// Finds Bootstrap for the official GUI or stable CLI in a protected Windows installation.
+pub fn windows_installation_bootstrap(entry_point: &Path) -> io::Result<Option<PathBuf>> {
+    let Some(directory) = entry_point.parent() else {
+        return Ok(None);
+    };
+    let core = if has_name(entry_point, concat!(env!("ALCOMD_GUI_NAME"), ".exe"))
+        && is_versioned_runtime(directory)
+    {
+        directory.join(CORE_EXECUTABLE_NAME)
+    } else if has_name(entry_point, concat!(env!("ALCOMD_CLI_NAME"), ".exe"))
+        && has_name(directory, "bin")
+        && let Some(root) = directory.parent()
+    {
+        let versions = root.join("runtime");
+        match fs::symlink_metadata(&versions) {
+            Ok(_) => versions
+                .join(env!("CARGO_PKG_VERSION"))
+                .join(CORE_EXECUTABLE_NAME),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        }
+    } else {
+        return Ok(None);
+    };
+    // Validate the unnormalized paths so a reparse point cannot redirect either role.
+    validate_core_executable(entry_point)?;
+    validate_core_executable(&core)?;
+    let runtime = windows_installation_runtime(&core)?;
+    let bootstrap = runtime.join(concat!(env!("ALCOMD_BOOTSTRAP_NAME"), ".exe"));
+    validate_core_executable(&bootstrap)?;
+    Ok(Some(bootstrap))
+}
+
+fn is_versioned_runtime(directory: &Path) -> bool {
+    has_name(directory, env!("CARGO_PKG_VERSION"))
+        && directory
+            .parent()
+            .is_some_and(|parent| has_name(parent, "runtime"))
+}
+
+fn has_name(path: &Path, name: &str) -> bool {
+    path.file_name()
+        .and_then(|part| part.to_str())
+        .is_some_and(|part| part.eq_ignore_ascii_case(name))
 }
 
 /// Checks whether the selected runtime already owns this user's registration.

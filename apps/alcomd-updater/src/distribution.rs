@@ -62,14 +62,18 @@ impl Candidate {
             self.version.major == 4 && self.version.build.is_empty(),
             "product payload version must be in the v4 release series without build metadata"
         );
-        ensure!(
-            self.source_commit.len() == 40
-                && self.source_commit.bytes().all(is_lower_hex)
-                && (self.source_commit == FIXTURE_COMMIT) == (purpose == Purpose::Fixture),
-            "invalid product payload source commit"
-        );
-        Ok(())
+        validate_source_commit(&self.source_commit, purpose)
     }
+}
+
+fn validate_source_commit(source_commit: &str, purpose: Purpose) -> anyhow::Result<()> {
+    ensure!(
+        source_commit.len() == 40
+            && source_commit.bytes().all(is_lower_hex)
+            && (source_commit == FIXTURE_COMMIT) == (purpose == Purpose::Fixture),
+        "invalid product payload source commit"
+    );
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -123,7 +127,32 @@ pub fn prepare_release(
 
 /// Verifies a complete runtime against the public trust compiled into the release tooling.
 pub fn verify_release(root: &Path, candidate: &Candidate) -> anyhow::Result<VerifiedRuntime> {
-    verify(root, candidate, Purpose::Release, &release_trust()?)
+    candidate.validate(Purpose::Release)?;
+    verify(
+        root,
+        candidate.target,
+        &candidate.version,
+        Some(&candidate.source_commit),
+        Purpose::Release,
+        &release_trust()?,
+    )
+}
+
+/// Verifies the installed version, taking the source commit from the authenticated manifest.
+#[cfg(windows)]
+pub fn verify_installed_release(
+    root: &Path,
+    target: Target,
+    version: &Version,
+) -> anyhow::Result<VerifiedRuntime> {
+    verify(
+        root,
+        target,
+        version,
+        None,
+        Purpose::Release,
+        &release_trust()?,
+    )
 }
 
 pub struct VerifiedRuntime {
@@ -160,7 +189,15 @@ pub fn verify_fixture(
     candidate: &Candidate,
     key: &VerifyingKey,
 ) -> anyhow::Result<VerifiedRuntime> {
-    verify(root, candidate, Purpose::Fixture, key)
+    candidate.validate(Purpose::Fixture)?;
+    verify(
+        root,
+        candidate.target,
+        &candidate.version,
+        Some(&candidate.source_commit),
+        Purpose::Fixture,
+        key,
+    )
 }
 
 /// Produces a synthetic manifest. The release verifier rejects this purpose.
@@ -234,11 +271,16 @@ fn prepare(
 
 fn verify(
     root: &Path,
-    candidate: &Candidate,
+    target: Target,
+    version: &Version,
+    source_commit: Option<&str>,
     purpose: Purpose,
     key: &VerifyingKey,
 ) -> anyhow::Result<VerifiedRuntime> {
-    candidate.validate(purpose)?;
+    ensure!(
+        version.major == 4 && version.build.is_empty(),
+        "invalid product version"
+    );
     let (root, identity) = alcomd_platform::resolve_plain_storage_directory(root)?;
     let bytes = read_limited(&root.join(MANIFEST_NAME), MANIFEST_LIMIT)?;
     let signature = read_limited(&root.join(SIGNATURE_NAME), 128)?;
@@ -254,13 +296,14 @@ fn verify(
         .context("product payload signature is invalid")?;
 
     let payload: Payload = serde_json::from_slice(&bytes)?;
+    validate_source_commit(&payload.source_commit, purpose)?;
     let product: Product = toml::from_str(PRODUCT)?;
     ensure!(
         payload.schema == 1
             && payload.product_id == product.identity.bundle_identifier
-            && payload.target == candidate.target
-            && payload.version == candidate.version
-            && payload.source_commit == candidate.source_commit
+            && payload.target == target
+            && &payload.version == version
+            && source_commit.is_none_or(|source_commit| payload.source_commit == source_commit)
             && payload.purpose == purpose,
         "product payload does not match the candidate"
     );
@@ -278,7 +321,7 @@ fn verify(
         .filter(|path| ![MANIFEST_NAME, SIGNATURE_NAME].contains(&path.as_str()))
         .cloned()
         .collect();
-    let executables = validate_layout(&product, candidate.target, purpose, &content_paths)?;
+    let executables = validate_layout(&product, target, purpose, &content_paths)?;
     let file_digests = verify_files(
         &root,
         payload.files,
@@ -286,7 +329,7 @@ fn verify(
         [MANIFEST_NAME, SIGNATURE_NAME],
         |path, file| {
             if executables.contains(path) {
-                check_executable_header(file, candidate.target, WINDOWS_SIDECARS.contains(&path))?;
+                check_executable_header(file, target, WINDOWS_SIDECARS.contains(&path))?;
             }
             Ok(())
         },

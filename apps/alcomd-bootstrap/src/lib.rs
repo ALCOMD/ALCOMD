@@ -4,7 +4,9 @@ mod journal;
 #[cfg(windows)]
 mod windows_installation;
 #[cfg(windows)]
-pub use windows_installation::{register_installed_core, unregister_installed_core};
+pub use windows_installation::{
+    register_installed_core, start_installed_core, unregister_installed_core,
+};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;

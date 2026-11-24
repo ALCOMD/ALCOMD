@@ -72,7 +72,7 @@ mod registration;
 #[cfg(windows)]
 pub use registration::{
     check_windows_core_registration, publish_windows_core_registration,
-    remove_windows_core_registration, windows_installation_runtime,
+    remove_windows_core_registration, windows_installation_bootstrap, windows_installation_runtime,
 };
 
 fn parse_runtime_directory(data: &[u8]) -> io::Result<PathBuf> {
@@ -327,6 +327,51 @@ mod tests {
         };
         assert!(crate::windows::is_volume_root(&open(root)).expect("volume-relative path"));
         assert!(!crate::windows::is_volume_root(&open(&profile)).expect("volume-relative path"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_first_use_finds_bootstrap_only_from_protected_official_entry_points() {
+        use std::fs;
+
+        let root = crate::local_app_data_directory()
+            .expect("test profile")
+            .join(format!(
+                "alcomd-bootstrap-{}-{}",
+                std::process::id(),
+                timestamp()
+            ));
+        let runtime = root.join("runtime").join(env!("CARGO_PKG_VERSION"));
+        let bin = root.join("bin");
+        let gui = runtime.join(concat!(env!("ALCOMD_GUI_NAME"), ".exe"));
+        let cli = bin.join(concat!(env!("ALCOMD_CLI_NAME"), ".exe"));
+        let helper = bin.join("sdk-helper.exe");
+        let bootstrap = runtime.join(concat!(env!("ALCOMD_BOOTSTRAP_NAME"), ".exe"));
+        fs::create_dir_all(&bin).expect("test bin");
+        assert_eq!(windows_installation_bootstrap(&cli).expect("dev CLI"), None);
+        fs::create_dir_all(&runtime).expect("test runtime");
+        for file in [&gui, &cli, &helper, &runtime.join(CORE_EXECUTABLE_NAME)] {
+            fs::write(file, b"fixture").expect("test executable");
+        }
+        assert!(windows_installation_bootstrap(&cli).is_err());
+        fs::write(&bootstrap, b"fixture").expect("test bootstrap");
+        let expected = bootstrap.canonicalize().expect("canonical bootstrap");
+        for entry in [&gui, &cli] {
+            assert_eq!(
+                windows_installation_bootstrap(entry).expect("official entry"),
+                Some(expected.clone())
+            );
+        }
+        assert_eq!(windows_installation_bootstrap(&helper).expect("SDK"), None);
+        let alias = runtime.join("bootstrap-link");
+        fs::hard_link(&bootstrap, alias).expect("test hard link");
+        assert_eq!(
+            windows_installation_bootstrap(&cli)
+                .expect_err("linked bootstrap")
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        fs::remove_dir_all(root).expect("remove isolated fixture");
     }
 
     #[cfg(windows)]

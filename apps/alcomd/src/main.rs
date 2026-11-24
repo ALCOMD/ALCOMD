@@ -24,7 +24,10 @@ enum Command {
     CheckNativeState(NativeStage),
     #[cfg(windows)]
     #[command(hide = true)]
-    RegisterInstallation,
+    RegisterInstallation {
+        #[arg(long)]
+        serve: bool,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -68,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
                     .await?
             }
             #[cfg(windows)]
-            Command::RegisterInstallation => {
+            Command::RegisterInstallation { serve } => {
                 anyhow::ensure!(
                     arguments.runtime_dir.is_none(),
                     "invalid Windows installation endpoint"
@@ -77,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
                     .data_dir
                     .map(alcomd_platform::DataConfig::isolated)
                     .unwrap_or_default();
-                alcomd::register_windows_installation(data).await?;
+                alcomd::register_windows_installation(data, serve.then(shutdown_signal)).await?;
                 return Ok(());
             }
         };
@@ -92,12 +95,14 @@ async fn main() -> anyhow::Result<()> {
         .data_dir
         .map(alcomd_platform::DataConfig::isolated)
         .unwrap_or_default();
-    alcomd::serve_with_data_until(config, data, async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to wait for Ctrl+C");
-    })
-    .await
-    .context("daemon stopped")?;
+    alcomd::serve_with_data_until(config, data, shutdown_signal())
+        .await
+        .context("daemon stopped")?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to wait for Ctrl+C");
 }

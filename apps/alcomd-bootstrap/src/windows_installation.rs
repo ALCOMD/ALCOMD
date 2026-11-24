@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 
 use alcomd_platform::{
     CORE_EXECUTABLE_NAME, DaemonInstance, DataConfig, IpcConfig, check_windows_core_registration,
-    remove_windows_core_registration, windows_installation_runtime,
+    remove_windows_core_registration, start_core_process, windows_installation_runtime,
 };
-use alcomd_updater::distribution::{Candidate, Target, verify_release};
+use alcomd_updater::distribution::{Candidate, Target, verify_installed_release, verify_release};
 use anyhow::{Context, ensure};
 
 /// Verifies the installed signed payload and lets the current user's Core initialize its state.
@@ -43,6 +43,24 @@ pub fn unregister_installed_core(
         .context("stop Core before unregistering it")?;
     remove_windows_core_registration(&data_config(data_dir), &runtime)?;
     Ok(())
+}
+
+/// Starts and registers Core for the current user after verifying the installed runtime.
+pub fn start_installed_core() -> anyhow::Result<()> {
+    let runtime = windows_installation_runtime(&std::env::current_exe()?)?;
+    verify_installed_release(
+        &runtime,
+        Target::Windows,
+        &env!("CARGO_PKG_VERSION").parse()?,
+    )
+    .context("Windows installed product payload did not verify")?;
+    start_core_process(
+        &runtime.join(CORE_EXECUTABLE_NAME),
+        [OsStr::new("register-installation"), OsStr::new("--serve")],
+        Some(&runtime),
+        "ALCOMD_MCP_CLIENT_CREDENTIAL",
+    )
+    .context("installed Core could not start")
 }
 
 fn verified_runtime(source_commit: String) -> anyhow::Result<PathBuf> {

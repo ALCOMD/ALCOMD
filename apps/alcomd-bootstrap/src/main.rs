@@ -28,6 +28,9 @@ enum Command {
     #[cfg(windows)]
     /// Remove the current user's registration when it belongs to this installed runtime.
     UnregisterInstalledCore(InstallCoreArguments),
+    #[cfg(windows)]
+    #[command(hide = true)]
+    StartInstalledCore,
 }
 
 #[cfg(windows)]
@@ -89,6 +92,8 @@ fn main() -> anyhow::Result<()> {
                 arguments.data_dir.as_deref(),
             );
         }
+        #[cfg(windows)]
+        Command::StartInstalledCore => return alcomd_bootstrap::start_installed_core(),
     };
     let MigrateArguments {
         source_root,

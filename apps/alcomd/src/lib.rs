@@ -231,13 +231,24 @@ pub async fn serve_with_data_until<F>(
 where
     F: Future<Output = ()>,
 {
-    let (mut listener, applications) = initialize_daemon_with_directories(
+    let (listener, applications) = initialize_daemon_with_directories(
         ipc,
         data,
         Arc::new(storage_platform::PlatformStorageDirectories),
     )
     .await?;
     recover_startup_credentials(&applications).await?;
+    run_initialized_daemon(listener, applications, shutdown).await
+}
+
+async fn run_initialized_daemon<F>(
+    mut listener: IpcListener,
+    applications: Arc<Applications>,
+    shutdown: F,
+) -> Result<(), BindError>
+where
+    F: Future<Output = ()>,
+{
     let mut initial_repository_sync =
         builtin_repositories::start(&applications.store, &applications.m3).await?;
     let result = run_listener(
@@ -251,14 +262,21 @@ where
     result.map_err(BindError::Io)
 }
 
-/// Initializes and checks the selected user's store before publishing the Windows install.
+/// Initializes the selected user's store and optionally serves IPC after publishing the install.
 #[cfg(windows)]
-pub async fn register_windows_installation(data: DataConfig) -> Result<(), BindError> {
+pub async fn register_windows_installation<F>(
+    data: DataConfig,
+    serve_until: Option<F>,
+) -> Result<(), BindError>
+where
+    F: Future<Output = ()>,
+{
     let runtime = alcomd_platform::windows_installation_runtime(&std::env::current_exe()?)?;
-    if alcomd_platform::check_windows_core_registration(&data, &runtime)? {
+    let already_registered = alcomd_platform::check_windows_core_registration(&data, &runtime)?;
+    if already_registered && serve_until.is_none() {
         return Ok(());
     }
-    let (_listener, applications) = initialize_daemon_with_directories(
+    let (listener, applications) = initialize_daemon_with_directories(
         IpcConfig::default(),
         data.clone(),
         Arc::new(storage_platform::PlatformStorageDirectories),
@@ -266,6 +284,9 @@ pub async fn register_windows_installation(data: DataConfig) -> Result<(), BindE
     .await?;
     recover_startup_credentials(&applications).await?;
     alcomd_platform::publish_windows_core_registration(&data, &runtime)?;
+    if let Some(shutdown) = serve_until {
+        return run_initialized_daemon(listener, applications, shutdown).await;
+    }
     Ok(())
 }
 
