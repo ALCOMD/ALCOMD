@@ -128,11 +128,13 @@ impl ClientInstallation {
         {
             let (id, name) = official(self.kind);
             let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
-            let core_dir = core_path.and_then(Path::parent).ok_or_else(invalid)?;
+            let core_path = core_path.ok_or_else(invalid)?;
+            let core_dir = core_path.parent().ok_or_else(invalid)?;
             let mut candidates = vec![core_dir.join(&file)];
-            if core_dir.ends_with("runtime")
-                && self.kind == ClientKind::Cli
-                && let Some(root) = core_dir.parent()
+            #[cfg(windows)]
+            if self.kind == ClientKind::Cli
+                && let Ok(runtime) = crate::windows_installation_runtime(core_path)
+                && let Some(root) = runtime.parent().and_then(Path::parent)
             {
                 candidates.push(root.join("bin").join(&file));
             }
@@ -407,8 +409,12 @@ mod tests {
                 .expect("isolated installer fixture")
                 .as_nanos()
         ));
-        let runtime = root.join("runtime");
+        let runtime = root.join("runtime").join(env!("CARGO_PKG_VERSION"));
         let bin = root.join("bin");
+        #[cfg(windows)]
+        let cli_dir = &bin;
+        #[cfg(not(windows))]
+        let cli_dir = &runtime;
         let data = DataConfig::isolated(root.join("data"));
         for dir in [&root, &runtime, &bin, &root.join("data")] {
             crate::prepare_storage_directory(dir).expect("isolated installer fixture");
@@ -423,7 +429,7 @@ mod tests {
         let mut records = Vec::new();
         for (kind, dir) in [
             (ClientKind::Gui, &runtime),
-            (ClientKind::Cli, &bin),
+            (ClientKind::Cli, cli_dir),
             (ClientKind::Mcp, &runtime),
         ] {
             let (id, name) = official(kind);
@@ -434,7 +440,7 @@ mod tests {
                 program_id: id.into(),
                 kind,
                 display_name: name.into(),
-                product_version: "1.0".into(),
+                product_version: env!("CARGO_PKG_VERSION").into(),
                 install_root: dir.clone(),
                 executable: file.into(),
             };
@@ -458,6 +464,13 @@ mod tests {
         let catalogue = scan(&data);
         assert!(!catalogue.incomplete);
         assert_eq!(catalogue.items.len(), 4);
+        #[cfg(windows)]
+        {
+            let mut unrelated_cli = records[1].clone();
+            unrelated_cli.install_root = root.clone();
+            stage(&root.join(&unrelated_cli.executable), true);
+            assert!(publish(&data, InstallScope::User, &unrelated_cli, Some(&core)).is_err());
+        }
         let mut forged = independent.clone();
         forged.program_id = official(ClientKind::Gui).0.into();
         assert!(publish(&data, InstallScope::User, &forged, Some(&core)).is_err());
