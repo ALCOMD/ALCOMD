@@ -24,9 +24,9 @@ Windows 当前用户、全用户与 Linux DEB、AppImage 已用真实 v3 工程�
 
 Windows 双范围和 Linux 两种范围已实测前四个迁移检查点的系统权限拒绝和前三个检查点的进程终止，验证回滚、原事务恢复、原件保全和新事务成功提交。[早期故障验收](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-早期迁移检查点系统故障)
 
-四种安装范围也已通过后四个检查点的进程终止恢复。Windows 从独立 Core 启动真实 Unity `2022.3.22f1` 打开工程副本并正常退出。Linux AppImage 和 DEB 的冻结 v3 和 v4 桌面均已核对包安装和升级。[后四个检查点和真实工程操作](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-后四个检查点和真实工程操作)
+四种安装范围也已通过后四个检查点的进程终止恢复。Windows 从独立 Core 启动真实 Unity `2022.3.22f1` 打开工程副本并正常退出。Linux AppImage 和 DEB 的冻结 v3 和 v4 桌面均已核对包安装和升级。Windows 在同一隔离工程用冻结 v3 的认证 MCP 和 v4 原生 CLI 验证安装、升级和移除。[后四个检查点和真实工程操作](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-后四个检查点和真实工程操作)
 
-Linux AppImage 和 DEB 的七个检查点共通过 14 项实际磁盘耗尽测试。已验证提交前回滚和提交意图后的同事务恢复。Windows 双范围的同类验证正在收尾。[Linux 磁盘耗尽验收](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-linux-七个检查点实际磁盘耗尽)
+Windows 双范围及 Linux AppImage 和 DEB 的七个检查点共通过 28 项实际磁盘耗尽测试，验证提交前回滚和提交意图后的同事务恢复。[实际磁盘耗尽验收](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-windows-和-linux-七个检查点实际磁盘耗尽)
 
 签名候选 `b9f2d3e9` 已通过同一 SHA 的三平台 Hosted CI、仓库外 SDK 和四项 CodeQL。三个平台的 Chromium 各通过 762 项。最终签名候选复验仍在进行。所有者因当前没有 Apple Silicon 环境延期 macOS 原生验收，macOS Hosted CI 仍属本阶段门禁。正式部署归 M12。[候选门禁与原生验收缺口](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-签名候选门禁)
 
