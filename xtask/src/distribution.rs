@@ -250,7 +250,7 @@ mod tests {
 
     fn fixture(target: Target) -> anyhow::Result<(tempfile::TempDir, Candidate)> {
         let product: ProductConfig = toml::from_str(include_str!("../../alcomd.product.toml"))?;
-        let root = tempfile::tempdir()?;
+        let root = tempfile::tempdir_in(std::env::temp_dir().canonicalize()?)?;
         let candidate = Candidate {
             target,
             version: product.product.version.parse()?,
