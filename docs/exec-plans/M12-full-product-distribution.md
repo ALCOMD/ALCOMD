@@ -188,4 +188,13 @@ Windows 11 Sandbox 在签名夹具中打开实际 Tauri 窗口，检测到 WebVi
 
 Windows 11 Sandbox 使用 Inno 6.5.4、合成签名和 Release Bootstrap，安装包 SHA-256 为 `2d75f526a149b8b213c35a0eeee4067c53f558b5fa1a1fed2bbff21a200f0d90`。全用户部署未写入安装账号的资料。签名篡改后，普通账号的资料目录保持空白。恢复有效签名后，普通账号首次运行 `bin/alcomd-cli.exe` 收到 `ready` 并发布本账号的登记。另一普通账号的四个并发 CLI 均在约 1.4 秒内收到 `ready`，按 SID 观察到一个 Core。Windows 客户端与平台库的 91 项测试通过，3 项沿用既有跳过。
 
-同一夹具的 Debug GUI 在隔离会话中没有启动 WebView2 渲染器，未触发首次登记。官方 Release GUI 的首次启动、连接和卸载流程仍须复验。
+Debug GUI 试验未启动 WebView2。改用干净 `25afa078` 的 `npm run gui:build -- --no-bundle` 构建 Release GUI 后，替换合成签名夹具中的 GUI 并重签，安装包 SHA-256 为 `dd7c1f097235817f2ff89ef7b986647887a90fdbabf18f3b1bcd46652c937e05`。隔离图形会话显示 `ALCOMD3` 窗口和 5 个对应 WebView2 进程，约 2.1 秒发布 Core 登记。禁止自动启动的独立 CLI 返回 `ready`。同一轮通过 7 项检查，涵盖全用户部署、签名拒绝、普通用户单次及并发首启、GUI 首启、外部程序读取登记、卸载后状态保留及残留登记失效。
+
+### 2026-11-25 Ubuntu 22.04 同候选原生夹具
+
+从独立 Ubuntu 22.04 x86_64 的干净签名检出构建 `25afa078` 的七个 Release 程序。最高 glibc 符号版本为 `GLIBC_2.34`。在限制性 `umask` 下构建 AppImage 与 DEB 的合成签名夹具，二者解出相同清单 `08bd169468b2bdf92b145444433675ad95577afc62237b57225384025f9c20f4` 并通过验签。AppImage 用原生 FUSE 挂载，DEB 用真实 `dpkg` 安装、重装、冷启动并移除，保留状态库。Xvfb 中由同一组二进制验证了 Tauri 窗口、WebKit 渲染流程和实际 Core IPC。
+
+| 格式 | SHA-256 |
+| --- | --- |
+| AppImage | `9571a9b6a4b157a29d6bfc4147610423359defe16bd75c574eb93161fe641a1f` |
+| DEB | `cca36ec9ee5706cf385f868bfa4068ee9a87970c13d29b6c9728b4501b49bdc9` |

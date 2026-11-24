@@ -8,7 +8,9 @@
 
 Windows 11 Sandbox 的当前用户和全用户夹具已验证 Core 安装登记、外部 CLI 冷启动、账号隔离和卸载保留状态。Ubuntu 22.04 x86_64 隔离环境已原生编译七个发行组件，产物最高要求 `GLIBC_2.34`。[Windows 登记及 Ubuntu 构建记录](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-core-安装登记)
 
-Windows 全用户安装夹具已验证普通账号从稳定 CLI 首次启动、独立登记、四个 CLI 并发接入单个 Core，以及签名篡改拒绝。官方 Release GUI 的首次启动仍待复验。[Windows 全用户首次启动验收](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-全用户安装首次启动)
+Windows 全用户安装夹具已验证普通账号从稳定 CLI 首次启动、独立登记、四个 CLI 并发接入单个 Core，以及签名篡改拒绝。正式构建入口生成的 Release GUI 也通过原生首启、发布登记和 IPC。卸载保留各测试账号状态并使残留登记失效。[Windows 全用户首次启动验收](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-全用户安装首次启动)
+
+Ubuntu 22.04 用签名候选 `25afa078` 复验了原生 AppImage 挂载、DEB 安装和卸载、Tauri 窗口及 Core IPC。[Ubuntu 同候选原生夹具](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-2204-同候选原生夹具)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 

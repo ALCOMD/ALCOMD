@@ -1168,6 +1168,24 @@ description = "Windows 11 Sandbox 的全用户合成签名 Inno 包通过普通�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "crates/alcomd-platform/src/core_installation.rs"]
 
 [[test]]
+id = "distribution.windows-machine-gui-first-use-fixture"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "Windows 11 Sandbox 中的合成签名全用户 Inno 夹具使用候选 25afa078 的 Release GUI，复验 WebView2、官方 GUI 首启发布登记、只连接的 CLI、卸载后状态保留及残留登记失效。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
+
+[[test]]
+id = "distribution.ubuntu22-native-candidate-fixtures"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 隔离环境用 25afa078 的七个 Release 程序验证 AppImage 挂载和验签，DEB 安装、重装、冷启动与移除保留状态，以及实际 Tauri 窗口、WebKit 和 Core IPC。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
+
+[[test]]
 id = "distribution.cli-integration"
 stage = "M12"
 kind = "system"
