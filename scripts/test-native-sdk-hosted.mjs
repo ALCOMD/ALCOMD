@@ -46,7 +46,10 @@ if (macos) {
 const fixtureEnvironment = { ...environment, ...(macos ? { HOME: profileBase } : {}) };
 const target = join(workspace, "target");
 const cargo = windows ? "cargo.exe" : "cargo";
-const bridge = join(target, "debug", `alcomd-sdk-bridge${suffix}`);
+// Windows staging exercises the optimized runtime shipped to users. The
+// unoptimized fixture can miss the unchanged five-second SDK readiness budget.
+const runtimeProfile = windows ? "release" : "debug";
+const bridge = join(target, runtimeProfile, `alcomd-sdk-bridge${suffix}`);
 const daemon = join(runtime, `alcomd${suffix}`);
 const packageEntry = join(external, "node_modules", "@alcomd", "sdk", "dist", "node.js");
 const sourceExample = join(workspace, "sdk", "rust", "examples", "native-client");
@@ -314,9 +317,11 @@ try {
     await mkdir(runtime, { mode: 0o700 });
     await mkdir(external, { mode: 0o700 });
     const buildEnv = { ...environment, CARGO_TARGET_DIR: target };
-    success(run(cargo, ["build", "--locked", "--offline", "--package", "alcomd", "--package", "alcomd-client",
-        "--bin", "alcomd", "--bin", "alcomd-sdk-bridge"], { env: buildEnv, timeout: 600_000 }), "Build native SDK and Core");
-    await copyFile(join(target, "debug", basename(daemon)), daemon);
+    const runtimeBuild = ["build", "--locked", "--offline", "--package", "alcomd", "--package", "alcomd-client",
+        "--bin", "alcomd", "--bin", "alcomd-sdk-bridge"];
+    if (windows) runtimeBuild.push("--release");
+    success(run(cargo, runtimeBuild, { env: buildEnv, timeout: windows ? 1_800_000 : 600_000 }), "Build native SDK and Core");
+    await copyFile(join(target, runtimeProfile, basename(daemon)), daemon);
     if (!windows) await chmod(daemon, 0o700);
 
     const archive = join(stage, "archive");
