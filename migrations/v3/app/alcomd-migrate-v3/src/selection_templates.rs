@@ -350,7 +350,12 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn vcc_template_is_imported_through_core_without_replacing_an_existing_record()
     -> Result<()> {
-        let fixture = crate::Stage::create(&std::env::temp_dir().canonicalize()?)?;
+        // Use the same short root as the other real IPC fixtures on macOS.
+        #[cfg(target_os = "macos")]
+        let temporary_root = PathBuf::from("/private/tmp");
+        #[cfg(not(target_os = "macos"))]
+        let temporary_root = std::env::temp_dir();
+        let fixture = crate::Stage::create(&temporary_root.canonicalize()?)?;
         let root = &fixture.path;
         let source = root.join("source");
         let project = vcc_project(&source)?;
