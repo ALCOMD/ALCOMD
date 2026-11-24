@@ -93,6 +93,15 @@ impl Journal {
     }
 
     pub fn record<T: Serialize>(&self, name: &str, value: &T) -> anyhow::Result<()> {
+        self.record_with(name, value, File::write_all)
+    }
+
+    pub(super) fn record_with<T: Serialize>(
+        &self,
+        name: &str,
+        value: &T,
+        write_record: impl FnOnce(&mut File, &[u8]) -> io::Result<()>,
+    ) -> anyhow::Result<()> {
         self.check()?;
         let bytes = serde_json::to_vec(value)?;
         ensure!(
@@ -109,7 +118,7 @@ impl Journal {
             .create_new(true)
             .write(true)
             .open(&temporary)?;
-        file.write_all(&bytes)?;
+        write_record(&mut file, &bytes)?;
         file.sync_all()?;
         drop(file);
         self.check()?;
