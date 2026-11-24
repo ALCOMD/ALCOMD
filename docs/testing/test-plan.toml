@@ -950,8 +950,17 @@ id = "migration.signed-candidate-hosted"
 stage = "M11"
 kind = "system"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "blocked"
+description = "修订候选 fb6b0455 的 Windows 和 Ubuntu Hosted 与四项 CodeQL 均通过。同一 SHA 的 macOS 两轮均因 Hosted 运行器容量不足取消。上一候选 6914b1a8 的 macOS Hosted 通过。"
+evidence = [".github/workflows/ci.yml", "docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.signed-candidate-windows-linux"
+stage = "M11"
+kind = "system"
+platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
-description = "签名候选 b9f2d3e9 的三平台 Hosted CI、仓库外 SDK、每平台 762 项 Chromium 与四项 CodeQL 同 SHA 通过。"
+description = "修订候选 fb6b0455 同 SHA 通过本机整仓、Windows 和 Ubuntu Hosted 整仓检查、仓库外 SDK、发行构建和每处 762 项 Chromium。其四项 CodeQL 同 SHA 通过。"
 evidence = [".github/workflows/ci.yml", "docs/exec-plans/M11-v3-migration-and-zip.md"]
 
 [[test]]
@@ -1050,7 +1059,7 @@ stage = "M11"
 kind = "migration"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "冻结 v3.4.0 的认证 MCP 和 v4 原生 CLI 在同一隔离工程与回环仓库完成真实包安装、升级与移除。v4 简体中文桌面另经预演确认安装并移除 1.1.0。核对版本字节、无关文件保全和任务终态。"
+description = "冻结 v3.4.0 的认证 MCP 和 v4 原生 CLI 在同一隔离工程与回环仓库完成真实包安装、升级与移除。两代简体中文桌面均经预演确认安装并移除同一合成包 1.1.0。核对版本字节、无关文件保全和任务终态。"
 evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
 
 [[test]]

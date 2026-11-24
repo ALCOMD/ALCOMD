@@ -40,7 +40,7 @@ GUI、CLI 和 MCP 的入口、对应 Core 用例及自动化测试见[绝对路�
 
 ## 验收状态
 
-本阶段实施中。以下结果来自 2026-11-21 的 Windows 工作区。
+Windows 和 Linux 已完成本阶段验收。以下早期结果来自 2026-11-21 的 Windows 工作区。
 
 - MCP 绝对路径真实 IPC 通过 1 项。原生复制与重启恢复通过 8 项。MCP HTTP 与 OAuth 端到端通过 2 项，覆盖配置目录之外的 ZIP、同键恢复和撤权。[三端对照表](../testing/M11-absolute-paths.md)
 - 2026-11-20 候选的数据库结构合同通过 5 项，Store 单元通过 90 项。Core 独立原生导入、重新打开和损坏输入拒绝通过 3 项。Bootstrap、Updater、独立迁移器及原生数据合同共通过 18 项，使用合成 LiteDB、配置、模板和签名载荷。[迁移器说明](../../migrations/v3/README.md)
@@ -222,7 +222,7 @@ GUI、CLI 和 MCP 的入口、对应 Core 用例及自动化测试见[绝对路�
 - Windows 通过独立 Core 和原生 CLI 启动本机 Unity `2022.3.22f1`，用批处理模式打开真实工程副本。Editor 日志确认工程导入完成、批处理成功且进程正常退出。实际 Editor 启动和先前两代 GUI 的参数对照分别来自这两项试验。
 - Ubuntu 24.04 的实际 AppImage 和 DEB 桌面上，冻结 v3.4.0 和 v4 均从隔离回环仓库安装合成包 `1.0.0` 并升级至 `1.1.0`。核对两代预演窗口显示后且确认前工程文件未变，确认后锁定版本、安装内容和 v4 的成功任务一致，其他工程文件保全。此前 DEB 的移除证据覆盖预演、确认、安装内容移除及其他内容保全。
 - Windows 离线来宾使用同一合成工程和回环仓库，分别经已安装冻结 v3.4.0 的认证 MCP 与 v4 原生 CLI 完成包 `1.0.0` 安装、`1.1.0` 升级及移除。检查锁定版本、包内标记内容与无关工程文件。v4 还核对预演前后文件一致，确认后以实际 `packages.apply` 成功任务结束。
-- Windows 官方 v4 简体中文桌面还从同一工程安装并移除 `1.1.0`，核对确认前文件、确认后的任务终态和无关工程内容。
+- Windows 冻结 v3.4.0 和官方 v4 简体中文桌面均从同一工程安装并移除同一个合成包 `1.1.0`，核对确认前文件、确认后的包内容、任务终态及无关工程内容。冻结版按合成包的精确 ID 选择，避开另一个同名夹具。
 - 真实 v3 工程结束后再次按文件复核，6,232 个文件的内容 SHA-256 与首次只读采集时一致。
 
 ### 2026-11-24 Windows 和 Linux 七个检查点实际磁盘耗尽
@@ -253,10 +253,13 @@ GUI、CLI 和 MCP 的入口、对应 Core 用例及自动化测试见[绝对路�
 - 签名候选 `6914b1a822fb574bd8992bd91f8ebacbd6b8fde5` 相对已跑本地门禁的 `85ee44bb` 只更新验收文档。复核发布合同、元数据和全部新增提交的 SSH 签名后，普通快进到主仓 `main`。同一 SHA 的四项 CodeQL 均通过。Rust、JavaScript/TypeScript、Python 和 Actions 的分析结果数为 6、0、0、0，与上次候选一致。[CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45402579617)
 - `6914b1a8` 的 Windows Hosted 仓库外 SDK 和整仓检查均通过，随后的 sibling 自动启动夹具中两个开发构建 CLI 均退出 1。原日志只保留退出码。后续 Windows Hosted 以同一任务已构建的优化版二进制执行同一 sibling 夹具，为测试数据目录参数加引号并记录受控错误。显式数据目录仍走 sibling 入口，两个就绪状态、单 Core 断言和 5 秒运行时预算照常验证。[Windows Hosted 日志](https://github.com/ALCOMD/ALCOMD/actions/runs/45402579518/job/138474734157)
 - 本机在带空格和中文的隔离临时目录验证默认开发构建一次，并用工作流选用的优化构建验证三次。每次两个 CLI 都返回就绪且只发现一个 Core。优化构建的整次夹具用时分别为 2.48、2.28 和 2.24 秒，含进程清理。
+- 修订候选 `fb6b045586e0b9a99aba963db154b10b87e366d4` 在干净工作树通过本机整仓检查，Rust 共通过 1,078 项，23 项为既有忽略测试，Chromium 762 项全部通过。同一 SHA 的四项 CodeQL 均通过，分析结果数仍为 6、0、0、0。[CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45411028197)
+- 同一候选的 Windows Server 2025 和 Ubuntu 22.04 Hosted CI 已通过，包括仓库外 SDK、整仓检查、发行构建与每平台 762 项 Chromium。Windows 的修订 sibling 夹具两个 CLI 均就绪且只发现一个 Core。[Windows 作业](https://github.com/ALCOMD/ALCOMD/actions/runs/45411028166/job/138504526923) · [Ubuntu 作业](https://github.com/ALCOMD/ALCOMD/actions/runs/45411028166/job/138504526678)
+- `fb6b0455` 的 macOS Hosted 首轮和单项补跑均因 GitHub 的 macOS arm64 运行器容量不足，在分配到运行器前取消。Windows 和 Ubuntu 的通过结果已保留。上一候选 `6914b1a8` 的 macOS Hosted 已通过，当前候选仍待取得同一 SHA 的结果。[首轮 macOS 作业](https://github.com/ALCOMD/ALCOMD/actions/runs/45411028166/job/138504526184) · [补跑 macOS 作业](https://github.com/ALCOMD/ALCOMD/actions/runs/45411028166/job/138564954827) · [上一候选 CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45402579518)
 
 ### 原生验收缺口
 
 - 所有者确认当前无 Apple Silicon 隔离桌面，原生 macOS 验收延期。待补项为冻结 DMG 真实挂载与启动、实际 Keychain 凭据转移、签名独立桥接提交、回滚后旧版重开及系统故障注入。macOS Hosted CI 仍属于最终候选门禁。
 - Windows 双范围与 Linux AppImage、DEB 均已完成七个检查点的进程终止、实际权限故障及实际磁盘耗尽，并核对签名验证阶段的拒绝和恢复。macOS 系统级注入延期。
-- 真实工程的登记、迁移和 ZIP 恢复已有 Windows 双范围与 Linux DEB、AppImage 的原生证据。macOS 和未逐项核对的业务操作仍待覆盖。
+- Windows 双范围及 Linux DEB、AppImage 已有真实工程登记、迁移和 ZIP 恢复的原生证据。两代桌面的包操作和 Windows 的实际 Unity 启动见本计划，三端业务入口的逐项证据见[三端操作矩阵](M11-client-operation-matrix.md)。
 - Windows 签名桥接已使用原 v3 更新密钥验证。本轮新增隔离载荷使用一次性测试密钥，现有旧钥签名无需重签。
