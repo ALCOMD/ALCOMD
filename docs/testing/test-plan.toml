@@ -954,12 +954,39 @@ description = "官方 VCC 2.4.5 和旧 ALCOM 1.1.8 在隔离环境生成默认�
 evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
 
 [[test]]
+id = "migration.selection-constructed-legacy"
+stage = "M11"
+kind = "migration"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "按冻结源码独立构造专用 ALCOM 和 ALCOMD3 2.1.0 Beta 非空样本。真实 IPC 验证选择项、主题优先、模板字节、重复应用、源变更拒绝和普通错误脱敏。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
 id = "migration.linux-native-stage-faults"
 stage = "M11"
 kind = "fault-injection"
 platforms = ["linux-x86_64"]
 status = "implemented"
 description = "Ubuntu 24.04 普通用户于私有 16 MiB tmpfs 验证真实 ENOSPC 和目录无写权限时的 Core 暂存拒绝；释放空间后以同一包重试并核对原件和导出哈希。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.bootstrap-checkpoint-replay"
+stage = "M11"
+kind = "fault-injection"
+platforms = ["windows-x86_64", "linux-x86_64"]
+status = "implemented"
+description = "七个正向检查点分别验证子进程终止和重启，以及部分写入遇到空间不足与权限错误后的日志重开、精确重放和 v3 源保全。"
+evidence = ["apps/alcomd-bootstrap/src/tests.rs", "docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.native-commit-checkpoint-faults"
+stage = "M11"
+kind = "fault-injection"
+platforms = ["windows-x86_64", "linux-x86_64"]
+status = "implemented"
+description = "Windows 双范围和 Linux AppImage、DEB 用实际权限拒绝验证健康、提交意图及提交记录故障，覆盖提交前回滚、提交后原事务重开和签名拒绝。Linux 两种范围额外验证健康检查点实际 ENOSPC 后原事务提交。"
 evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
 
 [[test]]

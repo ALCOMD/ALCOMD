@@ -60,6 +60,6 @@ alcomd-migrate-v3 select --source alcomd3-beta --source-root <绝对源目录> -
 - `theme` 按当前修订更新外观模式。`settings` 和 `theme` 均保留导入字段之外的设置。
 - `templates` 从 VCC 的 `Templates/` 工程目录或旧 ALCOM、Beta 的 `vrc-get/templates/` 导入。只登记当前 Core 支持的模板，已有不同内容的同标识模板保留原样。存档模板 Apply 需要提供源目录之外的 `--staging-directory <绝对目录>`。重试复用该目录和原摘要，等任务结束后可清理转换副本。
 
-登记使用独立业务事务和固定的幂等键。应用中断时已接受的新增会保留，可以用仍匹配的摘要继续。官方 VCC 和使用 VCC 共用目录的旧 ALCOM 已通过默认资料复验。专用 `ALCOM` 目录和 ALCOMD3 2.1.0 Beta 的真实样本仍待补验。直接升级的原生包继续限定 `sourceVersion` 为 `3.4.0`。[选择性导入记录](../../docs/exec-plans/M11-v3-migration-and-zip.md#2026-11-24-官方-vcc-与旧-alcom-选择性导入)
+登记使用独立业务事务和固定的幂等键。应用中断时已接受的新增会保留，可以用仍匹配的摘要继续。官方 VCC 和使用 VCC 共用目录的旧 ALCOM 已通过默认资料复验。专用 `ALCOM` 目录和 ALCOMD3 2.1.0 Beta 已通过按冻结源码独立构造的非空样本补验。直接升级的原生包继续限定 `sourceVersion` 为 `3.4.0`。[选择性导入记录](../../docs/exec-plans/M11-v3-migration-and-zip.md#2026-11-24-专用-alcom-与-alcomd3-210-beta-自制样本)
 
 [冻结的选择性导入定义](https://github.com/ALCOMD/ALCOMD3/blob/4aa98ae4f18d42c10137278997180dbede991e88/vrc-get-gui/src/commands/environment/legacy_import.rs) · [冻结的旧数据根定义](https://github.com/ALCOMD/ALCOMD3/blob/4aa98ae4f18d42c10137278997180dbede991e88/alcomd3-app-paths/src/lib.rs)

@@ -18,7 +18,9 @@ Windows v3.3.0 已实测升级到冻结 v3.4.0，再以同一隔离账号完成�
 
 Windows 当前用户和全用户安装、Linux AppImage 和 DEB 均已通过隔离原生数据提交、篡改证明拒绝和同事务恢复。Windows 两种安装范围也通过配对旧版实例清理、第三方关联及未知文件保全、提交后 Core 重开。真实 v3 ZIP 已在 Windows 通过实际 GUI、CLI 和认证 MCP 从配置目录外恢复。官方 VCC 2.4.5 与旧 ALCOM 1.1.8 生成的默认资料均已通过选择性导入。[隔离提交记录](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-windows-双范围原生数据提交)
 
-签名候选 `b9f2d3e9` 已通过同一 SHA 的三平台 Hosted CI、仓库外 SDK 和四项 CodeQL。三个平台的 Chromium 各通过 762 项。M11 仍需可连接的 Apple Silicon 隔离环境验证冻结 DMG、Keychain 和桥接提交回滚，并补齐真实旧样本与完整故障矩阵。正式部署归 M12。[候选门禁与原生验收缺口](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-签名候选门禁)
+专用 `ALCOM` 目录和 ALCOMD3 2.1.0 Beta 已按冻结源码构造自制样本，经真实 Core 补验选择性导入。Windows 双范围与 Linux AppImage、DEB 均补验了三处提交相关检查点的系统权限拒绝及签名失败，Linux 两种范围也以真实磁盘耗尽验证了原事务重试。Windows 和 Linux 的日志自动化覆盖全部七个正向检查点。[样本来源和故障回滚记录](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-专用-alcom-与-alcomd3-210-beta-自制样本)
+
+签名候选 `b9f2d3e9` 已通过同一 SHA 的三平台 Hosted CI、仓库外 SDK 和四项 CodeQL。三个平台的 Chromium 各通过 762 项。M11 仍需可连接的 Apple Silicon 隔离环境验证冻结 DMG、Keychain 和桥接提交回滚，完整的跨平台系统级故障矩阵也还有缺口。正式部署归 M12。[候选门禁与原生验收缺口](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-签名候选门禁)
 
 软件包默认显示预发布版，安装和升级优先兼容稳定版。CLI 和 MCP 安装、升级均可省略版本。Windows 已通过真实 Core 的候选与设置重启测试、MCP 安装升级、27 项 VPM 回归和 74 项软件包浏览器测试。[配置规范](../specs/config/settings-v1.md)
 
