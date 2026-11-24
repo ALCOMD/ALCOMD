@@ -906,7 +906,8 @@ stage = "M11"
 kind = "migration"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
-description = "从受支持旧版升级到 3.4.0，再以脱敏 Fixture 执行完整 v4 迁移并核对记录与文件。"
+description = "Windows 已验证 3.3.0 更新至 3.4.0 后启动签名桥接。Linux DEB 和 AppImage 已从 3.3.0 升级到 3.4.0，再将同一资料通过独立迁移器与 v4 Core 导入并重开对账。macOS 原生验收延期。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
 
 [[test]]
 id = "migration.windows-native-health-commit"
@@ -1014,6 +1015,42 @@ kind = "fault-injection"
 platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
 description = "在 Windows 双范围和 Linux AppImage、DEB 的真实 Bootstrap 中逐项注入前四个检查点的系统权限拒绝，并在前三个检查点终止隔离进程。核对原事务恢复、回滚、原件保全及新事务提交。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.native-late-checkpoint-process-recovery"
+stage = "M11"
+kind = "fault-injection"
+platforms = ["windows-x86_64", "linux-x86_64"]
+status = "implemented"
+description = "Windows 双范围和 Linux AppImage、DEB 在第 4 至 7 个检查点落盘后真实终止进程，以常规 Bootstrap 复验提交点前回滚、提交点后同事务重开、已发布字节与源资料保全。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.native-project-editor-launch"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "隔离 Core 通过原生 CLI 启动实际 Unity 2022.3.22f1，以批处理模式打开真实工程副本，核对导入日志和正常退出。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.linux-desktop-package-install-upgrade"
+stage = "M11"
+kind = "migration"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "在 Ubuntu 24.04 AppImage 和 DEB 范围的冻结 v3 和 v4 桌面执行真实工程副本的合成包安装、升级和预演确认，比较锁定版本、写入内容及其他工程文件。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
+
+[[test]]
+id = "migration.linux-native-disk-checkpoints"
+stage = "M11"
+kind = "fault-injection"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 24.04 AppImage 和 DEB 在独立 tmpfs 上逐项复现七个检查点的 ENOSPC，核对回滚、提交意图后的同事务恢复、重开对账和冻结源保全。"
 evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
 
 [[test]]
