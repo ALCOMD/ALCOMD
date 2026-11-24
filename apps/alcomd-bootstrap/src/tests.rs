@@ -74,6 +74,18 @@ fn stub_export() -> ExportEvidence {
     }
 }
 
+fn checkpoints(evidence: &StateEvidence) -> [Phase; 7] {
+    [
+        Phase::Frozen,
+        Phase::ExportValidated(stub_export()),
+        Phase::NativeStaged,
+        Phase::NativeChecked(evidence.clone()),
+        Phase::Healthy(evidence.clone()),
+        Phase::CommitIntent(evidence.clone()),
+        Phase::Committed,
+    ]
+}
+
 #[test]
 fn journal_detects_concurrent_writes_and_missing_steps() {
     let fixture = Fixture::create();
@@ -94,48 +106,48 @@ fn journal_detects_concurrent_writes_and_missing_steps() {
 }
 
 #[test]
-fn partial_write_at_disk_limit_keeps_previous_checkpoint_and_retries_cleanly() {
-    let fixture = Fixture::create();
-    let steps = test_steps(&fixture.0);
-    steps
-        .journal
-        .record(&phase_file(Phase::Frozen.index()), &Phase::Frozen)
-        .expect("persist first checkpoint");
-    let next = Phase::ExportValidated(stub_export());
-    let name = phase_file(next.index());
-    let failure = steps
-        .journal
-        .record_with(&name, &next, |file, bytes| {
-            std::io::Write::write_all(file, &bytes[..bytes.len() / 2])?;
-            Err(io::ErrorKind::StorageFull.into())
-        })
-        .expect_err("partial write must fail without publishing the record");
-    assert_eq!(
-        failure.downcast_ref::<io::Error>().map(io::Error::kind),
-        Some(io::ErrorKind::StorageFull)
-    );
-    let partial = steps.journal.root().join(format!("{name}.partial"));
-    assert!(partial.metadata().expect("partial write survived").len() > 0);
-    assert!(!steps.journal.root().join(&name).exists());
-    let workspace = steps.plan.workspace.clone();
-    drop(steps.journal);
-    let journal = Journal::open(&workspace).expect("restart after incomplete write");
-    assert!(matches!(
-        latest_phase(&journal).expect("restart journal"),
-        Some(Phase::Frozen)
-    ));
-    journal
-        .record(&name, &next)
-        .expect("retry after space becomes available");
-    assert!(!partial.exists());
-    assert!(matches!(
-        latest_phase(&journal).expect("retry checkpoint"),
-        Some(Phase::ExportValidated(_))
-    ));
-    assert_eq!(
-        fs::read(fixture.0.join("source/previous")).expect("v3 source"),
-        b"unchanged input"
-    );
+fn partial_writes_preserve_every_checkpoint_until_retry() {
+    for kind in [io::ErrorKind::StorageFull, io::ErrorKind::PermissionDenied] {
+        let fixture = Fixture::create();
+        let steps = test_steps(&fixture.0);
+        let evidence = stub_state(&fixture.0.join("test-state"));
+        let mut journal = steps.journal;
+        let mut previous = None;
+        for next in checkpoints(&evidence) {
+            let name = phase_file(next.index());
+            let failure = journal
+                .record_with(&name, &next, |file, bytes| {
+                    std::io::Write::write_all(file, &bytes[..bytes.len() / 2])?;
+                    Err(kind.into())
+                })
+                .expect_err("partial write must fail without publishing the record");
+            assert_eq!(
+                failure.downcast_ref::<io::Error>().map(io::Error::kind),
+                Some(kind)
+            );
+            let partial = journal.root().join(format!("{name}.partial"));
+            assert!(partial.metadata().expect("partial write survived").len() > 0);
+            assert!(!journal.root().join(&name).exists());
+
+            drop(journal);
+            journal = Journal::open(&steps.plan.workspace).expect("restart after incomplete write");
+            assert_eq!(latest_phase(&journal).expect("restart journal"), previous);
+            journal
+                .record(&name, &next)
+                .expect("retry after restoring writes");
+            assert!(!partial.exists());
+            previous = Some(next);
+            assert_eq!(latest_phase(&journal).expect("retry checkpoint"), previous);
+        }
+        assert_eq!(
+            fs::read(fixture.0.join("source/previous")).expect("v3 source"),
+            b"unchanged input"
+        );
+        assert_eq!(
+            file_evidence(&steps.plan.recovery_executable, EXE_LIMIT).expect("v3 executable"),
+            steps.plan.recovery_file
+        );
+    }
 }
 
 #[cfg(windows)]
@@ -383,15 +395,7 @@ fn persist_checkpoint_until_terminated() {
         .expect("owned native staging")
         .join(DATA_DIR);
     let evidence = stub_state(&stage);
-    for phase in [
-        Phase::Frozen,
-        Phase::ExportValidated(stub_export()),
-        Phase::NativeStaged,
-        Phase::NativeChecked(evidence.clone()),
-        Phase::Healthy(evidence.clone()),
-        Phase::CommitIntent(evidence.clone()),
-        Phase::Committed,
-    ] {
+    for phase in checkpoints(&evidence) {
         let index = phase.index();
         if matches!(phase, Phase::Committed) {
             assert!(matches!(
