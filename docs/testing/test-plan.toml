@@ -1157,6 +1157,15 @@ status = "blocked"
 description = "同一 Inno Setup EXE 默认无提升执行当前用户安装，显式选择所有用户时才请求 UAC；覆盖 Win10 22H2/Win11、无主动旧版阻止、WebView2 Evergreen 在线/离线部署与正确系统集成。"
 
 [[test]]
+id = "installer.windows.fixture-core-registration"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "passed"
+description = "Win11 Sandbox 使用合成签名载荷验证 Core 登记、安装目录外冷启动、运行中拒绝注销和注销重入。当前用户及全用户 Inno 夹具验证各账号单独登记、卸载保留状态库与遗留登记无法启动已卸载程序。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation.rs", "crates/alcomd-platform/src/windows_installation_registration.rs"]
+
+[[test]]
 id = "installer.windows.scope-conversion"
 stage = "M12"
 kind = "migration"

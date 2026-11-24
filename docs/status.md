@@ -6,6 +6,8 @@
 
 **M12 阶段 0 已批准，阶段 1 正在实施。** 永久 Windows AppId、安装和登记布局、v4 更新声明及卸载归属已冻结。`cargo xtask dist` 已支持运行组件构建、清单验签和测试打包输入。Inno EXE、AppImage 和 DEB 测试包均已生成并复验解包内容。正式产品打包和客户端安装生命周期仍待验收。macOS 原生验收按所有者决定延期，公开发版仍按 A-017 的三平台四格式条件审批。[M12 实施计划与审批矩阵](exec-plans/M12-full-product-distribution.md) · [阶段 0 冻结合同](exec-plans/M12-stage-0-release-contract.md)
 
+Windows 11 Sandbox 的当前用户和全用户夹具已验证 Core 安装登记、外部 CLI 冷启动、账号隔离和卸载保留状态。Ubuntu 22.04 x86_64 隔离环境已原生编译七个发行组件，产物最高要求 `GLIBC_2.34`。[Windows 登记及 Ubuntu 构建记录](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-core-安装登记)
+
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 
 Unity `6000.0.67f1` 的两个内置模板和八组迁移已完成 Windows 开发验收。三平台门禁见 [PR #13](https://github.com/ALCOMD/ALCOMD/pull/13)。[Unity 6 ExecPlan](exec-plans/unity-6-first-release.md)

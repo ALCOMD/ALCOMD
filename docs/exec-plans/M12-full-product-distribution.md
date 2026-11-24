@@ -140,4 +140,16 @@ Windows 用实际编译的七个运行程序生成 Inno 测试 EXE。仅向隔�
 | AppImage | `7d3f2f8018cc7aa9884046998d58268c2cf0846c1eac15880870ee9fe9ad0f49` |
 | DEB | `f7157fec77ae5fb5bc1b5dbf148d6e668a55a0e958c6e864b49f4268b19b794f` |
 
-产品安装包的身份、启动登记、集成入口和生命周期按阶段 2 实施。Linux 产品构建及客户端验证仍需 Ubuntu 22.04。三平台四格式的公开放行按 A-017。
+产品安装包的身份、启动登记、集成入口和生命周期按阶段 2 实施。三平台四格式的公开放行按 A-017。
+
+### 2026-11-25 Windows Core 安装登记
+
+`4a80ac26` 实现 Windows 登记与精确注销。Bootstrap 核验安装载荷后，由当前账号下的 Core 获取单实例锁、完成初始化并发布登记。注销获取同一锁，使用已核验的文件句柄仅移除归属相符的登记。`98784db0` 补齐真正卷根的 ACL 校验。它通过打开的句柄识别卷根，仍检查 `FILE_DELETE_CHILD` 及其他适用的危险授权。
+
+Windows 11 Enterprise 24H2 Sandbox 中，合成签名载荷以 `98784db0` 编译 Core、CLI 和 Bootstrap。9 项验收覆盖签名候选不匹配、未知状态拒绝、首次及重复登记、外部 CLI 冷启动、Core 仍在运行时拒绝注销、停止后注销、重复注销及注销后拒绝冷启动。Inno 6.5.4 的当前用户夹具另外通过安装并登记、卸载程序并注销、保留状态库。夹具使用独立 AppId。正式安装器的范围转换、入口、WebView2 与更新流程仍需接线和验收。
+
+全用户夹具用 `/ALLUSERS` 部署到 Program Files，安装阶段没有在执行安装的账号下初始化 Core。两个普通账号分别登记、创建状态库并从安装目录外冷启动同一套程序。注销只影响发起账号。卸载程序后两份状态库均可读取，另一个账号的遗留登记无法启动已卸载的 Core。这轮覆盖 Win11 的夹具流程。Win10、UAC 取消以及最终安装器仍待验收。
+
+### 2026-11-25 Ubuntu 22.04 隔离构建
+
+独立 Ubuntu 22.04.5 x86_64 WSL 使用经过摘要校验的 Canonical Jammy 镜像，实际 glibc 为 2.35。验签后的 `4a80ac26` 干净检出编译全部七个发行程序，glibc 门禁测得最高要求 `GLIBC_2.34`。Tauri GUI 采用 no-bundle 构建。正式产品的 AppImage 持久登记、DEB 系统生命周期和客户端验收继续按阶段 2 执行。[Canonical Jammy 镜像摘要](https://cloud-images.ubuntu.com/wsl/jammy/current/SHA256SUMS)
