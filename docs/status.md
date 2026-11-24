@@ -20,7 +20,9 @@ Windows 当前用户和全用户安装、Linux AppImage 和 DEB 均已通过隔�
 
 专用 `ALCOM` 目录和 ALCOMD3 2.1.0 Beta 已按冻结源码构造自制样本，经真实 Core 补验选择性导入。Windows 双范围与 Linux AppImage、DEB 均补验了三处提交相关检查点的系统权限拒绝和签名失败，并在健康检查点复现实际磁盘满后用原事务重试。Windows 和 Linux 的日志自动化覆盖全部七个正向检查点。[样本来源和故障回滚记录](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-专用-alcom-与-alcomd3-210-beta-自制样本)
 
-Windows 当前用户范围与 Linux DEB、AppImage 已用一份真实 v3 工程的只读副本，核对两代桌面的工程行、迁移状态及冻结版 ZIP 恢复。各范围核对 6,232 个恢复文件，原工程通过前后摘要复核。[真实工程对照](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-windows-真实-v3-工程对照)
+Windows 当前用户、全用户与 Linux DEB、AppImage 已用真实 v3 工程的只读副本，核对两代桌面的工程行、迁移状态及冻结版 ZIP 恢复。各范围核对 6,232 个恢复文件，原工程通过前后摘要复核。Windows 全用户和 Linux 两种范围还通过两代桌面核对了包管理读回和编辑器启动参数。Linux DEB 另外通过真实桌面的合成包卸载预览、确认与写入。[真实工程对照](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-windows-真实-v3-工程对照)
+
+Windows 双范围和 Linux 两种范围已实测前四个迁移检查点的系统权限拒绝和前三个检查点的进程终止，验证回滚、原事务恢复、原件保全和新事务成功提交。[早期故障验收](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-早期迁移检查点系统故障)
 
 签名候选 `b9f2d3e9` 已通过同一 SHA 的三平台 Hosted CI、仓库外 SDK 和四项 CodeQL。三个平台的 Chromium 各通过 762 项。M11 仍需可连接的 Apple Silicon 隔离环境验证冻结 DMG、Keychain 和桥接提交回滚，完整的跨平台系统级故障矩阵也还有缺口。正式部署归 M12。[候选门禁与原生验收缺口](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-签名候选门禁)
 
