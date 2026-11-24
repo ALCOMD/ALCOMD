@@ -356,7 +356,16 @@ stage = "M11"
 kind = "ui-contract"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
-description = "M11 在真实脱敏 v3 Fixture 到位后执行 entry differential、flow/migration-state comparison、截图比较与 missing-entry audit；M7 synthetic/public GUI evidence 不得冒充该 parity。"
+description = "对照真实 v3 工程的入口、业务流程、迁移状态和截图，并审计缺失入口。Windows 当前用户和 Linux DEB、AppImage 已有部分证据，三平台完整覆盖仍待验收。"
+
+[[test]]
+id = "gui.v3-real-project-native-comparison"
+stage = "M11"
+kind = "ui-contract"
+platforms = ["windows-x86_64", "linux-x86_64"]
+status = "implemented"
+description = "用本机已登记真实 v3 工程的只读副本，在 Windows 当前用户和 Linux DEB、AppImage 范围对照两代真实桌面的工程行、迁移状态、CLI/MCP 回读与原版 ZIP 的同键恢复。各范围恢复和原件复核均核对 6,232 个文件。"
+evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
 
 [[test]]
 id = "gui.m7-stop-a-contract"
@@ -986,7 +995,7 @@ stage = "M11"
 kind = "fault-injection"
 platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
-description = "Windows 双范围和 Linux AppImage、DEB 用实际权限拒绝验证健康、提交意图及提交记录故障，覆盖提交前回滚、提交后原事务重开和签名拒绝。Linux 两种范围额外验证健康检查点实际 ENOSPC 后原事务提交。"
+description = "Windows 双范围和 Linux AppImage、DEB 用实际权限拒绝验证健康、提交意图及提交记录故障，覆盖提交前回滚、提交后原事务重开和签名拒绝；四种范围也验证健康检查点实际磁盘满后原事务提交。"
 evidence = ["docs/exec-plans/M11-v3-migration-and-zip.md"]
 
 [[test]]

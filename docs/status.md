@@ -18,7 +18,9 @@ Windows v3.3.0 已实测升级到冻结 v3.4.0，再以同一隔离账号完成�
 
 Windows 当前用户和全用户安装、Linux AppImage 和 DEB 均已通过隔离原生数据提交、篡改证明拒绝和同事务恢复。Windows 两种安装范围也通过配对旧版实例清理、第三方关联及未知文件保全、提交后 Core 重开。真实 v3 ZIP 已在 Windows 通过实际 GUI、CLI 和认证 MCP 从配置目录外恢复。官方 VCC 2.4.5 与旧 ALCOM 1.1.8 生成的默认资料均已通过选择性导入。[隔离提交记录](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-windows-双范围原生数据提交)
 
-专用 `ALCOM` 目录和 ALCOMD3 2.1.0 Beta 已按冻结源码构造自制样本，经真实 Core 补验选择性导入。Windows 双范围与 Linux AppImage、DEB 均补验了三处提交相关检查点的系统权限拒绝及签名失败，Linux 两种范围也以真实磁盘耗尽验证了原事务重试。Windows 和 Linux 的日志自动化覆盖全部七个正向检查点。[样本来源和故障回滚记录](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-专用-alcom-与-alcomd3-210-beta-自制样本)
+专用 `ALCOM` 目录和 ALCOMD3 2.1.0 Beta 已按冻结源码构造自制样本，经真实 Core 补验选择性导入。Windows 双范围与 Linux AppImage、DEB 均补验了三处提交相关检查点的系统权限拒绝和签名失败，并在健康检查点复现实际磁盘满后用原事务重试。Windows 和 Linux 的日志自动化覆盖全部七个正向检查点。[样本来源和故障回滚记录](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-专用-alcom-与-alcomd3-210-beta-自制样本)
+
+Windows 当前用户范围与 Linux DEB、AppImage 已用一份真实 v3 工程的只读副本，核对两代桌面的工程行、迁移状态及冻结版 ZIP 恢复。各范围核对 6,232 个恢复文件，原工程通过前后摘要复核。[真实工程对照](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-windows-真实-v3-工程对照)
 
 签名候选 `b9f2d3e9` 已通过同一 SHA 的三平台 Hosted CI、仓库外 SDK 和四项 CodeQL。三个平台的 Chromium 各通过 762 项。M11 仍需可连接的 Apple Silicon 隔离环境验证冻结 DMG、Keychain 和桥接提交回滚，完整的跨平台系统级故障矩阵也还有缺口。正式部署归 M12。[候选门禁与原生验收缺口](exec-plans/M11-v3-migration-and-zip.md#2026-11-24-签名候选门禁)
 
@@ -49,7 +51,7 @@ M8 冻结候选为 `622cb62a`，Windows、Ubuntu 和 CodeQL 已通过。macOS �
 - H7沿用所有者整体认可及条件收尾授权；新增修正按实际门禁和运行交付验收，不以浏览器fixture冒充原生人工操作。Portable UI原生表单/超时/外部断线等旧未覆盖项保持，见[桌面验收清单](testing/m7-official-gui-manual-checklist.md)。
 - 最终功能证据绑定`c46f7544`；此前候选的失败、分轮结果和历史三平台基线分别保留，不替代本轮完整通过。收尾文档为后续独立提交，不声称其新CI已完成。
 - 14项原有`#[ignore]`未全部直接单跑；子进程入口部分由父回归调用，联网VRCFury、Windows单实例/注册表、显式公开仓库快照及专用HTTP/代理隔离项不计作本轮直接通过。
-- v3 真实工程差分夹具仍属 M11。原生安装、更新、卸载和完整发行验收仍属 M12。后续里程碑按各自授权推进。
+- v3 真实工程差分余项仍属 M11。原生安装、更新、卸载和完整发行验收仍属 M12。后续里程碑按各自授权推进。
 - M7 已正式完成，M8 已按所有者要求收尾，M9 和 M10 已验收完成。Discord 启用状态迁移和随包装配分别归入 M11 和 M12。原生 Core 安装登记由 M12 安装器维护。[M10 验收记录](exec-plans/M10-native-sdk-and-rpc.md#2026-11-20-验收结果)
 
 [M7 状态与验收历史](testing/m7-status-history-through-20261107.md) 保存原状态页的候选、签收、遗留事项、失败轮次及证据链接。
