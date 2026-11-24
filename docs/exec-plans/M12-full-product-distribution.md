@@ -152,8 +152,24 @@ Windows 11 Enterprise 24H2 Sandbox 中，合成签名载荷以 `98784db0` 编译
 
 Windows 11 Sandbox 另用无本地管理员权限的账号通过当前用户夹具的安装、登记和卸载。卸载保留状态库。
 
+Windows 11 Sandbox 在签名夹具中打开实际 Tauri 窗口，检测到 WebView2 `157.0.4341.60` 的渲染进程，CLI 通过真实 Core IPC 返回 `ready`。`3eaf0935` 将客户端目录的稳定 CLI 校验对齐到同一安装根的 `runtime/<version>` 和 `bin/alcomd-cli.exe`，并通过 Windows 和 Ubuntu 22.04 的定向回归。
+
 ### 2026-11-25 Ubuntu 22.04 隔离构建
 
 独立 Ubuntu 22.04.5 x86_64 WSL 使用经过摘要校验的 Canonical Jammy 镜像，实际 glibc 为 2.35。验签后的 `4a80ac26` 干净检出编译全部七个发行程序，glibc 门禁测得最高要求 `GLIBC_2.34`。Tauri GUI 采用 no-bundle 构建。正式产品的 AppImage 持久登记、DEB 系统生命周期和客户端验收继续按阶段 2 执行。[Canonical Jammy 镜像摘要](https://cloud-images.ubuntu.com/wsl/jammy/current/SHA256SUMS)
 
 原生 `appimagetool` 拒绝了仅构建账号可读的桌面文件。`c6c9ede0` 在 AppImage 和 DEB 导出时明确写入目录、程序和普通文件模式，保留签名内容。Ubuntu 22.04 的限制性 `umask` 下 5 项 xtask 测试通过。复验用七个实际编译的组件，验证 AppImage 原生挂载和清单签名。DEB 经 `dpkg` 安装及同版本重装，普通账号从包安装目录冷启动 Core，卸载移除程序且保留状态库。正式产品的系统入口、升级和恢复沿用发行矩阵。
+
+同一套 Ubuntu 产物通过 Xvfb 启动了原生 Tauri 窗口。核对 WebKit 渲染进程和真实 Core IPC 返回的 `ready`。
+
+### 2026-11-25 签名格式预验
+
+从冻结 Git 对象复核了 v3 公钥的 Minisign key ID `DDEF8C83EF8404B0`。提取的 32 字节 Ed25519 公钥 SHA-256 为 `85928b8e67983ce4e9289635ebc284a16e9ee91e609cd24e0a5433719c41c094`。
+
+用官方已验签的 Minisign 0.12 和全新合成密钥生成两种签名。Minisign 验过预哈希封装。v4 运行载荷验签器接受同一密钥签出的原始 Ed25519 签名，拒绝 Minisign 封装，并在恢复原始签名后再次通过。合成试验覆盖发布签名域的准确字节，准备好复用同一 Ed25519 密钥的格式验证。正式签名仍按阶段 0 的授权边界执行。[Minisign 格式](https://jedisct1.github.io/minisign/#signature-format)
+
+另用 Tauri 签名工具生成有密码的合成密钥。Tauri 签发的预哈希封装通过 Minisign 验证。同一加密密钥经解开 Tauri 外层编码后由 Minisign 签出原始 Ed25519 签名，两者用同一公钥通过验证。试验结束移除了合成私钥文件。
+
+### 2026-11-25 首批工程候选门禁
+
+签名候选 `5d58b43b` 的干净检出通过本地整仓、前端、SDK 和 762 项 Chromium。推送前逐笔验签 8 笔提交，远端 `main` 快进到该候选。四项 CodeQL 已通过。同一候选的 macOS 15 arm64 Hosted 首次尝试因运行器容量取消，启动前无测试步骤运行。[CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45479473999) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45479474031) · [macOS 首次尝试](https://github.com/ALCOMD/ALCOMD/actions/runs/45479474031/job/138748427086)

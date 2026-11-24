@@ -49,9 +49,7 @@ Windows 正式测试 Windows 10 22H2 与 Windows 11，不增加主动拒绝更�
 WebView2 Evergreen Runtime 必须覆盖已安装、缺失后在线 Bootstrapper、离线 Standalone
 Installer、安装取消与失败恢复。
 
-M0 的 Windows Server 2025 hosted 与开发机编译不构成上述客户端运行证据。Windows 10 22H2
-与 Windows 11 的状态仍为 deferred、尚未通过；验证归属 M12，必须使用完整产品覆盖实际安装、
-启动、WebView2 渲染、托盘、注册表、用户数据路径、更新、升级和卸载，不能只重复编译。
+Windows 11 Sandbox 已通过当前用户与全用户夹具的登记和卸载验证，并打开了使用已安装 WebView2 的原生 GUI。正式 Windows 10 22H2 与 Windows 11 矩阵仍需使用完整产品验证安装、启动、WebView2 部署、托盘、注册表、用户数据路径、升级、回滚和卸载。[Windows 登记及夹具验收](../exec-plans/M12-full-product-distribution.md#2026-11-25-windows-core-安装登记)
 
 ## macOS 安装与 CLI
 

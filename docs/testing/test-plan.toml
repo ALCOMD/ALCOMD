@@ -1133,6 +1133,15 @@ description = "在 Windows 和 Ubuntu 22.04 生成独立的 Inno EXE、AppImage 
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/package.rs"]
 
 [[test]]
+id = "distribution.synthetic-signing-interop"
+stage = "M12"
+kind = "contract"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "核对冻结 v3 公开指纹。使用合成加密 Tauri 密钥验证同一 Ed25519 公钥对应的预哈希 Minisign 签名和原始 Ed25519 签名。实际 v4 运行载荷验签器接受原始签名并拒绝 Minisign 封装。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/baselines/source-lock.toml", "apps/alcomd-updater/src/distribution.rs"]
+
+[[test]]
 id = "distribution.version-coherence"
 stage = "M12"
 kind = "contract"
