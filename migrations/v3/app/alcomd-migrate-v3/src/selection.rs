@@ -26,11 +26,14 @@ pub(super) struct Arguments {
     /// Apply the exact planDigest printed by a preceding preview on this source.
     #[arg(long)]
     apply_plan: Option<String>,
+    /// Absolute directory for reviewed template archives, reused with the same plan on retry.
+    #[arg(long)]
+    staging_directory: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Serialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
-enum Source {
+pub(super) enum Source {
     Vcc,
     Alcom,
     Alcomd3Beta,
@@ -42,6 +45,7 @@ enum Category {
     Resources,
     Settings,
     Theme,
+    Templates,
 }
 
 #[derive(Serialize)]
@@ -82,6 +86,19 @@ struct Merge {
 pub(super) fn run(arguments: Arguments) -> Result<Value> {
     let (root, original) =
         alcomd_platform::resolve_plain_storage_directory(&arguments.source_root)?;
+    if matches!(arguments.category, Category::Templates) {
+        return crate::selection_templates::run(
+            &root,
+            &original,
+            arguments.source,
+            arguments.apply_plan.as_deref(),
+            arguments.staging_directory.as_deref(),
+        );
+    }
+    ensure!(
+        arguments.staging_directory.is_none(),
+        "staging directory is only used for template selection"
+    );
     let selected = match arguments.category {
         Category::Projects => {
             ensure!(
@@ -121,6 +138,7 @@ pub(super) fn run(arguments: Arguments) -> Result<Value> {
             };
             Selection::Theme { mode }
         }
+        Category::Templates => unreachable!(),
     };
     let (_, current) = alcomd_platform::resolve_plain_storage_directory(&root)?;
     ensure!(original == current, "selected source was replaced");

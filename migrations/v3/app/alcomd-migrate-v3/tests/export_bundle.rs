@@ -52,11 +52,34 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn published_default_profile_normalizes_locale_and_skips_uncreated_roots() {
+    let fixture = Fixture::new();
+    let projects = fixture.0.join("Documents/ALCOMD3/Projects");
+    let backups = fixture.0.join("Documents/ALCOMD3/Backups");
+    fixture.write(
+        "settings.json",
+        &json!({"defaultProjectPath": projects, "projectBackupPath": backups}),
+    );
+    fixture.write("config/gui-config.json", &json!({"language": "zh_hans"}));
+    let export = fixture.run("export", Some(&fixture.bundle()));
+    assert!(export.status.success(), "{:?}", export.stderr);
+    let state: Value = serde_json::from_slice(
+        &fs::read(fixture.bundle().join("state.json")).expect("native state"),
+    )
+    .expect("native state JSON");
+    assert_eq!(state["settings"]["locale"], "zh-CN");
+    assert_eq!(state["settings"]["projectDirectory"], Value::Null);
+    assert_eq!(state["settings"]["backupDirectory"], Value::Null);
+    assert!(!projects.exists() && !backups.exists());
+}
+
+#[test]
 fn synthetic_v3_profile_normalizes_records_without_writing_the_source_or_printing_values() {
     let f = Fixture::new();
     let project = f.0.join("synthetic 项目");
     let project_path = project.to_str().expect("Unicode project path");
     let directory = f.0.join("synthetic Unity folders");
+    fs::create_dir(&directory).expect("existing project storage directory");
     let editor = f.0.join("synthetic editor");
     let editor_path = editor.to_str().expect("Unicode editor path");
     let local_package = f.0.join("package source");
@@ -559,6 +582,17 @@ fn standalone_select_previews_only_confirmed_legacy_inputs() {
         &json!({"theme":"system","mcpHttpToken":"synthetic-unselected-secret"}),
     );
     f.write("vrc-get/theme-config.json", &json!({"theme":"dark"}));
+    fs::create_dir(f.source().join("vrc-get/templates")).expect("legacy templates directory");
+    let template_path = "vrc-get/templates/confirmed.alcomtemplate";
+    let legacy_template = json!({
+        "$type": "com.anatawa12.vrc-get.custom-template",
+        "formatVersion": "1.0",
+        "displayName": "Confirmed legacy template",
+        "id": "dev.example.confirmed",
+        "base": "com.anatawa12.vrc-get.blank",
+        "unityVersion": "2022.3.22"
+    });
+    f.write(template_path, &legacy_template);
     let execute = |source, category: &str| {
         Command::new(env!("CARGO_BIN_EXE_alcomd-migrate-v3"))
             .args([
@@ -591,5 +625,26 @@ fn standalone_select_previews_only_confirmed_legacy_inputs() {
     assert_eq!(beta["appearanceMode"], "dark");
     assert!(!execute("alcomd3-beta", "projects").status.success());
     assert!(!execute("vcc", "resources").status.success());
+    for source in ["alcom", "alcomd3-beta"] {
+        let output = execute(source, "templates");
+        assert!(output.status.success());
+        let plan: Value = serde_json::from_slice(&output.stdout).expect("legacy template preview");
+        assert_eq!(plan["templates"], 1);
+        assert_eq!(plan["archives"], 0);
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("Confirmed legacy template"));
+    }
+    let no_vcc_templates = execute("vcc", "templates");
+    assert!(no_vcc_templates.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&no_vcc_templates.stdout).expect("VCC template preview")["templates"],
+        0
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(
+            &fs::read(f.source().join(template_path)).expect("original template")
+        )
+        .expect("original metadata"),
+        legacy_template
+    );
     assert!(!f.bundle().exists());
 }

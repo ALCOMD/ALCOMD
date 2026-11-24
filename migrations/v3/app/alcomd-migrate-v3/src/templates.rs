@@ -8,7 +8,7 @@ use alcomd_domain::vpm_range::VpmRange;
 use alcomd_import::{Template, TemplateSource};
 use anyhow::{Context, Result, ensure};
 use flate2::bufread::GzDecoder;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zip::write::SimpleFileOptions;
 
@@ -36,6 +36,7 @@ const HEADER_BYTES: usize = 256 * 1024;
 const TAR_BLOCK: usize = 512;
 const OLD_KIND: &str = "com.anatawa12.vrc-get.custom-template";
 
+#[derive(Serialize)]
 pub struct Archive {
     source: PathBuf,
     digest: [u8; 32],
@@ -89,6 +90,7 @@ struct LegacyArchive {
     unity_version: String,
 }
 
+#[derive(Serialize)]
 pub struct Inventory {
     pub templates: Vec<Template>,
     pub attachments: Vec<Archive>,
@@ -96,11 +98,19 @@ pub struct Inventory {
 }
 
 pub fn inventory(root: &Path) -> Result<Inventory> {
+    inventory_directories(root, &["templates", "vrc-get/templates"])
+}
+
+pub(super) fn inventory_legacy(root: &Path) -> Result<Inventory> {
+    inventory_directories(root, &["vrc-get/templates"])
+}
+
+fn inventory_directories(root: &Path, directory_names: &[&str]) -> Result<Inventory> {
     let mut templates = Vec::new();
     let mut attachments = Vec::new();
     let mut id_claims = BTreeSet::new();
     let mut mappings = BTreeMap::new();
-    for dir_name in ["templates", "vrc-get/templates"] {
+    for &dir_name in directory_names {
         let folder = root.join(dir_name);
         match alcomd_platform::resolve_plain_storage_directory(&folder) {
             Ok(_) => {}
@@ -567,4 +577,226 @@ fn allowed(path: &str) -> bool {
         ]
         .iter()
         .any(|name| path.eq_ignore_ascii_case(name))
+}
+
+#[derive(Serialize)]
+pub(super) struct DirectoryTemplate {
+    source: PathBuf,
+    target: String,
+    name: String,
+    id: String,
+    members: Vec<DirectoryMember>,
+}
+
+#[derive(Serialize)]
+struct DirectoryMember {
+    name: String,
+    sha256: Option<[u8; 32]>,
+}
+
+pub(super) fn inventory_vcc(root: &Path) -> Result<Vec<DirectoryTemplate>> {
+    let folder = root.join("Templates");
+    match alcomd_platform::resolve_plain_storage_directory(&folder) {
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(_) => anyhow::bail!("unsafe VCC template directory"),
+    }
+    let mut names = Vec::new();
+    for entry in fs::read_dir(&folder)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        if kind.is_file() {
+            continue;
+        }
+        ensure!(kind.is_dir(), "unsafe VCC template entry");
+        ensure!(names.len() < MAX_TEMPLATES, "too many source templates");
+        names.push(
+            entry
+                .file_name()
+                .into_string()
+                .map_err(|_| anyhow::anyhow!("invalid template name"))?,
+        );
+    }
+    names.sort_unstable();
+    let mut unique = BTreeSet::new();
+    let mut total = 0;
+    let mut total_members = 0;
+    names
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| {
+            ensure!(
+                name.trim() == name
+                    && !name.is_empty()
+                    && name.len() <= 128
+                    && !name.chars().any(char::is_control)
+                    && unique.insert(name.to_lowercase()),
+                "invalid or duplicate VCC template name"
+            );
+            let source = Path::new("Templates").join(&name);
+            let path = root.join(&source);
+            let (_, identity) = alcomd_platform::resolve_plain_storage_directory(&path)?;
+            let mut members = Vec::new();
+            collect_directory_members(&path, "", &mut members, &mut total)?;
+            validate_directory_members(&members)?;
+            total_members += members.len();
+            ensure!(
+                total_members <= MAX_ENTRIES,
+                "too many source template archive entries"
+            );
+            ensure!(
+                alcomd_platform::resolve_plain_storage_directory(&path)?.1 == identity,
+                "VCC template directory changed"
+            );
+            Ok(DirectoryTemplate {
+                source,
+                target: format!("templates/{:04}.alcomdtemplate", index + 1),
+                id: format!(
+                    "com.vrclearn.alcomd.migration.vcc.{}",
+                    crate::hex_digest(&Sha256::digest(name.as_bytes()))
+                ),
+                name,
+                members,
+            })
+        })
+        .collect()
+}
+
+fn collect_directory_members(
+    root: &Path,
+    parent: &str,
+    members: &mut Vec<DirectoryMember>,
+    expanded: &mut u64,
+) -> Result<()> {
+    let folder = root.join(parent);
+    let (_, before) = alcomd_platform::resolve_plain_storage_directory(&folder)?;
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(&folder)? {
+        ensure!(
+            entries.len() < MAX_ENTRIES,
+            "too many template archive entries"
+        );
+        entries.push(entry?);
+    }
+    entries.sort_unstable_by_key(fs::DirEntry::file_name);
+    for entry in entries {
+        let leaf = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| anyhow::anyhow!("invalid template entry name"))?;
+        ensure!(!leaf.contains(['/', '\\']), "invalid template entry name");
+        let name = if parent.is_empty() {
+            leaf
+        } else {
+            format!("{parent}/{leaf}")
+        };
+        if !allowed(&name) {
+            continue;
+        }
+        ensure!(
+            safe_archive_path(&name)? == name && name.split('/').count() <= 32,
+            "unsafe template entry path"
+        );
+        ensure!(
+            members.len() < MAX_ENTRIES,
+            "too many template archive entries"
+        );
+        let kind = entry.file_type()?;
+        let sha256 = if kind.is_file() {
+            let bytes =
+                read_file(root, &name, TEMPLATE_BYTES)?.context("template file disappeared")?;
+            *expanded += bytes.len() as u64;
+            ensure!(
+                *expanded <= EXPANDED_BYTES,
+                "template exceeds expanded byte limit"
+            );
+            Some(Sha256::digest(&bytes).into())
+        } else {
+            ensure!(kind.is_dir(), "unsafe template archive entry");
+            None
+        };
+        let is_directory = sha256.is_none();
+        members.push(DirectoryMember {
+            name: name.clone(),
+            sha256,
+        });
+        if is_directory {
+            collect_directory_members(root, &name, members, expanded)?;
+        }
+    }
+    ensure!(
+        alcomd_platform::resolve_plain_storage_directory(&folder)?.1 == before,
+        "template directory changed"
+    );
+    Ok(())
+}
+
+fn validate_directory_members(members: &[DirectoryMember]) -> Result<()> {
+    let mut paths = BTreeSet::new();
+    for member in members {
+        ensure!(
+            paths.insert(member.name.to_lowercase()),
+            "duplicate template archive entry"
+        );
+    }
+    for required in ["Assets", "Packages", "ProjectSettings"] {
+        ensure!(
+            members
+                .iter()
+                .any(|member| member.name == required && member.sha256.is_none()),
+            "template lacks a required project root"
+        );
+    }
+    ensure!(
+        members
+            .iter()
+            .any(|member| member.name == "ProjectSettings/ProjectVersion.txt"
+                && member.sha256.is_some()),
+        "template lacks project version settings"
+    );
+    Ok(())
+}
+
+impl DirectoryTemplate {
+    pub(super) fn relative(&self) -> &str {
+        &self.target
+    }
+
+    pub(super) fn convert(&self, root: &Path, stage: &Path) -> Result<()> {
+        let file = File::options()
+            .write(true)
+            .create_new(true)
+            .open(stage.join(&self.target))?;
+        let mut zip = zip::ZipWriter::new(file);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file("package.json", options)?;
+        serde_json::to_writer(
+            &mut zip,
+            &serde_json::json!({"name": self.id, "displayName": self.name}),
+        )?;
+        let source = root.join(&self.source);
+        for member in &self.members {
+            if let Some(expected) = member.sha256 {
+                let bytes = read_file(&source, &member.name, TEMPLATE_BYTES)?
+                    .context("template file disappeared")?;
+                ensure!(
+                    Sha256::digest(&bytes).as_slice() == expected,
+                    "template changed after preview"
+                );
+                zip.start_file(&member.name, options)?;
+                io::copy(&mut bytes.as_slice(), &mut zip)?;
+            } else {
+                alcomd_platform::resolve_plain_storage_directory(&source.join(&member.name))?;
+                zip.add_directory(format!("{}/", member.name), SimpleFileOptions::default())?;
+            }
+        }
+        let file = zip.finish()?;
+        ensure!(
+            file.metadata()?.len() <= TEMPLATE_BYTES,
+            "template ZIP exceeds its byte limit"
+        );
+        file.sync_all()?;
+        Ok(())
+    }
 }

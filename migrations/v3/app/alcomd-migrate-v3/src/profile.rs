@@ -186,8 +186,8 @@ pub fn read(root: &Path) -> Result<Profile> {
         hide_local_user_packages: gui.hide_local_user_packages,
         hide_official_repository: builtin.ignore_official_repository,
         hide_curated_repository: builtin.ignore_curated_repository,
-        project_directory: optional_path(settings.default_project_path)?,
-        backup_directory: optional_path(settings.project_backup_path)?,
+        project_directory: existing_storage_path(settings.default_project_path)?,
+        backup_directory: existing_storage_path(settings.project_backup_path)?,
         hub_path: optional_path(settings.path_to_unity_hub)?,
         default_unity_launch_arguments: arguments(gui.default_unity_arguments)?,
         backup_compression: compression(gui.backup_format.as_deref()).into(),
@@ -361,8 +361,8 @@ pub(super) fn selected_settings(
                 ..Default::default()
             }
         });
-        let project = optional_path(source.default_project_path)?;
-        let backup = optional_path(source.project_backup_path)?;
+        let project = existing_storage_path(source.default_project_path)?;
+        let backup = existing_storage_path(source.project_backup_path)?;
         if project.is_some() || backup.is_some() {
             patch.paths = Some(alcomd_protocol::PathSettingsUpdate {
                 project_directory: project.map_or(NullableUpdate::Unchanged, NullableUpdate::Set),
@@ -710,7 +710,7 @@ fn extensions(gui: &Gui) -> Vec<ExtensionPreference> {
 fn locale(value: Option<&str>) -> Result<&'static str> {
     Ok(match value {
         None | Some("" | "en" | "en-US") => "en-US",
-        Some("zh" | "zh-CN" | "zh-Hans") => "zh-CN",
+        Some("zh" | "zh-CN" | "zh-Hans" | "zh_hans") => "zh-CN",
         Some("ja" | "ja-JP") => "ja-JP",
         Some("system") => "system",
         Some(_) => {
@@ -765,6 +765,18 @@ fn optional_path(path: Option<String>) -> Result<Option<String>> {
     path.filter(|text| !text.is_empty())
         .map(checked_path)
         .transpose()
+}
+
+fn existing_storage_path(path: Option<String>) -> Result<Option<String>> {
+    let Some(path) = optional_path(path)? else {
+        return Ok(None);
+    };
+    match std::fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.is_dir() => Ok(Some(path)),
+        Ok(_) => anyhow::bail!("saved storage path is not a directory"),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).context("could not inspect saved storage directory"),
+    }
 }
 
 fn arguments(values: Option<Vec<String>>) -> Result<Option<Vec<String>>> {

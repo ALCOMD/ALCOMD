@@ -2,10 +2,11 @@ mod external_mcp;
 mod litedb;
 mod profile;
 mod selection;
+mod selection_templates;
 mod templates;
 
 use std::collections::BTreeMap;
-use std::fs::{self, DirBuilder, File, OpenOptions};
+use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
@@ -33,6 +34,10 @@ struct Arguments {
 enum Command {
     /// Inspect an isolated external MCP configuration for the v3.4.0 quick-setup shape.
     PreviewMcpClient(external_mcp::Arguments),
+    /// Review or remove the exact v3 entry from a paired, isolated client configuration.
+    PatchMcpClient(external_mcp::PatchArguments),
+    /// Restore the original bytes of one isolated external MCP configuration.
+    RollbackMcpClient(external_mcp::RollbackArguments),
     /// Preview an audited category, or apply the exact confirmed selection.
     Select(selection::Arguments),
     /// Count valid source records without writing data or emitting profile values.
@@ -100,6 +105,8 @@ fn main() -> ExitCode {
 fn run(command: Command) -> Result<serde_json::Value> {
     match command {
         Command::PreviewMcpClient(arguments) => external_mcp::preview(arguments),
+        Command::PatchMcpClient(arguments) => external_mcp::patch(arguments),
+        Command::RollbackMcpClient(arguments) => external_mcp::rollback(arguments),
         Command::Select(arguments) => selection::run(arguments),
         Command::Inventory { source_root } => {
             let source = profile::read(&source_root)?;
@@ -260,7 +267,7 @@ fn write_json(root: &Path, name: &str, value: &impl Serialize, limit: u64) -> Re
 }
 
 fn file_summary(root: &Path, name: &str) -> Result<BundleFile> {
-    let mut file = File::open(root.join(name))?;
+    let (mut file, _) = alcomd_platform::open_plain_file(&root.join(name))?;
     let size = file.metadata()?.len();
     let mut bytes = [0; 65536];
     let mut sha = Sha256::new();
