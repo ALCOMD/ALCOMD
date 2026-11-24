@@ -1119,7 +1119,7 @@ id = "distribution.offline-payload-verification"
 stage = "M12"
 kind = "contract"
 platforms = ["windows-x86_64"]
-status = "passed"
+status = "implemented"
 description = "Windows 上运行三目标合成载荷验签，用本轮编译的七个 Windows 运行程序复验带空格和中文的暂存路径。拒绝改动文件、覆盖清单以及从未提交工作树构建发行候选。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution.rs"]
 
@@ -1128,8 +1128,8 @@ id = "distribution.native-fixture-containers"
 stage = "M12"
 kind = "distribution"
 platforms = ["windows-x86_64", "linux-x86_64"]
-status = "passed"
-description = "在 Windows 和 Ubuntu 24.04 WSL 生成独立的 Inno EXE、AppImage 和 DEB 测试包并解包复验签名。Windows 载荷为实际编译程序，Linux 使用真实 ELF 充当各组件的合成载荷。验证 Windows 拒绝覆盖既有目标、AppImage 打印签名清单摘要、DEB 元数据正确。"
+status = "implemented"
+description = "在 Windows 和 Ubuntu 22.04 生成独立的 Inno EXE、AppImage 和 DEB 夹具。两平台使用原生编译的组件。Windows 验证解包签名与拒绝覆盖，Ubuntu 验证签名、AppImage 原生挂载、DEB 安装和重装、普通账号冷启动及卸载保留状态。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/package.rs"]
 
 [[test]]
@@ -1161,7 +1161,7 @@ id = "installer.windows.fixture-core-registration"
 stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
-status = "passed"
+status = "implemented"
 description = "Win11 Sandbox 使用合成签名载荷验证 Core 登记、安装目录外冷启动、运行中拒绝注销和注销重入。当前用户及全用户 Inno 夹具验证各账号单独登记、卸载保留状态库与遗留登记无法启动已卸载程序。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation.rs", "crates/alcomd-platform/src/windows_installation_registration.rs"]
 

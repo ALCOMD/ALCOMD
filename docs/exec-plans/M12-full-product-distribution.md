@@ -150,6 +150,10 @@ Windows 11 Enterprise 24H2 Sandbox 中，合成签名载荷以 `98784db0` 编译
 
 全用户夹具用 `/ALLUSERS` 部署到 Program Files，安装阶段没有在执行安装的账号下初始化 Core。两个普通账号分别登记、创建状态库并从安装目录外冷启动同一套程序。注销只影响发起账号。卸载程序后两份状态库均可读取，另一个账号的遗留登记无法启动已卸载的 Core。这轮覆盖 Win11 的夹具流程。Win10、UAC 取消以及最终安装器仍待验收。
 
+Windows 11 Sandbox 另用无本地管理员权限的账号通过当前用户夹具的安装、登记和卸载。卸载保留状态库。
+
 ### 2026-11-25 Ubuntu 22.04 隔离构建
 
 独立 Ubuntu 22.04.5 x86_64 WSL 使用经过摘要校验的 Canonical Jammy 镜像，实际 glibc 为 2.35。验签后的 `4a80ac26` 干净检出编译全部七个发行程序，glibc 门禁测得最高要求 `GLIBC_2.34`。Tauri GUI 采用 no-bundle 构建。正式产品的 AppImage 持久登记、DEB 系统生命周期和客户端验收继续按阶段 2 执行。[Canonical Jammy 镜像摘要](https://cloud-images.ubuntu.com/wsl/jammy/current/SHA256SUMS)
+
+原生 `appimagetool` 拒绝了仅构建账号可读的桌面文件。`c6c9ede0` 在 AppImage 和 DEB 导出时明确写入目录、程序和普通文件模式，保留签名内容。Ubuntu 22.04 的限制性 `umask` 下 5 项 xtask 测试通过。复验用七个实际编译的组件，验证 AppImage 原生挂载和清单签名。DEB 经 `dpkg` 安装及同版本重装，普通账号从包安装目录冷启动 Core，卸载移除程序且保留状态库。正式产品的系统入口、升级和恢复沿用发行矩阵。
