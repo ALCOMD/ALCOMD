@@ -5,7 +5,7 @@ use alcomd_updater::{
     distribution::Target,
     product_update::{
         AcceptedUpdate, MAX_UPDATE_RESPONSE_BYTES, UpdateFormat, UpdateRequest, UpdateStream,
-        verify_and_record_update, verify_update,
+        download_update, product_update_origin, verify_and_record_update, verify_update,
     },
     read_limited, verify_staged_payload,
 };
@@ -49,6 +49,21 @@ enum Command {
         previous_manifest_sha256: Option<String>,
         #[arg(long, conflicts_with_all = ["previous_serial", "previous_manifest_sha256"])]
         replay_directory: Option<PathBuf>,
+    },
+    /// Download a verified v4 update into a trusted existing directory.
+    DownloadProductUpdate {
+        #[arg(long, value_enum)]
+        channel: Channel,
+        #[arg(long, value_enum)]
+        target: Target,
+        #[arg(long, value_enum)]
+        format: UpdateFormat,
+        #[arg(long)]
+        installed_version: semver::Version,
+        #[arg(long)]
+        download_directory: PathBuf,
+        #[arg(long)]
+        replay_directory: PathBuf,
     },
 }
 
@@ -116,6 +131,50 @@ fn main() -> anyhow::Result<()> {
                 verified.version(),
                 verified.acceptance().serial
             );
+        }
+        Command::DownloadProductUpdate {
+            channel,
+            target,
+            format,
+            installed_version,
+            download_directory,
+            replay_directory,
+        } => {
+            let origin = product_update_origin()?;
+            let origin_host = origin.host_str().ok_or_else(|| {
+                anyhow::anyhow!("embedded product update origin does not have a host")
+            })?;
+            let request = UpdateRequest {
+                stream: UpdateStream {
+                    channel,
+                    target,
+                    format,
+                },
+                installed_version: &installed_version,
+                allowed_asset_hosts: &[origin_host],
+                now: chrono::Utc::now(),
+                previous: None,
+            };
+            let download_directory = std::path::absolute(download_directory)?;
+            let replay_directory = std::path::absolute(replay_directory)?;
+            let network = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            let staged = network.block_on(download_update(
+                &origin,
+                &request,
+                &download_directory,
+                &replay_directory,
+            ))?;
+            if let Some(staged) = staged {
+                println!(
+                    "Staged product update {} (serial {})",
+                    staged.verified.version(),
+                    staged.verified.acceptance().serial
+                );
+            } else {
+                println!("No product update available");
+            }
         }
     }
     Ok(())

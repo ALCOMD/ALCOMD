@@ -18,7 +18,7 @@ Ubuntu 22.04 的产品 DEB 使用签名源码 `0c99475e` 与隔离测试密钥�
 
 Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密钥，验证原生 FUSE、真实桌面首启、独立 SDK 冷启动、移位拒绝与主动重新绑定。可选 CLI 集成和整产品替换仍待验收。[Ubuntu 产品 AppImage 首启](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
 
-v4 更新声明的离线验签、本地资产核对和持久防重放已接入，Windows 通过 Updater 定向测试、合成资产命令和普通账号竞争锁复验。联网下载、平台提交和回滚继续按阶段 3 实施。[更新声明核验](exec-plans/M12-full-product-distribution.md#v4-更新声明离线核验)
+v4 更新声明、HTTPS 下载、有界暂存和持久防重放已接入。Windows 11 Sandbox 通过 9 项实际 HTTPS 验收，其中包含下载中断、四进程竞争与回执保全。平台安装提交和回滚继续按阶段 3 实施。[更新声明、下载与暂存核验](exec-plans/M12-full-product-distribution.md#v4-更新声明离线核验)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 

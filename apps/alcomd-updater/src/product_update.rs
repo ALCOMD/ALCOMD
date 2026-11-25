@@ -12,7 +12,9 @@ use url::Url;
 use crate::distribution::Target;
 use crate::{Channel, PRODUCT, ProductIdentity, decode_hex, release_trust};
 
+mod download;
 mod replay;
+pub use download::{StagedUpdate, download_update};
 pub use replay::verify_and_record_update;
 
 pub const UPDATE_SIGNATURE_DOMAIN: &[u8] = b"ALCOMD product update manifest v1\0";
@@ -196,6 +198,13 @@ struct Product {
 #[derive(Deserialize)]
 struct ProductName {
     family_name: String,
+    homepage_url: String,
+}
+
+/// Returns the update origin configured for the current product.
+pub fn product_update_origin() -> anyhow::Result<Url> {
+    let product: Product = toml::from_str(PRODUCT).context("invalid embedded product metadata")?;
+    Url::parse(&product.product.homepage_url).context("invalid embedded product update origin")
 }
 
 /// Verifies the body of a successful JSON response with the embedded release key.

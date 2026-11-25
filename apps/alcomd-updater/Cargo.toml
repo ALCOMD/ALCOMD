@@ -15,10 +15,12 @@ base64 = { version = "=0.22.1", default-features = false, features = ["alloc"] }
 chrono.workspace = true
 clap.workspace = true
 ed25519-dalek.workspace = true
+reqwest.workspace = true
 semver = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+tokio.workspace = true
 toml.workspace = true
 url = "=2.5.8"
 

@@ -1222,6 +1222,15 @@ description = "在 Windows 11 Sandbox 普通用户上下文使用受保护目录
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-updater/src/product_update/replay.rs"]
 
 [[test]]
+id = "distribution.product-update-download"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "Windows 11 Sandbox 用本机 HTTPS、隔离证书和合成发布密钥验证 204、签名下载、同摘要复用、过时序号、篡改、跨主机重定向拒绝、截断下载、无更新时回执保全及四进程并发暂存。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-updater/src/product_update/download.rs"]
+
+[[test]]
 id = "installer.appimage.product-first-use"
 stage = "M12"
 kind = "system"

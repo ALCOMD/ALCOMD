@@ -19,6 +19,14 @@ use crate::Channel;
 const RECORD_LIMIT: u64 = 4096;
 static NEXT_PARTIAL: AtomicU64 = AtomicU64::new(0);
 
+pub(super) fn verify_download_replay(
+    directory: &Path,
+    accepted: AcceptedUpdate,
+) -> anyhow::Result<()> {
+    let journal = ReplayJournal::open(directory, accepted.stream)?;
+    check_replay(accepted, journal.previous()?)
+}
+
 /// Verifies an offline update and durably accepts its replay receipt in an existing directory.
 pub fn verify_and_record_update(
     directory: &Path,
@@ -48,7 +56,7 @@ struct Record {
     accepted: AcceptedUpdate,
 }
 
-struct ReplayJournal {
+pub(super) struct ReplayJournal {
     directory: PathBuf,
     identity: Vec<u8>,
     stem: String,
@@ -57,7 +65,7 @@ struct ReplayJournal {
 }
 
 impl ReplayJournal {
-    fn open(directory: &Path, stream: UpdateStream) -> anyhow::Result<Self> {
+    pub(super) fn open(directory: &Path, stream: UpdateStream) -> anyhow::Result<Self> {
         let (directory, identity) = resolve_plain_storage_directory(directory)?;
         ensure!(
             stream.target == stream.format.target(),
@@ -92,7 +100,7 @@ impl ReplayJournal {
         })
     }
 
-    fn previous(&self) -> anyhow::Result<Option<AcceptedUpdate>> {
+    pub(super) fn previous(&self) -> anyhow::Result<Option<AcceptedUpdate>> {
         self.ensure_directory()?;
         let path = self.record_path();
         match open_owned_installation_record(&path) {
@@ -117,7 +125,7 @@ impl ReplayJournal {
         }
     }
 
-    fn accept(&self, accepted: AcceptedUpdate) -> anyhow::Result<()> {
+    pub(super) fn accept(&self, accepted: AcceptedUpdate) -> anyhow::Result<()> {
         let previous = self.previous()?;
         check_replay(accepted, previous)?;
         self.ensure_directory()?;
