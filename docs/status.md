@@ -24,13 +24,15 @@ Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密
 
 v4 更新声明、HTTPS 下载、有界暂存和持久防重放已接入。Windows 11 Sandbox 通过 9 项 HTTPS 验收，覆盖下载中断、四进程竞争与回执保全。另通过 6 项签名响应接力检查，覆盖原始声明与资产的离线复验。平台安装提交和回滚继续按阶段 3 实施。[更新声明、下载与暂存核验](exec-plans/M12-full-product-distribution.md#v4-更新声明离线核验)
 
-Windows 当前用户的更新暂存与只读数据预检通过 8 项原生两版本夹具检查。Bootstrap 持有安装租约并排除运行中的 Core，核对外层 Inno 包和内层运行清单，再验证候选读取现有数据的能力。现行程序、登记和数据库保持原样。正式入口切换、提交恢复及全用户更新仍在实施。[Windows 当前用户更新预检](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-当前用户更新预检)
+Windows 当前用户的更新暂存与只读数据预检通过 9 项原生检查。完整签名源码 `f75808a9` 的 Inno 源版本包验证了安装维护锁、内外摘要、数据预检、中断后重试以及原程序、登记和数据库保全。全用户范围还复验了同一实包的六项卸载互斥。正式入口切换、提交恢复及全用户更新仍在实施。[Windows 当前用户更新预检](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-当前用户更新预检)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
 主仓工程候选 `595fc2ab` 已通过本机整仓、762 项 Chromium、三平台 Hosted CI 和 CodeQL。Windows 原生 Inno 入口的 11 项验收对应上文单独记录的 `62b6f562` 实包。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45552186695) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45552185931)
 
-跨账号卸载和离线更新声明候选 `81e7a498` 已通过本机整仓和 762 项 Chromium。五笔提交逐笔验签后快进至主仓 `main`，已启动同一 SHA 的远端门禁。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45601387153) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45601387132)
+跨账号卸载和离线更新声明候选 `81e7a498` 已通过本机整仓、762 项 Chromium、Windows 与 Ubuntu Hosted 以及 CodeQL。五笔提交逐笔验签后快进至主仓 `main`。该次 macOS Hosted 的 AI 客户端撤销用例在重开确认窗口时超时，等待关闭完成的修正已通过 Windows 定向复验。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45601387153) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45601387132)
+
+更新预检候选 `f75808a9` 已通过本机整仓、762 项 Chromium、三平台 Hosted CI 和四项 CodeQL。三笔提交逐笔验签后快进至主仓 `main`。Windows、Ubuntu 和 macOS Hosted 作业分别核对了 SDK 消费者、构建与 Chromium。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45606585593) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45606585513)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 
