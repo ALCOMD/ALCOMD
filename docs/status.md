@@ -1,6 +1,6 @@
 # 项目状态
 
-最后更新：2026-11-25
+最后更新：2026-11-26
 
 ## 当前阶段
 
@@ -37,6 +37,8 @@ M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows H
 跨账号卸载和离线更新声明候选 `81e7a498` 已通过本机整仓、762 项 Chromium、Windows 与 Ubuntu Hosted 以及 CodeQL。五笔提交逐笔验签后快进至主仓 `main`。该次 macOS Hosted 的 AI 客户端撤销用例在重开确认窗口时超时，等待关闭完成的修正已通过 Windows 定向复验。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45601387153) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45601387132)
 
 更新预检候选 `f75808a9` 已通过本机整仓、762 项 Chromium、三平台 Hosted CI 和四项 CodeQL。三笔提交逐笔验签后快进至主仓 `main`。Windows、Ubuntu 和 macOS Hosted 作业分别核对了 SDK 消费者、构建与 Chromium。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45606585593) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45606585513)
+
+当前用户版本切换候选 `b95e132f` 已通过本机整仓、762 项 Chromium、Windows／Ubuntu／macOS Hosted CI 和四项 CodeQL。五笔提交逐笔验签后普通快进至主仓 `main`。三平台 Hosted 均通过外部 SDK 消费者、Release 构建和 Chromium。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45641567398) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45641566264)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 

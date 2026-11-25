@@ -1258,6 +1258,15 @@ description = "完整 Release 源版 b95e132f 与版本派生 6a79c90e 通过 Wi
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation.rs", "apps/alcomd-bootstrap/src/windows_installation/update.rs", "xtask/src/distribution/inno.iss"]
 
 [[test]]
+id = "distribution.windows-current-user-update-candidate-gates"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "implemented"
+description = "同一签名候选 b95e132f 通过本机整仓和 762 项 Chromium、三平台 Hosted 的外部 SDK 消费者与构建和 Chromium 门禁，以及四项 CodeQL。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", ".github/workflows/ci.yml"]
+
+[[test]]
 id = "installer.appimage.product-first-use"
 stage = "M12"
 kind = "system"

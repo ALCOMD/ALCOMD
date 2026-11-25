@@ -284,6 +284,8 @@ M12 并行的 `81e7a498` macOS Hosted 在 Chromium 重开 AI 客户端撤销确�
 
 全用户更新、通过应用界面发起更新和其余故障场景继续按阶段 3 验收。
 
+`b95e132f` 的干净检出通过本机整仓与 762 项 Chromium。逐笔验签后普通快进主仓。同一 SHA 的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 作业均通过整仓、外部 SDK、Release、Tauri 和 Chromium 门禁。Actions、JavaScript／TypeScript、Python 和 Rust 的 CodeQL 均通过。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45641567398) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45641566264)
+
 ### 2026-11-25 Ubuntu 产品 AppImage 首启
 
 签名源码 `b324627eba5305457294bc4d921674535ead6dd8` 在隔离 Ubuntu 22.04 x86_64 构建七个 Release 程序，最高 glibc 符号版本为 `GLIBC_2.34`。合成密钥签名后的运行清单摘要为 `b82591144c327f87058905947ec9e12a3144aecb922422a708763fc948f99673`。用已固定摘要的 appimagetool 和 Type 2 runtime 生成 AppImage，文件 SHA-256 为 `e3c5e4dc60d39ca1966cd34180e05873a99b0f672b33357c2e6672b9fe381bdb`。
