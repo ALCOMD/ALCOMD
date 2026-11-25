@@ -116,6 +116,31 @@ fn invalid_registration() -> io::Error {
     )
 }
 
+/// Checks that an installation record's parent can't be modified by other accounts.
+pub fn validate_installation_record_parent(path: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    return crate::windows::core_installation::validate_registration_parent(path);
+    #[cfg(unix)]
+    {
+        use rustix::fs::fstat;
+        use rustix::process::geteuid;
+        let parent = path.parent().ok_or_else(invalid_registration)?;
+        let parent = crate::unix::validate_absolute_runtime_path(parent)?;
+        let directory = crate::unix::open_protected_directory_chain(&parent)?;
+        let stat = fstat(&directory).map_err(io::Error::from)?;
+        if stat.st_uid != geteuid().as_raw() || stat.st_mode & 0o077 != 0 {
+            return Err(invalid_registration());
+        }
+        Ok(())
+    }
+}
+
+/// Opens an existing protected local record without following a link.
+pub fn open_owned_installation_record(path: &Path) -> io::Result<std::fs::File> {
+    validate_installation_record_parent(path)?;
+    open_registration(path)
+}
+
 #[cfg(windows)]
 pub(crate) use crate::windows::core_installation::{open_registration, validate_core_executable};
 

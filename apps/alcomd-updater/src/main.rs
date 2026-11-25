@@ -5,7 +5,7 @@ use alcomd_updater::{
     distribution::Target,
     product_update::{
         AcceptedUpdate, MAX_UPDATE_RESPONSE_BYTES, UpdateFormat, UpdateRequest, UpdateStream,
-        verify_update,
+        verify_and_record_update, verify_update,
     },
     read_limited, verify_staged_payload,
 };
@@ -47,6 +47,8 @@ enum Command {
         previous_serial: Option<u64>,
         #[arg(long, requires = "previous_serial")]
         previous_manifest_sha256: Option<String>,
+        #[arg(long, conflicts_with_all = ["previous_serial", "previous_manifest_sha256"])]
+        replay_directory: Option<PathBuf>,
     },
 }
 
@@ -67,6 +69,7 @@ fn main() -> anyhow::Result<()> {
             allow_host,
             previous_serial,
             previous_manifest_sha256,
+            replay_directory,
         } => {
             let stream = UpdateStream {
                 channel,
@@ -88,17 +91,26 @@ fn main() -> anyhow::Result<()> {
                 &std::path::absolute(envelope)?,
                 MAX_UPDATE_RESPONSE_BYTES as u64,
             )?;
-            let verified = verify_update(
-                &envelope,
-                &UpdateRequest {
-                    stream,
-                    installed_version: &installed_version,
-                    allowed_asset_hosts: &hosts,
-                    now: chrono::Utc::now(),
-                    previous,
-                },
-            )?;
-            verified.asset().verify_file(&std::path::absolute(asset)?)?;
+            let request = UpdateRequest {
+                stream,
+                installed_version: &installed_version,
+                allowed_asset_hosts: &hosts,
+                now: chrono::Utc::now(),
+                previous,
+            };
+            let asset = std::path::absolute(asset)?;
+            let verified = if let Some(directory) = replay_directory {
+                verify_and_record_update(
+                    &std::path::absolute(directory)?,
+                    &envelope,
+                    &request,
+                    &asset,
+                )?
+            } else {
+                let verified = verify_update(&envelope, &request)?;
+                verified.asset().verify_file(&asset)?;
+                verified
+            };
             println!(
                 "Verified product update {} (serial {})",
                 verified.version(),

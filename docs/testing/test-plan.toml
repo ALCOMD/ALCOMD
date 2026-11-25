@@ -1213,6 +1213,15 @@ description = "用合成发布密钥核验 v4 声明原始字节、URI、UTC 有
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-updater/src/product_update.rs"]
 
 [[test]]
+id = "distribution.product-update-replay-persistent"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "在 Windows 11 Sandbox 普通用户上下文使用受保护目录和合成签名资产，验证 Updater 进程重开后读取同一回执、拒绝旧序号和冲突、锁竞争、新回执原子替换以及坏签名和文件保全。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-updater/src/product_update/replay.rs"]
+
+[[test]]
 id = "installer.appimage.product-first-use"
 stage = "M12"
 kind = "system"

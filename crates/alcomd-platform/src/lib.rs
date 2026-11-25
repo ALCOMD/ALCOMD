@@ -24,7 +24,8 @@ mod unity_hub_open;
 mod unity_registration;
 
 pub use core_installation::{
-    CORE_EXECUTABLE_NAME, core_installation_registration, registered_core_executable,
+    CORE_EXECUTABLE_NAME, core_installation_registration, open_owned_installation_record,
+    registered_core_executable, validate_installation_record_parent,
 };
 #[cfg(target_os = "linux")]
 pub use core_installation::{

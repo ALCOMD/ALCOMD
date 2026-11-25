@@ -12,6 +12,9 @@ use url::Url;
 use crate::distribution::Target;
 use crate::{Channel, PRODUCT, ProductIdentity, decode_hex, release_trust};
 
+mod replay;
+pub use replay::verify_and_record_update;
+
 pub const UPDATE_SIGNATURE_DOMAIN: &[u8] = b"ALCOMD product update manifest v1\0";
 pub const MAX_UPDATE_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_MANIFEST_BYTES: usize = 32 * 1024;
@@ -21,7 +24,7 @@ const MAX_SERIAL: u64 = 9_007_199_254_740_991;
 const MAX_URL_BYTES: usize = 2048;
 
 /// Self-update formats. The system package manager owns DEB installations.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, Deserialize, serde::Serialize, Eq, PartialEq, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum UpdateFormat {
     Inno,
@@ -45,10 +48,19 @@ impl UpdateFormat {
             Self::Dmg => "macos_aarch64.dmg",
         }
     }
+
+    const fn feed_name(self) -> &'static str {
+        match self {
+            Self::Inno => "inno",
+            Self::Appimage => "appimage",
+            Self::Dmg => "dmg",
+        }
+    }
 }
 
 /// The replay sequence is independent for each feed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateStream {
     pub channel: Channel,
     pub target: Target,
@@ -56,7 +68,8 @@ pub struct UpdateStream {
 }
 
 /// The last accepted sequence number and digest to persist for one feed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AcceptedUpdate {
     pub stream: UpdateStream,
     pub serial: u64,
