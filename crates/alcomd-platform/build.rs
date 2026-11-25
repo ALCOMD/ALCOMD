@@ -6,6 +6,7 @@ fn main() {
     let text = std::fs::read_to_string(manifest).expect("product metadata");
     let mut section = "";
     let mut directory = None;
+    let mut installation = None;
     let mut daemon = None;
     let mut bundle = None;
     let mut gui = None;
@@ -22,6 +23,7 @@ fn main() {
         };
         let field = match (section, key.trim()) {
             ("[identity]", "data_directory") => &mut directory,
+            ("[identity]", "install_directory") => &mut installation,
             ("[binaries]", "daemon") => &mut daemon,
             ("[identity]", "bundle_identifier") => &mut bundle,
             ("[binaries]", "gui") => &mut gui,
@@ -54,6 +56,7 @@ fn main() {
         daemon.expect("product binaries.daemon")
     );
     for (key, value) in [
+        ("INSTALL_DIRECTORY", installation),
         ("BUNDLE_ID", bundle),
         ("GUI_NAME", gui),
         ("CLI_NAME", cli),

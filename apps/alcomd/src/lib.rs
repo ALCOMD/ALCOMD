@@ -84,8 +84,8 @@ fn preflight_data_layout(database: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Checks the current user's persistent data before installing a portable runtime.
-#[cfg(target_os = "linux")]
+/// Checks the current user's persistent data before selecting a new runtime.
+#[cfg(any(windows, target_os = "linux"))]
 pub fn check_installation_data(data: &DataConfig) -> io::Result<()> {
     preflight_data_layout(&alcomd_platform::state_database_location(data)?)
 }

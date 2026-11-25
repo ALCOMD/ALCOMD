@@ -168,6 +168,31 @@ begin
     Result := HKEY_CURRENT_USER;
 end;
 
+function InitializeSetup: Boolean;
+var
+  Digest, Root, Destination, Extracted: String;
+begin
+  Digest := ExpandConstant('{param:ALCOMDStage|}');
+  Result := Digest = '';
+  if Result then
+    Exit;
+  // Bootstrap verifies this installer and supplies the expected payload digest.
+  // Both success and failure leave the normal Inno installation path unused.
+  if IsAdminInstallMode or (Digest <> '@MANIFEST_DIGEST@') then
+    Exit;
+  Root := ExpandConstant('{localappdata}\Programs\@INSTALL_DIRECTORY@');
+  if not OwnedUninstallRoot(Root) or not PlainDirectoryChain(Root, False) then
+    Exit;
+  Destination := AddBackslash(ExtractFileDir(Root)) +
+    '.@INSTALL_DIRECTORY@@UPDATE_STAGE_PREFIX@' + Digest;
+  if (GetAttributes(Destination) <> InvalidFileAttributes) or not MissingEntry(DLLGetLastError) then
+    Exit;
+  ExtractTemporaryFiles('{app}\runtime\@APP_VERSION@\*');
+  Extracted := ExpandConstant('{tmp}\') + '{app}\runtime\@APP_VERSION@';
+  if not RenameFile(Extracted, Destination) then
+    Log('Could not publish the ALCOMD update staging directory.');
+end;
+
 function ReadPath(var Path: String; var ValueType: Cardinal): Boolean;
 var
   Key: String;

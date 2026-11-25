@@ -207,6 +207,33 @@ pub fn product_update_origin() -> anyhow::Result<Url> {
     Url::parse(&product.product.homepage_url).context("invalid embedded product update origin")
 }
 
+/// Rechecks a saved update against the product's configured trusted origin and replay state.
+pub fn verify_saved_product_update(
+    envelope: &std::path::Path,
+    asset: &std::path::Path,
+    replay_directory: &std::path::Path,
+    stream: UpdateStream,
+    installed_version: &Version,
+) -> anyhow::Result<VerifiedUpdate> {
+    let origin = product_update_origin()?;
+    let host = origin
+        .host_str()
+        .context("missing product update origin host")?;
+    let body = crate::read_limited(envelope, MAX_UPDATE_RESPONSE_BYTES as u64)?;
+    verify_and_record_update(
+        replay_directory,
+        &body,
+        &UpdateRequest {
+            stream,
+            installed_version,
+            allowed_asset_hosts: &[host],
+            now: chrono::Utc::now(),
+            previous: None,
+        },
+        asset,
+    )
+}
+
 /// Verifies the body of a successful JSON response with the embedded release key.
 ///
 /// A caller handling HTTP 204 keeps its previous replay state without calling this function.

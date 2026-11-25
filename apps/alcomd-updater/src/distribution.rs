@@ -21,6 +21,7 @@ pub use alcomd_platform::PRODUCT_PAYLOAD_MANIFEST_NAME as MANIFEST_NAME;
 pub const SIGNATURE_NAME: &str = "product-payload.sig";
 pub const SIGNATURE_DOMAIN: &[u8] = b"ALCOMD product payload v1\0";
 pub const WINDOWS_CRT_FILE: &str = "vcruntime140.dll";
+pub const WINDOWS_UPDATE_STAGE_PREFIX: &str = ".update-";
 const LICENSE: &str = "LICENSE";
 const NOTICES: &str = "THIRD_PARTY_NOTICES.md";
 const DISCORD_PACKAGE: &str = "extensions/discord.alcomdextension";

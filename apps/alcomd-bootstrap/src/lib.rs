@@ -9,7 +9,8 @@ pub use linux_portable::start_portable;
 mod windows_installation;
 #[cfg(windows)]
 pub use windows_installation::{
-    register_installed_core, start_installed_core, unregister_installed_core,
+    register_installed_core, stage_installed_update, start_installed_core,
+    unregister_installed_core,
 };
 
 /// Verifies and starts the installed Core in the calling Linux account.
@@ -1001,6 +1002,15 @@ fn ensure_absent(path: &Path) -> anyhow::Result<()> {
 }
 
 fn run_command(executable: &Path, cwd: &Path, args: &[&OsStr]) -> anyhow::Result<Vec<u8>> {
+    run_command_with_exit_code(executable, cwd, args, 0)
+}
+
+fn run_command_with_exit_code(
+    executable: &Path,
+    cwd: &Path,
+    args: &[&OsStr],
+    expected_exit_code: i32,
+) -> anyhow::Result<Vec<u8>> {
     let mut process = Command::new(executable)
         .current_dir(cwd)
         .args(args)
@@ -1039,7 +1049,7 @@ fn run_command(executable: &Path, cwd: &Path, args: &[&OsStr]) -> anyhow::Result
         }
     };
     ensure!(
-        status.success(),
+        status.code() == Some(expected_exit_code),
         "migration subprocess did not complete successfully"
     );
     let output = receiver

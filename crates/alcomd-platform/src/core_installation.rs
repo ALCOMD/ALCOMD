@@ -79,7 +79,8 @@ mod registration;
 #[cfg(windows)]
 pub use registration::{
     check_windows_core_registration, hold_windows_installation, publish_windows_core_registration,
-    remove_windows_core_registration, windows_installation_bootstrap, windows_installation_runtime,
+    remove_windows_core_registration, windows_current_user_installation_root,
+    windows_installation_bootstrap, windows_installation_runtime,
 };
 
 #[cfg(target_os = "linux")]

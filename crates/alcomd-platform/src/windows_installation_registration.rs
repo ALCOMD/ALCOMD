@@ -18,6 +18,14 @@ use crate::{DataConfig, publish_path_no_replace, resolve_plain_storage_directory
 // signed manifest, so verification can still read the complete file.
 const MANIFEST_LEASE_OFFSET: u64 = 1 << 32;
 
+/// Resolves the current user's standard Windows product root for maintenance.
+pub fn windows_current_user_installation_root() -> io::Result<PathBuf> {
+    let path = crate::local_app_data_directory()?
+        .join("Programs")
+        .join(env!("ALCOMD_INSTALL_DIRECTORY"));
+    resolve_plain_storage_directory(&path).map(|(path, _)| path)
+}
+
 /// Holds a shared lease for a running installed Core. Scratch and sibling builds have no lease.
 pub fn hold_windows_installation(executable: &Path) -> io::Result<Option<File>> {
     // Windows reports the spelling used at launch, which can include a short name or junction.

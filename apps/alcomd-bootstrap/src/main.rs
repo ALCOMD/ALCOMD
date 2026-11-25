@@ -28,6 +28,18 @@ enum Command {
     #[cfg(windows)]
     /// Remove the current user's registration when it belongs to this installed runtime.
     UnregisterInstalledCore(InstallCoreArguments),
+    #[cfg(windows)]
+    /// Prepare a verified update for a current-user Windows installation.
+    StageInstalledUpdate {
+        #[arg(long)]
+        envelope: PathBuf,
+        #[arg(long)]
+        asset: PathBuf,
+        #[arg(long)]
+        replay_directory: PathBuf,
+        #[arg(long, value_enum)]
+        channel: Channel,
+    },
     #[cfg(any(windows, target_os = "linux"))]
     #[command(hide = true)]
     StartInstalledCore,
@@ -97,6 +109,22 @@ fn main() -> anyhow::Result<()> {
                 arguments.source_sha,
                 arguments.data_dir.as_deref(),
             );
+        }
+        #[cfg(windows)]
+        Command::StageInstalledUpdate {
+            envelope,
+            asset,
+            replay_directory,
+            channel,
+        } => {
+            let staged = alcomd_bootstrap::stage_installed_update(
+                &std::path::absolute(envelope)?,
+                &std::path::absolute(asset)?,
+                &std::path::absolute(replay_directory)?,
+                channel,
+            )?;
+            println!("Verified update staged at {}", staged.display());
+            return Ok(());
         }
         #[cfg(any(windows, target_os = "linux"))]
         Command::StartInstalledCore => return alcomd_bootstrap::start_installed_core(),
