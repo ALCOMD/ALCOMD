@@ -1240,6 +1240,24 @@ description = "Windows 11 Sandbox 用本机 HTTPS、隔离证书和合成发布�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-updater/src/product_update/download.rs"]
 
 [[test]]
+id = "distribution.windows-current-user-update-activation"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "Windows 11 Sandbox 用 Inno 两版合成签名夹具验证正常切换、无事务安装和未知目标拒绝、稳定 CLI、开始菜单、Core 登记、旧版启动阻断、新版原工程读取及卸载保全。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs", "crates/alcomd-platform/src/windows_installation_registration.rs", "xtask/src/distribution/inno.iss"]
+
+[[test]]
+id = "distribution.windows-current-user-update-interruption"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "签名源码 3a02f869 的两版夹具通过 Win11 10 项恢复检查，包括提交意图后终止 Bootstrap 和 Inno 进程树、篡改保留安装包、登记占用、同一事务激活、旧程序文件变化拒绝卸载及用户资料保全。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation.rs", "apps/alcomd-bootstrap/src/windows_installation/update.rs", "xtask/src/distribution/inno.iss"]
+
+[[test]]
 id = "installer.appimage.product-first-use"
 stage = "M12"
 kind = "system"
