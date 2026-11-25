@@ -8,7 +8,7 @@
 
 Windows 11 Sandbox 的当前用户和全用户夹具已验证 Core 安装登记、外部 CLI 冷启动、账号隔离和卸载保留状态。Ubuntu 22.04 x86_64 隔离环境已原生编译七个发行组件，产物最高要求 `GLIBC_2.34`。[Windows 登记及 Ubuntu 构建记录](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-core-安装登记)
 
-Windows 全用户安装夹具已验证普通账号从稳定 CLI 首次启动、独立登记、四个 CLI 并发接入单个 Core，以及签名篡改拒绝。正式构建入口生成的 Release GUI 也通过原生首启、发布登记和 IPC。卸载保留各测试账号状态并使残留登记失效。[Windows 全用户首次启动验收](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-全用户安装首次启动)
+Windows 已在两套隔离环境用 `25afa078` 的同一个全 Release Inno 夹具通过当前用户和全用户安装。验收覆盖 CLI 和 GUI 首启、签名篡改拒绝、同账号四个 CLI 接入同一 Core、注销登记以及卸载保留资料。[Windows 双范围验收](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-全用户安装首次启动)
 
 Ubuntu 22.04 用签名候选 `25afa078` 复验了原生 AppImage 挂载、DEB 安装和卸载、Tauri 窗口及 Core IPC。[Ubuntu 同候选原生夹具](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-2204-同候选原生夹具)
 

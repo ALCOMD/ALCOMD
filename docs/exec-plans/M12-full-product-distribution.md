@@ -190,6 +190,8 @@ Windows 11 Sandbox 使用 Inno 6.5.4、合成签名和 Release Bootstrap，安�
 
 Debug GUI 试验未启动 WebView2。改用干净 `25afa078` 的 `npm run gui:build -- --no-bundle` 构建 Release GUI 后，替换合成签名夹具中的 GUI 并重签，安装包 SHA-256 为 `dd7c1f097235817f2ff89ef7b986647887a90fdbabf18f3b1bcd46652c937e05`。隔离图形会话显示 `ALCOMD3` 窗口和 5 个对应 WebView2 进程，约 2.1 秒发布 Core 登记。禁止自动启动的独立 CLI 返回 `ready`。同一轮通过 7 项检查，涵盖全用户部署、签名拒绝、普通用户单次及并发首启、GUI 首启、外部程序读取登记、卸载后状态保留及残留登记失效。
 
+从干净签名 `25afa078` 构建全部七个 Windows Release 程序并生成正式布局输入。合成签名的运行清单摘要为 `6b00bb300e44b5e49c18ec2a6123cc5b0346c17548bee8ae2ecfcf4b349af172`。同一个 Inno 夹具 EXE `f67183320fd119190b083b33ae036174c1e8dae01eb10ac514e6c61443f6db4e` 在两个独立 Windows 11 Sandbox 中复验。当前用户范围用普通账号通过安装、CLI 首次启动、Bootstrap 注销登记和保留状态的卸载。全用户范围重复通过上述 7 项检查，四个 CLI 约 1.1 秒全部就绪，只观察到同账号一个 Core。Release GUI 约 2.0 秒发布登记。正式 Inno 事务和完整客户端矩阵按阶段 2 接线。
+
 ### 2026-11-25 Ubuntu 22.04 同候选原生夹具
 
 从独立 Ubuntu 22.04 x86_64 的干净签名检出构建 `25afa078` 的七个 Release 程序。最高 glibc 符号版本为 `GLIBC_2.34`。在限制性 `umask` 下构建 AppImage 与 DEB 的合成签名夹具，二者解出相同清单 `08bd169468b2bdf92b145444433675ad95577afc62237b57225384025f9c20f4` 并通过验签。AppImage 用原生 FUSE 挂载，DEB 用真实 `dpkg` 安装、重装、冷启动并移除，保留状态库。Xvfb 中由同一组二进制验证了 Tauri 窗口、WebKit 渲染流程和实际 Core IPC。

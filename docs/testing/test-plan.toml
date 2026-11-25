@@ -1186,6 +1186,15 @@ description = "Ubuntu 22.04 隔离环境用 25afa078 的七个 Release 程序验
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
+id = "distribution.windows-release-dual-scope-fixture"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "同一 25afa078 合成签名 Inno 夹具包含全部七个 Release 程序，在独立 Windows 11 环境验证普通账号当前用户安装和全用户安装，两范围均证明移除程序后保留账号资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
+
+[[test]]
 id = "distribution.cli-integration"
 stage = "M12"
 kind = "system"
