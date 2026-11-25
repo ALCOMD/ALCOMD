@@ -186,6 +186,8 @@ Windows 11 Sandbox 在签名夹具中打开实际 Tauri 窗口，检测到 WebVi
 
 中间候选 `590f7c84` 的三平台 Hosted CI 与四项 CodeQL 均通过。后续下载器候选 `bd13cbed` 的 Ubuntu Hosted 通过整仓、原生 SDK 和发行构建，Chromium 同轮 761 项通过。版本菜单重复选择用例在指定来源后打开第二次确认弹窗时失败。[590f7c84 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45531161768) · [590f7c84 CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45531161429) · [Ubuntu Chromium 首轮](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509247/job/138947625177)
 
+该用例两次选择版本都改为等待实际菜单打开、选项就绪和菜单关闭，再检查 Core 的计划参数。原用例在 Windows 重跑 20 次、Ubuntu 22.04 重跑 30 次均通过。修订后两平台各通过 30 次定向重复和完整候选用例组的 45 项。
+
 ### 2026-11-25 Windows 全用户安装首次启动
 
 `25afa078` 接通官方 Windows 入口。没有登记且 IPC 尚未就绪时，受保护的稳定 CLI 和版本化 GUI 可调用同一运行目录中的 Bootstrap。Bootstrap 核验已安装载荷，Core 在当前账号下初始化并发布登记后服务 IPC。独立 SDK 继续按登记定位 Core，沿用五秒就绪预算。
