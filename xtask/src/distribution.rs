@@ -3,8 +3,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use alcomd_updater::distribution::{
-    Candidate, MANIFEST_NAME, SIGNATURE_DOMAIN, SIGNATURE_NAME, Target, format_digest,
-    prepare_fixture, prepare_release, verify_fixture, verify_release,
+    Candidate, MANIFEST_NAME, SIGNATURE_DOMAIN, SIGNATURE_NAME, Target, WindowsCrtDigests,
+    format_digest, prepare_fixture, prepare_release, verify_fixture, verify_release,
 };
 use anyhow::{Context, ensure};
 use clap::{ArgGroup, Parser};
@@ -58,12 +58,18 @@ struct Arguments {
     /// Pinned SHA-256 of the first-party extension archive.
     #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout"])]
     discord_sha256: Option<String>,
-    /// The x64 VC runtime DLL from a licensed Visual Studio redistributable directory.
+    /// The x64 vcruntime140.dll from a licensed Visual Studio redistributable directory.
     #[arg(long, requires_all = ["build", "windows_crt_sha256"])]
     windows_crt: Option<PathBuf>,
     /// Pinned SHA-256 of the exact app-local Windows VC runtime DLL.
     #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout"])]
     windows_crt_sha256: Option<String>,
+    /// The x64 vcruntime140_1.dll from the same Visual Studio redistributable directory.
+    #[arg(long, requires_all = ["build", "windows_crt_companion_sha256"])]
+    windows_crt_companion: Option<PathBuf>,
+    /// Pinned SHA-256 of the exact app-local Windows VC runtime companion DLL.
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout"])]
+    windows_crt_companion_sha256: Option<String>,
 }
 
 pub fn run(root: &Path) -> anyhow::Result<()> {
@@ -85,7 +91,14 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
         return Ok(());
     }
     let path = std::path::absolute(args.staging.context("staging directory is required")?)?;
-    let crt_pin = args.windows_crt_sha256.as_deref();
+    let crt_digests = match (
+        args.windows_crt_sha256.as_deref(),
+        args.windows_crt_companion_sha256.as_deref(),
+    ) {
+        (Some(primary), Some(companion)) => Some(WindowsCrtDigests { primary, companion }),
+        (None, None) => None,
+        _ => anyhow::bail!("supply both --windows-crt-sha256 and --windows-crt-companion-sha256"),
+    };
     if args.package_layout {
         let output = std::path::absolute(args.output.context("package output is required")?)?;
         package::export(
@@ -102,11 +115,26 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
             args.discord_package
                 .context("Discord package is required")?,
         )?;
-        let crt_source = args.windows_crt.map(std::path::absolute).transpose()?;
-        ensure!(
-            crt_source.is_some() == crt_pin.is_some(),
-            "supply both --windows-crt and --windows-crt-sha256 for the Windows build"
-        );
+        let crt_primary = args.windows_crt.map(std::path::absolute).transpose()?;
+        let crt_companion = args
+            .windows_crt_companion
+            .map(std::path::absolute)
+            .transpose()?;
+        let crt = match (
+            crt_primary.as_deref(),
+            crt_companion.as_deref(),
+            crt_digests,
+        ) {
+            (Some(primary), Some(companion), Some(digests)) => Some(build::WindowsCrtInputs {
+                primary,
+                companion,
+                digests,
+            }),
+            (None, None, None) => None,
+            _ => anyhow::bail!(
+                "supply both --windows-crt and --windows-crt-companion and their SHA-256 pins"
+            ),
+        };
         build::runtime(
             root,
             &path,
@@ -116,7 +144,7 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
             args.discord_sha256
                 .as_deref()
                 .context("Discord digest is required")?,
-            crt_source.as_deref().zip(crt_pin),
+            crt,
         )?;
     } else if args.fixture {
         let key = SigningKey::from_bytes(&FIXTURE_KEY);
@@ -135,7 +163,7 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
             .as_deref()
             .context("Discord digest is required for release preparation")?;
         let (staging, identity) = alcomd_platform::resolve_plain_storage_directory(&path)?;
-        let bytes = prepare_release(&staging, &candidate, digest, crt_pin)?;
+        let bytes = prepare_release(&staging, &candidate, digest, crt_digests)?;
         build::verify_discord_package(
             root,
             &staging.join("extensions/discord.alcomdextension"),
@@ -247,7 +275,7 @@ fn synthetic_executable(target: Target) -> [u8; 90] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alcomd_updater::distribution::WINDOWS_CRT_FILE;
+    use alcomd_updater::distribution::{WINDOWS_CRT_COMPANION_FILE, WINDOWS_CRT_FILE};
 
     fn fixture(target: Target) -> anyhow::Result<(tempfile::TempDir, Candidate)> {
         let product: ProductConfig = toml::from_str(include_str!("../../alcomd.product.toml"))?;
@@ -418,25 +446,93 @@ mod tests {
         let crt = root.path().join(WINDOWS_CRT_FILE);
         fs::write(&crt, dll)?;
         let crt_hash = format_digest(&alcomd_updater::hash_exact(fs::File::open(&crt)?, 90)?);
-        assert!(prepare_release(root.path(), &candidate, &hash, Some(&crt_hash)).is_err());
+        let mut companion_dll = dll;
+        companion_dll[2] = 1;
+        let companion = root.path().join(WINDOWS_CRT_COMPANION_FILE);
+        fs::write(&companion, companion_dll)?;
+        let companion_hash = format_digest(&alcomd_updater::hash_exact(
+            fs::File::open(&companion)?,
+            90,
+        )?);
+        let pins = WindowsCrtDigests {
+            primary: &crt_hash,
+            companion: &companion_hash,
+        };
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(pins)).is_err());
         candidate.source_commit = "1".repeat(40);
-        prepare_release(root.path(), &candidate, &hash, Some(&crt_hash))?;
+        let manifest: serde_json::Value = serde_json::from_slice(&prepare_release(
+            root.path(),
+            &candidate,
+            &hash,
+            Some(pins),
+        )?)?;
+        let files = manifest["files"].as_array().context("release files")?;
+        for (name, digest) in [
+            (WINDOWS_CRT_FILE, &crt_hash),
+            (WINDOWS_CRT_COMPANION_FILE, &companion_hash),
+        ] {
+            assert!(
+                files
+                    .iter()
+                    .any(|entry| entry["path"] == name && entry["sha256"] == digest.as_str())
+            );
+        }
         assert!(prepare_release(root.path(), &candidate, &hash, None).is_err());
-        assert!(prepare_release(root.path(), &candidate, &hash, Some(&"1".repeat(64))).is_err());
-        assert!(
-            prepare_release(root.path(), &candidate, &"1".repeat(64), Some(&crt_hash)).is_err()
-        );
-        fs::remove_file(&crt)?;
-        assert!(prepare_release(root.path(), &candidate, &hash, Some(&crt_hash)).is_err());
-        fs::write(&crt, synthetic_executable(Target::Windows))?;
-        let non_dll = format_digest(&alcomd_updater::hash_exact(fs::File::open(&crt)?, 90)?);
-        assert!(prepare_release(root.path(), &candidate, &hash, Some(&non_dll)).is_err());
-        fs::write(crt, dll)?;
+        let wrong_hash = "1".repeat(64);
+        for wrong_pins in [
+            WindowsCrtDigests {
+                primary: &wrong_hash,
+                ..pins
+            },
+            WindowsCrtDigests {
+                companion: &wrong_hash,
+                ..pins
+            },
+        ] {
+            assert!(prepare_release(root.path(), &candidate, &hash, Some(wrong_pins)).is_err());
+        }
+        fs::write(&companion, dll)?;
+        let identical_pins = WindowsCrtDigests {
+            companion: &crt_hash,
+            ..pins
+        };
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(identical_pins)).is_err());
+        fs::write(&companion, companion_dll)?;
+        assert!(prepare_release(root.path(), &candidate, &wrong_hash, Some(pins)).is_err());
+        for (path, valid, primary) in [(&crt, dll, true), (&companion, companion_dll, false)] {
+            fs::remove_file(path)?;
+            assert!(prepare_release(root.path(), &candidate, &hash, Some(pins)).is_err());
+
+            let mut wrong_architecture = valid;
+            wrong_architecture[68..70].copy_from_slice(&[0x64, 0xaa]);
+            let mut not_a_dll = valid;
+            not_a_dll[87] = 0;
+            for malformed in [wrong_architecture, not_a_dll] {
+                fs::write(path, malformed)?;
+                let malformed_hash =
+                    format_digest(&alcomd_updater::hash_exact(fs::File::open(path)?, 90)?);
+                let malformed_pins = if primary {
+                    WindowsCrtDigests {
+                        primary: &malformed_hash,
+                        ..pins
+                    }
+                } else {
+                    WindowsCrtDigests {
+                        companion: &malformed_hash,
+                        ..pins
+                    }
+                };
+                assert!(
+                    prepare_release(root.path(), &candidate, &hash, Some(malformed_pins)).is_err()
+                );
+            }
+            fs::write(path, valid)?;
+        }
         let cli = root.path().join("alcomd-cli.exe");
         fs::write(&cli, synthetic_executable(Target::Linux))?;
-        assert!(prepare_release(root.path(), &candidate, &hash, Some(&crt_hash)).is_err());
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(pins)).is_err());
         fs::remove_file(cli)?;
-        assert!(prepare_release(root.path(), &candidate, &hash, Some(&crt_hash)).is_err());
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(pins)).is_err());
         Ok(())
     }
 }

@@ -21,6 +21,7 @@ use super::{
 pub use alcomd_platform::{PRODUCT_PAYLOAD_MANIFEST_NAME as MANIFEST_NAME, WINDOWS_CRT_FILE};
 pub const SIGNATURE_NAME: &str = "product-payload.sig";
 pub const SIGNATURE_DOMAIN: &[u8] = b"ALCOMD product payload v1\0";
+pub const WINDOWS_CRT_COMPANION_FILE: &str = "vcruntime140_1.dll";
 pub const WINDOWS_UPDATE_STAGE_PREFIX: &str = ".update-";
 const LICENSE: &str = "LICENSE";
 const NOTICES: &str = "THIRD_PARTY_NOTICES.md";
@@ -95,33 +96,51 @@ struct Payload {
     files: Vec<SignedFile>,
 }
 
+/// Independently pinned digests for the two app-local Windows VC runtime DLLs.
+#[derive(Clone, Copy)]
+pub struct WindowsCrtDigests<'a> {
+    pub primary: &'a str,
+    pub companion: &'a str,
+}
+
+impl WindowsCrtDigests<'_> {
+    /// Rejects missing identity information and duplicate digest pins.
+    pub fn validate(self) -> anyhow::Result<()> {
+        ensure!(
+            self.primary != self.companion
+                && [self.primary, self.companion]
+                    .into_iter()
+                    .all(|digest| digest.len() == 64 && digest.bytes().all(is_lower_hex)),
+            "Windows release requires distinct pinned lowercase SHA-256 values for {WINDOWS_CRT_FILE} and {WINDOWS_CRT_COMPANION_FILE}"
+        );
+        Ok(())
+    }
+}
+
 /// Produces the exact bytes to validate and sign for an already populated runtime directory.
 pub fn prepare_release(
     root: &Path,
     candidate: &Candidate,
     discord_sha256: &str,
-    windows_crt_sha256: Option<&str>,
+    windows_crt: Option<WindowsCrtDigests<'_>>,
 ) -> anyhow::Result<Vec<u8>> {
     ensure!(
         discord_sha256.len() == 64 && discord_sha256.bytes().all(is_lower_hex),
         "pinned Discord package digest must be a lowercase SHA-256"
     );
     ensure!(
-        match windows_crt_sha256 {
-            Some(digest) =>
-                candidate.target == Target::Windows
-                    && digest.len() == 64
-                    && digest.bytes().all(is_lower_hex),
-            None => candidate.target != Target::Windows,
-        },
-        "Windows release requires a pinned lowercase SHA-256 for {WINDOWS_CRT_FILE}"
+        (candidate.target == Target::Windows) == windows_crt.is_some(),
+        "only Windows releases require pinned SHA-256 values for {WINDOWS_CRT_FILE} and {WINDOWS_CRT_COMPANION_FILE}"
     );
+    if let Some(digests) = windows_crt {
+        digests.validate()?;
+    }
     prepare(
         root,
         candidate,
         Purpose::Release,
         Some(discord_sha256),
-        windows_crt_sha256,
+        windows_crt,
     )
 }
 
@@ -237,7 +256,7 @@ fn prepare(
     candidate: &Candidate,
     purpose: Purpose,
     discord_sha256: Option<&str>,
-    windows_crt_sha256: Option<&str>,
+    windows_crt: Option<WindowsCrtDigests<'_>>,
 ) -> anyhow::Result<Vec<u8>> {
     candidate.validate(purpose)?;
     let (root, identity) = alcomd_platform::resolve_plain_storage_directory(root)?;
@@ -267,10 +286,14 @@ fn prepare(
             path != DISCORD_PACKAGE || discord_sha256.is_none_or(|expected| sha256 == expected),
             "staged Discord package does not match the pinned digest"
         );
+        let crt_digest = match (path.as_str(), windows_crt) {
+            (WINDOWS_CRT_FILE, Some(digests)) => Some(digests.primary),
+            (WINDOWS_CRT_COMPANION_FILE, Some(digests)) => Some(digests.companion),
+            _ => None,
+        };
         ensure!(
-            path != WINDOWS_CRT_FILE
-                || windows_crt_sha256.is_none_or(|expected| sha256 == expected),
-            "staged {WINDOWS_CRT_FILE} does not match the pinned digest"
+            crt_digest.is_none_or(|expected| sha256 == expected),
+            "staged {path} does not match the pinned digest"
         );
         files.push(SignedFile { path, size, sha256 });
     }
@@ -402,12 +425,14 @@ fn validate_layout(
             && paths.contains(DISCORD_PACKAGE),
         "missing required product component"
     );
-    ensure!(
-        target != Target::Windows
-            || purpose != Purpose::Release
-            || paths.contains(WINDOWS_CRT_FILE),
-        "missing required {WINDOWS_CRT_FILE} in the Windows release"
-    );
+    if target == Target::Windows && purpose == Purpose::Release {
+        for filename in [WINDOWS_CRT_FILE, WINDOWS_CRT_COMPANION_FILE] {
+            ensure!(
+                paths.contains(filename),
+                "missing required {filename} in the Windows release"
+            );
+        }
+    }
     ensure!(paths.len() <= MAX_FILES, "too many product payload files");
     let mut names = BTreeSet::new();
     for path in paths {

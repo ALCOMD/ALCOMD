@@ -4,12 +4,19 @@ use std::path::Path;
 use std::process::Command;
 
 use alcomd_updater::distribution::{
-    Candidate, Target, WINDOWS_CRT_FILE, format_digest, prepare_release,
+    Candidate, Target, WINDOWS_CRT_COMPANION_FILE, WINDOWS_CRT_FILE, WindowsCrtDigests,
+    format_digest, prepare_release,
 };
 use anyhow::{Context, ensure};
 use clap::ValueEnum;
 
 use super::{ProductConfig, publish_manifest, read_toml, runtime_binaries};
+
+pub(super) struct WindowsCrtInputs<'a> {
+    pub primary: &'a Path,
+    pub companion: &'a Path,
+    pub digests: WindowsCrtDigests<'a>,
+}
 
 pub(super) fn runtime(
     root: &Path,
@@ -18,7 +25,7 @@ pub(super) fn runtime(
     candidate: &Candidate,
     extension: &Path,
     extension_digest: &str,
-    windows_crt: Option<(&Path, &str)>,
+    windows_crt: Option<WindowsCrtInputs<'_>>,
 ) -> anyhow::Result<()> {
     let target = candidate
         .target
@@ -36,7 +43,7 @@ pub(super) fn runtime(
     );
     ensure!(
         (candidate.target == Target::Windows) == windows_crt.is_some(),
-        "the Windows build requires an app-local VC runtime file and its SHA-256"
+        "the Windows build requires both app-local VC runtime files and their SHA-256 pins"
     );
     check_source_commit(root, &candidate.source_commit)?;
     let signature = Command::new("git")
@@ -70,15 +77,25 @@ pub(super) fn runtime(
     let packaged = extensions.join("discord.alcomdextension");
     copy_component(extension, &packaged)?;
     verify_discord_package(root, &packaged, extension_digest)?;
-    if let Some((source, digest)) = windows_crt {
-        let path = staged.join(WINDOWS_CRT_FILE);
-        copy_component(source, &path)?;
-        let (file, _) = alcomd_platform::open_plain_file(&path)?;
-        let size = file.metadata()?.len();
-        ensure!(
-            format_digest(&alcomd_updater::hash_exact(file, size)?) == digest,
-            "app-local VC runtime does not match the pinned SHA-256"
-        );
+    if let Some(crt) = &windows_crt {
+        crt.digests.validate()?;
+        for (name, source, digest) in [
+            (WINDOWS_CRT_FILE, crt.primary, crt.digests.primary),
+            (
+                WINDOWS_CRT_COMPANION_FILE,
+                crt.companion,
+                crt.digests.companion,
+            ),
+        ] {
+            let path = staged.join(name);
+            copy_component(source, &path)?;
+            let (file, _) = alcomd_platform::open_plain_file(&path)?;
+            let size = file.metadata()?.len();
+            ensure!(
+                format_digest(&alcomd_updater::hash_exact(file, size)?) == digest,
+                "app-local {name} does not match the pinned SHA-256"
+            );
+        }
     }
 
     let build_cache = root.join("target");
@@ -112,7 +129,7 @@ pub(super) fn runtime(
         staged,
         candidate,
         extension_digest,
-        windows_crt.map(|(_, digest)| digest),
+        windows_crt.map(|crt| crt.digests),
     )?;
     publish_manifest(staged, &bytes)?;
     check_source_commit(root, &candidate.source_commit)?;
