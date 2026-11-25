@@ -321,7 +321,7 @@ fn check_unsafe_boundary(
         "crates/alcomd-platform/src/windows_unity_window.rs",
         // M9: outbound named-pipe peer, process token, and Authenticode inspection.
         "crates/alcomd-platform/src/windows_local_ipc.rs",
-        // Storage directories use one documented MoveFileExW(flags=0) call; never replaces a destination.
+        // Windows file publication, deletion through a verified handle, and maintenance leases.
         "crates/alcomd-platform/src/windows_file_publish.rs",
         "crates/alcomd-platform/src/credential_vault/windows.rs",
     ];

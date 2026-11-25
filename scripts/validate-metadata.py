@@ -763,6 +763,7 @@ def main() -> int:
             "Win32_Storage_FileSystem",
             "Win32_Storage_Packaging_Appx",
             "Win32_System_Com",
+            "Win32_System_IO",
             "Win32_System_Pipes",
             "Win32_System_Registry",
             "Win32_System_RemoteDesktop",
