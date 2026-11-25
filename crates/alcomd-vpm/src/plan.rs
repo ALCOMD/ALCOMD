@@ -212,6 +212,12 @@ impl ProjectPackageSnapshot {
             explicit,
             preserve_unselected,
             unlocked: self.unlocked.clone(),
+            previous_edges: if preserve_unselected {
+                self.dependency_edges()?
+            } else {
+                Vec::new()
+            },
+            removed: BTreeSet::new(),
         })
     }
 }
@@ -838,49 +844,31 @@ fn build_resolution_plan_with_ranges(
         return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
     }
     if !matches!(action, PlanAction::Resolve | PlanAction::Reinstall) {
-        let old_graph = graph_from_edges(&old_edges);
-        let affected = dependency_closure(
-            mutations
-                .iter()
-                .map(|mutation| mutation.package_id.clone())
-                .chain(removed.iter().cloned()),
-            &old_graph,
-            &BTreeSet::new(),
-        );
-        let graph = graph_from_edges(&edges);
-        // Packages outside the cleanup closure remain installed and protect their dependencies.
-        let used = dependency_closure(
-            direct
-                .keys()
-                .chain(snapshot.unlocked.keys())
-                .cloned()
-                .chain(
-                    resolution
-                        .packages
-                        .iter()
-                        .map(|package| package.package_id.clone()),
-                )
-                .chain(locked.keys().filter(|id| !affected.contains(*id)).cloned()),
-            &graph,
+        let unused = unused_locked_packages(
+            &old_edges,
+            &graph_from_edges(&edges),
+            previous_locked.keys(),
+            direct.keys().chain(snapshot.unlocked.keys()).chain(
+                resolution
+                    .packages
+                    .iter()
+                    .map(|package| &package.package_id),
+            ),
+            &changed,
             removed,
         );
-        for (id, version) in locked.clone() {
-            if removed.contains(&id) || (affected.contains(&id) && !used.contains(&id)) {
-                locked.remove(&id);
+        let removed_ids = removed.union(&unused).cloned().collect::<BTreeSet<_>>();
+        for id in &removed_ids {
+            if let Some(version) = locked.remove(id) {
                 mutations.push(PackageMutation {
                     kind: PackageMutationKind::Remove,
-                    package_id: id,
+                    package_id: id.clone(),
                     from_version: Some(version),
                     to_version: None,
                     source: None,
                 });
             }
         }
-        let removed_ids = mutations
-            .iter()
-            .filter(|mutation| mutation.kind == PackageMutationKind::Remove)
-            .map(|mutation| mutation.package_id.clone())
-            .collect::<BTreeSet<_>>();
         edges.retain(|edge| {
             !removed_ids.contains(&edge.from_package_id)
                 && !(edge.direct && removed_ids.contains(&edge.to_package_id))
@@ -1055,9 +1043,38 @@ pub(crate) fn build_removal_plan(
     Ok(draft)
 }
 
-fn graph_from_edges(edges: &[PackageDependencyEdge]) -> BTreeMap<&str, Vec<&str>> {
+pub(super) fn unused_locked_packages<'a>(
+    previous_edges: &[PackageDependencyEdge],
+    graph: &BTreeMap<&str, Vec<&str>>,
+    locked: impl Iterator<Item = &'a String> + Clone,
+    roots: impl Iterator<Item = &'a String>,
+    changed: &BTreeSet<String>,
+    removed: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let affected = dependency_closure(
+        changed.iter().chain(removed).cloned(),
+        &graph_from_edges(previous_edges),
+        &BTreeSet::new(),
+    );
+    // Packages outside the cleanup closure remain installed and protect their dependencies.
+    let used = dependency_closure(
+        roots
+            .chain(locked.clone().filter(|id| !affected.contains(*id)))
+            .cloned(),
+        graph,
+        removed,
+    );
+    locked
+        .filter(|id| affected.contains(*id) && !used.contains(*id) && !removed.contains(*id))
+        .cloned()
+        .collect()
+}
+
+pub(super) fn graph_from_edges<'a>(
+    edges: impl IntoIterator<Item = &'a PackageDependencyEdge>,
+) -> BTreeMap<&'a str, Vec<&'a str>> {
     let mut graph = BTreeMap::<&str, Vec<&str>>::new();
-    for edge in edges.iter().filter(|edge| !edge.direct) {
+    for edge in edges.into_iter().filter(|edge| !edge.direct) {
         graph
             .entry(&edge.from_package_id)
             .or_default()

@@ -425,6 +425,7 @@ async fn prepare_bulk(
         let mut rules = snapshot.resolution_rules(explicit, true)?;
         rules.locked.retain(|id, _| !removed.contains(id));
         rules.direct.retain(|id, _| !removed.contains(id));
+        rules.removed.clone_from(&removed);
         resolve_migrating_packages(
             cache,
             &candidates,
