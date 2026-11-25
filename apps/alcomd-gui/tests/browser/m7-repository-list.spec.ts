@@ -223,15 +223,30 @@ test("package browsing groups versions and reads only the selected trailing pack
     await expect(host).toContainText("Avatar package description");
     await expect(host).toContainText(">=2022.3");
     expect(await page.evaluate(() => window.repositoryPackageRequests.length)).toBe(2);
-    await version.click();
-    await expect(host.locator("md-select-option")).toHaveText(["1.0.0", "1.1.0", "2.0.0-beta.1"]);
-    await host.getByRole("option", { name: "2.0.0-beta.1", exact: true }).click();
+    const versions = host.locator("md-filled-select");
+    const lifecycle = await versions.evaluateHandle((element) => {
+        const once = (type: string) => new Promise<void>((resolve) => {
+            element.addEventListener(type, () => resolve(), { once: true });
+        });
+        return { opened: once("opened"), closed: once("closed") };
+    });
+    try {
+        await version.click();
+        await lifecycle.evaluate((events) => events.opened);
+        await expect(versions.locator("md-select-option")).toHaveText(["1.0.0", "1.1.0", "2.0.0-beta.1"]);
+        await versions.getByRole("option", { name: "2.0.0-beta.1", exact: true }).click();
+        await lifecycle.evaluate((events) => events.closed);
+    } finally {
+        await lifecycle.dispose();
+    }
     await expect(host).toContainText("Preview package description");
     await expect(host).toContainText("Prerelease");
+    const documentation = { method: "openPackageLink", params: { url: "https://fixture.example/preview-docs" } };
     await host.getByRole("button", { name: "Documentation", exact: true }).click();
+    await expect.poll(() => requests(page, "openPackageLink")).toEqual([documentation]);
     await host.getByRole("button", { name: "Changelog", exact: true }).click();
-    expect(await requests(page, "openPackageLink")).toEqual([
-        { method: "openPackageLink", params: { url: "https://fixture.example/preview-docs" } },
+    await expect.poll(() => requests(page, "openPackageLink")).toEqual([
+        documentation,
         { method: "openPackageLink", params: { url: "https://fixture.example/preview-changelog" } }
     ]);
     await page.evaluate(() => window.coreEvents.hold(true));
