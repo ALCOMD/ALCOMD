@@ -200,3 +200,9 @@ Debug GUI 试验未启动 WebView2。改用干净 `25afa078` 的 `npm run gui:bu
 | --- | --- |
 | AppImage | `9571a9b6a4b157a29d6bfc4147610423359defe16bd75c574eb93161fe641a1f` |
 | DEB | `cca36ec9ee5706cf385f868bfa4068ee9a87970c13d29b6c9728b4501b49bdc9` |
+
+### 2026-11-25 Ubuntu 产品 DEB 首装
+
+签名源码 `0c99475e1ce78d63f406722ba8280609c47de7cc` 在独立 Ubuntu 22.04 x86_64 构建全部七个 Release 程序。合成密钥签名后的运行清单摘要为 `54ab44fdae998003c8bfc615c6c5ba89ce0561694433893fecd29ed9da0869f8`。产品 DEB 的 SHA-256 为 `61fba1219aedb8de2a9e67288beadce6432fd843c50c76b2217537b2e93573f6`。实际包名、版本和架构为 `alcomd 4.0.0~alpha.0-1 amd64`。包安装稳定 CLI、版本化运行目录和桌面入口。
+
+用真实 `dpkg --unpack` 保留未配置状态，再用 `dpkg --configure -a` 恢复，随后经 APT 重装同一包。安装账号没有生成 Core 登记。篡改签名后首次 CLI 调用失败，目标账号资料目录保持空白。恢复签名后，标准用户分别从 CLI 和实际 Tauri 窗口发布私有登记。独立 Rust SDK 在登记前拒绝启动，并从已登记路径冷启动。执行 purge 后 CLI、桌面入口和运行组件移除，两个状态库的摘要保持一致，残留登记无法启动被移除的 Core。跨版本更新、回滚和 v3 DEB 的包管理交接继续按阶段 3 与 4 验收。

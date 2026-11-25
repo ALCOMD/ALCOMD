@@ -12,6 +12,8 @@ Windows 已在两套隔离环境用 `25afa078` 的同一个全 Release Inno 夹�
 
 Ubuntu 22.04 用签名候选 `25afa078` 复验了原生 AppImage 挂载、DEB 安装和卸载、Tauri 窗口及 Core IPC。[Ubuntu 同候选原生夹具](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-2204-同候选原生夹具)
 
+Ubuntu 22.04 的产品 DEB 使用签名源码 `0c99475e` 与隔离测试密钥，通过解包后恢复配置、APT 重装、CLI 与 GUI 首次登记、独立 SDK 冷启动和 purge 保留资料。逐账号更新与跨版本回滚仍待验收。[Ubuntu 产品 DEB 首装](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-deb-首装)
+
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。

@@ -1195,6 +1195,15 @@ description = "同一 25afa078 合成签名 Inno 夹具包含全部七个 Releas
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
+id = "installer.deb.product-first-use"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 以签名源码 0c99475e 和合成签名产品 DEB 验证 dpkg 未配置状态恢复、APT 重装、签名损坏不创建用户资料、CLI 和原生 GUI 首启登记、外部 Rust SDK 冷启动及 purge 保留资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "crates/alcomd-platform/src/linux_installation_registration.rs", "xtask/src/distribution/package.rs"]
+
+[[test]]
 id = "distribution.cli-integration"
 stage = "M12"
 kind = "system"
