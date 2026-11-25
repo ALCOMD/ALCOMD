@@ -14,17 +14,19 @@ Windows 11 的产品 Inno 已使用同一个 `e79db74f` 离线签名载荷验收
 
 Windows 双范围 PATH 与开始菜单快捷方式已用主仓候选 `62b6f562` 的完整 Inno 实包通过 11 项原生验收。覆盖 AUMID、第三方入口保全、精确卸载、`/NOICONS`、稳定 CLI 冷启动、Core 登记和 Updater 入口。跨范围转换、同范围更新和其他系统入口继续按实施计划验收。[Windows 产品 Inno 双范围](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-产品-inno-双范围)
 
+Windows 签名候选 `72a85893` 的同一个 Inno 实包通过两种安装范围的 12 项原生检查。全用户卸载会拒绝任一仍使用 Core 的账号，已经持有维护锁时也拒绝旧 Core 首启。正常卸载保留两个普通账号的资料与登记。当前用户卸载只注销该账号登记，保留资料和未知文件。[Windows 跨账号卸载](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-跨账号卸载)
+
 Ubuntu 22.04 用签名候选 `25afa078` 复验了原生 AppImage 挂载、DEB 安装和卸载、Tauri 窗口及 Core IPC。[Ubuntu 同候选原生夹具](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-2204-同候选原生夹具)
 
 Ubuntu 22.04 的产品 DEB 已通过原生首装、解包中断恢复、逐账号升级和同数据版本下的 APT 回退。两套签名测试包验证了 CLI、真实 GUI、外部 SDK、坏签名与不安全登记拒绝、双账号设置保全及 purge 后数据库摘要一致。[Ubuntu 产品 DEB 升级与回退](exec-plans/M12-full-product-distribution.md#ubuntu-2204-deb-跨版本登记与回退)
 
 Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密钥，验证原生 FUSE、真实桌面首启、独立 SDK 冷启动、移位拒绝与主动重新绑定。可选 CLI 集成和整产品替换仍待验收。[Ubuntu 产品 AppImage 首启](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
 
-v4 更新声明、HTTPS 下载、有界暂存和持久防重放已接入。Windows 11 Sandbox 通过 9 项实际 HTTPS 验收，其中包含下载中断、四进程竞争与回执保全。平台安装提交和回滚继续按阶段 3 实施。[更新声明、下载与暂存核验](exec-plans/M12-full-product-distribution.md#v4-更新声明离线核验)
+v4 更新声明、HTTPS 下载、有界暂存和持久防重放已接入。Windows 11 Sandbox 通过 9 项 HTTPS 验收，覆盖下载中断、四进程竞争与回执保全。另通过 6 项签名响应接力检查，覆盖原始声明与资产的离线复验。平台安装提交和回滚继续按阶段 3 实施。[更新声明、下载与暂存核验](exec-plans/M12-full-product-distribution.md#v4-更新声明离线核验)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
-签名源码 `25afa078` 和 `590f7c84` 的三平台 Hosted CI 与 CodeQL 均已通过。当前主仓工程候选 `62b6f562` 已通过本机整仓、762 项 Chromium 和四项 CodeQL，三平台 Hosted CI 继续复验。中间下载器候选 `bd13cbed` 的 Ubuntu Chromium 通过 761 项，版本菜单用例首轮失败。[当前 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45540736904) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45540736352) · [Ubuntu 首轮](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509247/job/138947625177)
+主仓工程候选 `595fc2ab` 已通过本机整仓、762 项 Chromium、三平台 Hosted CI 和 CodeQL。Windows 原生 Inno 入口的 11 项验收对应上文单独记录的 `62b6f562` 实包。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45552186695) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45552185931)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 

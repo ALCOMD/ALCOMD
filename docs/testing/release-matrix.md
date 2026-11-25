@@ -51,6 +51,8 @@ Installer、安装取消与失败恢复。
 
 Windows 11 Sandbox 已通过当前用户与全用户夹具的登记和卸载验证，并打开了使用已安装 WebView2 的原生 GUI。正式 Windows 10 22H2 与 Windows 11 矩阵仍需使用完整产品验证安装、启动、WebView2 部署、托盘、注册表、用户数据路径、升级、回滚和卸载。[Windows 登记及夹具验收](../exec-plans/M12-full-product-distribution.md#2026-11-25-windows-core-安装登记)
 
+Windows 11 的完整 Inno 实包 `72a85893` 已通过双范围的 12 项卸载与启动互斥检查。全用户验收使用两个普通账号和实际 SDK 持续连接。[Windows 跨账号卸载](../exec-plans/M12-full-product-distribution.md#2026-11-25-windows-跨账号卸载)
+
 ## macOS 安装与 CLI
 
 - DMG 中的 `ALCOMD.app` 必须包含目标平台所需的完整产品组件，所有 arm64 产物使用
