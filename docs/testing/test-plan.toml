@@ -1231,6 +1231,15 @@ description = "Ubuntu 22.04 以签名源码 b324627e 和合成签名产品 AppIm
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable.rs", "crates/alcomd-platform/src/linux_portable_origin.rs"]
 
 [[test]]
+id = "installer.windows.product-first-use"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "同一 e79db74f 产品 Inno 在独立 Windows 11 Sandbox 通过当前用户 6 项和全用户 8 项原生验证，覆盖永久 AppId、首启、范围冲突、签名或清单拒绝、活动 Core 拒绝、卸载所有权及资料保全。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss", "xtask/src/distribution/inno.rs"]
+
+[[test]]
 id = "distribution.cli-integration"
 stage = "M12"
 kind = "system"

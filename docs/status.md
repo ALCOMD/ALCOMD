@@ -10,13 +10,15 @@ Windows 11 Sandbox 的当前用户和全用户夹具已验证 Core 安装登记�
 
 Windows 已在两套隔离环境用 `25afa078` 的同一个全 Release Inno 夹具通过当前用户和全用户安装。验收覆盖 CLI 和 GUI 首启、签名篡改拒绝、同账号四个 CLI 接入同一 Core、注销登记以及卸载保留资料。[Windows 双范围验收](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-全用户安装首次启动)
 
+Windows 11 的产品 Inno 已使用同一个 `e79db74f` 离线签名载荷验收永久 AppId 和两种安装范围。当前用户卸载会拒绝正在使用的 Core 和篡改清单，正常卸载注销该账号并保留状态库。全用户安装按账号初始化，卸载后保留各账号资料。[Windows 产品 Inno 双范围](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-产品-inno-双范围)
+
 Ubuntu 22.04 用签名候选 `25afa078` 复验了原生 AppImage 挂载、DEB 安装和卸载、Tauri 窗口及 Core IPC。[Ubuntu 同候选原生夹具](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-2204-同候选原生夹具)
 
 Ubuntu 22.04 的产品 DEB 使用签名源码 `0c99475e` 与隔离测试密钥，通过解包后恢复配置、APT 重装、CLI 与 GUI 首次登记、独立 SDK 冷启动和 purge 保留资料。逐账号更新与跨版本回滚仍待验收。[Ubuntu 产品 DEB 首装](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-deb-首装)
 
 Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密钥，验证原生 FUSE、真实桌面首启、独立 SDK 冷启动、移位拒绝与主动重新绑定。可选 CLI 集成和整产品替换仍待验收。[Ubuntu 产品 AppImage 首启](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
 
-v4 更新声明的离线验签和本地资产核对已接入，Windows 的 Updater 定向测试和合成资产实际命令均通过。联网下载、持久防重放以及平台提交和回滚继续按阶段 3 实施。[更新声明核验](exec-plans/M12-full-product-distribution.md#v4-更新声明离线核验)
+v4 更新声明的离线验签、本地资产核对和持久防重放已接入，Windows 通过 Updater 定向测试、合成资产命令和普通账号竞争锁复验。联网下载、平台提交和回滚继续按阶段 3 实施。[更新声明核验](exec-plans/M12-full-product-distribution.md#v4-更新声明离线核验)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
