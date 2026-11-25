@@ -296,6 +296,20 @@ M12 并行的 `81e7a498` macOS Hosted 在 Chromium 重开 AI 客户端撤销确�
 
 开发构建的部分首次冷启动超过五秒预算，随后重试接通。优化组件的单次冷启动、标准用户向另一管理员的凭据提升和同一候选的 Hosted 门禁分别记录。
 
+### 2026-11-26 应用内产品更新
+
+Windows Inno 和 Linux AppImage 的「关于」页按当前构建所属频道检查获批准的 HTTPS feed。检查只取并验证签名声明。用户选择下载后，Updater 读取同一声明指定的资产，提供取消并再次核对摘要。用于安装和恢复的文件路径保留在原生进程。选定安装后，GUI 退出，Bootstrap 等待本账号 Core 空闲，再执行平台事务并重开桌面。仍在使用的其他 Core 继续按安装范围检查。DEB 由包管理器更新，macOS 原生替换延期。
+
+GUI 复用 AGPL-3.0-only 的工作区 Updater。调用独立程序解析文本输出会重复维护进程和结果合同。现有 Updater 提供签名、下载、时限和防重放，桌面适配器只管理用户确认和进程生命周期。前端类型、Material 控件、三语言文案、Windows 定向 Clippy 和三项 Chromium 用例已通过。实际 WebView2 接入通过签名 Inno 夹具单独复验。
+
+### 2026-11-26 Ubuntu 产品 AppImage 整包更新
+
+Bootstrap 在持有本账号 Core 启动锁时，重新核对原 AppImage 文件、已登记运行时、签名声明、完整候选和其中的运行清单。候选经只读数据预检后，在原 AppImage 同卷完成暂存并持久化提交意图。原文件名由原子交换交给完整新版，旧文件保留。同一安装的 Core 登记随后切换到经签名校验的运行时。断电或进程终止后的恢复按原文件身份和签名摘要判断是否已经交换，在原位置重新打开 AppImage 可恢复保留的事务。DEB 登记和未知目标继续受原归属检查保护。
+
+Ubuntu 22.04 隔离样本用合成密钥，复用已验证的 Linux 运行组件并重新构建两版 Bootstrap。外层 AppImage SHA-256 分别为 `4c87dccf70217615ce3b9281e16f954fae3c6f86157bc3da585973fb64be5dbe` 和 `7cee280b480a9c22b16d6a74e5819fe1d86455dc2d61c78c9012bce1387debe9`。对应的运行清单为 `3d6a204edc4282bffa12d3c81080aea3ada78076ef41b1a41acee1905202ea68` 和 `05f66007008fc613280f0d3bcfdcc828c31918a778d130cc279086b064092d84`。
+
+十项原生检查覆盖占用目录保全、正常替换、文件名与执行模式保全、保留并核验原 AppImage、交换后登记前的实际 SIGKILL、篡改拒绝、原下载删除后的恢复、状态库和项目摘要对账、真实 FUSE 与 WebKit 和新版 CLI 读回原工程。Jammy 定向 Clippy 与 68 项 Rust 测试通过。部分混合夹具的首次连接超出五秒，单次冷启动继续由干净 Release 候选核验。
+
 ### 2026-11-25 Ubuntu 产品 AppImage 首启
 
 签名源码 `b324627eba5305457294bc4d921674535ead6dd8` 在隔离 Ubuntu 22.04 x86_64 构建七个 Release 程序，最高 glibc 符号版本为 `GLIBC_2.34`。合成密钥签名后的运行清单摘要为 `b82591144c327f87058905947ec9e12a3144aecb922422a708763fc948f99673`。用已固定摘要的 appimagetool 和 Type 2 runtime 生成 AppImage，文件 SHA-256 为 `e3c5e4dc60d39ca1966cd34180e05873a99b0f672b33357c2e6672b9fe381bdb`。

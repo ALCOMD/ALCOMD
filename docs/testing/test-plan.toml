@@ -1285,6 +1285,24 @@ description = "Ubuntu 22.04 以签名源码 b324627e 和合成签名产品 AppIm
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable.rs", "crates/alcomd-platform/src/linux_portable_origin.rs"]
 
 [[test]]
+id = "distribution.appimage.signed-update-interruption"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 签名混合夹具通过 10 项原生检查，包括同卷交换、实际 SIGKILL、篡改拒绝、原下载缺失后的恢复、原包与用户资料保全，以及真实桌面和新版项目读取。干净 Release 五秒冷启动另验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_update.rs", "crates/alcomd-platform/src/linux_installation_registration.rs"]
+
+[[test]]
+id = "distribution.gui.signed-update-consent"
+stage = "M12"
+kind = "integration-ui"
+platforms = ["windows-x86_64", "linux-x86_64"]
+status = "implemented"
+description = "通过「关于」页的三项 Chromium 用例覆盖检查与下载步骤、取消、安装重启及恢复的独立确认。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-gui/tests/browser/product-updates.spec.ts"]
+
+[[test]]
 id = "installer.linux.package-format-ownership"
 stage = "M12"
 kind = "system"

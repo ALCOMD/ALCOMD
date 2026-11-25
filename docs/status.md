@@ -20,7 +20,9 @@ Ubuntu 22.04 用签名候选 `25afa078` 复验了原生 AppImage 挂载、DEB �
 
 Ubuntu 22.04 的产品 DEB 已通过原生首装、解包中断恢复、逐账号升级和同数据版本下的 APT 回退。两套签名测试包验证了 CLI、真实 GUI、外部 SDK、坏签名与不安全登记拒绝、双账号设置保全及 purge 后数据库摘要一致。[Ubuntu 产品 DEB 升级与回退](exec-plans/M12-full-product-distribution.md#ubuntu-2204-deb-跨版本登记与回退)
 
-Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密钥，验证原生 FUSE、真实桌面首启、独立 SDK 冷启动、移位拒绝与主动重新绑定。可选 CLI 集成和整产品替换仍待验收。[Ubuntu 产品 AppImage 首启](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
+Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密钥，验证原生 FUSE、真实桌面首启、独立 SDK 冷启动、移位拒绝与主动重新绑定。可选 CLI 集成继续按发行矩阵验收。[Ubuntu 产品 AppImage 首启](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
+
+Ubuntu 22.04 的 AppImage 整包更新与中断恢复已通过 10 项原生工程检查。验收覆盖同路径原子替换、实际进程终止、篡改拒绝、删除原下载后的恢复，以及新版 AppImage 经原生 FUSE 打开并读回原工程。混合夹具的冷启动有超过五秒的记录，干净 Release 仍需复验。[Ubuntu 产品 AppImage 整包更新](exec-plans/M12-full-product-distribution.md#2026-11-26-ubuntu-产品-appimage-整包更新)
 
 新建的 Ubuntu 22.04 x86_64 WSL 2 实例已复验 AppImage 首启。用此前的签名 DEB 另通过三项双格式归属检查，覆盖双向接管拒绝与 `dpkg purge` 后资料保全。[Ubuntu 双格式归属](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
 
@@ -31,6 +33,8 @@ Windows 当前用户的更新暂存与只读数据预检通过 9 项原生检查
 Windows 当前用户的版本切换和提交恢复已通过原生验收。完整 Release 源版 `b95e132f` 和版本派生 `6a79c90e` 通过 8 项正常升级和 11 项中断恢复检查，覆盖实际终止、签名篡改、登记占用、新版 WebView2 窗口、原工程重开和卸载资料保全。[Windows 当前用户版本切换与恢复](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-当前用户版本切换与恢复)
 
 Windows 全用户切换使用签名源码 `d1555aa3` 的断网夹具通过 6 项正常升级和 8 项中断恢复检查，覆盖真实进程树终止、篡改拒绝、原下载移除后的恢复、两个普通账号分别接入新版 Core 以及升级后卸载资料保全。开发夹具的部分首次冷启动需要重试。优化版五秒冷启动和标准账号向另一管理员提升待验。[Windows 全用户版本切换与中断恢复](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-全用户版本切换与中断恢复)
+
+Windows 和 AppImage 的「关于」页已接入产品更新。三项 Chromium 用例覆盖用户确认前保留当前进程、取消下载和恢复确认。实际 WebView2 检查、下载与自动重启使用签名安装包另行复验。[应用内产品更新](exec-plans/M12-full-product-distribution.md#2026-11-26-应用内产品更新)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
