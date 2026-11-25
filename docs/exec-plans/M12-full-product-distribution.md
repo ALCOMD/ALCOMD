@@ -188,6 +188,8 @@ Windows 11 Sandbox 在签名夹具中打开实际 Tauri 窗口，检测到 WebVi
 
 该用例两次选择版本都改为等待实际菜单打开、选项就绪和菜单关闭，再检查 Core 的计划参数。原用例在 Windows 重跑 20 次、Ubuntu 22.04 重跑 30 次均通过。修订后两平台各通过 30 次定向重复和完整候选用例组的 45 项。
 
+同一 `bd13cbed` 的 macOS Hosted 在模板目录失效场景首轮出现提交按钮仍禁用，其余 Chromium 761 项通过。模板用例增加对实际菜单打开、选项就绪、菜单关闭、模板值和 Unity 版本的核对，保留提交和失效断言。Windows 本机对原失败用例重跑 20 次通过，修订后的两个模板场景共复跑 40 次通过，macOS Hosted 另行复验。[macOS Chromium 首轮](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509247/job/138947624770)
+
 ### 2026-11-25 Windows 全用户安装首次启动
 
 `25afa078` 接通官方 Windows 入口。没有登记且 IPC 尚未就绪时，受保护的稳定 CLI 和版本化 GUI 可调用同一运行目录中的 Bootstrap。Bootstrap 核验已安装载荷，Core 在当前账号下初始化并发布登记后服务 IPC。独立 SDK 继续按登记定位 Core，沿用五秒就绪预算。

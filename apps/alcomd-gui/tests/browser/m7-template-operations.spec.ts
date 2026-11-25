@@ -1,14 +1,33 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
+
+async function selectExistingTemplate(dialog: Locator) {
+    const picker = dialog.locator("#project-create-template");
+    const lifecycle = await picker.evaluateHandle((element) => {
+        const once = (type: string) => new Promise<void>((resolve) => {
+            element.addEventListener(type, () => resolve(), { once: true });
+        });
+        return { opened: once("opened"), closed: once("closed") };
+    });
+    try {
+        await picker.getByRole("combobox", { name: "Project template", exact: true }).click();
+        await lifecycle.evaluate((events) => events.opened);
+        const option = picker.getByRole("option", { name: "Existing fixture · 2022.3.22f1", exact: true });
+        await expect(option).toBeEnabled();
+        await option.click();
+        await lifecycle.evaluate((events) => events.closed);
+    } finally {
+        await lifecycle.dispose();
+    }
+    await expect(picker).toHaveJSProperty("value", "com.example.fixture");
+    await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2022.3.22f1");
+}
 
 test("a lost creation reply retries the identical request after a catalog change", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects&create-unknown=1&template-existing=1");
     await page.getByRole("button", { name: "Create project", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
-    const template = dialog.getByRole("combobox", { name: "Project template", exact: true });
-    await template.click();
-    await dialog.getByRole("option", { name: "Existing fixture · 2022.3.22f1", exact: true }).click();
-    await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2022.3.22f1");
+    await selectExistingTemplate(dialog);
     await dialog.getByLabel("Create project name", { exact: true }).fill("Retry fixture");
     const submit = dialog.getByRole("button", { name: "Create project", exact: true });
     await submit.click();
@@ -33,12 +52,7 @@ test("catalog changes invalidate a selected revision until the user reselects", 
     await page.goto("/browser-harness.html?route=/projects&template-existing=1");
     await page.getByRole("button", { name: "Create project", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
-    const template = dialog.getByRole("combobox", { name: "Project template", exact: true });
-    const chooseTemplate = async () => {
-        await template.click();
-        await dialog.getByRole("option", { name: /Existing fixture/ }).click();
-    };
-    await chooseTemplate();
+    await selectExistingTemplate(dialog);
     await dialog.getByLabel("Create project name", { exact: true }).fill("Selected again");
     const submit = dialog.getByRole("button", { name: "Create project", exact: true });
     await expect(submit).toBeEnabled();
@@ -46,8 +60,7 @@ test("catalog changes invalidate a selected revision until the user reselects", 
     await page.evaluate(() => window.dispatchEvent(new Event("test-template-advance")));
     await expect(dialog.getByRole("alert")).toContainText("The selected template changed. Select it again.");
     await expect(submit).toBeDisabled();
-    await chooseTemplate();
-    await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2022.3.22f1");
+    await selectExistingTemplate(dialog);
     await submit.click();
     await expect(page.getByText("Task completed.", { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/projects$/);
