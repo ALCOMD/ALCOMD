@@ -58,6 +58,10 @@ fn preflight_data_layout(database: &Path) -> io::Result<()> {
                 alcomd_platform::resolve_plain_storage_directory(&entry.path())?;
                 continue;
             }
+            #[cfg(target_os = "linux")]
+            if alcomd_platform::linux_portable_runtime_is_known(&data, &entry.path())? {
+                continue;
+            }
             if entry.path() == registration
                 && alcomd_platform::registered_core_executable(&data)?.is_some()
             {
@@ -78,6 +82,12 @@ fn preflight_data_layout(database: &Path) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Checks the current user's persistent data before installing a portable runtime.
+#[cfg(target_os = "linux")]
+pub fn check_installation_data(data: &DataConfig) -> io::Result<()> {
+    preflight_data_layout(&alcomd_platform::state_database_location(data)?)
 }
 
 mod builtin_repositories;
@@ -274,7 +284,6 @@ where
     #[cfg(target_os = "linux")]
     use alcomd_platform::{
         check_linux_core_registration as check_registration,
-        linux_installation_runtime as installation_runtime,
         publish_linux_core_registration as publish_registration,
     };
     #[cfg(windows)]
@@ -284,7 +293,11 @@ where
         windows_installation_runtime as installation_runtime,
     };
 
-    let runtime = installation_runtime(&std::env::current_exe()?)?;
+    let executable = std::env::current_exe()?;
+    #[cfg(target_os = "linux")]
+    let runtime = alcomd_platform::linux_installation_runtime(&executable, &data)?;
+    #[cfg(windows)]
+    let runtime = installation_runtime(&executable)?;
     let already_registered = check_registration(&data, &runtime)?;
     if already_registered && serve_until.is_none() {
         return Ok(());

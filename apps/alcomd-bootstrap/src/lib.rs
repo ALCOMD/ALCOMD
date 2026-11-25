@@ -1,6 +1,10 @@
 //! Coordinates migration against a verified product and a fresh per-user data directory.
 
 mod journal;
+#[cfg(target_os = "linux")]
+mod linux_portable;
+#[cfg(target_os = "linux")]
+pub use linux_portable::start_portable;
 #[cfg(windows)]
 mod windows_installation;
 #[cfg(windows)]
@@ -8,17 +12,23 @@ pub use windows_installation::{
     register_installed_core, start_installed_core, unregister_installed_core,
 };
 
-/// Verifies and starts the system package's Core in the calling Linux account.
+/// Verifies and starts the installed Core in the calling Linux account.
 #[cfg(target_os = "linux")]
 pub fn start_installed_core() -> anyhow::Result<()> {
     use std::os::unix::process::CommandExt;
 
-    let runtime = alcomd_platform::linux_installation_runtime(&std::env::current_exe()?)?;
-    alcomd_updater::distribution::verify_installed_release(
-        &runtime,
-        alcomd_updater::distribution::Target::Linux,
-        &env!("CARGO_PKG_VERSION").parse()?,
-    )
+    let data = alcomd_platform::DataConfig::default();
+    let runtime = alcomd_platform::linux_installation_runtime(&std::env::current_exe()?, &data)?;
+    let version = env!("CARGO_PKG_VERSION").parse()?;
+    if runtime == alcomd_platform::linux_portable_runtime(&data)? {
+        alcomd_updater::distribution::verify_portable_runtime(&runtime, &version)
+    } else {
+        alcomd_updater::distribution::verify_installed_release(
+            &runtime,
+            alcomd_updater::distribution::Target::Linux,
+            &version,
+        )
+    }
     .context("Linux installed product payload did not verify")?;
     Err(
         Command::new(runtime.join(alcomd_platform::CORE_EXECUTABLE_NAME))

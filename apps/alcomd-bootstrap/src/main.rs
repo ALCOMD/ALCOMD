@@ -31,6 +31,12 @@ enum Command {
     #[cfg(any(windows, target_os = "linux"))]
     #[command(hide = true)]
     StartInstalledCore,
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    StartPortable {
+        #[arg(last = true)]
+        arguments: Vec<std::ffi::OsString>,
+    },
 }
 
 #[cfg(windows)]
@@ -94,6 +100,10 @@ fn main() -> anyhow::Result<()> {
         }
         #[cfg(any(windows, target_os = "linux"))]
         Command::StartInstalledCore => return alcomd_bootstrap::start_installed_core(),
+        #[cfg(target_os = "linux")]
+        Command::StartPortable { arguments } => {
+            return alcomd_bootstrap::start_portable(&arguments);
+        }
     };
     let MigrateArguments {
         source_root,

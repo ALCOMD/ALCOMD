@@ -48,6 +48,10 @@ pub fn registered_core_executable(config: &DataConfig) -> io::Result<Option<Path
     let runtime = read_runtime_directory(&file)?;
     #[cfg(unix)]
     let runtime = crate::unix::validate_absolute_runtime_path(&runtime)?;
+    #[cfg(target_os = "linux")]
+    if linux_registration::is_portable_runtime_path(config, &runtime)? {
+        crate::PortableOrigin::read(&runtime)?.revalidate()?;
+    }
     let candidate = runtime.join(CORE_EXECUTABLE_NAME);
     validate_core_executable(&candidate).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
@@ -80,8 +84,9 @@ pub use registration::{
 mod linux_registration;
 #[cfg(target_os = "linux")]
 pub use linux_registration::{
-    check_linux_core_registration, linux_installation_bootstrap, linux_installation_runtime,
-    publish_linux_core_registration,
+    LINUX_BOOTSTRAP_EXECUTABLE_NAME, LINUX_GUI_EXECUTABLE_NAME, check_linux_core_registration,
+    linux_installation_bootstrap, linux_installation_runtime, linux_portable_runtime,
+    linux_portable_runtime_is_known, publish_linux_core_registration,
 };
 
 fn parse_runtime_directory(data: &[u8]) -> io::Result<PathBuf> {

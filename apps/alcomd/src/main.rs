@@ -22,6 +22,9 @@ enum Command {
     ImportNativeState(NativeStage),
     #[command(hide = true)]
     CheckNativeState(NativeStage),
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    CheckInstallationData,
     #[cfg(any(windows, target_os = "linux"))]
     #[command(hide = true)]
     RegisterInstallation {
@@ -69,6 +72,11 @@ async fn main() -> anyhow::Result<()> {
             Command::CheckNativeState(stage) => {
                 alcomd::check_native_state(&stage.bundle, &stage.data_dir, stage.discord_options())
                     .await?
+            }
+            #[cfg(target_os = "linux")]
+            Command::CheckInstallationData => {
+                alcomd::check_installation_data(&alcomd_platform::DataConfig::default())?;
+                return Ok(());
             }
             #[cfg(any(windows, target_os = "linux"))]
             Command::RegisterInstallation { serve } => {

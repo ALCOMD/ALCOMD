@@ -12,6 +12,8 @@ mod core_installation;
 mod credential_vault;
 pub mod desktop;
 mod external_path;
+#[cfg(target_os = "linux")]
+mod linux_portable_origin;
 mod process;
 mod project_delete;
 mod project_discovery;
@@ -26,8 +28,9 @@ pub use core_installation::{
 };
 #[cfg(target_os = "linux")]
 pub use core_installation::{
-    check_linux_core_registration, linux_installation_bootstrap, linux_installation_runtime,
-    publish_linux_core_registration,
+    LINUX_BOOTSTRAP_EXECUTABLE_NAME, LINUX_GUI_EXECUTABLE_NAME, check_linux_core_registration,
+    linux_installation_bootstrap, linux_installation_runtime, linux_portable_runtime,
+    linux_portable_runtime_is_known, publish_linux_core_registration,
 };
 #[cfg(windows)]
 pub use core_installation::{
@@ -36,6 +39,8 @@ pub use core_installation::{
 };
 pub use credential_vault::{delete_credential, read_credential, write_credential};
 pub use external_path::external_filesystem_path;
+#[cfg(target_os = "linux")]
+pub use linux_portable_origin::{PORTABLE_ORIGIN_FILE, PortableImage, PortableOrigin};
 pub use storage_directories::{
     default_storage_directories, normalize_storage_directory, open_plain_file,
     prepare_storage_directory, publish_path_no_replace, resolve_plain_project_directory,

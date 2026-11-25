@@ -149,6 +149,7 @@ struct Identity {
     uri_scheme: String,
     data_directory: String,
     install_directory: String,
+    linux_desktop_id: String,
 }
 
 #[derive(Deserialize)]

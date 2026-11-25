@@ -40,8 +40,8 @@ pub(super) fn export(
     ensure!(
         for_fixture
             || format == Format::Inno
-            || (format == Format::Deb && cfg!(target_os = "linux")),
-        "release layout export supports Inno and native Linux DEB packaging"
+            || (matches!(format, Format::Appimage | Format::Deb) && cfg!(target_os = "linux")),
+        "release layout export supports Inno and native Linux AppImage and DEB packaging"
     );
     let (source, _) = resolve_plain_storage_directory(source)?;
     let verify = |path: &Path| {
@@ -101,21 +101,25 @@ pub(super) fn export(
     if for_fixture {
         match format {
             Format::Inno => export_inno(layout, &fixture, &version)?,
-            Format::Appimage => export_appimage(root, layout, &fixture, &manifest_digest)?,
+            Format::Appimage => export_fixture_appimage(root, layout, &fixture, &manifest_digest)?,
             Format::Deb => export_fixture_deb(layout, &fixture, &candidate.version)?,
         }
-    } else if format == Format::Inno {
-        export_windows_bin(layout, &runtime, product, &verified)?;
-        super::inno::export(layout, product, candidate, &verified)?;
     } else {
-        export_product_deb(
-            root,
-            layout,
-            &runtime,
-            product,
-            &candidate.version,
-            &verified,
-        )?;
+        match format {
+            Format::Inno => {
+                export_windows_bin(layout, &runtime, product, &verified)?;
+                super::inno::export(layout, product, candidate, &verified)?;
+            }
+            Format::Appimage => export_product_appimage(root, layout, product, &linux_root)?,
+            Format::Deb => export_product_deb(
+                root,
+                layout,
+                &runtime,
+                product,
+                &candidate.version,
+                &verified,
+            )?,
+        }
     }
     #[cfg(unix)]
     match format {
@@ -228,7 +232,7 @@ end;
     publish_file(layout, "fixture.iss", script.as_bytes())
 }
 
-fn export_appimage(
+fn export_fixture_appimage(
     root: &Path,
     layout: &Path,
     fixture: &str,
@@ -245,6 +249,31 @@ fn export_appimage(
     copy_component(
         &root.join("apps/alcomd-gui/src-tauri/icons/icon.png"),
         &app.join(format!("{fixture}.png")),
+    )
+}
+
+fn export_product_appimage(
+    root: &Path,
+    layout: &Path,
+    product: &ProductConfig,
+    runtime: &str,
+) -> anyhow::Result<()> {
+    let app = layout.join("AppDir");
+    let bootstrap = &product.binaries.bootstrap;
+    let launcher = format!(
+        "#!/bin/sh\nexec \"${{APPDIR:?AppImage mount is unavailable}}/{runtime}/{bootstrap}\" start-portable -- \"$@\"\n"
+    );
+    publish_file(&app, "AppRun", launcher.as_bytes())?;
+    let id = &product.identity.linux_desktop_id;
+    let name = &product.product.display_name;
+    let scheme = &product.identity.uri_scheme;
+    let desktop = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nExec=AppRun %u\nIcon={id}\nCategories=Development;\nMimeType=x-scheme-handler/{scheme};\n"
+    );
+    publish_file(&app, &format!("{id}.desktop"), desktop.as_bytes())?;
+    copy_component(
+        &root.join("apps/alcomd-gui/src-tauri/icons/icon.png"),
+        &app.join(format!("{id}.png")),
     )
 }
 
@@ -285,7 +314,7 @@ fn export_product_deb(
     verified.verify_copy(&product.binaries.cli, &cli)?;
 
     let package = &product.product.technical_name;
-    let desktop_id = &product.identity.bundle_identifier;
+    let desktop_id = &product.identity.linux_desktop_id;
     let display = &product.product.display_name;
     let scheme = &product.identity.uri_scheme;
     let gui = &product.binaries.gui;

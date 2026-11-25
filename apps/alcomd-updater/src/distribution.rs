@@ -135,6 +135,7 @@ pub fn verify_release(root: &Path, candidate: &Candidate) -> anyhow::Result<Veri
         Some(&candidate.source_commit),
         Purpose::Release,
         &release_trust()?,
+        None,
     )
 }
 
@@ -152,7 +153,28 @@ pub fn verify_installed_release(
         None,
         Purpose::Release,
         &release_trust()?,
+        None,
     )
+}
+
+/// Verifies the signed payload and its origin record in a persistent AppImage runtime.
+#[cfg(target_os = "linux")]
+pub fn verify_portable_runtime(root: &Path, version: &Version) -> anyhow::Result<VerifiedRuntime> {
+    let origin = alcomd_platform::PortableOrigin::read(root)?;
+    let verified = verify(
+        root,
+        Target::Linux,
+        version,
+        None,
+        Purpose::Release,
+        &release_trust()?,
+        Some(alcomd_platform::PORTABLE_ORIGIN_FILE),
+    )?;
+    ensure!(
+        format_digest(&verified.manifest_sha256) == origin.payload_manifest_sha256(),
+        "portable origin does not belong to the verified runtime"
+    );
+    Ok(verified)
 }
 
 pub struct VerifiedRuntime {
@@ -201,6 +223,7 @@ pub fn verify_fixture(
         Some(&candidate.source_commit),
         Purpose::Fixture,
         key,
+        None,
     )
 }
 
@@ -280,6 +303,7 @@ fn verify(
     source_commit: Option<&str>,
     purpose: Purpose,
     key: &VerifyingKey,
+    local_record: Option<&str>,
 ) -> anyhow::Result<VerifiedRuntime> {
     ensure!(
         version.major == 4 && version.build.is_empty(),
@@ -319,7 +343,10 @@ fn verify(
         "invalid product payload file metadata"
     );
 
-    let observed = observe(&root)?;
+    let mut observed = observe(&root)?;
+    if let Some(record) = local_record {
+        ensure!(observed.remove(record), "missing local installation record");
+    }
     let content_paths = observed
         .iter()
         .filter(|path| ![MANIFEST_NAME, SIGNATURE_NAME].contains(&path.as_str()))

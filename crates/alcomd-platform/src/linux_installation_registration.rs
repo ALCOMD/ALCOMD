@@ -12,7 +12,10 @@ use super::{
     CORE_EXECUTABLE_NAME, core_installation_registration, invalid_registration, open_registration,
     parse_runtime_directory, read_runtime_directory, validate_core_executable,
 };
-use crate::DataConfig;
+use crate::{DataConfig, PortableOrigin};
+
+pub const LINUX_BOOTSTRAP_EXECUTABLE_NAME: &str = env!("ALCOMD_BOOTSTRAP_NAME");
+pub const LINUX_GUI_EXECUTABLE_NAME: &str = env!("ALCOMD_GUI_NAME");
 
 fn package_runtime() -> PathBuf {
     Path::new("/usr/lib")
@@ -46,28 +49,70 @@ fn require_system_executable(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Resolves the versioned runtime of the Linux system package.
-pub fn linux_installation_runtime(executable: &Path) -> io::Result<PathBuf> {
-    let runtime = package_runtime();
-    if executable.parent() != Some(runtime.as_path()) {
+/// Locates the current user's versioned AppImage runtime without creating it.
+pub fn linux_portable_runtime(config: &DataConfig) -> io::Result<PathBuf> {
+    Ok(portable_runtime_parent(config)?.join(env!("CARGO_PKG_VERSION")))
+}
+
+pub(super) fn is_portable_runtime_path(config: &DataConfig, runtime: &Path) -> io::Result<bool> {
+    Ok(runtime.parent() == Some(portable_runtime_parent(config)?.as_path()))
+}
+
+fn portable_runtime_parent(config: &DataConfig) -> io::Result<PathBuf> {
+    Ok(crate::unix::data_directory_path(config)?.join("runtime"))
+}
+
+/// Checks whether an existing runtime tree belongs to a current portable installation.
+pub fn linux_portable_runtime_is_known(config: &DataConfig, entry: &Path) -> io::Result<bool> {
+    let runtime = linux_portable_runtime(config)?;
+    if runtime.parent() != Some(entry) {
+        return Ok(false);
+    }
+    let directory = crate::unix::open_protected_directory_chain(entry)?;
+    let stat = fstat(&directory).map_err(io::Error::from)?;
+    if stat.st_uid != geteuid().as_raw() || stat.st_mode & 0o777 != 0o700 {
         return Err(invalid_registration());
     }
-    require_system_executable(executable)?;
-    require_system_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
-    Ok(runtime)
+    validate_core_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
+    PortableOrigin::read(&runtime)?;
+    Ok(true)
+}
+
+/// Resolves the versioned runtime of a protected Linux package or AppImage installation.
+pub fn linux_installation_runtime(executable: &Path, config: &DataConfig) -> io::Result<PathBuf> {
+    let runtime = executable.parent().ok_or_else(invalid_registration)?;
+    if runtime == package_runtime() {
+        require_system_executable(executable)?;
+        require_system_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
+    } else if runtime == linux_portable_runtime(config)? {
+        validate_core_executable(executable)?;
+        validate_core_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
+        PortableOrigin::read(runtime)?.revalidate()?;
+    } else {
+        return Err(invalid_registration());
+    }
+    Ok(runtime.to_path_buf())
 }
 
 /// Finds Bootstrap from the protected CLI or GUI installed by the Linux system package.
 pub fn linux_installation_bootstrap(entry_point: &Path) -> io::Result<Option<PathBuf>> {
-    let runtime = package_runtime();
-    if entry_point != Path::new("/usr/bin").join(env!("ALCOMD_CLI_NAME"))
-        && entry_point != runtime.join(env!("ALCOMD_GUI_NAME"))
+    let data = DataConfig::default();
+    let package = package_runtime();
+    let runtime = if entry_point == Path::new("/usr/bin").join(env!("ALCOMD_CLI_NAME"))
+        || entry_point == package.join(LINUX_GUI_EXECUTABLE_NAME)
     {
+        require_system_executable(entry_point)?;
+        package
+    } else if let Ok(portable) = linux_portable_runtime(&data)
+        && entry_point == portable.join(LINUX_GUI_EXECUTABLE_NAME)
+    {
+        validate_core_executable(entry_point)?;
+        portable
+    } else {
         return Ok(None);
-    }
-    require_system_executable(entry_point)?;
-    let bootstrap = runtime.join(env!("ALCOMD_BOOTSTRAP_NAME"));
-    linux_installation_runtime(&bootstrap)?;
+    };
+    let bootstrap = runtime.join(LINUX_BOOTSTRAP_EXECUTABLE_NAME);
+    linux_installation_runtime(&bootstrap, &data)?;
     Ok(Some(bootstrap))
 }
 
@@ -91,7 +136,7 @@ pub fn check_linux_core_registration(config: &DataConfig, runtime: &Path) -> io:
 
 /// Publishes the checked runtime after Core initializes under its instance lock.
 pub fn publish_linux_core_registration(config: &DataConfig, runtime: &Path) -> io::Result<()> {
-    linux_installation_runtime(&runtime.join(CORE_EXECUTABLE_NAME))?;
+    linux_installation_runtime(&runtime.join(CORE_EXECUTABLE_NAME), config)?;
     if check_linux_core_registration(config, runtime)? {
         return Ok(());
     }
