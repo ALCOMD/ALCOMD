@@ -1,16 +1,21 @@
+use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use rustix::fd::AsFd;
 use rustix::fs::{
-    AtFlags, FileType, Mode, OFlags, RenameFlags, fstat, fsync, openat, renameat_with, unlinkat,
+    AtFlags, FileType, Mode, OFlags, RenameFlags, fstat, fsync, openat, renameat_with, statat,
+    unlinkat,
 };
+use rustix::io::Errno;
 use rustix::process::geteuid;
 
 use super::{
     CORE_EXECUTABLE_NAME, core_installation_registration, invalid_registration, open_registration,
     parse_runtime_directory, read_runtime_directory, validate_core_executable,
+    validate_installation_record_parent,
 };
 use crate::{DataConfig, PortableOrigin};
 
@@ -18,10 +23,40 @@ pub const LINUX_BOOTSTRAP_EXECUTABLE_NAME: &str = env!("ALCOMD_BOOTSTRAP_NAME");
 pub const LINUX_GUI_EXECUTABLE_NAME: &str = env!("ALCOMD_GUI_NAME");
 
 fn package_runtime() -> PathBuf {
+    package_runtime_root().join(env!("CARGO_PKG_VERSION"))
+}
+
+fn package_runtime_root() -> PathBuf {
     Path::new("/usr/lib")
         .join(CORE_EXECUTABLE_NAME)
         .join("runtime")
-        .join(env!("CARGO_PKG_VERSION"))
+}
+
+fn deb_runtime_version<'a>(runtime: &'a Path, parent: &Path) -> Option<&'a OsStr> {
+    if runtime.parent() != Some(parent) {
+        return None;
+    }
+    let name = runtime.file_name()?;
+    let version = name.to_str()?.parse::<semver::Version>().ok()?;
+    (version.major == 4 && version.build.is_empty()).then_some(name)
+}
+
+fn runtime_version_is_absent(directory: impl AsFd, version: &OsStr) -> io::Result<bool> {
+    match statat(directory, version, AtFlags::SYMLINK_NOFOLLOW) {
+        Err(Errno::NOENT) => Ok(true),
+        Ok(_) => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn retired_deb_runtime_is_absent(runtime: &Path) -> io::Result<bool> {
+    let parent = package_runtime_root();
+    let Some(version) = deb_runtime_version(runtime, &parent) else {
+        return Ok(false);
+    };
+    let directory = crate::unix::open_system_directory_chain(&parent)?;
+    // A missing executable alone does not establish that dpkg removed the runtime.
+    runtime_version_is_absent(&directory, version)
 }
 
 fn require_system_executable(path: &Path) -> io::Result<()> {
@@ -98,9 +133,7 @@ pub fn linux_installation_runtime(executable: &Path, config: &DataConfig) -> io:
 pub fn linux_installation_bootstrap(entry_point: &Path) -> io::Result<Option<PathBuf>> {
     let data = DataConfig::default();
     let package = package_runtime();
-    let runtime = if entry_point == Path::new("/usr/bin").join(env!("ALCOMD_CLI_NAME"))
-        || entry_point == package.join(LINUX_GUI_EXECUTABLE_NAME)
-    {
+    let runtime = if is_deb_entry_point(entry_point, &package) {
         require_system_executable(entry_point)?;
         package
     } else if let Ok(portable) = linux_portable_runtime(&data)
@@ -116,28 +149,73 @@ pub fn linux_installation_bootstrap(entry_point: &Path) -> io::Result<Option<Pat
     Ok(Some(bootstrap))
 }
 
-/// Checks whether the selected runtime already owns this user's registration.
-pub fn check_linux_core_registration(config: &DataConfig, runtime: &Path) -> io::Result<bool> {
-    match open_registration(&core_installation_registration(config)?) {
+fn is_deb_entry_point(entry_point: &Path, runtime: &Path) -> bool {
+    entry_point == Path::new("/usr/bin").join(env!("ALCOMD_CLI_NAME"))
+        || entry_point == runtime.join(LINUX_GUI_EXECUTABLE_NAME)
+}
+
+/// Finds the current DEB Bootstrap when an official entry sees a removed DEB registration.
+pub fn linux_retired_deb_installation_bootstrap(
+    entry_point: &Path,
+    config: &DataConfig,
+) -> io::Result<Option<PathBuf>> {
+    let package = package_runtime();
+    if !is_deb_entry_point(entry_point, &package)
+        || !matches!(
+            inspect_registration(config, &package)?,
+            RegistrationState::RetiredDeb { .. }
+        )
+    {
+        return Ok(None);
+    }
+    linux_installation_bootstrap(entry_point)
+}
+
+enum RegistrationState {
+    Missing,
+    Current,
+    RetiredDeb { file: File, runtime: PathBuf },
+}
+
+fn inspect_registration(config: &DataConfig, runtime: &Path) -> io::Result<RegistrationState> {
+    let registration = core_installation_registration(config)?;
+    match open_registration(&registration) {
         Ok(file) => {
-            if read_runtime_directory(&file)? != runtime {
-                return Err(io::Error::new(
-                    io::ErrorKind::AlreadyExists,
-                    "Core registration belongs to another installed runtime",
-                ));
+            let registered = read_runtime_directory(&file)?;
+            if registered == runtime {
+                validate_core_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
+                return Ok(RegistrationState::Current);
             }
-            validate_core_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
-            Ok(true)
+            if runtime == package_runtime() && retired_deb_runtime_is_absent(&registered)? {
+                validate_installation_record_parent(&registration)?;
+                return Ok(RegistrationState::RetiredDeb {
+                    file,
+                    runtime: registered,
+                });
+            }
+            Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "Core registration belongs to another installed runtime",
+            ))
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(RegistrationState::Missing),
         Err(error) => Err(error),
     }
+}
+
+/// Checks whether this runtime already owns the registration before Core initializes.
+pub fn check_linux_core_registration(config: &DataConfig, runtime: &Path) -> io::Result<bool> {
+    Ok(matches!(
+        inspect_registration(config, runtime)?,
+        RegistrationState::Current
+    ))
 }
 
 /// Publishes the checked runtime after Core initializes under its instance lock.
 pub fn publish_linux_core_registration(config: &DataConfig, runtime: &Path) -> io::Result<()> {
     linux_installation_runtime(&runtime.join(CORE_EXECUTABLE_NAME), config)?;
-    if check_linux_core_registration(config, runtime)? {
+    let state = inspect_registration(config, runtime)?;
+    if matches!(state, RegistrationState::Current) {
         return Ok(());
     }
     let registration = core_installation_registration(config)?;
@@ -176,18 +254,84 @@ pub fn publish_linux_core_registration(config: &DataConfig, runtime: &Path) -> i
     let result = (|| {
         file.write_all(line.as_bytes())?;
         file.sync_all()?;
-        renameat_with(
-            &directory,
-            temporary.as_str(),
-            &directory,
-            name,
-            RenameFlags::NOREPLACE,
-        )
-        .map_err(io::Error::from)?;
+        let flags = if let RegistrationState::RetiredDeb {
+            file: previous,
+            runtime: previous_runtime,
+        } = state
+        {
+            let RegistrationState::RetiredDeb {
+                file: current,
+                runtime: current_runtime,
+            } = inspect_registration(config, runtime)?
+            else {
+                return Err(invalid_registration());
+            };
+            let previous = fstat(&previous).map_err(io::Error::from)?;
+            let current = fstat(&current).map_err(io::Error::from)?;
+            let anchored =
+                statat(&directory, name, AtFlags::SYMLINK_NOFOLLOW).map_err(io::Error::from)?;
+            if previous_runtime != current_runtime
+                || (previous.st_dev, previous.st_ino) != (current.st_dev, current.st_ino)
+                || (current.st_dev, current.st_ino) != (anchored.st_dev, anchored.st_ino)
+            {
+                return Err(invalid_registration());
+            }
+            RenameFlags::empty()
+        } else {
+            RenameFlags::NOREPLACE
+        };
+        renameat_with(&directory, temporary.as_str(), &directory, name, flags)
+            .map_err(io::Error::from)?;
         fsync(&directory).map_err(io::Error::from)
     })();
     if result.is_err() {
         let _ = unlinkat(&directory, temporary.as_str(), AtFlags::empty());
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn recognizes_only_siblings_named_for_a_canonical_v4_release() {
+        let parent = package_runtime_root();
+        for name in ["4.0.0-alpha.0", "4.0.0-alpha.1", "4.10.1"] {
+            assert_eq!(
+                deb_runtime_version(&parent.join(name), &parent),
+                Some(OsStr::new(name))
+            );
+        }
+        for name in ["local", "04.0.0", "3.4.0", "4.0.0+local", "4.0.1/elsewhere"] {
+            assert_eq!(deb_runtime_version(&parent.join(name), &parent), None);
+        }
+        assert_eq!(
+            deb_runtime_version(Path::new("/home/app/runtime/4.0.0-alpha.1"), &parent),
+            None
+        );
+    }
+
+    #[test]
+    fn only_a_missing_directory_entry_can_be_retired() {
+        let root =
+            std::env::temp_dir().join(format!("alcomd-deb-retirement-{}", std::process::id()));
+        fs::create_dir(&root).expect("private test tree");
+        let directory = File::open(&root).expect("fixture directory");
+        let version = OsStr::new("4.0.0-alpha.1");
+        assert!(runtime_version_is_absent(&directory, version).expect("missing"));
+        fs::create_dir(root.join(version)).expect("remaining runtime directory");
+        let directory_was_absent =
+            runtime_version_is_absent(&directory, version).expect("directory");
+        fs::remove_dir(root.join(version)).expect("clear fixture directory");
+        symlink("missing-target", root.join(version)).expect("dangling runtime link");
+        let link_was_absent =
+            runtime_version_is_absent(&directory, version).expect("no-follow stat");
+        fs::remove_file(root.join(version)).expect("remove fixture link");
+        fs::remove_dir(root).expect("remove fixture tree");
+        assert!(!directory_was_absent);
+        assert!(!link_was_absent);
+    }
 }

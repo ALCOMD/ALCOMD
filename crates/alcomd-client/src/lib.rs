@@ -1587,16 +1587,28 @@ fn daemon_command(config: &ClientConfig) -> Result<Command, ClientError> {
             .clone()
             .map(DataConfig::isolated)
             .unwrap_or_default();
-        match alcomd_platform::registered_core_executable(&data)
-            .map_err(ClientError::StartDaemon)?
-        {
-            Some(daemon) => {
+        match alcomd_platform::registered_core_executable(&data) {
+            Ok(Some(daemon)) => {
                 let mut command = Command::new(&daemon);
                 command.current_dir(daemon.parent().ok_or(ClientError::DaemonPathUnavailable)?);
                 command
             }
-            None if config.require_installation => return Err(ClientError::DaemonPathUnavailable),
-            None => default_daemon_command()?,
+            Ok(None) if config.require_installation => {
+                return Err(ClientError::DaemonPathUnavailable);
+            }
+            Ok(None) => default_daemon_command()?,
+            #[cfg(target_os = "linux")]
+            Err(error)
+                if !config.require_installation && error.kind() == io::ErrorKind::InvalidData =>
+            {
+                let entry_point = std::env::current_exe().map_err(ClientError::StartDaemon)?;
+                let bootstrap =
+                    alcomd_platform::linux_retired_deb_installation_bootstrap(&entry_point, &data)
+                        .map_err(ClientError::StartDaemon)?
+                        .ok_or(ClientError::StartDaemon(error))?;
+                installation_daemon_command(&bootstrap)?
+            }
+            Err(error) => return Err(ClientError::StartDaemon(error)),
         }
     };
     command.env_remove(MCP_CREDENTIAL_ENVIRONMENT_KEY);
@@ -1624,14 +1636,19 @@ fn default_daemon_command() -> Result<Command, ClientError> {
         installation_bootstrap(&std::env::current_exe().map_err(ClientError::StartDaemon)?)
             .map_err(ClientError::StartDaemon)?
     {
-        let runtime = bootstrap
-            .parent()
-            .ok_or(ClientError::DaemonPathUnavailable)?;
-        let mut command = Command::new(&bootstrap);
-        command.arg("start-installed-core").current_dir(runtime);
-        return Ok(command);
+        return installation_daemon_command(&bootstrap);
     }
     Ok(Command::new(sibling_daemon_path()?))
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn installation_daemon_command(bootstrap: &std::path::Path) -> Result<Command, ClientError> {
+    let runtime = bootstrap
+        .parent()
+        .ok_or(ClientError::DaemonPathUnavailable)?;
+    let mut command = Command::new(bootstrap);
+    command.arg("start-installed-core").current_dir(runtime);
+    Ok(command)
 }
 
 fn sibling_daemon_path() -> Result<PathBuf, ClientError> {

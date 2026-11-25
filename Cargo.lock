@@ -274,6 +274,7 @@ dependencies = [
  "open",
  "rustix",
  "security-framework",
+ "semver",
  "serde",
  "serde_json",
  "sysinfo",

@@ -86,7 +86,8 @@ mod linux_registration;
 pub use linux_registration::{
     LINUX_BOOTSTRAP_EXECUTABLE_NAME, LINUX_GUI_EXECUTABLE_NAME, check_linux_core_registration,
     linux_installation_bootstrap, linux_installation_runtime, linux_portable_runtime,
-    linux_portable_runtime_is_known, publish_linux_core_registration,
+    linux_portable_runtime_is_known, linux_retired_deb_installation_bootstrap,
+    publish_linux_core_registration,
 };
 
 fn parse_runtime_directory(data: &[u8]) -> io::Result<PathBuf> {
