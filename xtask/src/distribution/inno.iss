@@ -41,6 +41,25 @@ const
   ExpandStringValue = 2;
   ReadEnvironmentString = $10000006;
 
+type
+  TLeaseRange = record
+    Internal, InternalHigh, Offset, OffsetHigh, EventHandle: Cardinal;
+  end;
+
+var
+  UninstallLease: Integer;
+
+function OpenLeaseFile(FileName: String; Access, Share: Cardinal; Security: Integer;
+  Disposition, Flags: Cardinal; Template: Integer): Integer;
+  external 'CreateFileW@kernel32.dll stdcall';
+
+function TryLockLease(Handle: Integer; Flags, Reserved, LengthLow, LengthHigh: Cardinal;
+  var Range: TLeaseRange): Boolean;
+  external 'LockFileEx@kernel32.dll stdcall';
+
+function CloseLeaseFile(Handle: Integer): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
 function GetAttributes(FileName: String): Cardinal;
   external 'GetFileAttributesW@kernel32.dll stdcall';
 
@@ -365,10 +384,64 @@ begin
   PublishStartMenuEntry;
 end;
 
+function AcquireUninstallLease(Manifest: String): Boolean;
+var
+  Range: TLeaseRange;
+begin
+  Result := False;
+  // GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, OPEN_EXISTING,
+  // FILE_FLAG_OPEN_REPARSE_POINT. Deletion is allowed once Core is excluded.
+  UninstallLease := OpenLeaseFile(Manifest, $80000000, 5, 0, 3, $00200000, 0);
+  if UninstallLease = -1 then
+    Exit;
+  Range.Internal := 0;
+  Range.InternalHigh := 0;
+  Range.Offset := 0;
+  Range.OffsetHigh := 1;
+  Range.EventHandle := 0;
+  // Core shares this byte at 4 GiB. Request an exclusive lock without waiting.
+  Result := TryLockLease(UninstallLease, 3, 0, 1, 0, Range);
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Root, Runtime, Manifest: String;
+  ExitCode: Integer;
+  Unregistered: Boolean;
 begin
   if CurUninstallStep <> usUninstall then
     Exit;
+  Root := ExpandConstant('{app}');
+  Runtime := Root + '\runtime\@APP_VERSION@';
+  Manifest := Runtime + '\@MANIFEST_NAME@';
+  if not OwnedUninstallRoot(Root) or not PlainDirectoryChain(Runtime, False) or
+    not PlainDirectoryChain(Root + '\bin', False) or
+    not PlainFileMatches(Manifest, '@MANIFEST_DIGEST@') then begin
+    Log('Could not confirm installed ALCOMD program ownership. No files were removed.');
+    SuppressibleMsgBox('The installed ALCOMD files could not be verified.',
+      mbError, MB_OK, IDOK);
+    Abort;
+  end;
+  if not AcquireUninstallLease(Manifest) then begin
+    Log('Could not lock the installed ALCOMD runtime. No files were removed.');
+    SuppressibleMsgBox('Close ALCOMD in all signed-in accounts and try uninstalling again.',
+      mbError, MB_OK, IDOK);
+    Abort;
+  end;
+  if not IsAdminInstallMode then begin
+    Unregistered := False;
+    if PlainFileMatches(Runtime + '\@BOOTSTRAP_FILE@', '@BOOTSTRAP_DIGEST@') and
+      PlainFileMatches(Runtime + '\@CRT_FILE@', '@CRT_DIGEST@') then
+      if Exec(Runtime + '\@BOOTSTRAP_FILE@',
+        'unregister-installed-core --source-sha @SOURCE_SHA@', Runtime, SW_HIDE,
+        ewWaitUntilTerminated, ExitCode) then
+        Unregistered := ExitCode = 0;
+    if not Unregistered then begin
+      Log('Could not unregister the current account. The installation was kept.');
+      SuppressibleMsgBox('Close ALCOMD and try uninstalling again.', mbError, MB_OK, IDOK);
+      Abort;
+    end;
+  end;
   if not RemoveOwnedCliPath then begin
     Log('Could not remove the ALCOMD-owned CLI PATH entry.');
     SuppressibleMsgBox('The ALCOMD CLI entry could not be removed from PATH.',
@@ -377,31 +450,8 @@ begin
   RemoveOwnedStartMenuEntry;
 end;
 
-function InitializeUninstall: Boolean;
-var
-  Root, Runtime: String;
-  ExitCode: Integer;
+procedure DeinitializeUninstall;
 begin
-  Root := ExpandConstant('{app}');
-  Runtime := Root + '\runtime\@APP_VERSION@';
-  Result := OwnedUninstallRoot(Root) and PlainDirectoryChain(Runtime, False) and
-    PlainDirectoryChain(Root + '\bin', False) and
-    PlainFileMatches(Runtime + '\@MANIFEST_NAME@', '@MANIFEST_DIGEST@');
-  if not Result then begin
-    Log('Could not confirm installed ALCOMD program ownership. No files were removed.');
-    Exit;
-  end;
-  if not IsAdminInstallMode then begin
-    Result := False;
-    if PlainFileMatches(Runtime + '\@BOOTSTRAP_FILE@', '@BOOTSTRAP_DIGEST@') and
-      PlainFileMatches(Runtime + '\@CRT_FILE@', '@CRT_DIGEST@') then
-      if Exec(Runtime + '\@BOOTSTRAP_FILE@',
-        'unregister-installed-core --source-sha @SOURCE_SHA@', Runtime, SW_HIDE,
-        ewWaitUntilTerminated, ExitCode) then
-        Result := ExitCode = 0;
-    if not Result then begin
-      Log('Could not unregister the current account. The installation was kept.');
-      SuppressibleMsgBox('Close ALCOMD and try uninstalling again.', mbError, MB_OK, IDOK);
-    end;
-  end;
+  if (UninstallLease <> 0) and (UninstallLease <> -1) then
+    CloseLeaseFile(UninstallLease);
 end;

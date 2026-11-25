@@ -8,6 +8,9 @@ use crate::DataConfig;
 const REGISTRATION_FILE: &str = "core-installation-v1";
 const MAX_RUNTIME_PATH_BYTES: usize = 4096;
 
+/// Filename of the signed manifest for a complete installed product runtime.
+pub const PRODUCT_PAYLOAD_MANIFEST_NAME: &str = "product-payload.json";
+
 /// Basename of the Core executable from the product manifest.
 #[cfg(unix)]
 pub const CORE_EXECUTABLE_NAME: &str = env!("ALCOMD_DAEMON_NAME");
@@ -75,7 +78,7 @@ fn read_runtime_directory(file: &std::fs::File) -> io::Result<PathBuf> {
 mod registration;
 #[cfg(windows)]
 pub use registration::{
-    check_windows_core_registration, publish_windows_core_registration,
+    check_windows_core_registration, hold_windows_installation, publish_windows_core_registration,
     remove_windows_core_registration, windows_installation_bootstrap, windows_installation_runtime,
 };
 

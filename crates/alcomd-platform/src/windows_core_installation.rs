@@ -5,7 +5,7 @@ use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 use std::os::windows::io::AsRawHandle;
 use std::path::{Component, Path, PathBuf, Prefix};
 
-use windows_sys::Win32::Foundation::{GENERIC_ALL, GENERIC_WRITE};
+use windows_sys::Win32::Foundation::{GENERIC_ALL, GENERIC_READ, GENERIC_WRITE};
 use windows_sys::Win32::Storage::FileSystem::{
     DELETE, FILE_APPEND_DATA, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DELETE_CHILD,
     FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, FILE_READ_DATA,
@@ -26,6 +26,10 @@ pub(crate) fn open_registration_for_removal(path: &Path) -> io::Result<File> {
 
 pub(crate) fn validate_core_executable(path: &Path) -> io::Result<()> {
     open_checked_file(path, 0).map(drop)
+}
+
+pub(crate) fn open_installation_manifest(path: &Path) -> io::Result<File> {
+    open_checked_file(path, GENERIC_READ)
 }
 
 const REPLACE_ACCESS: u32 =

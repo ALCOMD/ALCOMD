@@ -63,6 +63,9 @@ impl NativeStage {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let arguments = Arguments::parse();
+    #[cfg(windows)]
+    let _installation = alcomd_platform::hold_windows_installation(&std::env::current_exe()?)
+        .context("installed product is unavailable or undergoing maintenance")?;
     if let Some(command) = arguments.command {
         let receipt = match command {
             Command::ImportNativeState(stage) => {

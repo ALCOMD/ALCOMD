@@ -24,8 +24,9 @@ mod unity_hub_open;
 mod unity_registration;
 
 pub use core_installation::{
-    CORE_EXECUTABLE_NAME, core_installation_registration, open_owned_installation_record,
-    registered_core_executable, validate_installation_record_parent,
+    CORE_EXECUTABLE_NAME, PRODUCT_PAYLOAD_MANIFEST_NAME, core_installation_registration,
+    open_owned_installation_record, registered_core_executable,
+    validate_installation_record_parent,
 };
 #[cfg(target_os = "linux")]
 pub use core_installation::{
@@ -36,7 +37,7 @@ pub use core_installation::{
 };
 #[cfg(windows)]
 pub use core_installation::{
-    check_windows_core_registration, publish_windows_core_registration,
+    check_windows_core_registration, hold_windows_installation, publish_windows_core_registration,
     remove_windows_core_registration, windows_installation_bootstrap, windows_installation_runtime,
 };
 pub use credential_vault::{delete_credential, read_credential, write_credential};
