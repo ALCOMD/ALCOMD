@@ -14,9 +14,11 @@ test("Register an AI client, issue its credential once, and revoke it after conf
     await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
     await expect(dialog.getByText("browser-fixture-one-time-credential")).toBeVisible();
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(page.getByText("browser-fixture-one-time-credential", { exact: true })).toHaveCount(0);
     await expect(ai.getByText("browser-fixture-one-time-credential")).toHaveCount(0);
     await row.getByRole("button", { name: "Revoke client" }).click();
     await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByText("Revoking this client permanently ends its access.", { exact: true })).toHaveCount(0);
     await row.getByRole("button", { name: "Revoke client" }).click();
     await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
     await expect(row.getByText("Revoked", { exact: true })).toBeVisible();
