@@ -22,11 +22,13 @@ Ubuntu 22.04 的产品 DEB 已通过原生首装、解包中断恢复、逐账�
 
 Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密钥，验证原生 FUSE、真实桌面首启、独立 SDK 冷启动、移位拒绝与主动重新绑定。可选 CLI 集成和整产品替换仍待验收。[Ubuntu 产品 AppImage 首启](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
 
+新建的 Ubuntu 22.04 x86_64 WSL 2 实例已复验 AppImage 首启。用此前的签名 DEB 另通过三项双格式归属检查，覆盖双向接管拒绝与 `dpkg purge` 后资料保全。[Ubuntu 双格式归属](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
+
 v4 更新声明、HTTPS 下载、有界暂存和持久防重放已接入。Windows 11 Sandbox 通过 9 项 HTTPS 验收，覆盖下载中断、四进程竞争与回执保全。另通过 6 项签名响应接力检查，覆盖原始声明与资产的离线复验。平台安装提交和回滚继续按阶段 3 实施。[更新声明、下载与暂存核验](exec-plans/M12-full-product-distribution.md#v4-更新声明离线核验)
 
 Windows 当前用户的更新暂存与只读数据预检通过 9 项原生检查。完整签名源码 `f75808a9` 的 Inno 源版本包验证了安装维护锁、内外摘要、数据预检、中断后重试以及原程序、登记和数据库保全。全用户范围还复验了同一实包的六项卸载互斥。[Windows 当前用户更新预检](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-当前用户更新预检)
 
-Windows 当前用户的版本切换和提交恢复已通过原生验收。正常升级覆盖稳定 CLI、开始菜单、卸载归属和 Core 登记的同版切换。最新 `3a02f869` 两版隔离夹具通过 10 项中断恢复检查，覆盖实际终止、签名篡改、登记占用、原工程重开和卸载资料保全。全用户切换和完整 Release 候选仍在实施。[Windows 当前用户版本切换与恢复](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-当前用户版本切换与恢复)
+Windows 当前用户的版本切换和提交恢复已通过原生验收。完整 Release 源版 `b95e132f` 和版本派生 `6a79c90e` 通过 8 项正常升级和 11 项中断恢复检查，覆盖实际终止、签名篡改、登记占用、新版 WebView2 窗口、原工程重开和卸载资料保全。全用户切换和应用内更新入口仍在实施。[Windows 当前用户版本切换与恢复](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-当前用户版本切换与恢复)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 

@@ -1245,7 +1245,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "Windows 11 Sandbox 用 Inno 两版合成签名夹具验证正常切换、无事务安装和未知目标拒绝、稳定 CLI、开始菜单、Core 登记、旧版启动阻断、新版原工程读取及卸载保全。"
+description = "Windows 11 Sandbox 用 b95e132f 和 6a79c90e 两套完整 Release 实包通过 8 项正常升级检查，覆盖无事务安装和未知目标拒绝、稳定 CLI、开始菜单、Core 登记、旧版启动阻断、新版原工程读取及卸载保全。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs", "crates/alcomd-platform/src/windows_installation_registration.rs", "xtask/src/distribution/inno.iss"]
 
 [[test]]
@@ -1254,7 +1254,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "签名源码 3a02f869 的两版夹具通过 Win11 10 项恢复检查，包括提交意图后终止 Bootstrap 和 Inno 进程树、篡改保留安装包、登记占用、同一事务激活、旧程序文件变化拒绝卸载及用户资料保全。"
+description = "完整 Release 源版 b95e132f 与版本派生 6a79c90e 通过 Win11 11 项恢复检查，包括提交意图后终止 Bootstrap 和 Inno 进程树、篡改保留安装包、登记占用、真实 WebView2 新版首启、旧程序文件变化拒绝卸载及用户资料保全。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation.rs", "apps/alcomd-bootstrap/src/windows_installation/update.rs", "xtask/src/distribution/inno.iss"]
 
 [[test]]
@@ -1265,6 +1265,15 @@ platforms = ["linux-x86_64"]
 status = "implemented"
 description = "Ubuntu 22.04 以签名源码 b324627e 和合成签名产品 AppImage 验证原生 FUSE、真实 Tauri 首启、独立 SDK 冷启动、移位和链接替换阻断、从新位置重新绑定及未知资料保全。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable.rs", "crates/alcomd-platform/src/linux_portable_origin.rs"]
+
+[[test]]
+id = "installer.linux.package-format-ownership"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 x86_64 WSL 2 用此前的签名 AppImage 与 DEB 实包验证双向登记接管拒绝。dpkg purge 后两套测试登记和状态库摘要保持一致。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable.rs", "crates/alcomd-platform/src/linux_installation_registration.rs"]
 
 [[test]]
 id = "installer.windows.product-first-use"
