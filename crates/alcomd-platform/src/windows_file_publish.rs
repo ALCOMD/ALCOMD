@@ -1,10 +1,31 @@
-//! One Win32 move without replacement for files and directories.
+//! Win32 file publication, deletion and maintenance leases.
 #![allow(unsafe_code)]
 
+use std::fs::File;
 use std::io;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::AsRawHandle;
 use std::path::Path;
+
+pub(crate) fn lock_file_byte(file: &File, offset: u64, exclusive: bool) -> io::Result<()> {
+    use windows_sys::Win32::Storage::FileSystem::{
+        LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
+    };
+    use windows_sys::Win32::System::IO::OVERLAPPED;
+
+    let mut range = OVERLAPPED::default();
+    range.Anonymous.Anonymous.Offset = (offset & u64::from(u32::MAX)) as u32;
+    range.Anonymous.Anonymous.OffsetHigh = (offset >> 32) as u32;
+    let mut flags = LOCKFILE_FAIL_IMMEDIATELY;
+    if exclusive {
+        flags |= LOCKFILE_EXCLUSIVE_LOCK;
+    }
+    // SAFETY: The synchronous file handle and initialized range live through this call.
+    if unsafe { LockFileEx(file.as_raw_handle().cast(), flags, 0, 1, 0, &mut range) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
 
 pub(crate) fn publish_path_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
     let wide = |path: &Path| -> io::Result<Vec<u16>> {

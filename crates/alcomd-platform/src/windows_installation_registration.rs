@@ -1,11 +1,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
-use std::os::windows::io::AsRawHandle;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-
-use windows_sys::Win32::Storage::FileSystem::{LOCKFILE_FAIL_IMMEDIATELY, LockFileEx};
-use windows_sys::Win32::System::IO::OVERLAPPED;
 
 use super::{
     CORE_EXECUTABLE_NAME, PRODUCT_PAYLOAD_MANIFEST_NAME, core_installation_registration,
@@ -15,31 +11,24 @@ use super::{
 use crate::windows::core_installation::{
     open_installation_manifest, open_registration_for_removal, validate_registration_parent,
 };
-use crate::windows::{delete_open_file, file_identity_from_file};
+use crate::windows::{delete_open_file, file_identity_from_file, lock_file_byte};
 use crate::{DataConfig, publish_path_no_replace, resolve_plain_storage_directory, sync_directory};
+
+// The Inno uninstaller takes this byte exclusively. It is beyond the bounded
+// signed manifest, so verification can still read the complete file.
+const MANIFEST_LEASE_OFFSET: u64 = 1 << 32;
 
 /// Holds a shared lease for a running installed Core. Scratch and sibling builds have no lease.
 pub fn hold_windows_installation(executable: &Path) -> io::Result<Option<File>> {
+    // Windows reports the spelling used at launch, which can include a short name or junction.
+    let executable = fs::canonicalize(executable)?;
     if !executable.parent().is_some_and(is_versioned_runtime) {
         return Ok(None);
     }
-    let runtime = windows_installation_runtime(executable)?;
+    let runtime = windows_installation_runtime(&executable)?;
     let manifest = open_installation_manifest(&runtime.join(PRODUCT_PAYLOAD_MANIFEST_NAME))?;
-    lock_installation(&manifest, LOCKFILE_FAIL_IMMEDIATELY)?;
+    lock_file_byte(&manifest, MANIFEST_LEASE_OFFSET, false)?;
     Ok(Some(manifest))
-}
-
-#[allow(unsafe_code)]
-fn lock_installation(manifest: &File, flags: u32) -> io::Result<()> {
-    // The Inno uninstaller takes the same one-byte range exclusively. The offset
-    // is 4 GiB, beyond the bounded signed manifest, so verification can still read it.
-    let mut range = OVERLAPPED::default();
-    range.Anonymous.Anonymous.OffsetHigh = 1;
-    // SAFETY: The file and range are valid throughout this synchronous, non-blocking call.
-    if unsafe { LockFileEx(manifest.as_raw_handle().cast(), flags, 0, 1, 0, &mut range) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
 }
 
 /// Resolves a member of the current versioned Windows runtime through trusted paths.
@@ -196,44 +185,39 @@ fn require_owner(file: &File, runtime: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use windows_sys::Win32::Storage::FileSystem::LOCKFILE_EXCLUSIVE_LOCK;
-
     #[test]
-    fn installed_core_lease_excludes_maintenance_without_locking_manifest_contents() {
+    fn installed_core_lease_excludes_maintenance_without_locking_manifest_contents()
+    -> io::Result<()> {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("system time is after the Unix epoch")
             .as_nanos();
-        let root = crate::local_app_data_directory()
-            .unwrap()
+        let root = crate::local_app_data_directory()?
             .join(format!("alcomd-lease-{}-{stamp}", std::process::id()));
-        fs::create_dir(&root).unwrap();
+        fs::create_dir(&root)?;
         let runtime = root.join("runtime").join(env!("CARGO_PKG_VERSION"));
-        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&runtime)?;
         let executable = runtime.join(CORE_EXECUTABLE_NAME);
-        fs::write(&executable, []).unwrap();
+        fs::write(&executable, [])?;
         assert!(hold_windows_installation(&executable).is_err());
-        assert!(
-            hold_windows_installation(&root.join(CORE_EXECUTABLE_NAME))
-                .unwrap()
-                .is_none()
-        );
+        let sibling = root.join(CORE_EXECUTABLE_NAME);
+        fs::write(&sibling, [])?;
+        assert!(hold_windows_installation(&sibling)?.is_none());
 
         let path = runtime.join(PRODUCT_PAYLOAD_MANIFEST_NAME);
-        fs::write(&path, b"manifest contents").unwrap();
-        let first = hold_windows_installation(&executable).unwrap().unwrap();
-        let second = hold_windows_installation(&executable).unwrap().unwrap();
-        let maintenance = open_installation_manifest(&path).unwrap();
-        let exclusive = LOCKFILE_FAIL_IMMEDIATELY | LOCKFILE_EXCLUSIVE_LOCK;
-        assert!(lock_installation(&maintenance, exclusive).is_err());
+        fs::write(&path, b"manifest contents")?;
+        let first = hold_windows_installation(&executable)?.expect("first shared lease");
+        let second = hold_windows_installation(&executable)?.expect("second shared lease");
+        let maintenance = open_installation_manifest(&path)?;
+        assert!(lock_file_byte(&maintenance, MANIFEST_LEASE_OFFSET, true).is_err());
         drop(first);
-        assert!(lock_installation(&maintenance, exclusive).is_err());
+        assert!(lock_file_byte(&maintenance, MANIFEST_LEASE_OFFSET, true).is_err());
         drop(second);
-        lock_installation(&maintenance, exclusive).unwrap();
-        assert_eq!(fs::read(&path).unwrap(), b"manifest contents");
+        lock_file_byte(&maintenance, MANIFEST_LEASE_OFFSET, true)?;
+        assert_eq!(fs::read(&path)?, b"manifest contents");
         assert!(hold_windows_installation(&executable).is_err());
         drop(maintenance);
-        assert!(hold_windows_installation(&executable).unwrap().is_some());
-        fs::remove_dir_all(root).unwrap();
+        assert!(hold_windows_installation(&executable)?.is_some());
+        fs::remove_dir_all(root)
     }
 }

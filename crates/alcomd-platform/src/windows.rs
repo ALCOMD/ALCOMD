@@ -26,7 +26,7 @@ mod security;
 
 pub use file_identity::{WindowsFileIdentity, file_identity, file_link_count};
 pub(crate) use file_identity::{file_identity_from_file, is_volume_root};
-pub(crate) use file_publish::{delete_open_file, publish_path_no_replace};
+pub(crate) use file_publish::{delete_open_file, lock_file_byte, publish_path_no_replace};
 pub(crate) use known_folder::program_data_directory;
 pub use local_ipc::connect_verified_local_pipe;
 pub(crate) use local_ipc::verify_publisher as verify_program_publisher;
