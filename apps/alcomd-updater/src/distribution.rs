@@ -165,11 +165,15 @@ impl VerifiedRuntime {
         self.file_digests.keys().map(String::as_str)
     }
 
+    /// Returns a component digest from the verified signed manifest.
+    pub fn file_sha256(&self, relative: &str) -> Option<&[u8; 32]> {
+        self.file_digests.get(relative)
+    }
+
     /// Verifies a regular file copied to a separate entry point against the signed runtime file.
     pub fn verify_copy(&self, relative: &str, path: &Path) -> anyhow::Result<()> {
         let expected = self
-            .file_digests
-            .get(relative)
+            .file_sha256(relative)
             .context("file is not in the verified product payload")?;
         let (file, _) = alcomd_platform::open_plain_file(path)?;
         let size = file.metadata()?.len();

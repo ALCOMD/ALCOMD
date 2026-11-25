@@ -148,6 +148,7 @@ struct Identity {
     windows_app_id: String,
     uri_scheme: String,
     data_directory: String,
+    install_directory: String,
 }
 
 #[derive(Deserialize)]

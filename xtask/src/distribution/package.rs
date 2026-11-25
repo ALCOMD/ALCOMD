@@ -106,6 +106,7 @@ pub(super) fn export(
         }
     } else if format == Format::Inno {
         export_windows_bin(layout, &runtime, product, &verified)?;
+        super::inno::export(layout, product, candidate, &verified)?;
     } else {
         export_product_deb(
             root,

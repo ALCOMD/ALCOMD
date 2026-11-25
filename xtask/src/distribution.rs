@@ -13,6 +13,7 @@ use ed25519_dalek::{Signer, SigningKey};
 use crate::{ProductConfig, read_toml};
 
 mod build;
+mod inno;
 mod package;
 
 const FIXTURE_KEY: [u8; 32] = [37; 32];
@@ -35,7 +36,7 @@ struct Arguments {
     /// Verify the manifest signature and the entire staged runtime.
     #[arg(long)]
     check: bool,
-    /// Export signed Windows product inputs or native test fixture inputs.
+    /// Export signed product packaging inputs or development fixtures.
     #[arg(long, requires_all = ["staging", "format", "output"])]
     package_layout: bool,
     #[arg(long, value_enum, requires = "package_layout")]
