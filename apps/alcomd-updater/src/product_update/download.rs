@@ -1,7 +1,7 @@
 //! Network transport and local staging for authenticated self-update assets.
 
 use std::fs::{self, File, OpenOptions};
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -25,7 +25,10 @@ use super::{
     MAX_UPDATE_RESPONSE_BYTES, MAX_URL_BYTES, UpdateAsset, UpdateRequest, UpdateStream,
     VerifiedUpdate, check_replay, validate_update_asset_url, verify_update,
 };
-use crate::{Channel, distribution::Target};
+use crate::{
+    Channel,
+    distribution::{Target, format_digest},
+};
 
 const MAX_REDIRECTS: usize = 5;
 const FEED_DEADLINE: Duration = Duration::from_secs(30);
@@ -35,13 +38,14 @@ static NEXT_DOWNLOAD: AtomicU64 = AtomicU64::new(0);
 /// A verified, published asset for the caller's separate platform transaction.
 pub struct StagedUpdate {
     pub path: PathBuf,
+    pub envelope_path: PathBuf,
     pub verified: VerifiedUpdate,
 }
 
 /// Downloads a self-update from a trusted HTTPS origin into an existing private directory.
 ///
-/// A 204 response leaves staging and the replay receipt untouched. A retry can reuse
-/// an exact previously staged asset. The caller revalidates the asset before execution.
+/// A 204 response leaves staging and the replay receipt untouched. The asset and signed
+/// response are durably staged for offline verification. A retry can reuse exact files.
 pub async fn download_update(
     origin: &Url,
     request: &UpdateRequest<'_>,
@@ -135,7 +139,7 @@ pub async fn download_update(
 
 fn publish_verified_update(
     stage: Stage,
-    pending: Option<PendingAsset>,
+    pending: Option<PendingFile>,
     replay_directory: &Path,
     body: &[u8],
     request: &UpdateRequest<'_>,
@@ -151,13 +155,40 @@ fn publish_verified_update(
     }
     drop(open_owned_installation_record(&stage.destination)?);
     verified.asset().verify_file(&stage.destination)?;
+    let envelope_path = publish_signed_envelope(&stage, body)?;
     if previous != Some(acceptance) {
         journal.accept(acceptance)?;
     }
     Ok(StagedUpdate {
         path: stage.destination,
+        envelope_path,
         verified,
     })
+}
+
+fn publish_signed_envelope(asset: &Stage, body: &[u8]) -> anyhow::Result<PathBuf> {
+    // The manifest digest controls replay. The envelope digest identifies the
+    // exact HTTPS response, including its outer JSON encoding.
+    let filename = format!("update-{}.json", format_digest(&Sha256::digest(body)));
+    let stage = Stage {
+        directory: asset.directory.clone(),
+        directory_identity: asset.directory_identity.clone(),
+        destination: asset.directory.join(filename),
+    };
+    stage.ensure_directory()?;
+    if !stage.has_destination()? {
+        let (pending, mut file) = PendingFile::create(&stage)?;
+        file.write_all(body)?;
+        file.sync_all()?;
+        drop(file);
+        pending.publish(&stage)?;
+    }
+    let file = open_owned_installation_record(&stage.destination)?;
+    let mut staged = Vec::new();
+    file.take((MAX_UPDATE_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut staged)?;
+    ensure!(staged == body, "staged signed update response changed");
+    Ok(stage.destination)
 }
 
 fn feed_endpoint(origin: &Url, stream: UpdateStream) -> anyhow::Result<Url> {
@@ -329,7 +360,7 @@ async fn stream_asset(
     asset: &UpdateAsset,
     hosts: &[&str],
     stage: &Stage,
-) -> anyhow::Result<PendingAsset> {
+) -> anyhow::Result<PendingFile> {
     let mut response = fetch(
         client,
         asset.url().clone(),
@@ -348,7 +379,7 @@ async fn stream_asset(
             .is_none_or(|size| size == asset.bytes()),
         "product update asset length does not match the signed manifest"
     );
-    let (pending, file) = PendingAsset::create(stage)?;
+    let (pending, file) = PendingFile::create(stage)?;
     let mut file = tokio::fs::File::from_std(file);
     let mut bytes = 0;
     let mut hash = Sha256::new();
@@ -413,14 +444,14 @@ impl Stage {
     }
 }
 
-struct PendingAsset {
+struct PendingFile {
     path: PathBuf,
     directory_identity: Vec<u8>,
     file_identity: Vec<u8>,
     keep: bool,
 }
 
-impl PendingAsset {
+impl PendingFile {
     fn create(stage: &Stage) -> anyhow::Result<(Self, File)> {
         stage.ensure_directory()?;
         let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
@@ -464,12 +495,12 @@ impl PendingAsset {
                 Ok(())
             }
             Err(error) if error.kind() == ErrorKind::AlreadyExists => Ok(()),
-            Err(error) => Err(error).context("cannot exclusively publish product update asset"),
+            Err(error) => Err(error).context("cannot exclusively publish product update file"),
         }
     }
 }
 
-impl Drop for PendingAsset {
+impl Drop for PendingFile {
     fn drop(&mut self) {
         if !self.keep
             && self.path.parent().is_some_and(|parent| {
@@ -488,6 +519,34 @@ mod tests {
     use super::*;
     use crate::product_update::UpdateFormat;
     use tokio::io::AsyncReadExt as _;
+
+    #[test]
+    fn signed_response_is_atomically_saved_for_offline_verification() -> anyhow::Result<()> {
+        #[cfg(windows)]
+        let parent = alcomd_platform::local_app_data_directory()?;
+        #[cfg(unix)]
+        let parent = std::env::temp_dir().canonicalize()?;
+        let path = parent.join(format!("alcomd-update-envelope-{}", uuid::Uuid::new_v4()));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt as _;
+            fs::DirBuilder::new().mode(0o700).create(&path)?;
+        }
+        #[cfg(windows)]
+        fs::create_dir(&path)?;
+        let stage = Stage::open(&path, "fixture.exe")?;
+        let body = b"{ \"manifest\": \"a\", \"signature\": \"b\" }\n";
+        let envelope = publish_signed_envelope(&stage, body)?;
+        assert_eq!(fs::read(&envelope)?, body);
+        assert_eq!(publish_signed_envelope(&stage, body)?, envelope);
+        fs::write(&envelope, b"tampered")?;
+        assert!(publish_signed_envelope(&stage, body).is_err());
+        assert_eq!(fs::read(&envelope)?, b"tampered");
+        assert_eq!(fs::read_dir(&path)?.count(), 1);
+        fs::remove_file(envelope)?;
+        fs::remove_dir(path)?;
+        Ok(())
+    }
 
     #[test]
     fn derives_the_exact_feed_and_rejects_untrusted_origin_shapes() {

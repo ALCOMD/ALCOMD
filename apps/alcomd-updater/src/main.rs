@@ -172,6 +172,8 @@ fn main() -> anyhow::Result<()> {
                     staged.verified.version(),
                     staged.verified.acceptance().serial
                 );
+                println!("Asset {}", staged.path.display());
+                println!("Signed response {}", staged.envelope_path.display());
             } else {
                 println!("No product update available");
             }
