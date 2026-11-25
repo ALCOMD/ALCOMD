@@ -186,6 +186,7 @@ dependencies = [
  "alcomd-client",
  "alcomd-platform",
  "alcomd-protocol",
+ "alcomd-updater",
  "open",
  "serde",
  "serde_json",

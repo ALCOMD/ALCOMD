@@ -16,7 +16,7 @@ use anyhow::{Context, ensure};
 mod update;
 pub use update::{
     apply_installed_update, apply_machine_update_worker, resume_installed_update,
-    resume_machine_update_worker, stage_installed_update,
+    resume_machine_update_worker, stage_installed_update, with_windows_desktop_restart,
 };
 
 /// Verifies the installed signed payload and lets the current user's Core initialize its state.

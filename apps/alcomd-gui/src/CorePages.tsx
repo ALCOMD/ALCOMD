@@ -10,6 +10,7 @@ import { ProjectInspectionDialog } from "./ProjectInspectionDialog";
 import { FrozenPlanDialog } from "./FrozenPlanDialog";
 import { PackageRequestDialog } from "./PackageRequestDialog";
 import { ProjectInventoryDialog } from "./ProjectInventoryDialog";
+import { ProductUpdateSection } from "./ProductUpdateSection";
 import { useCoreEvents, useCoreInvalidation, useViewState, useViewReadingPosition, useWorkspaceInvalidation } from "./core-events-ui";
 import type { ChangeScope, CoreEvents } from "./core-events";
 import type { SupportedLocale, Translate } from "./i18n-types";
@@ -2435,6 +2436,7 @@ export function AboutPage({ client }: PageProps) {
             <LocalPageReadContext.Provider value={true}>
                 <ResourcePage initialRequest={initialStatus} load={load} loading={<PageLoadingState title={t("Loading page…")} delayed />}>{(status) => <dl className="detail-grid"><Detail label={t("Daemon")} value={status.daemonVersion} /><Detail label="RPC" value={`v${status.rpcVersion}`} /><Detail label={t("State")} value={humanize(t, status.state)} /></dl>}</ResourcePage>
             </LocalPageReadContext.Provider>
+            <ProductUpdateSection />
             <section className="notice-card"><h2>{t("Licenses")}</h2><p>{t("ALCOMD source is licensed under AGPL-3.0-only.")}</p><p><Translated message="The canonical third-party dependency notice source is {file} in the product distribution." values={{ file: <code>THIRD_PARTY_NOTICES.md</code> }} /></p></section>
         </ScrollArea>
     </section>;

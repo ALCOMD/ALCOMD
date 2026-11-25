@@ -39,10 +39,18 @@ enum Command {
     StageInstalledUpdate(UpdateArguments),
     #[cfg(windows)]
     /// Install a verified update in the original Windows installation scope.
-    ApplyInstalledUpdate(UpdateArguments),
+    ApplyInstalledUpdate {
+        #[command(flatten)]
+        update: UpdateArguments,
+        #[arg(long, hide = true)]
+        desktop: bool,
+    },
     #[cfg(windows)]
     /// Recover an interrupted installed Windows update.
-    ResumeInstalledUpdate,
+    ResumeInstalledUpdate {
+        #[arg(long, hide = true)]
+        desktop: bool,
+    },
     #[cfg(windows)]
     #[command(hide = true)]
     ApplyMachineUpdateWorker {
@@ -197,20 +205,33 @@ fn main() -> anyhow::Result<()> {
             return Ok(());
         }
         #[cfg(windows)]
-        Command::ApplyInstalledUpdate(arguments) => {
-            let [envelope, asset, replay_directory] = arguments.absolute_paths()?;
-            alcomd_bootstrap::apply_installed_update(
-                &envelope,
-                &asset,
-                &replay_directory,
-                arguments.channel,
-            )?;
+        Command::ApplyInstalledUpdate { update, desktop } => {
+            let [envelope, asset, replay_directory] = update.absolute_paths()?;
+            let apply = || {
+                alcomd_bootstrap::apply_installed_update(
+                    &envelope,
+                    &asset,
+                    &replay_directory,
+                    update.channel,
+                )
+            };
+            if desktop {
+                alcomd_bootstrap::with_windows_desktop_restart(apply)?;
+            } else {
+                apply()?;
+            }
             println!("Windows product update applied");
             return Ok(());
         }
         #[cfg(windows)]
-        Command::ResumeInstalledUpdate => {
-            alcomd_bootstrap::resume_installed_update()?;
+        Command::ResumeInstalledUpdate { desktop } => {
+            if desktop {
+                alcomd_bootstrap::with_windows_desktop_restart(
+                    alcomd_bootstrap::resume_installed_update,
+                )?;
+            } else {
+                alcomd_bootstrap::resume_installed_update()?;
+            }
             println!("Windows product update resumed");
             return Ok(());
         }

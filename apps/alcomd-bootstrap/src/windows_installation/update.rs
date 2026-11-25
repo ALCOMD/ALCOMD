@@ -2,18 +2,20 @@ use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use alcomd_platform::{
     CORE_EXECUTABLE_NAME, DaemonInstance, DataConfig, IpcConfig, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME,
-    WINDOWS_CLI_EXECUTABLE_NAME, WINDOWS_UPDATE_INTENT_RECORD, WindowsInstallationUpdate,
-    check_windows_core_registration, create_windows_machine_installation_directory,
-    create_windows_machine_installation_record, hold_windows_installation,
-    open_owned_installation_record, open_windows_machine_installation_record,
-    publish_path_no_replace, receive_windows_machine_update, resolve_plain_storage_directory,
-    send_windows_machine_update, start_elevated_windows_program, sync_directory,
+    WINDOWS_CLI_EXECUTABLE_NAME, WINDOWS_GUI_EXECUTABLE_NAME, WINDOWS_UPDATE_INTENT_RECORD,
+    WindowsInstallationUpdate, check_windows_core_registration,
+    create_windows_machine_installation_directory, create_windows_machine_installation_record,
+    hold_windows_installation, open_owned_installation_record,
+    open_windows_machine_installation_record, publish_path_no_replace,
+    receive_windows_machine_update, resolve_plain_storage_directory, send_windows_machine_update,
+    start_core_process, start_elevated_windows_program, sync_directory,
     validate_installation_record_parent, validate_windows_machine_installation_record_parent,
-    windows_current_user_installation_root, windows_installation_runtime,
-    windows_machine_installation_root, windows_process_is_elevated,
+    windows_current_user_installation_root, windows_installation_bootstrap,
+    windows_installation_runtime, windows_machine_installation_root, windows_process_is_elevated,
 };
 use alcomd_updater::{
     Channel,
@@ -24,7 +26,8 @@ use alcomd_updater::{
     product_update::{
         AcceptedUpdate, MAX_UPDATE_RESPONSE_BYTES, VerifiedUpdate,
         accept_windows_machine_product_update, accept_windows_product_update,
-        reverify_interrupted_windows_update, verify_fresh_windows_product_update,
+        record_desktop_update_failure, reverify_interrupted_windows_update,
+        verify_fresh_windows_product_update,
     },
 };
 use anyhow::{Context, ensure};
@@ -36,6 +39,61 @@ const ACCEPTANCE: &str = "accepted.json";
 const INSTALLED_RECEIPT: &str = "installed-v1";
 const PRIVATE_RECORD_LIMIT: usize = 4096;
 const INSTALLED_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Lets the closing desktop and its Core disconnect before entering maintenance.
+pub fn with_windows_desktop_restart(
+    operation: impl FnOnce() -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    let installation = Installation::installed()?;
+    let result = wait_for_idle_core().and_then(|()| operation());
+    if record_desktop_update_failure(result.is_err()).is_err() {
+        eprintln!("Windows desktop update could not store its restart outcome");
+    }
+    let relaunch = relaunch_desktop(&installation);
+    result.and(relaunch)
+}
+
+fn wait_for_idle_core() -> anyhow::Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(18);
+    loop {
+        match DaemonInstance::acquire(&IpcConfig::default()) {
+            Ok(_) => return Ok(()),
+            Err(alcomd_platform::BindError::AlreadyRunning) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(150));
+            }
+            Err(error) => {
+                return Err(error).context("close the current user's Core before updating");
+            }
+        }
+    }
+}
+
+fn relaunch_desktop(installation: &Installation) -> anyhow::Result<()> {
+    let cli = installation
+        .root
+        .join("bin")
+        .join(WINDOWS_CLI_EXECUTABLE_NAME);
+    let bootstrap =
+        windows_installation_bootstrap(&cli)?.context("active Windows runtime is unavailable")?;
+    let runtime = bootstrap
+        .parent()
+        .context("active Windows runtime is unavailable")?;
+    let version = runtime
+        .file_name()
+        .and_then(OsStr::to_str)
+        .context("invalid active Windows runtime")?;
+    let verified = verify_runtime(runtime, version)?;
+    if installation.scope == Scope::Machine {
+        check_machine_runtime(runtime, &verified)?;
+    }
+    start_core_process(
+        &runtime.join(WINDOWS_GUI_EXECUTABLE_NAME),
+        [],
+        Some(runtime),
+        "ALCOMD_MCP_CLIENT_CREDENTIAL",
+    )
+    .context("could not reopen the installed desktop")
+}
 
 /// Extracts a verified update and checks the user's data layout without opening it for writes.
 pub fn stage_installed_update(

@@ -1961,6 +1961,40 @@ if (query.has("vcc-settings-fixture")) {
     });
     Object.defineProperty(window, "isTauri", { value: true });
 }
+const productUpdateFixture = query.get("product-update-fixture");
+if (productUpdateFixture !== null) {
+    const { mockIPC, mockWindows } = await import("@tauri-apps/api/mocks");
+    mockWindows("main");
+    let state: { state: string; version?: string; bytes?: number } = {
+        state: productUpdateFixture === "recovery" ? "recovery" : "idle",
+    };
+    mockIPC((command, args) => {
+        if (command !== "gui_product_update" || typeof args !== "object" || args === null || !("action" in args)) {
+            return undefined;
+        }
+        const action = args.action;
+        window.resourceRequests.push({ method: command, params: { action } });
+        switch (action) {
+            case "check":
+                state = { state: "available", version: "4.0.0-alpha.1", bytes: 20971520 };
+                return { state: "checking" };
+            case "download":
+                state = productUpdateFixture === "cancel"
+                    ? { state: "downloading" }
+                    : { state: "ready", version: "4.0.0-alpha.1" };
+                return { state: "downloading" };
+            case "cancel":
+                state = { state: "idle" };
+                break;
+            case "install":
+            case "resume":
+                state = { state: "restarting" };
+                break;
+        }
+        return state;
+    }, { shouldMockEvents: true });
+    Object.defineProperty(window, "isTauri", { value: true });
+}
 const pendingDesktopLinks: DesktopLink[] = [];
 if (query.has("repository-link-fixture")) pendingDesktopLinks.push({
     kind: "vccRepository",

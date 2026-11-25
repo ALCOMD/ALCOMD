@@ -12,6 +12,7 @@ mod desktop_links;
 mod events;
 mod native_clients;
 mod picker_location;
+mod product_updates;
 mod repository_links;
 mod rpc_clients;
 mod unity_windows;
@@ -1793,6 +1794,7 @@ pub fn run() {
         .manage(repository_links::VccRegistration::default())
         .manage(GuiClientState::default())
         .manage(events::EventsClient::default())
+        .manage(product_updates::DesktopUpdates::default())
         .manage(unity_windows::UnityWindows::default())
         .on_page_load(|view, payload| {
             events::on_page_load(view, payload);
@@ -1814,6 +1816,7 @@ pub fn run() {
             desktop_links::gui_take_desktop_link,
             repository_links::gui_vcc_registration_available,
             repository_links::gui_register_vcc_links,
+            product_updates::gui_product_update,
             window_state::gui_window_state_configure,
             gui_system_status,
             gui_state_check,

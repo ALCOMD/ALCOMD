@@ -32,6 +32,9 @@ pub const WINDOWS_BOOTSTRAP_EXECUTABLE_NAME: &str = concat!(env!("ALCOMD_BOOTSTR
 /// Basename of the Windows stable CLI entry point.
 pub const WINDOWS_CLI_EXECUTABLE_NAME: &str = concat!(env!("ALCOMD_CLI_NAME"), ".exe");
 
+/// Basename of the signed Windows desktop executable.
+pub const WINDOWS_GUI_EXECUTABLE_NAME: &str = concat!(env!("ALCOMD_GUI_NAME"), ".exe");
+
 /// Protected Windows installation-root record containing the active version and an LF.
 pub const WINDOWS_ACTIVE_RUNTIME_RECORD: &str = "active-runtime-v1";
 
@@ -134,7 +137,7 @@ pub fn windows_installation_bootstrap(entry_point: &Path) -> io::Result<Option<P
     let Some(directory) = entry_point.parent() else {
         return Ok(None);
     };
-    let runtime = if has_name(entry_point, concat!(env!("ALCOMD_GUI_NAME"), ".exe"))
+    let runtime = if has_name(entry_point, WINDOWS_GUI_EXECUTABLE_NAME)
         && is_versioned_runtime(directory)
     {
         require_active_runtime(directory, installation_trust(runtime_root(directory)?)?)?;
