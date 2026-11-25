@@ -1257,6 +1257,15 @@ status = "blocked"
 description = "验证三平台只公开 alcomd-cli，安装、重复启用、升级、范围转换、便携文件移动和卸载不泄露内部命令或残留错误入口。"
 
 [[test]]
+id = "installer.windows.owned-cli-path-first-use"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "用隔离 Win11 的真实 Inno EXE 在两种安装范围验证原类型保留、卸载精确移除、第三方 PATH 改动保留、已有条目去重及初始缺失值恢复。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss"]
+
+[[test]]
 id = "installer.windows.scope-modes"
 stage = "M12"
 kind = "system"

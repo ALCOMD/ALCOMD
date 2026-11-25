@@ -15,6 +15,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 SetupMutex=Global\@FAMILY_NAME@.ProductSetup
 CloseApplications=no
 RestartApplications=no
+ChangesEnvironment=yes
 UninstallDisplayIcon={app}\runtime\@APP_VERSION@\@GUI_NAME@.exe
 OutputBaseFilename=@FAMILY_NAME@_@APP_VERSION@_windows_x86_64_setup
 
@@ -28,12 +29,22 @@ const
   MissingPath = 3;
   FixedDrive = 3;
   InvalidFileAttributes = $FFFFFFFF;
+  UserEnvironment = 'Environment';
+  MachineEnvironment = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
+  OwnedCliPath = '@FAMILY_NAME@OwnedCliPath';
+  StringValue = 1;
+  ExpandStringValue = 2;
+  ReadEnvironmentString = $10000006;
 
 function GetAttributes(FileName: String): Cardinal;
   external 'GetFileAttributesW@kernel32.dll stdcall';
 
 function GetDriveType(Root: String): Cardinal;
   external 'GetDriveTypeW@kernel32.dll stdcall';
+
+function ReadRegistryValueType(Root: Cardinal; Key, Name: String; Flags: Cardinal;
+  var ValueType: Cardinal; Data: Integer; var Size: Cardinal): Integer;
+  external 'RegGetValueW@advapi32.dll stdcall';
 
 function MissingEntry(Error: Integer): Boolean;
 begin
@@ -123,6 +134,171 @@ begin
       Exit;
   end;
   Result := CompareText(Root, RemoveBackslashUnlessRoot(RegisteredRoot)) = 0;
+end;
+
+function InstallRegistryRoot: Cardinal;
+begin
+  if IsAdminInstallMode then
+    Result := HKEY_LOCAL_MACHINE_64
+  else
+    Result := HKEY_CURRENT_USER;
+end;
+
+function ReadPath(var Path: String; var ValueType: Cardinal): Boolean;
+var
+  Key: String;
+  Root: Cardinal;
+  Size: Cardinal;
+  ReadResult: Integer;
+begin
+  if IsAdminInstallMode then begin
+    Root := HKEY_LOCAL_MACHINE;
+    Key := MachineEnvironment;
+  end else begin
+    Root := HKEY_CURRENT_USER;
+    Key := UserEnvironment;
+  end;
+  Size := 0;
+  ValueType := 0;
+  Path := '';
+  ReadResult := ReadRegistryValueType(Root, Key, 'Path', ReadEnvironmentString, ValueType, 0, Size);
+  Result := ReadResult = MissingFile;
+  if Result then begin
+    ValueType := 0;
+    Exit;
+  end;
+  if (ReadResult <> 0) or (Size > 65534) then
+    Exit;
+  Result := RegQueryStringValue(InstallRegistryRoot, Key, 'Path', Path);
+end;
+
+function WritePath(Path: String; ValueType: Cardinal): Boolean;
+var
+  Key: String;
+  Root: Cardinal;
+begin
+  Root := InstallRegistryRoot;
+  if IsAdminInstallMode then
+    Key := MachineEnvironment
+  else
+    Key := UserEnvironment;
+  case ValueType of
+    0: Result := RegDeleteValue(Root, Key, 'Path');
+    StringValue: Result := RegWriteStringValue(Root, Key, 'Path', Path);
+    ExpandStringValue: Result := RegWriteExpandStringValue(Root, Key, 'Path', Path);
+  else
+    Result := False;
+  end;
+end;
+
+function PathEntryIsPresent(Path, Entry: String): Boolean;
+var
+  Delimiter: Integer;
+  Candidate: String;
+begin
+  Path := Path + ';';
+  while Path <> '' do begin
+    Delimiter := Pos(';', Path);
+    Candidate := Trim(Copy(Path, 1, Delimiter - 1));
+    Delete(Path, 1, Delimiter);
+    if (Length(Candidate) >= 2) and (Candidate[1] = '"') and
+      (Candidate[Length(Candidate)] = '"') then
+      Candidate := Copy(Candidate, 2, Length(Candidate) - 2);
+    if CompareText(RemoveBackslashUnlessRoot(Candidate), Entry) = 0 then begin
+      Result := True;
+      Exit;
+    end;
+  end;
+  Result := False;
+end;
+
+function InstallCliPath: Boolean;
+var
+  Root: Cardinal;
+  Entry, Path, Claim: String;
+  ValueType: Cardinal;
+begin
+  Result := False;
+  Root := InstallRegistryRoot;
+  Entry := ExpandConstant('{app}\bin');
+  if (Pos(';', Entry) <> 0) or (Pos('%', Entry) <> 0) or not ReadPath(Path, ValueType) then
+    Exit;
+  if PathEntryIsPresent(Path, Entry) then begin
+    Result := True;
+    Exit;
+  end;
+  if RegValueExists(Root, UninstallKey, OwnedCliPath) then
+    Exit;
+  Claim := 'existing|' + Entry;
+  if ValueType = 0 then begin
+    Claim := 'missing|' + Entry;
+    ValueType := ExpandStringValue;
+  end;
+  if Path <> '' then
+    Path := Path + ';';
+  Path := Path + Entry;
+  if (Length(Path) > 32766) or
+    not RegWriteStringValue(Root, UninstallKey, OwnedCliPath, Claim) then
+    Exit;
+  Result := WritePath(Path, ValueType);
+  if not Result then
+    if not RegDeleteValue(Root, UninstallKey, OwnedCliPath) then
+      Log('Could not clear the CLI PATH ownership receipt.');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep <> ssPostInstall then
+    Exit;
+  if not OwnedUninstallRoot(ExpandConstant('{app}')) or not InstallCliPath then begin
+    Log('ALCOMD CLI PATH integration failed. The existing PATH was preserved.');
+    SuppressibleMsgBox('ALCOMD was installed, but its CLI could not be added to PATH.',
+      mbInformation, MB_OK, IDOK);
+  end;
+end;
+
+function RemoveOwnedCliPath: Boolean;
+var
+  Root: Cardinal;
+  Entry, Path, Claim, Token: String;
+  ValueType: Cardinal;
+  Position: Integer;
+begin
+  Result := True;
+  Root := InstallRegistryRoot;
+  if not RegQueryStringValue(Root, UninstallKey, OwnedCliPath, Claim) then
+    Exit;
+  Entry := ExpandConstant('{app}\bin');
+  if (Claim <> 'missing|' + Entry) and (Claim <> 'existing|' + Entry) then
+    Exit;
+  if not ReadPath(Path, ValueType) then begin
+    Result := False;
+    Exit;
+  end;
+  Path := ';' + Path + ';';
+  Token := ';' + Entry + ';';
+  Position := Pos(Token, Path);
+  if Position = 0 then
+    Exit;
+  if Pos(Token, Copy(Path, Position + Length(Token) - 1, Length(Path))) <> 0 then
+    Exit;
+  Delete(Path, Position, Length(Token) - 1);
+  if Length(Path) > 1 then
+    Path := Copy(Path, 2, Length(Path) - 2)
+  else
+    Path := '';
+  if (Path = '') and (Claim = 'missing|' + Entry) then
+    ValueType := 0;
+  Result := WritePath(Path, ValueType);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if (CurUninstallStep = usUninstall) and not RemoveOwnedCliPath then begin
+    Log('Could not remove the ALCOMD-owned CLI PATH entry.');
+    SuppressibleMsgBox('The ALCOMD CLI entry could not be removed from PATH.',
+      mbInformation, MB_OK, IDOK);
+  end;
 end;
 
 function PlainFileMatches(FileName, Digest: String): Boolean;
