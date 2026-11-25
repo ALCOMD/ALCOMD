@@ -1,9 +1,9 @@
 use super::*;
 
-struct Fixture(PathBuf);
+pub(super) struct Fixture(pub(super) PathBuf);
 
 impl Fixture {
-    fn create() -> Self {
+    pub(super) fn create() -> Self {
         let root = std::env::temp_dir().join(format!("alcomd-migration-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&root).expect("isolated test fixture");
         Self(fs::canonicalize(root).expect("canonical fixture root"))

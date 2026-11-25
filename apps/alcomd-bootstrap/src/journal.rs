@@ -11,7 +11,7 @@ const RECORD_LIMIT: u64 = 64 * 1024;
 pub(super) struct Journal {
     root: PathBuf,
     identity: Vec<u8>,
-    _lock: File,
+    lock: File,
 }
 
 impl Journal {
@@ -61,7 +61,7 @@ impl Journal {
         Ok(Self {
             root,
             identity,
-            _lock: lock,
+            lock,
         })
     }
 
@@ -126,6 +126,28 @@ impl Journal {
         alcomd_platform::sync_directory(&self.root)?;
         Ok(())
     }
+}
+
+impl Drop for Journal {
+    fn drop(&mut self) {
+        // On Unix a concurrent spawn can still hold a duplicate between fork and exec.
+        let _ = self.lock.unlock();
+    }
+}
+
+#[cfg(all(test, unix))]
+#[test]
+fn journal_drop_unlocks_while_a_duplicate_descriptor_is_open() {
+    let fixture = super::tests::Fixture::create();
+    let workspace = fixture.0.join("workspace");
+    let journal = Journal::open(&workspace).expect("open original journal");
+    let inherited = journal.lock.try_clone().expect("duplicate lock descriptor");
+    assert!(Journal::open(&workspace).is_err());
+
+    drop(journal);
+    let reopened = Journal::open(&workspace).expect("reopen after the lock owner exits");
+    drop(inherited);
+    assert!(Journal::open(reopened.root()).is_err());
 }
 
 pub(super) fn isolated_child(path: &Path) -> anyhow::Result<(PathBuf, Vec<u8>)> {
