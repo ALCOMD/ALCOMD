@@ -263,16 +263,29 @@ where
 }
 
 /// Initializes the selected user's store and optionally serves IPC after publishing the install.
-#[cfg(windows)]
-pub async fn register_windows_installation<F>(
+#[cfg(any(windows, target_os = "linux"))]
+pub async fn register_installation<F>(
     data: DataConfig,
     serve_until: Option<F>,
 ) -> Result<(), BindError>
 where
     F: Future<Output = ()>,
 {
-    let runtime = alcomd_platform::windows_installation_runtime(&std::env::current_exe()?)?;
-    let already_registered = alcomd_platform::check_windows_core_registration(&data, &runtime)?;
+    #[cfg(target_os = "linux")]
+    use alcomd_platform::{
+        check_linux_core_registration as check_registration,
+        linux_installation_runtime as installation_runtime,
+        publish_linux_core_registration as publish_registration,
+    };
+    #[cfg(windows)]
+    use alcomd_platform::{
+        check_windows_core_registration as check_registration,
+        publish_windows_core_registration as publish_registration,
+        windows_installation_runtime as installation_runtime,
+    };
+
+    let runtime = installation_runtime(&std::env::current_exe()?)?;
+    let already_registered = check_registration(&data, &runtime)?;
     if already_registered && serve_until.is_none() {
         return Ok(());
     }
@@ -283,7 +296,7 @@ where
     )
     .await?;
     recover_startup_credentials(&applications).await?;
-    alcomd_platform::publish_windows_core_registration(&data, &runtime)?;
+    publish_registration(&data, &runtime)?;
     if let Some(shutdown) = serve_until {
         return run_initialized_daemon(listener, applications, shutdown).await;
     }

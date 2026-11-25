@@ -139,7 +139,7 @@ pub fn verify_release(root: &Path, candidate: &Candidate) -> anyhow::Result<Veri
 }
 
 /// Verifies the installed version, taking the source commit from the authenticated manifest.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub fn verify_installed_release(
     root: &Path,
     target: Target,

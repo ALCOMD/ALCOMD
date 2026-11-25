@@ -38,8 +38,10 @@ pub(super) fn export(
         "package format does not match target"
     );
     ensure!(
-        for_fixture || format == Format::Inno,
-        "release layout export is available for Windows Inno packaging"
+        for_fixture
+            || format == Format::Inno
+            || (format == Format::Deb && cfg!(target_os = "linux")),
+        "release layout export supports Inno and native Linux DEB packaging"
     );
     let (source, _) = resolve_plain_storage_directory(source)?;
     let verify = |path: &Path| {
@@ -74,7 +76,12 @@ pub(super) fn export(
     let layout = temporary.path();
     let fixture = format!("{}-dist-fixture", product.product.technical_name);
     let version = candidate.version.to_string();
-    let linux_root = format!("usr/lib/{fixture}/runtime/{version}");
+    let package = if for_fixture {
+        fixture.as_str()
+    } else {
+        product.product.technical_name.as_str()
+    };
+    let linux_root = format!("usr/lib/{package}/runtime/{version}");
     let runtime = match format {
         Format::Inno => layout.join("runtime").join(&version),
         Format::Appimage => layout.join("AppDir").join(&linux_root),
@@ -95,10 +102,19 @@ pub(super) fn export(
         match format {
             Format::Inno => export_inno(layout, &fixture, &version)?,
             Format::Appimage => export_appimage(root, layout, &fixture, &manifest_digest)?,
-            Format::Deb => export_deb(layout, &fixture, &candidate.version)?,
+            Format::Deb => export_fixture_deb(layout, &fixture, &candidate.version)?,
         }
-    } else {
+    } else if format == Format::Inno {
         export_windows_bin(layout, &runtime, product, &verified)?;
+    } else {
+        export_product_deb(
+            root,
+            layout,
+            &runtime,
+            product,
+            &candidate.version,
+            &verified,
+        )?;
     }
     #[cfg(unix)]
     match format {
@@ -107,7 +123,11 @@ pub(super) fn export(
             let tree = layout.join("AppDir");
             set_unix_package_modes(&tree, &runtime, product, Some(&tree.join("AppRun")))?;
         }
-        Format::Deb => set_unix_package_modes(&layout.join("deb-root"), &runtime, product, None)?,
+        Format::Deb => {
+            let tree = layout.join("deb-root");
+            let launcher = (!for_fixture).then(|| tree.join("usr/bin").join(&product.binaries.cli));
+            set_unix_package_modes(&tree, &runtime, product, launcher.as_deref())?;
+        }
     }
 
     ensure!(
@@ -227,16 +247,74 @@ fn export_appimage(
     )
 }
 
-fn export_deb(layout: &Path, fixture: &str, version: &semver::Version) -> anyhow::Result<()> {
+fn deb_version(version: &semver::Version) -> String {
     let base = format!("{}.{}.{}", version.major, version.minor, version.patch);
-    let version = if version.pre.is_empty() {
+    if version.pre.is_empty() {
         format!("{base}-1")
     } else {
         format!("{base}~{}-1", version.pre)
-    };
+    }
+}
+
+fn export_fixture_deb(
+    layout: &Path,
+    fixture: &str,
+    version: &semver::Version,
+) -> anyhow::Result<()> {
     let control = format!(
-        "Package: {fixture}\nVersion: {version}\nSection: devel\nPriority: optional\nArchitecture: amd64\nMaintainer: ALCOMD Distribution Testing <noreply@vrclearn.com>\nDescription: ALCOMD packaging fixture\n Contains a signed development runtime for archive verification.\n"
+        "Package: {fixture}\nVersion: {}\nSection: devel\nPriority: optional\nArchitecture: amd64\nMaintainer: ALCOMD Distribution Testing <noreply@vrclearn.com>\nDescription: ALCOMD packaging fixture\n Contains a signed development runtime for archive verification.\n",
+        deb_version(version)
     );
+    publish_deb_control(layout, &control)
+}
+
+fn export_product_deb(
+    root: &Path,
+    layout: &Path,
+    runtime: &Path,
+    product: &ProductConfig,
+    version: &semver::Version,
+    verified: &VerifiedRuntime,
+) -> anyhow::Result<()> {
+    let tree = layout.join("deb-root");
+    let bin = tree.join("usr/bin");
+    fs::create_dir_all(&bin)?;
+    let cli = bin.join(&product.binaries.cli);
+    copy_component(&runtime.join(&product.binaries.cli), &cli)?;
+    verified.verify_copy(&product.binaries.cli, &cli)?;
+
+    let package = &product.product.technical_name;
+    let desktop_id = &product.identity.bundle_identifier;
+    let display = &product.product.display_name;
+    let scheme = &product.identity.uri_scheme;
+    let gui = &product.binaries.gui;
+    let applications = tree.join("usr/share/applications");
+    fs::create_dir_all(&applications)?;
+    let desktop = format!(
+        "[Desktop Entry]\nType=Application\nName={display}\nExec=/usr/lib/{package}/runtime/{version}/{gui} %u\nIcon={desktop_id}\nCategories=Development;\nMimeType=x-scheme-handler/{scheme};\n"
+    );
+    publish_file(
+        &applications,
+        &format!("{desktop_id}.desktop"),
+        desktop.as_bytes(),
+    )?;
+    let icons = tree.join("usr/share/icons/hicolor/256x256/apps");
+    fs::create_dir_all(&icons)?;
+    copy_component(
+        &root.join("apps/alcomd-gui/src-tauri/icons/128x128@2x.png"),
+        &icons.join(format!("{desktop_id}.png")),
+    )?;
+
+    let maintainer = &product.product.publisher_name;
+    let homepage = &product.product.homepage_url;
+    let control = format!(
+        "Package: {package}\nVersion: {}\nSection: utils\nPriority: optional\nArchitecture: amd64\nMaintainer: {maintainer} <noreply@vrclearn.com>\nDepends: libc6 (>= 2.34), libcairo2, libdbus-1-3, libgcc-s1, libgdk-pixbuf-2.0-0, libglib2.0-0, libgtk-3-0, libjavascriptcoregtk-4.1-0, libsoup-3.0-0, libwebkit2gtk-4.1-0\nHomepage: {homepage}\nDescription: {display} project and package management\n Contains the desktop client, Core and command line interface for Unity projects.\n",
+        deb_version(version)
+    );
+    publish_deb_control(layout, &control)
+}
+
+fn publish_deb_control(layout: &Path, control: &str) -> anyhow::Result<()> {
     let metadata = layout.join("deb-root/DEBIAN");
     fs::create_dir(&metadata)?;
     publish_file(&metadata, "control", control.as_bytes())

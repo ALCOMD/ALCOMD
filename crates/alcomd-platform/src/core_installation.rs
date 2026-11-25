@@ -75,6 +75,15 @@ pub use registration::{
     remove_windows_core_registration, windows_installation_bootstrap, windows_installation_runtime,
 };
 
+#[cfg(target_os = "linux")]
+#[path = "linux_installation_registration.rs"]
+mod linux_registration;
+#[cfg(target_os = "linux")]
+pub use linux_registration::{
+    check_linux_core_registration, linux_installation_bootstrap, linux_installation_runtime,
+    publish_linux_core_registration,
+};
+
 fn parse_runtime_directory(data: &[u8]) -> io::Result<PathBuf> {
     let line = data
         .strip_suffix(b"\n")

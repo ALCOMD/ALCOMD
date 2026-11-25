@@ -24,6 +24,11 @@ mod unity_registration;
 pub use core_installation::{
     CORE_EXECUTABLE_NAME, core_installation_registration, registered_core_executable,
 };
+#[cfg(target_os = "linux")]
+pub use core_installation::{
+    check_linux_core_registration, linux_installation_bootstrap, linux_installation_runtime,
+    publish_linux_core_registration,
+};
 #[cfg(windows)]
 pub use core_installation::{
     check_windows_core_registration, publish_windows_core_registration,

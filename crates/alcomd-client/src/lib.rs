@@ -1614,11 +1614,15 @@ fn daemon_command(config: &ClientConfig) -> Result<Command, ClientError> {
 }
 
 fn default_daemon_command() -> Result<Command, ClientError> {
+    #[cfg(target_os = "linux")]
+    use alcomd_platform::linux_installation_bootstrap as installation_bootstrap;
     #[cfg(windows)]
-    if let Some(bootstrap) = alcomd_platform::windows_installation_bootstrap(
-        &std::env::current_exe().map_err(ClientError::StartDaemon)?,
-    )
-    .map_err(ClientError::StartDaemon)?
+    use alcomd_platform::windows_installation_bootstrap as installation_bootstrap;
+
+    #[cfg(any(windows, target_os = "linux"))]
+    if let Some(bootstrap) =
+        installation_bootstrap(&std::env::current_exe().map_err(ClientError::StartDaemon)?)
+            .map_err(ClientError::StartDaemon)?
     {
         let runtime = bootstrap
             .parent()

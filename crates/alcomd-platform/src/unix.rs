@@ -432,6 +432,20 @@ pub(super) fn open_protected_directory_chain(path: &Path) -> io::Result<OwnedFd>
     })
 }
 
+#[cfg(target_os = "linux")]
+pub(super) fn open_system_directory_chain(path: &Path) -> io::Result<OwnedFd> {
+    open_directory_chain_with(path, |directory| {
+        let stat = fstat(directory).map_err(io::Error::from)?;
+        if stat.st_uid != 0 || stat.st_mode & 0o022 != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "untrusted system installation directory",
+            ));
+        }
+        Ok(())
+    })
+}
+
 fn open_directory_chain_with(
     path: &Path,
     check_directory: impl Fn(&OwnedFd) -> io::Result<()>,

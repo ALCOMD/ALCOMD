@@ -8,6 +8,28 @@ pub use windows_installation::{
     register_installed_core, start_installed_core, unregister_installed_core,
 };
 
+/// Verifies and starts the system package's Core in the calling Linux account.
+#[cfg(target_os = "linux")]
+pub fn start_installed_core() -> anyhow::Result<()> {
+    use std::os::unix::process::CommandExt;
+
+    let runtime = alcomd_platform::linux_installation_runtime(&std::env::current_exe()?)?;
+    alcomd_updater::distribution::verify_installed_release(
+        &runtime,
+        alcomd_updater::distribution::Target::Linux,
+        &env!("CARGO_PKG_VERSION").parse()?,
+    )
+    .context("Linux installed product payload did not verify")?;
+    Err(
+        Command::new(runtime.join(alcomd_platform::CORE_EXECUTABLE_NAME))
+            .args(["register-installation", "--serve"])
+            .current_dir(runtime)
+            .env_remove("ALCOMD_MCP_CLIENT_CREDENTIAL")
+            .exec(),
+    )
+    .context("installed Core could not start")
+}
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
