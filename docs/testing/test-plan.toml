@@ -1204,6 +1204,15 @@ description = "Ubuntu 22.04 以签名源码 0c99475e 和合成签名产品 DEB �
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "crates/alcomd-platform/src/linux_installation_registration.rs", "xtask/src/distribution/package.rs"]
 
 [[test]]
+id = "distribution.product-update-envelope-offline"
+stage = "M12"
+kind = "contract"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "implemented"
+description = "用合成发布密钥核验 v4 声明原始字节、URI、UTC 有效期、频道和平台、反重放序号及本地资产摘要。Windows 通过 6 项 Updater 测试和 7 项实际离线命令场景。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-updater/src/product_update.rs"]
+
+[[test]]
 id = "distribution.cli-integration"
 stage = "M12"
 kind = "system"

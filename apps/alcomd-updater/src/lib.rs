@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub mod distribution;
+pub mod product_update;
 
 const MANIFEST: &str = "bridge-payload.json";
 const SIGNATURE: &str = "bridge-payload.sig";
