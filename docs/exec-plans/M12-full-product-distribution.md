@@ -182,6 +182,8 @@ Windows 11 Sandbox 在签名夹具中打开实际 Tauri 窗口，检测到 WebVi
 
 同一 SHA 仅重跑 macOS 15 arm64。该轮取得运行器，`Check` 执行到 `xtask` 时 5 个分发夹具报路径并非普通目录。测试将带链接祖先的系统临时路径传给生产目录校验。macOS 的 Chromium、仓库外 SDK 验收和后续构建未执行。[macOS Hosted 第二次尝试](https://github.com/ALCOMD/ALCOMD/actions/runs/45479474031/job/138798375951)
 
+修订工程候选 `25afa078` 的三平台 Hosted CI 和 CodeQL 均通过。Windows Chromium 首轮失败后，在同一 SHA 的重跑通过整项门禁。下载器候选 `bd13cbed` 在干净检出通过本机整仓、762 项 Chromium 和外部 SDK 合同，快进前逐笔验签四笔提交。同一 SHA 的四项 CodeQL 通过，三平台 Hosted CI 继续跟踪。[25afa078 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45507904871) · [25afa078 CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45507905452) · [bd13cbed Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509247) · [bd13cbed CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509198)
+
 ### 2026-11-25 Windows 全用户安装首次启动
 
 `25afa078` 接通官方 Windows 入口。没有登记且 IPC 尚未就绪时，受保护的稳定 CLI 和版本化 GUI 可调用同一运行目录中的 Bootstrap。Bootstrap 核验已安装载荷，Core 在当前账号下初始化并发布登记后服务 IPC。独立 SDK 继续按登记定位 Core，沿用五秒就绪预算。
@@ -208,6 +210,17 @@ Debug GUI 试验未启动 WebView2。改用干净 `25afa078` 的 `npm run gui:bu
 用真实 `dpkg --unpack` 保留未配置状态，再用 `dpkg --configure -a` 恢复，随后经 APT 重装同一包。安装账号没有生成 Core 登记。篡改签名后首次 CLI 调用失败，目标账号资料目录保持空白。恢复签名后，标准用户分别从 CLI 和实际 Tauri 窗口发布私有登记。独立 Rust SDK 在登记前拒绝启动，并从已登记路径冷启动。执行 purge 后 CLI、桌面入口和运行组件移除，两个状态库的摘要保持一致，残留登记无法启动被移除的 Core。跨版本更新、回滚和 v3 DEB 的包管理交接继续按阶段 3 与 4 验收。
 
 DEB 跨版本登记使用工作区已锁定的 `semver 1.0.28` 校验旧目录名，沿用发行工具对规范 SemVer 和构建元数据的限制。手写版本解析会重复维护合法预发布版本的规则。同一受保护系统安装根内的旧目录须已被完整移除。官方 CLI 或 GUI 经 Bootstrap 核验当前载荷，Core 在实例锁下成功打开现行资料后再原子替换登记。SDK 遇到失效登记时继续返回可处理的错误。未知目录、链接、仍存在的旧运行目录和 AppImage 归属均不接管。
+
+#### Ubuntu 22.04 DEB 跨版本登记与回退
+
+在隔离 Ubuntu 22.04 x86_64 从签名基线 `748933d8` 和只变更版本号的签名检出 `bd30aba3` 分别生成七个 Release 组件和合成签名 DEB。两者最高要求 `GLIBC_2.34`。首先用已验收的 `0c99475e` 版 `alpha.0` 初始化两个账号，再经实际 `dpkg` 升到 `alpha.1`，最后用 APT 回退到相同基线的 `alpha.0`。
+
+| 测试版本 | 包 SHA-256 | 载荷清单 SHA-256 |
+| --- | --- | --- |
+| `4.0.0~alpha.0-1` | `aa97ee9139577b21e04559cdd4824db546a3764b4c1fc50d76a9763b1fb89c9e` | `0a2e93aa1c7326c1b29c9d22fa89fdd5832190475c8086792d31958fc689254d` |
+| `4.0.0~alpha.1-1` | `731b6ceeb70fc5c3d88881442d326e1520db6e586712a4ca1e264e4304154286` | `38cbb6d769dbb931edc81ff411c881262decf4488a9517825802dd50373aa5d1` |
+
+九组原生验收通过。解包结束时旧目录整体移除，两个账号的旧登记仍在，`dpkg --configure -a` 恢复配置。外部 Rust SDK 拒绝失效登记。先用官方 CLI 切换第一账号，再从真实 Tauri 窗口切换第二账号，两人的语言设置保持独立，SDK 可以从新登记冷启动。签名损坏、其他安装、悬空链接、仍有文件的旧目录及未知数据库均按原样保留。使用 APT 回退后，两个账号都冷启动并重新登记。最终 purge 移除程序，两个数据库摘要不变。Jammy 定向 Clippy、两项平台回归和 17 项客户端测试也通过。更广的包管理器故障注入、跨数据版本降级及 v3 实包交接继续按阶段 3 与 4 验收。
 
 ### v4 更新声明离线核验
 

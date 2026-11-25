@@ -16,13 +16,15 @@ Windows 双范围 PATH 与开始菜单快捷方式已通过九项原生验收，
 
 Ubuntu 22.04 用签名候选 `25afa078` 复验了原生 AppImage 挂载、DEB 安装和卸载、Tauri 窗口及 Core IPC。[Ubuntu 同候选原生夹具](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-2204-同候选原生夹具)
 
-Ubuntu 22.04 的产品 DEB 使用签名源码 `0c99475e` 与隔离测试密钥，通过解包后恢复配置、APT 重装、CLI 与 GUI 首次登记、独立 SDK 冷启动和 purge 保留资料。逐账号更新与跨版本回滚仍待验收。[Ubuntu 产品 DEB 首装](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-deb-首装)
+Ubuntu 22.04 的产品 DEB 已通过原生首装、解包中断恢复、逐账号升级和同数据版本下的 APT 回退。两套签名测试包验证了 CLI、真实 GUI、外部 SDK、坏签名与不安全登记拒绝、双账号设置保全及 purge 后数据库摘要一致。[Ubuntu 产品 DEB 升级与回退](exec-plans/M12-full-product-distribution.md#ubuntu-2204-deb-跨版本登记与回退)
 
 Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密钥，验证原生 FUSE、真实桌面首启、独立 SDK 冷启动、移位拒绝与主动重新绑定。可选 CLI 集成和整产品替换仍待验收。[Ubuntu 产品 AppImage 首启](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
 
 v4 更新声明、HTTPS 下载、有界暂存和持久防重放已接入。Windows 11 Sandbox 通过 9 项实际 HTTPS 验收，其中包含下载中断、四进程竞争与回执保全。平台安装提交和回滚继续按阶段 3 实施。[更新声明、下载与暂存核验](exec-plans/M12-full-product-distribution.md#v4-更新声明离线核验)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
+
+同一签名源码 `25afa078` 的三平台 Hosted CI 与 CodeQL 均已通过。Windows 首轮 Chromium 失败，重跑同一 SHA 通过。下载器候选 `bd13cbed` 已通过本机整仓检查、762 项 Chromium 和四项 CodeQL，验签后快进主仓，三平台 Hosted CI 正在复验。[下载器 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509247) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509198)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 

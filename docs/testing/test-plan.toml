@@ -1204,6 +1204,15 @@ description = "Ubuntu 22.04 以签名源码 0c99475e 和合成签名产品 DEB �
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "crates/alcomd-platform/src/linux_installation_registration.rs", "xtask/src/distribution/package.rs"]
 
 [[test]]
+id = "installer.deb.per-user-version-handoff"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 用签名基线 748933d8 和版本派生 bd30aba3 的实际 DEB，在两个账号验证 dpkg 解包恢复、官方 CLI 与原生 GUI 重新登记、外部 SDK、失效和不安全登记拒绝、APT 回退及 purge 原件保全。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "crates/alcomd-platform/src/linux_installation_registration.rs", "crates/alcomd-client/src/lib.rs"]
+
+[[test]]
 id = "distribution.product-update-envelope-offline"
 stage = "M12"
 kind = "contract"
