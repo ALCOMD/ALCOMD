@@ -65,6 +65,20 @@ enum Command {
         #[arg(last = true)]
         arguments: Vec<std::ffi::OsString>,
     },
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    ApplyPortableUpdate {
+        #[command(flatten)]
+        update: UpdateArguments,
+        #[arg(long)]
+        desktop: bool,
+    },
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    ResumePortableUpdate {
+        #[arg(long)]
+        desktop: bool,
+    },
 }
 
 #[cfg(windows)]
@@ -76,7 +90,7 @@ struct InstallCoreArguments {
     data_dir: Option<PathBuf>,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[derive(Debug, Args)]
 struct UpdateArguments {
     #[arg(long)]
@@ -89,7 +103,7 @@ struct UpdateArguments {
     channel: Channel,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 impl UpdateArguments {
     fn absolute_paths(&self) -> std::io::Result<[PathBuf; 3]> {
         Ok([
@@ -205,6 +219,21 @@ fn main() -> anyhow::Result<()> {
         #[cfg(target_os = "linux")]
         Command::StartPortable { arguments } => {
             return alcomd_bootstrap::start_portable(&arguments);
+        }
+        #[cfg(target_os = "linux")]
+        Command::ApplyPortableUpdate { update, desktop } => {
+            let [envelope, asset, replay_directory] = update.absolute_paths()?;
+            return alcomd_bootstrap::apply_portable_update(
+                &envelope,
+                &asset,
+                &replay_directory,
+                update.channel,
+                desktop,
+            );
+        }
+        #[cfg(target_os = "linux")]
+        Command::ResumePortableUpdate { desktop } => {
+            return alcomd_bootstrap::resume_portable_update(desktop);
         }
     };
     let MigrateArguments {

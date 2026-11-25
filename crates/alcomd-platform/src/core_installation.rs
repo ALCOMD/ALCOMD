@@ -102,9 +102,11 @@ mod linux_registration;
 #[cfg(target_os = "linux")]
 pub use linux_registration::{
     LINUX_BOOTSTRAP_EXECUTABLE_NAME, LINUX_GUI_EXECUTABLE_NAME, check_linux_core_registration,
-    linux_installation_bootstrap, linux_installation_runtime, linux_portable_runtime,
-    linux_portable_runtime_is_known, linux_retired_deb_installation_bootstrap,
-    publish_linux_core_registration,
+    check_linux_portable_update_registration, linux_installation_bootstrap,
+    linux_installation_runtime, linux_portable_runtime, linux_portable_runtime_for_version,
+    linux_portable_runtime_is_known, linux_portable_update_bootstrap,
+    linux_retired_deb_installation_bootstrap, publish_linux_core_registration,
+    publish_linux_portable_update_registration,
 };
 
 fn parse_runtime_directory(data: &[u8]) -> io::Result<PathBuf> {

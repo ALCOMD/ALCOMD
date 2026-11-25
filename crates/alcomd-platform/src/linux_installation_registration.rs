@@ -17,7 +17,7 @@ use super::{
     parse_runtime_directory, read_runtime_directory, validate_core_executable,
     validate_installation_record_parent,
 };
-use crate::{DataConfig, PortableOrigin};
+use crate::{DataConfig, PortableImage, PortableOrigin};
 
 pub const LINUX_BOOTSTRAP_EXECUTABLE_NAME: &str = env!("ALCOMD_BOOTSTRAP_NAME");
 pub const LINUX_GUI_EXECUTABLE_NAME: &str = env!("ALCOMD_GUI_NAME");
@@ -32,7 +32,7 @@ fn package_runtime_root() -> PathBuf {
         .join("runtime")
 }
 
-fn deb_runtime_version<'a>(runtime: &'a Path, parent: &Path) -> Option<&'a OsStr> {
+fn runtime_version<'a>(runtime: &'a Path, parent: &Path) -> Option<&'a OsStr> {
     if runtime.parent() != Some(parent) {
         return None;
     }
@@ -51,7 +51,7 @@ fn runtime_version_is_absent(directory: impl AsFd, version: &OsStr) -> io::Resul
 
 fn retired_deb_runtime_is_absent(runtime: &Path) -> io::Result<bool> {
     let parent = package_runtime_root();
-    let Some(version) = deb_runtime_version(runtime, &parent) else {
+    let Some(version) = runtime_version(runtime, &parent) else {
         return Ok(false);
     };
     let directory = crate::unix::open_system_directory_chain(&parent)?;
@@ -87,6 +87,20 @@ fn require_system_executable(path: &Path) -> io::Result<()> {
 /// Locates the current user's versioned AppImage runtime without creating it.
 pub fn linux_portable_runtime(config: &DataConfig) -> io::Result<PathBuf> {
     Ok(portable_runtime_parent(config)?.join(env!("CARGO_PKG_VERSION")))
+}
+
+/// Resolves a signed transaction's canonical v4 runtime name in the portable data root.
+pub fn linux_portable_runtime_for_version(
+    config: &DataConfig,
+    version: &str,
+) -> io::Result<PathBuf> {
+    let version = version
+        .parse::<semver::Version>()
+        .map_err(|_| invalid_registration())?;
+    if version.major != 4 || !version.build.is_empty() {
+        return Err(invalid_registration());
+    }
+    Ok(portable_runtime_parent(config)?.join(version.to_string()))
 }
 
 pub(super) fn is_portable_runtime_path(config: &DataConfig, runtime: &Path) -> io::Result<bool> {
@@ -147,6 +161,29 @@ pub fn linux_installation_bootstrap(entry_point: &Path) -> io::Result<Option<Pat
     let bootstrap = runtime.join(LINUX_BOOTSTRAP_EXECUTABLE_NAME);
     linux_installation_runtime(&bootstrap, &data)?;
     Ok(Some(bootstrap))
+}
+
+/// Finds the update worker for an initialized AppImage's installed GUI, excluding system packages.
+pub fn linux_portable_update_bootstrap(
+    entry_point: &Path,
+    config: &DataConfig,
+) -> io::Result<Option<PathBuf>> {
+    let runtime = linux_portable_runtime(config)?;
+    if entry_point != runtime.join(LINUX_GUI_EXECUTABLE_NAME)
+        || !check_linux_core_registration(config, &runtime)?
+    {
+        return Ok(None);
+    }
+    let origin = PortableOrigin::read(&runtime)?;
+    origin.revalidate()?;
+    validate_core_executable(entry_point)?;
+    let bootstrap = runtime.join(LINUX_BOOTSTRAP_EXECUTABLE_NAME);
+    validate_core_executable(&bootstrap)?;
+    match PortableImage::open_for_update(origin.image_path()) {
+        Ok(_) => Ok(Some(bootstrap)),
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 fn is_deb_entry_point(entry_point: &Path, runtime: &Path) -> bool {
@@ -218,6 +255,75 @@ pub fn publish_linux_core_registration(config: &DataConfig, runtime: &Path) -> i
     if matches!(state, RegistrationState::Current) {
         return Ok(());
     }
+    let previous = match state {
+        RegistrationState::RetiredDeb { file, runtime } => Some((file, runtime)),
+        _ => None,
+    };
+    publish_registration(config, runtime, previous)
+}
+
+fn portable_update_registration(
+    config: &DataConfig,
+    previous: &Path,
+    selected: &Path,
+) -> io::Result<(File, PathBuf)> {
+    let parent = portable_runtime_parent(config)?;
+    let version_at = |runtime: &Path| -> io::Result<semver::Version> {
+        let name = runtime_version(runtime, &parent).ok_or_else(invalid_registration)?;
+        let name = name.to_str().ok_or_else(invalid_registration)?;
+        name.parse().map_err(|_| invalid_registration())
+    };
+    if !version_at(selected)?
+        .cmp_precedence(&version_at(previous)?)
+        .is_gt()
+    {
+        return Err(invalid_registration());
+    }
+    let registration = core_installation_registration(config)?;
+    validate_installation_record_parent(&registration)?;
+    let file = open_registration(&registration)?;
+    let runtime = read_runtime_directory(&file)?;
+    if runtime != previous && runtime != selected {
+        return Err(invalid_registration());
+    }
+    validate_core_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
+    Ok((file, runtime))
+}
+
+/// Ensures an interrupted update can only operate on its exact portable registration.
+pub fn check_linux_portable_update_registration(
+    config: &DataConfig,
+    previous: &Path,
+    selected: &Path,
+) -> io::Result<bool> {
+    portable_update_registration(config, previous, selected).map(|(_, runtime)| runtime == selected)
+}
+
+/// Activates a fully verified portable runtime while Bootstrap holds the Core instance lock.
+pub fn publish_linux_portable_update_registration(
+    config: &DataConfig,
+    previous: &Path,
+    selected: &Path,
+) -> io::Result<()> {
+    let (file, runtime) = portable_update_registration(config, previous, selected)?;
+    let old_origin = PortableOrigin::read(previous)?;
+    let new_origin = PortableOrigin::read(selected)?;
+    if old_origin.image_path() != new_origin.image_path() {
+        return Err(invalid_registration());
+    }
+    new_origin.revalidate()?;
+    validate_core_executable(&selected.join(CORE_EXECUTABLE_NAME))?;
+    if runtime == selected {
+        return Ok(());
+    }
+    publish_registration(config, selected, Some((file, runtime)))
+}
+
+fn publish_registration(
+    config: &DataConfig,
+    runtime: &Path,
+    previous: Option<(File, PathBuf)>,
+) -> io::Result<()> {
     let registration = core_installation_registration(config)?;
     let parent = registration.parent().ok_or_else(invalid_registration)?;
     let name = registration.file_name().ok_or_else(invalid_registration)?;
@@ -254,18 +360,12 @@ pub fn publish_linux_core_registration(config: &DataConfig, runtime: &Path) -> i
     let result = (|| {
         file.write_all(line.as_bytes())?;
         file.sync_all()?;
-        let flags = if let RegistrationState::RetiredDeb {
-            file: previous,
-            runtime: previous_runtime,
-        } = state
-        {
-            let RegistrationState::RetiredDeb {
-                file: current,
-                runtime: current_runtime,
-            } = inspect_registration(config, runtime)?
-            else {
+        let flags = if let Some((previous, previous_runtime)) = previous {
+            if runtime == package_runtime() && !retired_deb_runtime_is_absent(&previous_runtime)? {
                 return Err(invalid_registration());
-            };
+            }
+            let current = open_registration(&registration)?;
+            let current_runtime = read_runtime_directory(&current)?;
             let previous = fstat(&previous).map_err(io::Error::from)?;
             let current = fstat(&current).map_err(io::Error::from)?;
             let anchored =
@@ -301,15 +401,15 @@ mod tests {
         let parent = package_runtime_root();
         for name in ["4.0.0-alpha.0", "4.0.0-alpha.1", "4.10.1"] {
             assert_eq!(
-                deb_runtime_version(&parent.join(name), &parent),
+                runtime_version(&parent.join(name), &parent),
                 Some(OsStr::new(name))
             );
         }
         for name in ["local", "04.0.0", "3.4.0", "4.0.0+local", "4.0.1/elsewhere"] {
-            assert_eq!(deb_runtime_version(&parent.join(name), &parent), None);
+            assert_eq!(runtime_version(&parent.join(name), &parent), None);
         }
         assert_eq!(
-            deb_runtime_version(Path::new("/home/app/runtime/4.0.0-alpha.1"), &parent),
+            runtime_version(Path::new("/home/app/runtime/4.0.0-alpha.1"), &parent),
             None
         );
     }
