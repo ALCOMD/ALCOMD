@@ -1213,6 +1213,15 @@ description = "用合成发布密钥核验 v4 声明原始字节、URI、UTC 有
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-updater/src/product_update.rs"]
 
 [[test]]
+id = "installer.appimage.product-first-use"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 以签名源码 b324627e 和合成签名产品 AppImage 验证原生 FUSE、真实 Tauri 首启、独立 SDK 冷启动、移位和链接替换阻断、从新位置重新绑定及未知资料保全。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable.rs", "crates/alcomd-platform/src/linux_portable_origin.rs"]
+
+[[test]]
 id = "distribution.cli-integration"
 stage = "M12"
 kind = "system"

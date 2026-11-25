@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-**M12 阶段 0 已批准，阶段 1 正在实施。** 永久 Windows AppId、安装和登记布局、v4 更新声明及卸载归属已冻结。`cargo xtask dist` 已支持运行组件构建、清单验签和测试打包输入。Inno EXE、AppImage 和 DEB 测试包均已生成并复验解包内容。正式产品打包和客户端安装生命周期仍待验收。macOS 原生验收按所有者决定延期，公开发版仍按 A-017 的三平台四格式条件审批。[M12 实施计划与审批矩阵](exec-plans/M12-full-product-distribution.md) · [阶段 0 冻结合同](exec-plans/M12-stage-0-release-contract.md)
+**M12 阶段 0 已批准，正在实施产品安装和更新。** 永久 Windows AppId、安装和登记布局、v4 更新声明及卸载归属已冻结。`cargo xtask dist` 已接通运行组件构建、清单验签与 Windows、Linux 产品打包输入。首装、整产品更新和客户端生命周期分项验收。macOS 原生验收按所有者决定延期，公开发版仍按 A-017 的三平台四格式条件审批。[M12 实施计划与审批矩阵](exec-plans/M12-full-product-distribution.md) · [阶段 0 冻结合同](exec-plans/M12-stage-0-release-contract.md)
 
 Windows 11 Sandbox 的当前用户和全用户夹具已验证 Core 安装登记、外部 CLI 冷启动、账号隔离和卸载保留状态。Ubuntu 22.04 x86_64 隔离环境已原生编译七个发行组件，产物最高要求 `GLIBC_2.34`。[Windows 登记及 Ubuntu 构建记录](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-core-安装登记)
 
@@ -13,6 +13,10 @@ Windows 已在两套隔离环境用 `25afa078` 的同一个全 Release Inno 夹�
 Ubuntu 22.04 用签名候选 `25afa078` 复验了原生 AppImage 挂载、DEB 安装和卸载、Tauri 窗口及 Core IPC。[Ubuntu 同候选原生夹具](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-2204-同候选原生夹具)
 
 Ubuntu 22.04 的产品 DEB 使用签名源码 `0c99475e` 与隔离测试密钥，通过解包后恢复配置、APT 重装、CLI 与 GUI 首次登记、独立 SDK 冷启动和 purge 保留资料。逐账号更新与跨版本回滚仍待验收。[Ubuntu 产品 DEB 首装](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-deb-首装)
+
+Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密钥，验证原生 FUSE、真实桌面首启、独立 SDK 冷启动、移位拒绝与主动重新绑定。可选 CLI 集成和整产品替换仍待验收。[Ubuntu 产品 AppImage 首启](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
+
+v4 更新声明的离线验签和本地资产核对已接入，Windows 的 Updater 定向测试和合成资产实际命令均通过。联网下载、持久防重放以及平台提交和回滚继续按阶段 3 实施。[更新声明核验](exec-plans/M12-full-product-distribution.md#v4-更新声明离线核验)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
