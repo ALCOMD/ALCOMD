@@ -137,28 +137,27 @@ pub fn windows_installation_bootstrap(entry_point: &Path) -> io::Result<Option<P
     let Some(directory) = entry_point.parent() else {
         return Ok(None);
     };
-    let runtime = if has_name(entry_point, WINDOWS_GUI_EXECUTABLE_NAME)
-        && is_versioned_runtime(directory)
-    {
-        require_active_runtime(directory, installation_trust(runtime_root(directory)?)?)?;
-        directory.to_path_buf()
-    } else if has_name(entry_point, WINDOWS_CLI_EXECUTABLE_NAME)
-        && has_name(directory, "bin")
-        && let Some(root) = directory.parent()
-    {
-        let versions = root.join("runtime");
-        match fs::symlink_metadata(&versions) {
-            Ok(_) => {
-                let trust = installation_trust(root)?;
-                let version = active_version(root, trust)?;
-                versions.join(version.to_string())
+    let runtime =
+        if has_name(entry_point, WINDOWS_GUI_EXECUTABLE_NAME) && is_versioned_runtime(directory) {
+            require_active_runtime(directory, installation_trust(runtime_root(directory)?)?)?;
+            directory.to_path_buf()
+        } else if has_name(entry_point, WINDOWS_CLI_EXECUTABLE_NAME)
+            && has_name(directory, "bin")
+            && let Some(root) = directory.parent()
+        {
+            let versions = root.join("runtime");
+            match fs::symlink_metadata(&versions) {
+                Ok(_) => {
+                    let trust = installation_trust(root)?;
+                    let version = active_version(root, trust)?;
+                    versions.join(version.to_string())
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+                Err(error) => return Err(error),
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(error),
-        }
-    } else {
-        return Ok(None);
-    };
+        } else {
+            return Ok(None);
+        };
     // Validate the unnormalized paths so a reparse point cannot redirect either role.
     let trust = installation_trust(runtime_root(&runtime)?)?;
     trust.check_executable(entry_point)?;
