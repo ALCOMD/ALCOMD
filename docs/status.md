@@ -46,6 +46,8 @@ M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows H
 
 当前用户版本切换候选 `b95e132f` 已通过本机整仓、762 项 Chromium、Windows／Ubuntu／macOS Hosted CI 和四项 CodeQL。五笔提交逐笔验签后普通快进至主仓 `main`。三平台 Hosted 均通过外部 SDK 消费者、Release 构建和 Chromium。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45641567398) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45641566264)
 
+全用户更新、应用内更新和 AppImage 整包更新的签名候选 `73b1a108` 已快进至主仓 `main`。本机整仓、三平台 Hosted 和四项 CodeQL 均通过。本机及每个平台的 Chromium 各通过 765 项。Ubuntu Hosted 首轮发现的迁移日志锁问题已修复，并在隔离 Jammy 连续通过 20 轮并行复验。[实施计划](exec-plans/M12-full-product-distribution.md#2026-11-26-桌面更新候选门禁) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45696134018) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45696132490)
+
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 
 Unity `6000.0.67f1` 的两个内置模板和八组迁移已完成 Windows 开发验收。三平台门禁见 [PR #13](https://github.com/ALCOMD/ALCOMD/pull/13)。[Unity 6 ExecPlan](exec-plans/unity-6-first-release.md)

@@ -1312,6 +1312,15 @@ description = "断网 Windows Sandbox 用 f9bf2431 源包和 6a79c90e Release �
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-gui/src-tauri/src/product_updates.rs", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
 
 [[test]]
+id = "distribution.desktop-update-candidate-gates"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "implemented"
+description = "签名候选 73b1a108 通过本机整仓和 765 项 Chromium。三平台 Hosted 通过整仓、外部 SDK、Release 与 Tauri 构建，各通过 765 项 Chromium，四项 CodeQL 通过。Ubuntu 首轮锁争用由描述符继承回归覆盖，修复后在 Jammy 连续通过 20 轮并行复验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/journal.rs", ".github/workflows/ci.yml"]
+
+[[test]]
 id = "installer.linux.package-format-ownership"
 stage = "M12"
 kind = "system"

@@ -314,6 +314,12 @@ Ubuntu 22.04 隔离样本用合成密钥，复用已验证的 Linux 运行组件
 
 十项原生检查覆盖占用目录保全、正常替换、文件名与执行模式保全、保留并核验原 AppImage、交换后登记前的实际 SIGKILL、篡改拒绝、原下载删除后的恢复、状态库和项目摘要对账、真实 FUSE 与 WebKit 和新版 CLI 读回原工程。Jammy 定向 Clippy 与 68 项 Rust 测试通过。部分混合夹具的首次连接超出五秒，单次冷启动继续由干净 Release 候选核验。
 
+### 2026-11-26 桌面更新候选门禁
+
+工程候选 `fbcfa1d0` 的 Ubuntu Hosted 测试在部分写入后重新打开迁移日志时遭遇锁争用。隔离 Jammy 通过保留锁文件描述符的副本确定性复现。`73b1a108` 在迁移日志关闭时主动解锁，修复后同一回归通过。Jammy 的 Bootstrap 库通过 8 项测试、定向 Clippy 和 20 轮并行复验，现有的持久阶段进程终止测试继续通过。[首轮 Ubuntu 作业](https://github.com/ALCOMD/ALCOMD/actions/runs/45688341296/job/139466801364)
+
+最终源码 `73b1a108373c1b7a060b3db037017def84f336a8` 通过干净检出的本机整仓和 765 项 Chromium。两次普通快进逐笔验签。最终 SHA 的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 作业均通过整仓、外部 SDK、Release 和 Tauri 无打包构建，各自通过 765 项 Chromium。Actions、JavaScript／TypeScript、Python 和 Rust 的 CodeQL 均通过。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45696134018) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45696132490)
+
 ### 2026-11-25 Ubuntu 产品 AppImage 首启
 
 签名源码 `b324627eba5305457294bc4d921674535ead6dd8` 在隔离 Ubuntu 22.04 x86_64 构建七个 Release 程序，最高 glibc 符号版本为 `GLIBC_2.34`。合成密钥签名后的运行清单摘要为 `b82591144c327f87058905947ec9e12a3144aecb922422a708763fc948f99673`。用已固定摘要的 appimagetool 和 Type 2 runtime 生成 AppImage，文件 SHA-256 为 `e3c5e4dc60d39ca1966cd34180e05873a99b0f672b33357c2e6672b9fe381bdb`。
