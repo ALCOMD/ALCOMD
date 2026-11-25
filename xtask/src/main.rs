@@ -74,7 +74,12 @@ const MEMBERS: &[Member] = &[
     (
         "apps/alcomd-gui/src-tauri",
         "alcomd-gui",
-        &["alcomd-client", "alcomd-platform", "alcomd-protocol"],
+        &[
+            "alcomd-client",
+            "alcomd-platform",
+            "alcomd-protocol",
+            "alcomd-updater",
+        ],
     ),
     ("crates/alcomd-domain", "alcomd-domain", &[]),
     (
