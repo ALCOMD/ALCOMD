@@ -184,6 +184,8 @@ Windows 11 Sandbox 在签名夹具中打开实际 Tauri 窗口，检测到 WebVi
 
 修订工程候选 `25afa078` 的三平台 Hosted CI 和 CodeQL 均通过。Windows Chromium 首轮失败后，在同一 SHA 的重跑通过整项门禁。下载器候选 `bd13cbed` 在干净检出通过本机整仓、762 项 Chromium 和外部 SDK 合同，快进前逐笔验签四笔提交。同一 SHA 的四项 CodeQL 通过，三平台 Hosted CI 继续跟踪。[25afa078 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45507904871) · [25afa078 CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45507905452) · [bd13cbed Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509247) · [bd13cbed CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509198)
 
+中间候选 `590f7c84` 的三平台 Hosted CI 与四项 CodeQL 均通过。后续下载器候选 `bd13cbed` 的 Ubuntu Hosted 通过整仓、原生 SDK 和发行构建，Chromium 同轮 761 项通过。版本菜单重复选择用例在指定来源后打开第二次确认弹窗时失败。[590f7c84 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45531161768) · [590f7c84 CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45531161429) · [Ubuntu Chromium 首轮](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509247/job/138947625177)
+
 ### 2026-11-25 Windows 全用户安装首次启动
 
 `25afa078` 接通官方 Windows 入口。没有登记且 IPC 尚未就绪时，受保护的稳定 CLI 和版本化 GUI 可调用同一运行目录中的 Bootstrap。Bootstrap 核验已安装载荷，Core 在当前账号下初始化并发布登记后服务 IPC。独立 SDK 继续按登记定位 Core，沿用五秒就绪预算。
@@ -249,6 +251,8 @@ Inno 只向对应范围的 PATH 添加稳定 `bin` 目录。它保留原值类�
 Windows 11 Sandbox 用 `e79db74f` 的原签名运行载荷和 Inno 6.5.4 验证此脚本。四个原生检查涵盖当前用户范围与原值类型、第三方改动保留、已有条目去重、初始无 PATH 值的恢复，以及全用户安装和卸载仅修改机器 PATH。测试 EXE 摘要为 `922e5073fa8ed640d58137eb41336f3072a70ca2f82d180695ed8d2863dd243f`。同范围更新和双向范围转换的 PATH 交接继续按阶段 2 与 3 验收。
 
 开始菜单快捷方式按安装范围放置，AUMID 从产品清单派生，目标为同一安装的版本化 GUI。Inno 将快捷方式暂存在已拥有的程序目录，再以不覆盖已有文件的方式发布。卸载按登记的路径和摘要清理，保留原有和后来被替换的同名项。沿用显式 `/NOICONS` 选项。Windows 11 Sandbox 用同一签名载荷通过五项快捷方式检查与四项 PATH 复验，测试 EXE 摘要为 `e77057e86907980a996715767f6e7316669b302520880ae2fdf1d995b4cbfde9`。
+
+从已经快进主仓的干净签名 SHA `62b6f562` 构建七个 Windows Release 程序并使用隔离密钥验签。Inno 6.5.4 生成的完整产品 EXE 为 `be81c9cb01e84afc50acbf7f2b2de5e20d7f649a7be26bd330ec8d6ccd15c810`，运行清单为 `fcefdefe51b5d761c2ae8ecb028556179677590351322ccbce3f00e918022ddc`。同一 EXE 在 Windows 11 Sandbox 通过前述九项系统入口检查，并复验稳定 CLI 冷启动、Core 登记路径和已安装 Updater 的下载命令，共 11 项。本机整仓门禁和 762 项 Chromium 与此 SHA 一致，四项 CodeQL 已通过。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45540736904) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45540736352)
 
 源码 `e79db74f6d989a8a2e7c4c4daafa3c110cedffc9` 的七个 Release 程序通过合成密钥验签。运行清单摘要为 `4d956522ef525d346c49851c00d37fd25edcc0c25d9e48f97d5aa72f46c069b1`，Inno 6.5.4 生成的 EXE 摘要为 `40b3d0cf35966f47db8fdea9711be2358906ccb18a809e16e9bf9f04f58a1b5a`。同一个 EXE 在不同 Windows 11 Sandbox 验证当前用户和全用户安装。
 

@@ -1284,6 +1284,15 @@ description = "Win11 原生 Inno 验证两种范围的开始菜单位置、实�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss", "xtask/src/distribution/inno.rs"]
 
 [[test]]
+id = "installer.windows.exact-candidate-system-entry-points"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "用签名候选 62b6f562 原生构建完整 Inno EXE，11 项隔离 Win11 检查覆盖此前两范围 PATH 与开始菜单、稳定 CLI 冷启动、Core 登记以及产品 Updater 的下载入口。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss", "xtask/src/distribution/inno.rs"]
+
+[[test]]
 id = "installer.windows.scope-modes"
 stage = "M12"
 kind = "system"

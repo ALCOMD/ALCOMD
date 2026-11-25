@@ -12,7 +12,7 @@ Windows 已在两套隔离环境用 `25afa078` 的同一个全 Release Inno 夹�
 
 Windows 11 的产品 Inno 已使用同一个 `e79db74f` 离线签名载荷验收永久 AppId 和两种安装范围。当前用户卸载会拒绝正在使用的 Core 和篡改清单，正常卸载注销该账号并保留状态库。全用户安装按账号初始化，卸载后保留各账号资料。[Windows 产品 Inno 双范围](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-产品-inno-双范围)
 
-Windows 双范围 PATH 与开始菜单快捷方式已通过九项原生验收，覆盖产品 AUMID、预先存在或后来替换的入口保全、精确卸载与 `/NOICONS`。跨范围转换、同范围更新和其他系统入口继续按实施计划验收。[Windows 产品 Inno 双范围](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-产品-inno-双范围)
+Windows 双范围 PATH 与开始菜单快捷方式已用主仓候选 `62b6f562` 的完整 Inno 实包通过 11 项原生验收。覆盖 AUMID、第三方入口保全、精确卸载、`/NOICONS`、稳定 CLI 冷启动、Core 登记和 Updater 入口。跨范围转换、同范围更新和其他系统入口继续按实施计划验收。[Windows 产品 Inno 双范围](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-产品-inno-双范围)
 
 Ubuntu 22.04 用签名候选 `25afa078` 复验了原生 AppImage 挂载、DEB 安装和卸载、Tauri 窗口及 Core IPC。[Ubuntu 同候选原生夹具](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-2204-同候选原生夹具)
 
@@ -24,7 +24,7 @@ v4 更新声明、HTTPS 下载、有界暂存和持久防重放已接入。Windo
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
-同一签名源码 `25afa078` 的三平台 Hosted CI 与 CodeQL 均已通过。Windows 首轮 Chromium 失败，重跑同一 SHA 通过。下载器候选 `bd13cbed` 已通过本机整仓检查、762 项 Chromium 和四项 CodeQL，验签后快进主仓，三平台 Hosted CI 正在复验。[下载器 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509247) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509198)
+签名源码 `25afa078` 和 `590f7c84` 的三平台 Hosted CI 与 CodeQL 均已通过。当前主仓工程候选 `62b6f562` 已通过本机整仓、762 项 Chromium 和四项 CodeQL，三平台 Hosted CI 继续复验。中间下载器候选 `bd13cbed` 的 Ubuntu Chromium 通过 761 项，版本菜单用例首轮失败。[当前 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45540736904) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45540736352) · [Ubuntu 首轮](https://github.com/ALCOMD/ALCOMD/actions/runs/45537509247/job/138947625177)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 
