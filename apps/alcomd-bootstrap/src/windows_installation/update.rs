@@ -445,7 +445,7 @@ fn verify_runtime(path: &Path, version: &str) -> anyhow::Result<VerifiedRuntime>
         .context("Windows product payload did not verify")
 }
 
-fn verify_stable_cli(root: &Path, runtime: &VerifiedRuntime) -> anyhow::Result<()> {
+pub(super) fn verify_stable_cli(root: &Path, runtime: &VerifiedRuntime) -> anyhow::Result<()> {
     let bin = root.join("bin");
     runtime.verify_copy(
         WINDOWS_CLI_EXECUTABLE_NAME,

@@ -1,11 +1,15 @@
 use std::ffi::OsStr;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use alcomd_platform::{
     CORE_EXECUTABLE_NAME, DaemonInstance, DataConfig, IpcConfig, check_windows_core_registration,
-    remove_windows_core_registration, start_core_process, windows_installation_runtime,
+    remove_windows_core_registration, resolve_plain_storage_directory, start_core_process,
+    windows_installation_runtime,
 };
-use alcomd_updater::distribution::{Candidate, Target, verify_installed_release, verify_release};
+use alcomd_updater::distribution::{
+    Candidate, Target, VerifiedRuntime, verify_installed_release, verify_release,
+};
 use anyhow::{Context, ensure};
 
 mod update;
@@ -16,7 +20,7 @@ pub fn register_installed_core(
     source_commit: String,
     data_dir: Option<&Path>,
 ) -> anyhow::Result<()> {
-    let runtime = verified_runtime(source_commit)?;
+    let (runtime, _) = verified_runtime(source_commit)?;
     let config = data_config(data_dir);
     if check_windows_core_registration(&config, &runtime)? {
         return Ok(());
@@ -41,9 +45,10 @@ pub fn unregister_installed_core(
     source_commit: String,
     data_dir: Option<&Path>,
 ) -> anyhow::Result<()> {
-    let runtime = verified_runtime(source_commit)?;
+    let (runtime, verified) = verified_runtime(source_commit)?;
     let _instance = DaemonInstance::acquire(&IpcConfig::default())
         .context("stop Core before unregistering it")?;
+    verify_uninstall_program_files(&runtime, &verified)?;
     remove_windows_core_registration(&data_config(data_dir), &runtime)?;
     Ok(())
 }
@@ -66,9 +71,9 @@ pub fn start_installed_core() -> anyhow::Result<()> {
     .context("installed Core could not start")
 }
 
-fn verified_runtime(source_commit: String) -> anyhow::Result<PathBuf> {
+fn verified_runtime(source_commit: String) -> anyhow::Result<(PathBuf, VerifiedRuntime)> {
     let runtime = windows_installation_runtime(&std::env::current_exe()?)?;
-    verify_release(
+    let verified = verify_release(
         &runtime,
         &Candidate {
             target: Target::Windows,
@@ -77,7 +82,36 @@ fn verified_runtime(source_commit: String) -> anyhow::Result<PathBuf> {
         },
     )
     .context("Windows installed product payload did not verify")?;
-    Ok(runtime)
+    Ok((runtime, verified))
+}
+
+fn verify_uninstall_program_files(
+    runtime: &Path,
+    verified: &VerifiedRuntime,
+) -> anyhow::Result<()> {
+    let versions = runtime.parent().context("Windows product runtime parent")?;
+    let root = versions.parent().context("Windows installation root")?;
+    update::verify_stable_cli(root, verified)
+        .context("Windows stable entry point changed; the installation was kept")?;
+    // Stock Inno appends new entries to the original uninstall log. Before it can
+    // follow that log, verify all surviving versioned payloads in the same root.
+    for entry in fs::read_dir(versions)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        let Ok(version) = name.parse() else {
+            continue;
+        };
+        let path = entry.path();
+        if path != runtime {
+            let (path, _) = resolve_plain_storage_directory(&path)?;
+            verify_installed_release(&path, Target::Windows, &version)
+                .context("a retained Windows runtime changed; the installation was kept")?;
+        }
+    }
+    Ok(())
 }
 
 fn data_config(path: Option<&Path>) -> DataConfig {
