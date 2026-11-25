@@ -4,7 +4,7 @@ use std::{fs, io};
 
 use alcomd_platform::{
     CORE_EXECUTABLE_NAME, DaemonInstance, DataConfig, IpcConfig, check_windows_core_registration,
-    open_owned_installation_record, remove_windows_core_registration,
+    hold_windows_installation, open_owned_installation_record, remove_windows_core_registration,
     resolve_plain_storage_directory, start_core_process, sync_directory,
     validate_installation_record_parent, windows_current_user_installation_root,
     windows_installation_runtime,
@@ -81,13 +81,17 @@ pub fn stage_installed_update(
     replay_directory: &Path,
     channel: Channel,
 ) -> anyhow::Result<PathBuf> {
-    let installed = windows_installation_runtime(&std::env::current_exe()?)?;
+    let executable = std::env::current_exe()?;
+    let installed = windows_installation_runtime(&executable)?;
     let root = windows_current_user_installation_root()
         .context("a current-user Windows installation is required")?;
     ensure!(
         installed.parent().and_then(Path::parent) == Some(root.as_path()),
         "a current-user Windows installation is required"
     );
+    let _installation = hold_windows_installation(&executable)
+        .context("the current installation is undergoing maintenance")?
+        .context("a current-user Windows installation is required")?;
     let version = env!("CARGO_PKG_VERSION").parse()?;
     verify_installed_release(&installed, Target::Windows, &version)
         .context("installed Windows payload did not verify")?;
@@ -116,6 +120,8 @@ pub fn stage_installed_update(
         .and_then(OsStr::to_str)
         .context("Windows installation root needs a plain name")?;
     let staged = root.with_file_name(format!(".{name}{WINDOWS_UPDATE_STAGE_PREFIX}{digest_text}"));
+    let _instance = DaemonInstance::acquire(&IpcConfig::default())
+        .context("close the current user's Core before staging the update")?;
     match fs::symlink_metadata(&staged) {
         Ok(_) => {}
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -151,8 +157,6 @@ pub fn stage_installed_update(
             .context("staged Windows update needs a parent directory")?,
     )?;
 
-    let _instance = DaemonInstance::acquire(&IpcConfig::default())
-        .context("close the current user's Core before checking the staged update")?;
     super::run_command(
         &staged.join(CORE_EXECUTABLE_NAME),
         &staged,
