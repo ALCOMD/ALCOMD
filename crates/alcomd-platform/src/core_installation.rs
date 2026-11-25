@@ -10,6 +10,11 @@ const MAX_RUNTIME_PATH_BYTES: usize = 4096;
 
 /// Filename of the signed manifest for a complete installed product runtime.
 pub const PRODUCT_PAYLOAD_MANIFEST_NAME: &str = "product-payload.json";
+/// Required app-local runtime DLL on Windows.
+pub const WINDOWS_CRT_FILE: &str = "vcruntime140.dll";
+/// App-local DLL names permitted by the Windows product layout.
+pub const WINDOWS_PRODUCT_SIDECARS: &[&str] =
+    &[WINDOWS_CRT_FILE, "vcruntime140_1.dll", "WebView2Loader.dll"];
 
 /// Basename of the Core executable from the product manifest.
 #[cfg(unix)]
@@ -82,9 +87,13 @@ mod registration;
 pub use registration::{
     WINDOWS_ACTIVE_RUNTIME_RECORD, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME, WINDOWS_CLI_EXECUTABLE_NAME,
     WINDOWS_UPDATE_INTENT_RECORD, WindowsInstallationUpdate, check_windows_core_registration,
-    hold_windows_installation, publish_windows_core_registration, remove_windows_core_registration,
-    windows_current_user_installation_root, windows_installation_bootstrap,
-    windows_installation_runtime,
+    create_windows_machine_installation_directory, create_windows_machine_installation_record,
+    hold_windows_installation, open_windows_machine_installation_record,
+    publish_windows_core_registration, remove_windows_core_registration,
+    validate_windows_machine_installation_record_parent, windows_current_user_installation_root,
+    windows_installation_bootstrap, windows_installation_runtime,
+    windows_machine_installation_root, windows_machine_runtime_bootstrap,
+    windows_retired_machine_installation_bootstrap,
 };
 
 #[cfg(target_os = "linux")]

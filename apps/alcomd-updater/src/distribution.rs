@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
+use alcomd_platform::WINDOWS_PRODUCT_SIDECARS as WINDOWS_SIDECARS;
 use anyhow::{Context, ensure};
 use ed25519_dalek::{Signature, VerifyingKey};
 use semver::Version;
@@ -17,17 +18,15 @@ use super::{
     verify_files,
 };
 
-pub use alcomd_platform::PRODUCT_PAYLOAD_MANIFEST_NAME as MANIFEST_NAME;
+pub use alcomd_platform::{PRODUCT_PAYLOAD_MANIFEST_NAME as MANIFEST_NAME, WINDOWS_CRT_FILE};
 pub const SIGNATURE_NAME: &str = "product-payload.sig";
 pub const SIGNATURE_DOMAIN: &[u8] = b"ALCOMD product payload v1\0";
-pub const WINDOWS_CRT_FILE: &str = "vcruntime140.dll";
 pub const WINDOWS_UPDATE_STAGE_PREFIX: &str = ".update-";
 const LICENSE: &str = "LICENSE";
 const NOTICES: &str = "THIRD_PARTY_NOTICES.md";
 const DISCORD_PACKAGE: &str = "extensions/discord.alcomdextension";
 const FIXTURE_COMMIT: &str = "0000000000000000000000000000000000000000";
 const DIRECTORIES: &[&str] = &["extensions", "licenses"];
-const WINDOWS_SIDECARS: &[&str] = &[WINDOWS_CRT_FILE, "vcruntime140_1.dll", "WebView2Loader.dll"];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, clap::ValueEnum)]
 pub enum Target {

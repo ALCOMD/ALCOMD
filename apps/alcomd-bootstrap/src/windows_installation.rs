@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 
 use alcomd_platform::{
     CORE_EXECUTABLE_NAME, DaemonInstance, DataConfig, IpcConfig, check_windows_core_registration,
-    remove_windows_core_registration, resolve_plain_storage_directory, start_core_process,
-    windows_installation_runtime,
+    open_windows_machine_installation_record, remove_windows_core_registration,
+    resolve_plain_storage_directory, start_core_process, windows_installation_runtime,
+    windows_machine_installation_root, windows_process_is_elevated,
 };
 use alcomd_updater::distribution::{
     Candidate, Target, VerifiedRuntime, verify_installed_release, verify_release,
@@ -13,7 +14,10 @@ use alcomd_updater::distribution::{
 use anyhow::{Context, ensure};
 
 mod update;
-pub use update::{apply_installed_update, resume_installed_update, stage_installed_update};
+pub use update::{
+    apply_installed_update, apply_machine_update_worker, resume_installed_update,
+    resume_machine_update_worker, stage_installed_update,
+};
 
 /// Verifies the installed signed payload and lets the current user's Core initialize its state.
 pub fn register_installed_core(
@@ -48,9 +52,24 @@ pub fn unregister_installed_core(
     let (runtime, verified) = verified_runtime(source_commit)?;
     let _instance = DaemonInstance::acquire(&IpcConfig::default())
         .context("stop Core before unregistering it")?;
-    verify_uninstall_program_files(&runtime, &verified)?;
+    verify_uninstall_program_files(&runtime, &verified, false)?;
     remove_windows_core_registration(&data_config(data_dir), &runtime)?;
     Ok(())
+}
+
+/// Confirms that elevated Inno can remove the machine-owned program without touching a profile.
+pub fn verify_installed_machine_uninstall(source_commit: String) -> anyhow::Result<()> {
+    ensure!(
+        windows_process_is_elevated()?,
+        "machine uninstall requires elevation"
+    );
+    let (runtime, verified) = verified_runtime(source_commit)?;
+    let root = windows_machine_installation_root()?;
+    ensure!(
+        runtime.parent().and_then(Path::parent) == Some(root.as_path()),
+        "machine uninstall requires the protected installation root"
+    );
+    verify_uninstall_program_files(&runtime, &verified, true)
 }
 
 /// Starts and registers Core for the current user after verifying the installed runtime.
@@ -88,11 +107,21 @@ fn verified_runtime(source_commit: String) -> anyhow::Result<(PathBuf, VerifiedR
 fn verify_uninstall_program_files(
     runtime: &Path,
     verified: &VerifiedRuntime,
+    machine: bool,
 ) -> anyhow::Result<()> {
     let versions = runtime.parent().context("Windows product runtime parent")?;
     let root = versions.parent().context("Windows installation root")?;
     update::verify_stable_cli(root, verified)
         .context("Windows stable entry point changed; the installation was kept")?;
+    if machine {
+        update::check_machine_runtime(runtime, verified)?;
+        for name in [
+            alcomd_platform::WINDOWS_CLI_EXECUTABLE_NAME,
+            alcomd_updater::distribution::WINDOWS_CRT_FILE,
+        ] {
+            open_windows_machine_installation_record(&root.join("bin").join(name))?;
+        }
+    }
     // Stock Inno appends new entries to the original uninstall log. Before it can
     // follow that log, verify all surviving versioned payloads in the same root.
     for entry in fs::read_dir(versions)? {
@@ -107,8 +136,11 @@ fn verify_uninstall_program_files(
         let path = entry.path();
         if path != runtime {
             let (path, _) = resolve_plain_storage_directory(&path)?;
-            verify_installed_release(&path, Target::Windows, &version)
+            let verified = verify_installed_release(&path, Target::Windows, &version)
                 .context("a retained Windows runtime changed; the installation was kept")?;
+            if machine {
+                update::check_machine_runtime(&path, &verified)?;
+            }
         }
     }
     Ok(())

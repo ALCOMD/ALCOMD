@@ -21,19 +21,27 @@ mod file_publish;
 mod known_folder;
 #[path = "windows_local_ipc.rs"]
 mod local_ipc;
+#[path = "windows_machine_update_io.rs"]
+mod machine_update_io;
 #[path = "windows_security.rs"]
 mod security;
+
+pub use machine_update_io::{
+    WindowsElevatedProcess, WindowsMachineUpdateInput, receive_windows_machine_update,
+    send_windows_machine_update, start_elevated_windows_program, windows_process_is_elevated,
+};
 
 pub use file_identity::{WindowsFileIdentity, file_identity, file_link_count};
 pub(crate) use file_identity::{file_identity_from_file, is_volume_root};
 pub(crate) use file_publish::{
     delete_open_file, lock_file_byte, publish_path_no_replace, replace_owned_file,
 };
-pub(crate) use known_folder::program_data_directory;
+pub(crate) use known_folder::{program_data_directory, program_files_64_directory};
 pub use local_ipc::connect_verified_local_pipe;
 pub(crate) use local_ipc::verify_publisher as verify_program_publisher;
 pub(crate) use local_ipc::{client_process_id, client_process_image};
 pub use security::start_core_process;
+pub(crate) use security::{create_machine_directory, create_machine_record};
 
 /// Coordinates the current user's native clients while one launches Core.
 pub struct CoreStartupGuard {

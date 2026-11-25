@@ -308,6 +308,7 @@ fn check_unsafe_boundary(
     const APPROVED: &[&str] = &[
         // App Model: application identity, bounded package presence, registered activation.
         "crates/alcomd-platform/src/windows_app_identity.rs",
+        "crates/alcomd-platform/src/windows_machine_update_io.rs",
         // Registry: read-only registration lookup and ownership-checked VCC opt-out.
         "crates/alcomd-platform/src/windows_url_handler.rs",
         "crates/alcomd-platform/src/windows_security.rs",

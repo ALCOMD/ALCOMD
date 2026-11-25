@@ -9,8 +9,9 @@ pub use linux_portable::start_portable;
 mod windows_installation;
 #[cfg(windows)]
 pub use windows_installation::{
-    apply_installed_update, register_installed_core, resume_installed_update,
-    stage_installed_update, start_installed_core, unregister_installed_core,
+    apply_installed_update, apply_machine_update_worker, register_installed_core,
+    resume_installed_update, resume_machine_update_worker, stage_installed_update,
+    start_installed_core, unregister_installed_core, verify_installed_machine_uninstall,
 };
 
 /// Verifies and starts the installed Core in the calling Linux account.

@@ -29,14 +29,33 @@ enum Command {
     /// Remove the current user's registration when it belongs to this installed runtime.
     UnregisterInstalledCore(InstallCoreArguments),
     #[cfg(windows)]
+    #[command(hide = true)]
+    VerifyInstalledUninstall {
+        #[arg(long)]
+        source_sha: String,
+    },
+    #[cfg(windows)]
     /// Prepare a verified update for a current-user Windows installation.
     StageInstalledUpdate(UpdateArguments),
     #[cfg(windows)]
-    /// Install a verified update in the current-user Windows scope.
+    /// Install a verified update in the original Windows installation scope.
     ApplyInstalledUpdate(UpdateArguments),
     #[cfg(windows)]
-    /// Recover an interrupted current-user Windows update.
+    /// Recover an interrupted installed Windows update.
     ResumeInstalledUpdate,
+    #[cfg(windows)]
+    #[command(hide = true)]
+    ApplyMachineUpdateWorker {
+        #[arg(long)]
+        transfer: String,
+        #[arg(long)]
+        requester_pid: u32,
+        #[arg(long, value_enum)]
+        channel: Channel,
+    },
+    #[cfg(windows)]
+    #[command(hide = true)]
+    ResumeMachineUpdateWorker,
     #[cfg(any(windows, target_os = "linux"))]
     #[command(hide = true)]
     StartInstalledCore,
@@ -130,6 +149,26 @@ fn main() -> anyhow::Result<()> {
                 arguments.source_sha,
                 arguments.data_dir.as_deref(),
             );
+        }
+        #[cfg(windows)]
+        Command::VerifyInstalledUninstall { source_sha } => {
+            return alcomd_bootstrap::verify_installed_machine_uninstall(source_sha);
+        }
+        #[cfg(windows)]
+        Command::ApplyMachineUpdateWorker {
+            transfer,
+            requester_pid,
+            channel,
+        } => {
+            return alcomd_bootstrap::apply_machine_update_worker(
+                &transfer,
+                requester_pid,
+                channel,
+            );
+        }
+        #[cfg(windows)]
+        Command::ResumeMachineUpdateWorker => {
+            return alcomd_bootstrap::resume_machine_update_worker();
         }
         #[cfg(windows)]
         Command::StageInstalledUpdate(arguments) => {

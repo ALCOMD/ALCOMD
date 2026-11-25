@@ -54,6 +54,8 @@ const
   StringValue = 1;
   ExpandStringValue = 2;
   ReadEnvironmentString = $10000006;
+  KeyQueryValue = 1;
+  Registry64BitView = $0100;
 
 type
   TLeaseRange = record
@@ -247,6 +249,14 @@ begin
   Result := False;
 end;
 
+function MachineInstallationPresent: Boolean;
+begin
+  // An interrupted update can have deleted the machine uninstall key without
+  // removing its installation. A different user must still see the conflict.
+  Result := RegKeyExists(HKEY_LOCAL_MACHINE_64, UninstallKey) or
+    not EntryIsMissing(ExpandConstant('{commonpf}\@INSTALL_DIRECTORY@'));
+end;
+
 function PrepareUpdate(Root: String): Boolean;
   forward;
 
@@ -274,7 +284,7 @@ begin
     Exit;
 
   Result := 'An existing ALCOMD installation was found or could not be ruled out.';
-  if RegKeyExists(HKEY_LOCAL_MACHINE_64, UninstallKey) or RegKeyExists(HKEY_CURRENT_USER, UninstallKey) then
+  if MachineInstallationPresent or RegKeyExists(HKEY_CURRENT_USER, UninstallKey) then
     Exit;
   if IsAdminInstallMode and ConflictWithLoadedProfile then
     Exit;
@@ -308,31 +318,47 @@ begin
     Result := HKEY_CURRENT_USER;
 end;
 
+function UpdateScopeConflicts: Boolean;
+begin
+  if IsAdminInstallMode then
+    Result := ConflictWithLoadedProfile
+  else
+    Result := MachineInstallationPresent;
+end;
+
+function PublishStagedRuntime(Source, Destination: String): Boolean;
+  forward;
+
 function InitializeSetup: Boolean;
 var
-  Digest, Commit, Root, Destination, Extracted: String;
+  Digest, Commit, Scope, Root, Destination, Extracted: String;
 begin
   Digest := ExpandConstant('{param:ALCOMDStage|}');
   Commit := ExpandConstant('{param:ALCOMDCommit|}');
+  Scope := ExpandConstant('{param:ALCOMDScope|}');
   PreviousVersion := ExpandConstant('{param:ALCOMDPrevious|}');
   PreviousDigest := ExpandConstant('{param:ALCOMDPreviousDigest|}');
   CommittingUpdate := Commit <> '';
+  Result := (Digest = '') and (Commit = '') and (Scope = '') and
+    (PreviousVersion = '') and (PreviousDigest = '');
+  if Result then
+    Exit;
+  // Bind private update modes to the requested scope before accessing either installation.
+  if ((Scope = '') and IsAdminInstallMode) or
+    ((Scope <> '') and ((Scope <> 'all-users') or not IsAdminInstallMode)) then
+    Exit;
   if CommittingUpdate then begin
-    Result := (Digest = '') and not IsAdminInstallMode and
+    Result := (Digest = '') and
       (Commit = '@MANIFEST_DIGEST@') and PlainVersion(PreviousVersion) and
       (PreviousVersion <> '@APP_VERSION@') and LowerDigest(PreviousDigest);
     Exit;
   end;
-  Result := (Digest = '') and (PreviousVersion = '') and (PreviousDigest = '');
-  if Result then
-    Exit;
   // Bootstrap verifies this installer and supplies the expected payload digest.
   // Both success and failure leave the normal Inno installation path unused.
-  if IsAdminInstallMode or (Digest <> '@MANIFEST_DIGEST@') or
-    (PreviousVersion <> '') or (PreviousDigest <> '') then
+  if (Digest <> '@MANIFEST_DIGEST@') or (PreviousVersion <> '') or (PreviousDigest <> '') then
     Exit;
-  Root := ExpandConstant('{localappdata}\Programs\@INSTALL_DIRECTORY@');
-  if not OwnedUninstallRoot(Root) or not PlainDirectoryChain(Root, False) then
+  Root := ExpandConstant('{autopf}\@INSTALL_DIRECTORY@');
+  if not OwnedUninstallRoot(Root) or not PlainDirectoryChain(Root, False) or UpdateScopeConflicts then
     Exit;
   Destination := AddBackslash(ExtractFileDir(Root)) +
     '.@INSTALL_DIRECTORY@@UPDATE_STAGE_PREFIX@' + Digest;
@@ -340,7 +366,7 @@ begin
     Exit;
   ExtractTemporaryFiles('{app}\runtime\@APP_VERSION@\*');
   Extracted := ExpandConstant('{tmp}\') + '{app}\runtime\@APP_VERSION@';
-  if not RenameFile(Extracted, Destination) then
+  if not PublishStagedRuntime(Extracted, Destination) then
     Log('Could not publish the ALCOMD update staging directory.');
 end;
 
@@ -568,20 +594,21 @@ end;
 function SnapshotShellEntries(Root: String): Boolean;
 var
   Claim, Entry, Path, Shortcut: String;
-  ValueType: Cardinal;
+  ValueType, RegistryRoot: Cardinal;
 begin
   Result := False;
+  RegistryRoot := InstallRegistryRoot;
   PreviousCli := 'none';
   PreviousShortcut := 'none';
   Entry := Root + '\bin';
   if not ReadPath(Path, ValueType) then
     Exit;
-  if RegQueryStringValue(HKEY_CURRENT_USER, UninstallKey, OwnedCliPath, Claim) and
+  if RegQueryStringValue(RegistryRoot, UninstallKey, OwnedCliPath, Claim) and
     ((Claim = 'existing|' + Entry) or (Claim = 'missing|' + Entry)) and
     (ExactPathSlot(';' + Path + ';', ';' + Entry + ';') <> 0) then
     PreviousCli := Copy(Claim, 1, Pos('|', Claim) - 1);
   Shortcut := StartMenuEntry;
-  if RegQueryStringValue(HKEY_CURRENT_USER, UninstallKey, OwnedStartMenu, Claim) and
+  if RegQueryStringValue(RegistryRoot, UninstallKey, OwnedStartMenu, Claim) and
     (Copy(Claim, 65, Length(Claim)) = '|' + Shortcut) and
     PlainDirectoryChain(ExtractFileDir(Shortcut), False) then begin
     Claim := Copy(Claim, 1, 64);
@@ -626,7 +653,7 @@ begin
     Exit;
   Entry := Root + '\bin';
   if ExactPathSlot(';' + Path + ';', ';' + Entry + ';') <> 0 then
-    Result := RegWriteStringValue(HKEY_CURRENT_USER, UninstallKey, OwnedCliPath, PreviousCli + '|' + Entry);
+    Result := RegWriteStringValue(InstallRegistryRoot, UninstallKey, OwnedCliPath, PreviousCli + '|' + Entry);
 end;
 
 function UpdateStartMenuEntry: Boolean;
@@ -655,7 +682,7 @@ begin
   end;
   // If the user replaced or removed the prior link, preserve their choice.
   if PlainFileMatches(Destination, Digest) then
-    Result := RegWriteStringValue(HKEY_CURRENT_USER, UninstallKey, OwnedStartMenu, Digest + '|' + Destination);
+    Result := RegWriteStringValue(InstallRegistryRoot, UninstallKey, OwnedStartMenu, Digest + '|' + Destination);
 end;
 
 function UpdateLeaseIsHeld(Manifest: String): Boolean;
@@ -686,33 +713,35 @@ var
   Registered, Version: String;
   Names: TArrayOfString;
   Index: Integer;
+  RegistryRoot: Cardinal;
 begin
   Result := False;
-  if RegKeyExists(HKEY_LOCAL_MACHINE_64, UninstallKey) then
+  if UpdateScopeConflicts then
     Exit;
+  RegistryRoot := InstallRegistryRoot;
   if OwnedUninstallRoot(Root) then begin
-    if RegQueryStringValue(HKEY_CURRENT_USER, UninstallKey, 'DisplayVersion', Version) then
+    if RegQueryStringValue(RegistryRoot, UninstallKey, 'DisplayVersion', Version) then
       Result := (Version = PreviousVersion) or (Resuming and (Version = '@APP_VERSION@'))
     else
-      Result := Resuming and not RegValueExists(HKEY_CURRENT_USER, UninstallKey, 'DisplayVersion');
+      Result := Resuming and not RegValueExists(RegistryRoot, UninstallKey, 'DisplayVersion');
     Exit;
   end;
   if not Resuming then
     Exit;
   // Stock Inno recreates the uninstall key. A retry can encounter its initial, incomplete prefix.
-  if RegValueExists(HKEY_CURRENT_USER, UninstallKey, 'InstallLocation') then
+  if RegValueExists(RegistryRoot, UninstallKey, 'InstallLocation') then
     Exit;
-  if not RegKeyExists(HKEY_CURRENT_USER, UninstallKey) then begin
+  if not RegKeyExists(RegistryRoot, UninstallKey) then begin
     Result := True;
     Exit;
   end;
-  if not RegGetValueNames(HKEY_CURRENT_USER, UninstallKey, Names) then
+  if not RegGetValueNames(RegistryRoot, UninstallKey, Names) then
     Exit;
   for Index := 0 to GetArrayLength(Names) - 1 do
     if (Names[Index] <> 'Inno Setup: Setup Version') and (Names[Index] <> 'Inno Setup: App Path') then
       Exit;
-  if RegValueExists(HKEY_CURRENT_USER, UninstallKey, 'Inno Setup: App Path') then
-    if not RegQueryStringValue(HKEY_CURRENT_USER, UninstallKey, 'Inno Setup: App Path', Registered) or
+  if RegValueExists(RegistryRoot, UninstallKey, 'Inno Setup: App Path') then
+    if not RegQueryStringValue(RegistryRoot, UninstallKey, 'Inno Setup: App Path', Registered) or
       (CompareText(Registered, Root) <> 0) then
       Exit;
   Result := True;
@@ -770,6 +799,33 @@ begin
   end;
 end;
 
+function PublishStagedRuntime(Source, Destination: String): Boolean;
+var
+  Scratch, Runtime: String;
+  Remaining: Integer;
+begin
+  Result := False;
+  if not PlainDirectoryChain(Source, False) or
+    not PlainFileMatches(Source + '\@MANIFEST_NAME@', '@MANIFEST_DIGEST@') then
+    Exit;
+  // Create fresh files on the destination volume so they inherit the installation
+  // parent's ACL, including when a different administrator later resumes the update.
+  Scratch := GenerateUniqueName(AddBackslash(ExtractFileDir(Destination)), '.tmp');
+  if (Scratch = '') or not CreateDir(Scratch) then
+    Exit;
+  try
+    UpdateStage := Source;
+    UpdateJournal := Scratch;
+    Runtime := Scratch + '\runtime';
+    Remaining := @RUNTIME_FILE_COUNT@;
+    Result := CopyRuntime(Runtime) and RuntimeMatchesStage(Runtime, Source, 0, Remaining) and
+      (Remaining = 0) and EntryIsMissing(Destination) and PublishFile(Runtime, Destination, WriteThrough);
+  finally
+    if not DelTree(Scratch, True, True, True) then
+      Log('Could not remove the ALCOMD update extraction scratch directory.');
+  end;
+end;
+
 function StableBinOwned(Root, OldRuntime, Name: String): Boolean;
 var
   InstalledDigest, Prior, Candidate: String;
@@ -796,7 +852,7 @@ var
   Remaining: Integer;
 begin
   Result := False;
-  if IsAdminInstallMode or not PlainDirectoryChain(Root + '\bin', False) then
+  if not PlainDirectoryChain(Root + '\bin', False) then
     Exit;
   Intent := PreviousVersion + '|' + PreviousDigest + '|@APP_VERSION@|@MANIFEST_DIGEST@' + #10;
   if not RecordMatches(Root + '\' + UpdateIntent, Intent) then
@@ -845,10 +901,17 @@ end;
 
 function SyncUninstallRegistration: Boolean;
 var
-  Handle: Cardinal;
+  Root, Access, Handle: Cardinal;
 begin
   Result := False;
-  if OpenRegistryKey(HKEY_CURRENT_USER, UninstallKey, 0, 1, Handle) <> 0 then
+  Root := HKEY_CURRENT_USER;
+  Access := KeyQueryValue;
+  if IsAdminInstallMode then begin
+    // The native API has explicit registry view flags, unlike the Inno registry helpers.
+    Root := HKEY_LOCAL_MACHINE;
+    Access := Access or Registry64BitView;
+  end;
+  if OpenRegistryKey(Root, UninstallKey, 0, Access, Handle) <> 0 then
     Exit;
   try
     Result := FlushRegistryKey(Handle) = 0;
@@ -950,9 +1013,9 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  Root, Runtime, Manifest: String;
+  Root, Runtime, Manifest, BootstrapCommand: String;
   ExitCode: Integer;
-  Unregistered: Boolean;
+  Verified: Boolean;
 begin
   if CurUninstallStep <> usUninstall then
     Exit;
@@ -975,19 +1038,22 @@ begin
       mbError, MB_OK, IDOK);
     Abort;
   end;
-  if not IsAdminInstallMode then begin
-    Unregistered := False;
-    if PlainFileMatches(Runtime + '\@BOOTSTRAP_FILE@', '@BOOTSTRAP_DIGEST@') and
-      PlainFileMatches(Runtime + '\@CRT_FILE@', '@CRT_DIGEST@') then
-      if Exec(Runtime + '\@BOOTSTRAP_FILE@',
-        'unregister-installed-core --source-sha @SOURCE_SHA@', Runtime, SW_HIDE,
-        ewWaitUntilTerminated, ExitCode) then
-        Unregistered := ExitCode = 0;
-    if not Unregistered then begin
-      Log('Could not unregister the current account. The installation was kept.');
-      SuppressibleMsgBox('Close ALCOMD and try uninstalling again.', mbError, MB_OK, IDOK);
-      Abort;
-    end;
+  if IsAdminInstallMode then
+    BootstrapCommand := 'verify-installed-uninstall'
+  else
+    BootstrapCommand := 'unregister-installed-core';
+  Verified := False;
+  if PlainFileMatches(Runtime + '\@BOOTSTRAP_FILE@', '@BOOTSTRAP_DIGEST@') and
+    PlainFileMatches(Runtime + '\@CRT_FILE@', '@CRT_DIGEST@') then
+    if Exec(Runtime + '\@BOOTSTRAP_FILE@',
+      BootstrapCommand + ' --source-sha @SOURCE_SHA@', Runtime, SW_HIDE,
+      ewWaitUntilTerminated, ExitCode) then
+      Verified := ExitCode = 0;
+  if not Verified then begin
+    Log('Could not verify all ALCOMD program files or update the owned registration. The installation was kept.');
+    SuppressibleMsgBox('The installed ALCOMD files or registration could not be verified.',
+      mbError, MB_OK, IDOK);
+    Abort;
   end;
   if not RemoveOwnedCliPath then begin
     Log('Could not remove the ALCOMD-owned CLI PATH entry.');

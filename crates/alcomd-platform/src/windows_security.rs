@@ -3,18 +3,19 @@
 #![allow(unsafe_code)]
 
 use std::ffi::{OsStr, OsString, c_void};
+use std::fs::File;
 use std::io;
 use std::mem::size_of;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
-use std::os::windows::io::AsRawHandle;
+use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::Path;
 use std::process::Command;
 use std::ptr::{NonNull, addr_of, null, null_mut};
 
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_ALREADY_EXISTS, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, GetLastError,
-    HANDLE, LocalFree,
+    CloseHandle, ERROR_ALREADY_EXISTS, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, GENERIC_READ,
+    GENERIC_WRITE, GetLastError, HANDLE, INVALID_HANDLE_VALUE, LocalFree,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo,
@@ -26,7 +27,10 @@ use windows_sys::Win32::Security::{
     OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, TOKEN_QUERY,
     TOKEN_USER, TokenUser,
 };
-use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
+use windows_sys::Win32::Storage::FileSystem::{
+    CREATE_NEW, CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_SHARE_READ, GetDriveTypeW,
+};
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateMutexW, CreateProcessW, GetCurrentProcess,
     OpenProcessToken, PROCESS_INFORMATION, STARTUPINFOW,
@@ -100,7 +104,7 @@ fn create_background_process<'a>(
     Ok(OwnedHandle(process.hProcess))
 }
 
-fn wide_process_value(value: &OsStr) -> io::Result<Vec<u16>> {
+pub(super) fn wide_process_value(value: &OsStr) -> io::Result<Vec<u16>> {
     let wide = wide_null(value);
     if wide[..wide.len() - 1].contains(&0) {
         return Err(io::Error::new(
@@ -145,7 +149,7 @@ fn background_command_line<'a>(
     Ok(command_line)
 }
 
-fn push_quoted_argument(command_line: &mut Vec<u16>, argument: &[u16]) {
+pub(super) fn push_quoted_argument(command_line: &mut Vec<u16>, argument: &[u16]) {
     const QUOTE: u16 = b'"' as u16;
     const BACKSLASH: u16 = b'\\' as u16;
     command_line.push(QUOTE);
@@ -339,7 +343,23 @@ pub(super) fn acquire_instance_mutex(name: &str) -> Result<WindowsInstanceGuard,
 }
 
 fn descriptor_for_sid(sid: &str) -> io::Result<LocalSecurityDescriptor> {
-    let sddl = wide_null(OsStr::new(&format!("D:P(A;;GA;;;{sid})")));
+    security_descriptor(&format!("D:P(A;;GA;;;{sid})"))
+}
+
+pub(super) fn create_machine_update_pipe(
+    options: &ServerOptions,
+    endpoint: &str,
+    requester_sid: &str,
+) -> io::Result<NamedPipeServer> {
+    let descriptor = security_descriptor(&format!("O:BAD:P(A;;GA;;;BA)(A;;GW;;;{requester_sid})"))?;
+    let mut attributes = machine_file_attributes(&descriptor);
+    // SAFETY: the descriptor and attributes remain alive through creation. The
+    // pipe does not inherit handles or retain the attributes pointer.
+    unsafe { options.create_with_security_attributes_raw(endpoint, (&raw mut attributes).cast()) }
+}
+
+fn security_descriptor(sddl: &str) -> io::Result<LocalSecurityDescriptor> {
+    let sddl = wide_null(OsStr::new(sddl));
     let mut descriptor = null_mut();
     // SAFETY: `sddl` is nul-terminated UTF-16 and the output pointer is valid.
     // On success Win32 returns a LocalAlloc allocation owned by the wrapper.
@@ -355,6 +375,51 @@ fn descriptor_for_sid(sid: &str) -> io::Result<LocalSecurityDescriptor> {
         }
     }
     Ok(LocalSecurityDescriptor(descriptor))
+}
+
+fn machine_file_attributes(descriptor: &LocalSecurityDescriptor) -> SECURITY_ATTRIBUTES {
+    SECURITY_ATTRIBUTES {
+        nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: descriptor.0,
+        bInheritHandle: 0,
+    }
+}
+
+pub(crate) fn create_machine_directory(path: &Path) -> io::Result<()> {
+    let name = wide_process_value(path.as_os_str())?;
+    // Inherit rights to machine-owned children. Standard users can traverse and read.
+    let descriptor =
+        security_descriptor("O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)")?;
+    let attributes = machine_file_attributes(&descriptor);
+    // SAFETY: the name is nul-terminated and attributes and descriptor outlive the Win32 call.
+    if unsafe { CreateDirectoryW(name.as_ptr(), &attributes) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+pub(crate) fn create_machine_record(path: &Path) -> io::Result<File> {
+    let name = wide_process_value(path.as_os_str())?;
+    let descriptor = security_descriptor("O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;0x1200a9;;;BU)")?;
+    let attributes = machine_file_attributes(&descriptor);
+    // SAFETY: the name and pointed-to security descriptor live through the call. CREATE_NEW
+    // rejects an existing path. No handles are inherited, and the supplied template is null.
+    let result = unsafe {
+        CreateFileW(
+            name.as_ptr(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ,
+            &attributes,
+            CREATE_NEW,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+            null_mut(),
+        )
+    };
+    if result == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: CreateFileW returned a new owned file handle. File closes it once on drop.
+    Ok(unsafe { File::from_raw_handle(result.cast()) })
 }
 
 pub(super) fn validate_current_user_only_dacl(
@@ -386,7 +451,7 @@ pub(super) fn validate_current_user_only_dacl(
 
 pub(super) fn validate_installation_dacl(
     handle: HANDLE,
-    user_sid: &str,
+    user_sid: Option<&str>,
     unsafe_access: u32,
 ) -> io::Result<()> {
     let mut owner = null_mut();
@@ -414,8 +479,8 @@ pub(super) fn validate_installation_dacl(
     Ok(())
 }
 
-fn trusted_installation_sid(sid: &str, user_sid: &str) -> bool {
-    sid == user_sid
+fn trusted_installation_sid(sid: &str, user_sid: Option<&str>) -> bool {
+    Some(sid) == user_sid
         || matches!(
             sid,
             "S-1-5-18" // LocalSystem

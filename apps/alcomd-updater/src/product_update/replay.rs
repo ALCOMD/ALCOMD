@@ -34,13 +34,33 @@ pub fn verify_and_record_update(
     request: &UpdateRequest<'_>,
     asset_path: &Path,
 ) -> anyhow::Result<VerifiedUpdate> {
+    verify_and_record(directory, body, request, asset_path, RecordScope::User)
+}
+
+#[cfg(windows)]
+pub(super) fn verify_and_record_machine_update(
+    directory: &Path,
+    body: &[u8],
+    request: &UpdateRequest<'_>,
+    asset_path: &Path,
+) -> anyhow::Result<VerifiedUpdate> {
+    verify_and_record(directory, body, request, asset_path, RecordScope::Machine)
+}
+
+fn verify_and_record(
+    directory: &Path,
+    body: &[u8],
+    request: &UpdateRequest<'_>,
+    asset_path: &Path,
+    scope: RecordScope,
+) -> anyhow::Result<VerifiedUpdate> {
     ensure!(
         request.previous.is_none(),
         "a stored replay receipt cannot be combined with a caller supplied receipt"
     );
     let verified = verify_update(body, request)?;
     verified.asset().verify_file(asset_path)?;
-    let journal = ReplayJournal::open(directory, request.stream)?;
+    let journal = ReplayJournal::open_with_scope(directory, request.stream, scope)?;
     let previous = journal.previous()?;
     check_replay(verified.acceptance(), previous)?;
     if previous != Some(verified.acceptance()) {
@@ -61,11 +81,20 @@ pub(super) struct ReplayJournal {
     identity: Vec<u8>,
     stem: String,
     stream: UpdateStream,
+    scope: RecordScope,
     _lock: File,
 }
 
 impl ReplayJournal {
     pub(super) fn open(directory: &Path, stream: UpdateStream) -> anyhow::Result<Self> {
+        Self::open_with_scope(directory, stream, RecordScope::User)
+    }
+
+    fn open_with_scope(
+        directory: &Path,
+        stream: UpdateStream,
+        scope: RecordScope,
+    ) -> anyhow::Result<Self> {
         let (directory, identity) = resolve_plain_storage_directory(directory)?;
         ensure!(
             stream.target == stream.format.target(),
@@ -77,14 +106,14 @@ impl ReplayJournal {
         };
         let stem = format!("update-{channel}-{}", stream.format.feed_name());
         let lock_path = directory.join(format!("{stem}.lock"));
-        validate_installation_record_parent(&lock_path)?;
-        match create_private_file(&lock_path) {
+        scope.validate_parent(&lock_path)?;
+        match scope.create(&lock_path) {
             Ok(created) => drop(created),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error).context("cannot open product update replay lock"),
         }
         let (_, lock_identity) = open_plain_file(&lock_path)?;
-        let lock = open_owned_installation_record(&lock_path)?;
+        let lock = scope.open(&lock_path)?;
         lock.try_lock().context("product update stream is busy")?;
         ensure!(
             open_plain_file(&lock_path)?.1 == lock_identity
@@ -96,6 +125,7 @@ impl ReplayJournal {
             identity,
             stem,
             stream,
+            scope,
             _lock: lock,
         })
     }
@@ -103,7 +133,7 @@ impl ReplayJournal {
     pub(super) fn previous(&self) -> anyhow::Result<Option<AcceptedUpdate>> {
         self.ensure_directory()?;
         let path = self.record_path();
-        match open_owned_installation_record(&path) {
+        match self.scope.open(&path) {
             Ok(file) => {
                 let mut bytes = Vec::new();
                 file.take(RECORD_LIMIT + 1).read_to_end(&mut bytes)?;
@@ -140,7 +170,7 @@ impl ReplayJournal {
             schema: 1,
             accepted,
         })?;
-        let mut file = create_private_file(&partial)?;
+        let mut file = self.scope.create(&partial)?;
         let result = (|| {
             file.write_all(&bytes)?;
             file.sync_all()?;
@@ -166,6 +196,41 @@ impl ReplayJournal {
             "product update replay journal directory changed"
         );
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+enum RecordScope {
+    User,
+    #[cfg(windows)]
+    Machine,
+}
+
+impl RecordScope {
+    fn validate_parent(self, path: &Path) -> io::Result<()> {
+        match self {
+            Self::User => validate_installation_record_parent(path),
+            #[cfg(windows)]
+            Self::Machine => {
+                alcomd_platform::validate_windows_machine_installation_record_parent(path)
+            }
+        }
+    }
+
+    fn open(self, path: &Path) -> io::Result<File> {
+        match self {
+            Self::User => open_owned_installation_record(path),
+            #[cfg(windows)]
+            Self::Machine => alcomd_platform::open_windows_machine_installation_record(path),
+        }
+    }
+
+    fn create(self, path: &Path) -> io::Result<File> {
+        match self {
+            Self::User => create_private_file(path),
+            #[cfg(windows)]
+            Self::Machine => alcomd_platform::create_windows_machine_installation_record(path),
+        }
     }
 }
 

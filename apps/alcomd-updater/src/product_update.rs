@@ -216,27 +216,60 @@ pub fn accept_windows_product_update(
     channel: Channel,
     installed_version: &Version,
 ) -> anyhow::Result<(VerifiedUpdate, i64)> {
+    with_windows_update_request(channel, installed_version, |request| {
+        verify_and_record_update(replay_directory, bytes, request, asset)
+    })
+}
+
+/// Records a verified all-users update in a machine-owned Windows replay journal.
+#[cfg(windows)]
+pub fn accept_windows_machine_product_update(
+    bytes: &[u8],
+    asset: &std::path::Path,
+    replay_directory: &std::path::Path,
+    channel: Channel,
+    installed_version: &Version,
+) -> anyhow::Result<VerifiedUpdate> {
+    with_windows_update_request(channel, installed_version, |request| {
+        replay::verify_and_record_machine_update(replay_directory, bytes, request, asset)
+    })
+    .map(|(update, _)| update)
+}
+
+/// Verifies the signed declaration before an administrator receives its bounded asset.
+#[cfg(windows)]
+pub fn verify_fresh_windows_product_update(
+    bytes: &[u8],
+    channel: Channel,
+    installed_version: &Version,
+) -> anyhow::Result<(VerifiedUpdate, i64)> {
+    with_windows_update_request(channel, installed_version, |request| {
+        verify_update(bytes, request)
+    })
+}
+
+#[cfg(windows)]
+fn with_windows_update_request(
+    channel: Channel,
+    installed_version: &Version,
+    verify: impl FnOnce(&UpdateRequest<'_>) -> anyhow::Result<VerifiedUpdate>,
+) -> anyhow::Result<(VerifiedUpdate, i64)> {
     let origin = product_update_origin()?;
     let host = origin
         .host_str()
         .context("missing product update origin host")?;
     let now = Utc::now();
-    let update = verify_and_record_update(
-        replay_directory,
-        bytes,
-        &UpdateRequest {
-            stream: UpdateStream {
-                channel,
-                target: Target::Windows,
-                format: UpdateFormat::Inno,
-            },
-            installed_version,
-            allowed_asset_hosts: &[host],
-            now,
-            previous: None,
+    let update = verify(&UpdateRequest {
+        stream: UpdateStream {
+            channel,
+            target: Target::Windows,
+            format: UpdateFormat::Inno,
         },
-        asset,
-    )?;
+        installed_version,
+        allowed_asset_hosts: &[host],
+        now,
+        previous: None,
+    })?;
     Ok((update, now.timestamp_micros()))
 }
 

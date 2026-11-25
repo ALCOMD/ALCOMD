@@ -1597,6 +1597,18 @@ fn daemon_command(config: &ClientConfig) -> Result<Command, ClientError> {
                 return Err(ClientError::DaemonPathUnavailable);
             }
             Ok(None) => default_daemon_command()?,
+            #[cfg(windows)]
+            Err(error)
+                if error.kind() == io::ErrorKind::WouldBlock
+                    && config.data_directory.is_none()
+                    && config.runtime_directory.is_none() =>
+            {
+                let bootstrap =
+                    alcomd_platform::windows_retired_machine_installation_bootstrap(&data)
+                        .map_err(ClientError::StartDaemon)?
+                        .ok_or(ClientError::StartDaemon(error))?;
+                installation_daemon_command(&bootstrap)?
+            }
             #[cfg(target_os = "linux")]
             Err(error)
                 if !config.require_installation && error.kind() == io::ErrorKind::InvalidData =>

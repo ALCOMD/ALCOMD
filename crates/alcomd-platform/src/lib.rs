@@ -24,8 +24,8 @@ mod unity_hub_open;
 mod unity_registration;
 
 pub use core_installation::{
-    CORE_EXECUTABLE_NAME, PRODUCT_PAYLOAD_MANIFEST_NAME, core_installation_registration,
-    open_owned_installation_record, registered_core_executable,
+    CORE_EXECUTABLE_NAME, PRODUCT_PAYLOAD_MANIFEST_NAME, WINDOWS_CRT_FILE, WINDOWS_PRODUCT_SIDECARS,
+    core_installation_registration, open_owned_installation_record, registered_core_executable,
     validate_installation_record_parent,
 };
 #[cfg(target_os = "linux")]
@@ -39,9 +39,12 @@ pub use core_installation::{
 pub use core_installation::{
     WINDOWS_ACTIVE_RUNTIME_RECORD, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME, WINDOWS_CLI_EXECUTABLE_NAME,
     WINDOWS_UPDATE_INTENT_RECORD, WindowsInstallationUpdate, check_windows_core_registration,
-    hold_windows_installation, publish_windows_core_registration, remove_windows_core_registration,
-    windows_current_user_installation_root, windows_installation_bootstrap,
-    windows_installation_runtime,
+    create_windows_machine_installation_directory, create_windows_machine_installation_record,
+    hold_windows_installation, open_windows_machine_installation_record,
+    publish_windows_core_registration, remove_windows_core_registration,
+    validate_windows_machine_installation_record_parent, windows_current_user_installation_root,
+    windows_installation_bootstrap, windows_installation_runtime, windows_machine_installation_root,
+    windows_machine_runtime_bootstrap, windows_retired_machine_installation_bootstrap,
 };
 pub use credential_vault::{delete_credential, read_credential, write_credential};
 pub use external_path::external_filesystem_path;
@@ -121,6 +124,11 @@ pub use windows::{
     CoreStartupGuard, DaemonInstance, IpcListener, IpcStream, WindowsFileIdentity, connect,
     connect_verified_local_pipe, endpoint_display, file_identity, file_link_count,
     local_app_data_directory, start_core_process, state_database_path,
+};
+#[cfg(windows)]
+pub use windows::{
+    WindowsElevatedProcess, WindowsMachineUpdateInput, receive_windows_machine_update,
+    send_windows_machine_update, start_elevated_windows_program, windows_process_is_elevated,
 };
 
 /// Locates the state database without creating or changing the data directory.
