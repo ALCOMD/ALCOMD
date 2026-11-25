@@ -6,6 +6,7 @@ AppPublisher=@APP_PUBLISHER@
 DefaultDirName={autopf}\@INSTALL_DIRECTORY@
 DisableDirPage=yes
 DisableProgramGroupPage=yes
+AllowNoIcons=yes
 UsePreviousAppDir=no
 UsePreviousPrivileges=no
 PrivilegesRequired=lowest
@@ -22,6 +23,9 @@ OutputBaseFilename=@FAMILY_NAME@_@APP_VERSION@_windows_x86_64_setup
 [Files]
 @FILES@
 
+[Icons]
+Name: "{app}\start-menu"; Filename: "{app}\runtime\@APP_VERSION@\@GUI_NAME@.exe"; AppUserModelID: "@APP_AUMID@"; Flags: createonlyiffileexists; Check: not WizardNoIcons
+
 [Code]
 const
   UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\@APP_ID@_is1';
@@ -32,6 +36,7 @@ const
   UserEnvironment = 'Environment';
   MachineEnvironment = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
   OwnedCliPath = '@FAMILY_NAME@OwnedCliPath';
+  OwnedStartMenu = '@FAMILY_NAME@OwnedStartMenu';
   StringValue = 1;
   ExpandStringValue = 2;
   ReadEnvironmentString = $10000006;
@@ -246,17 +251,6 @@ begin
       Log('Could not clear the CLI PATH ownership receipt.');
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if CurStep <> ssPostInstall then
-    Exit;
-  if not OwnedUninstallRoot(ExpandConstant('{app}')) or not InstallCliPath then begin
-    Log('ALCOMD CLI PATH integration failed. The existing PATH was preserved.');
-    SuppressibleMsgBox('ALCOMD was installed, but its CLI could not be added to PATH.',
-      mbInformation, MB_OK, IDOK);
-  end;
-end;
-
 function RemoveOwnedCliPath: Boolean;
 var
   Root: Cardinal;
@@ -292,15 +286,6 @@ begin
   Result := WritePath(Path, ValueType);
 end;
 
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-begin
-  if (CurUninstallStep = usUninstall) and not RemoveOwnedCliPath then begin
-    Log('Could not remove the ALCOMD-owned CLI PATH entry.');
-    SuppressibleMsgBox('The ALCOMD CLI entry could not be removed from PATH.',
-      mbInformation, MB_OK, IDOK);
-  end;
-end;
-
 function PlainFileMatches(FileName, Digest: String): Boolean;
 var
   Attributes: Cardinal;
@@ -315,6 +300,81 @@ begin
   except
     Log('Could not read an installed ALCOMD file.');
   end;
+end;
+
+function StartMenuEntry: String;
+begin
+  Result := ExpandConstant('{autoprograms}\@APP_NAME@.lnk');
+end;
+
+procedure PublishStartMenuEntry;
+var
+  Root: Cardinal;
+  Source, Destination, Digest: String;
+begin
+  if WizardNoIcons then
+    Exit;
+  Root := InstallRegistryRoot;
+  Source := ExpandConstant('{app}\start-menu.lnk');
+  Destination := StartMenuEntry;
+  if not PlainDirectoryChain(ExtractFileDir(Destination), False) or
+    (GetAttributes(Destination) <> InvalidFileAttributes) or
+    not MissingEntry(DLLGetLastError) or
+    RegValueExists(Root, UninstallKey, OwnedStartMenu) then
+    Exit;
+  try
+    Digest := GetSHA256OfFile(Source);
+  except
+    Log('Could not read the staged Start menu shortcut.');
+    Exit;
+  end;
+  if not RegWriteStringValue(Root, UninstallKey, OwnedStartMenu, Digest + '|' + Destination) then
+    Exit;
+  // RenameFile leaves an existing destination intact.
+  if not RenameFile(Source, Destination) then begin
+    Log('Could not publish the Start menu shortcut.');
+    if not RegDeleteValue(Root, UninstallKey, OwnedStartMenu) then
+      Log('Could not clear the Start menu ownership receipt.');
+  end;
+end;
+
+procedure RemoveOwnedStartMenuEntry;
+var
+  Destination, Claim: String;
+begin
+  Destination := StartMenuEntry;
+  if RegQueryStringValue(InstallRegistryRoot, UninstallKey, OwnedStartMenu, Claim) and
+    (Copy(Claim, 65, Length(Claim)) = '|' + Destination) and
+    PlainDirectoryChain(ExtractFileDir(Destination), False) and
+    PlainFileMatches(Destination, Copy(Claim, 1, 64)) then
+    if not DeleteFile(Destination) then
+      Log('Could not remove the ALCOMD-owned Start menu shortcut.');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep <> ssPostInstall then
+    Exit;
+  if not OwnedUninstallRoot(ExpandConstant('{app}')) then
+    Exit;
+  if not InstallCliPath then begin
+    Log('ALCOMD CLI PATH integration failed. The existing PATH was preserved.');
+    SuppressibleMsgBox('ALCOMD was installed, but its CLI could not be added to PATH.',
+      mbInformation, MB_OK, IDOK);
+  end;
+  PublishStartMenuEntry;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep <> usUninstall then
+    Exit;
+  if not RemoveOwnedCliPath then begin
+    Log('Could not remove the ALCOMD-owned CLI PATH entry.');
+    SuppressibleMsgBox('The ALCOMD CLI entry could not be removed from PATH.',
+      mbInformation, MB_OK, IDOK);
+  end;
+  RemoveOwnedStartMenuEntry;
 end;
 
 function InitializeUninstall: Boolean;

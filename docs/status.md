@@ -12,7 +12,7 @@ Windows 已在两套隔离环境用 `25afa078` 的同一个全 Release Inno 夹�
 
 Windows 11 的产品 Inno 已使用同一个 `e79db74f` 离线签名载荷验收永久 AppId 和两种安装范围。当前用户卸载会拒绝正在使用的 Core 和篡改清单，正常卸载注销该账号并保留状态库。全用户安装按账号初始化，卸载后保留各账号资料。[Windows 产品 Inno 双范围](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-产品-inno-双范围)
 
-Windows 双范围 PATH 已通过原生安装和卸载。四项检查验证了原值类型、预先存在的条目、第三方改动及各范围的归属。跨范围转换、同范围更新和其他系统入口继续按实施计划验收。[Windows 产品 Inno 双范围](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-产品-inno-双范围)
+Windows 双范围 PATH 与开始菜单快捷方式已通过九项原生验收，覆盖产品 AUMID、预先存在或后来替换的入口保全、精确卸载与 `/NOICONS`。跨范围转换、同范围更新和其他系统入口继续按实施计划验收。[Windows 产品 Inno 双范围](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-产品-inno-双范围)
 
 Ubuntu 22.04 用签名候选 `25afa078` 复验了原生 AppImage 挂载、DEB 安装和卸载、Tauri 窗口及 Core IPC。[Ubuntu 同候选原生夹具](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-2204-同候选原生夹具)
 

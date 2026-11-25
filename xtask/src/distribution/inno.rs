@@ -23,6 +23,7 @@ pub(super) fn export(
     for value in [
         &product.product.family_name,
         &product.identity.install_directory,
+        &product.identity.windows_aumid,
         &product.binaries.bootstrap,
         &product.binaries.cli,
         &product.binaries.gui,
@@ -82,6 +83,7 @@ pub(super) fn export(
     let script = include_str!("inno.iss")
         .replace("@APP_ID@", app_id)
         .replace("@APP_NAME@", &product.product.display_name)
+        .replace("@APP_AUMID@", &product.identity.windows_aumid)
         .replace("@APP_PUBLISHER@", &product.product.publisher_name)
         .replace("@APP_VERSION@", &version)
         .replace("@FAMILY_NAME@", &product.product.family_name)

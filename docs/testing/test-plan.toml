@@ -1266,6 +1266,15 @@ description = "用隔离 Win11 的真实 Inno EXE 在两种安装范围验证原
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss"]
 
 [[test]]
+id = "installer.windows.owned-start-menu-shortcut"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "Win11 原生 Inno 验证两种范围的开始菜单位置、实际 Shell AUMID 与版本化 GUI 目标，涵盖自有快捷方式清理、同名及被替换的快捷方式保全和 /NOICONS。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss", "xtask/src/distribution/inno.rs"]
+
+[[test]]
 id = "installer.windows.scope-modes"
 stage = "M12"
 kind = "system"
