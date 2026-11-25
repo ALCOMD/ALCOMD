@@ -1267,6 +1267,15 @@ description = "同一签名候选 b95e132f 通过本机整仓和 762 项 Chromiu
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", ".github/workflows/ci.yml"]
 
 [[test]]
+id = "distribution.windows-all-users-update-interruption"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "断网 Windows 11 Sandbox 以 d1555aa3 的签名开发夹具完成六项全用户正常升级和八项中断恢复检查，涵盖跨账号活跃锁、提升进程树终止、签名拒绝、持久恢复、CLI/SDK 逐账号接入与卸载保全。开发冷启动重试和优化版五秒门禁单独记录。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs", "crates/alcomd-platform/src/windows_machine_update_io.rs", "xtask/src/distribution/inno.iss"]
+
+[[test]]
 id = "installer.appimage.product-first-use"
 stage = "M12"
 kind = "system"

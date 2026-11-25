@@ -28,7 +28,9 @@ v4 更新声明、HTTPS 下载、有界暂存和持久防重放已接入。Windo
 
 Windows 当前用户的更新暂存与只读数据预检通过 9 项原生检查。完整签名源码 `f75808a9` 的 Inno 源版本包验证了安装维护锁、内外摘要、数据预检、中断后重试以及原程序、登记和数据库保全。全用户范围还复验了同一实包的六项卸载互斥。[Windows 当前用户更新预检](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-当前用户更新预检)
 
-Windows 当前用户的版本切换和提交恢复已通过原生验收。完整 Release 源版 `b95e132f` 和版本派生 `6a79c90e` 通过 8 项正常升级和 11 项中断恢复检查，覆盖实际终止、签名篡改、登记占用、新版 WebView2 窗口、原工程重开和卸载资料保全。全用户切换和应用内更新入口仍在实施。[Windows 当前用户版本切换与恢复](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-当前用户版本切换与恢复)
+Windows 当前用户的版本切换和提交恢复已通过原生验收。完整 Release 源版 `b95e132f` 和版本派生 `6a79c90e` 通过 8 项正常升级和 11 项中断恢复检查，覆盖实际终止、签名篡改、登记占用、新版 WebView2 窗口、原工程重开和卸载资料保全。[Windows 当前用户版本切换与恢复](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-当前用户版本切换与恢复)
+
+Windows 全用户切换使用签名源码 `d1555aa3` 的断网夹具通过 6 项正常升级和 8 项中断恢复检查，覆盖真实进程树终止、篡改拒绝、原下载移除后的恢复、两个普通账号分别接入新版 Core 以及升级后卸载资料保全。开发夹具的部分首次冷启动需要重试。优化版五秒冷启动和标准账号向另一管理员提升待验。[Windows 全用户版本切换与中断恢复](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-全用户版本切换与中断恢复)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
