@@ -1272,7 +1272,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "断网 Windows 11 Sandbox 以 d1555aa3 的签名开发夹具完成六项全用户正常升级和八项中断恢复检查，涵盖跨账号活跃锁、提升进程树终止、签名拒绝、持久恢复、CLI/SDK 逐账号接入与卸载保全。开发冷启动重试和优化版五秒门禁单独记录。"
+description = "断网 Windows 11 Sandbox 以 d1555aa3 的签名开发夹具完成六项全用户正常升级和八项中断恢复检查。20a9d8f7 另通过六项不同 SID 传输和升级、八项实际终止与恢复。涵盖跨账号活跃锁、签名拒绝、CLI/SDK 逐账号接入与卸载保全。未初始化账号的完整 Release 五秒门禁和交互凭据提升另验。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs", "crates/alcomd-platform/src/windows_machine_update_io.rs", "xtask/src/distribution/inno.iss"]
 
 [[test]]
@@ -1301,6 +1301,15 @@ platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
 description = "通过「关于」页的三项 Chromium 用例覆盖检查与下载步骤、取消、安装重启及恢复的独立确认。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-gui/tests/browser/product-updates.spec.ts"]
+
+[[test]]
+id = "distribution.windows.gui-native-update"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "断网 Windows Sandbox 用 f9bf2431 源包和 6a79c90e Release 目标实测 8 项 WebView2 更新。实际 UI Automation 操作关于页，本机 HTTPS 证明检查仅取声明，取消确认保留安装，确认后自动重启并从新版 Core 打开原工程。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-gui/src-tauri/src/product_updates.rs", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
 
 [[test]]
 id = "installer.linux.package-format-ownership"

@@ -32,9 +32,9 @@ Windows 当前用户的更新暂存与只读数据预检通过 9 项原生检查
 
 Windows 当前用户的版本切换和提交恢复已通过原生验收。完整 Release 源版 `b95e132f` 和版本派生 `6a79c90e` 通过 8 项正常升级和 11 项中断恢复检查，覆盖实际终止、签名篡改、登记占用、新版 WebView2 窗口、原工程重开和卸载资料保全。[Windows 当前用户版本切换与恢复](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-当前用户版本切换与恢复)
 
-Windows 全用户切换使用签名源码 `d1555aa3` 的断网夹具通过 6 项正常升级和 8 项中断恢复检查，覆盖真实进程树终止、篡改拒绝、原下载移除后的恢复、两个普通账号分别接入新版 Core 以及升级后卸载资料保全。开发夹具的部分首次冷启动需要重试。优化版五秒冷启动和标准账号向另一管理员提升待验。[Windows 全用户版本切换与中断恢复](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-全用户版本切换与中断恢复)
+Windows 全用户切换使用签名源码 `d1555aa3` 的断网夹具通过 6 项正常升级和 8 项中断恢复检查。修复源码 `20a9d8f7` 另通过 6 项不同 SID 的传输及升级检查和 8 项实际终止与恢复复验。两个账号在一次连接内分别接入新版 Core 并保留资料。干净 Release 的首次冷启动和交互凭据提升另验。[Windows 全用户版本切换与中断恢复](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-全用户版本切换与中断恢复)
 
-Windows 和 AppImage 的「关于」页已接入产品更新。三项 Chromium 用例覆盖用户确认前保留当前进程、取消下载和恢复确认。实际 WebView2 检查、下载与自动重启使用签名安装包另行复验。[应用内产品更新](exec-plans/M12-full-product-distribution.md#2026-11-26-应用内产品更新)
+Windows 和 AppImage 的「关于」页已接入产品更新。三项 Chromium 用例覆盖用户确认前保留当前进程、取消下载和恢复确认。Windows 签名夹具另通过 8 项真实 WebView2 检查，覆盖仅检查声明、下载保留原版、取消确认、自动安装重启及新版 Core 读回原工程。Windows 正式包签名前须核对两只 Microsoft x64 CRT 的固定摘要。[应用内产品更新](exec-plans/M12-full-product-distribution.md#2026-11-26-应用内产品更新)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 

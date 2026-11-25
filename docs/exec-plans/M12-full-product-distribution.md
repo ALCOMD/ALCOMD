@@ -106,7 +106,7 @@ Linux 在 Ubuntu 22.04 构建，逐个核对发行 ELF 和本地动态库，最�
 
 用合成签名载荷验证了导出、重验、拒绝错源、拒绝用途不匹配和拒绝覆盖。Inno 6.5.4 直接消费导出的两个目录生成隔离夹具。Windows 11 Sandbox 实测安装、稳定 CLI 冷启动、卸载程序与登记并保留状态库。Ubuntu 22.04 的共享打包回归通过。
 
-对 Windows Release 程序的 PE 导入检查确认六个组件依赖 `vcruntime140.dll`。Windows `--build` 接收来自 Visual Studio x64 再发行目录的 `--windows-crt <dll> --windows-crt-sha256 <sha256>`，复制到七个程序所在目录。`--prepare` 接收相同的 `--windows-crt-sha256`，并核对已暂存文件。Windows 发行验证要求同目录存在签名清单覆盖的 x64 DLL。隔离候选选用 Microsoft 签名的 14.44.35211.0，SHA-256 为 `d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066`。[Microsoft 再发行规则](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files)
+接入更新服务后的 GUI 同时导入 `vcruntime140.dll` 和 `vcruntime140_1.dll`。Windows `--build` 从 Microsoft x64 再发行目录接收 `--windows-crt <dll> --windows-crt-sha256 <sha256>` 和 `--windows-crt-companion <dll> --windows-crt-companion-sha256 <sha256>`。`--prepare` 用两个独立摘要核对已暂存文件。两只 DLL 进入同一签名运行清单，缺失、摘要不符和架构不符在生成发行产物前拒绝。稳定 CLI 只导入 `vcruntime140.dll`，仍沿用现有入口布局。沿用发布合同已允许的伴随 DLL 可复用现有签名和安装校验，静态链接或另装全局再发行包会改变部署方式。[Microsoft 再发行规则](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files)
 
 Windows 发行构建为 Cargo 和 Tauri 提供已核验为同一对象的普通路径。Tauri 的权限文件枚举使用 glob，Windows 扩展路径中的问号会使该轮枚举遗漏 Core 权限。构建继续校验现有的 GUI 权限合同。[Tauri 权限路径问题](https://github.com/tauri-apps/tauri/issues/11950)
 
@@ -288,19 +288,23 @@ M12 并行的 `81e7a498` macOS Hosted 在 Chromium 重开 AI 客户端撤销确�
 
 ### 2026-11-26 Windows 全用户版本切换与中断恢复
 
-全用户更新由已安装的 Bootstrap 启动受保护的提升进程。一次性本机管道绑定请求进程和提升进程，传输签名声明以及声明长度的安装包。提升进程在 Program Files 下验签和暂存。提交期间以旧版清单租约和机器提交意图阻止各账号启动 Core。新版活动选择器生效后，已初始化的账号可从原生入口或外部 SDK 接入，在本账号成功打开资料后原子更新登记。
+全用户更新由已安装的 Bootstrap 启动受保护的提升进程。普通请求进程创建一次性本机上传管道，提升进程以仅识别级别打开读取。双方核对对端进程 ID，只传输签名声明以及声明长度的安装包。提升进程在 Program Files 下验签和暂存。提交期间以旧版清单租约和机器提交意图阻止各账号启动 Core。新版活动选择器生效后，已初始化的账号可从原生入口或外部 SDK 接入，在本账号成功打开资料后原子更新登记。
 
 断网 Windows 11 Sandbox 对签名源码 d1555aa3 的合成签名 Inno 夹具完成六项正常升级和八项中断恢复检查。两版重新构建了 Core、Bootstrap 和 CLI，其余四个运行组件复用已有夹具。源安装包 SHA-256 为 3201d8b61a32a9940d16ce9c059f11187442b548e02d3a298430208e88583441，更新安装包 SHA-256 为 d438f4886e5ad05e0ac15af357bd925bd58dafe35cb4bd40cb5632d63a8392f0。
 
 一个账号的外部 SDK 保持 Core 在线时，升级在持久提交前拒绝。释放占用后，升级切换共享版本、HKLM 卸载登记、机器 PATH 和开始菜单，保留两份原账号登记和资料。中断场景在新版文件已落盘、完成回执仍缺失时终止提升 Bootstrap 与 Inno 进程树。两个账号均拒绝启动两版 Core，篡改保留安装包时拒绝恢复。还原保留包并删除原始下载后，新版 Bootstrap 可恢复同一事务。两组验收均由稳定 CLI 和仓库外 Rust SDK 分别接回两个普通账号，读取原 Unity 工程，并核对升级后卸载保全两份账号资料。
 
-开发构建的部分首次冷启动超过五秒预算，随后重试接通。优化组件的单次冷启动、标准用户向另一管理员的凭据提升和同一候选的 Hosted 门禁分别记录。
+断网 Sandbox 复验了普通账号创建上传管道，由不同 SID 的已提升进程接收。修复源码 `20a9d8f7` 的 Bootstrap 与优化运行组件配合，通过活跃 Core 互斥、跨账号上传、共享激活、逐账号接入和卸载保全六项检查。同一源包另通过八项真实进程终止和中断恢复检查。两轮升级后的 CLI 与独立 SDK 均在一次连接内就绪。源安装包 SHA-256 为 `fb459a7c924742cf8390e741c6c5ae0c168c130c5f7ce146f63f3eadb1c531b2`。
+
+混合夹具的部分未初始化账号首次冷启动超过五秒，重试可以接通。标准账号交互输入另一管理员凭据、从干净 Release 复验未初始化账号的五秒冷启动及同一候选的 Hosted 门禁分别记录。
 
 ### 2026-11-26 应用内产品更新
 
 Windows Inno 和 Linux AppImage 的「关于」页按当前构建所属频道检查获批准的 HTTPS feed。检查只取并验证签名声明。用户选择下载后，Updater 读取同一声明指定的资产，提供取消并再次核对摘要。用于安装和恢复的文件路径保留在原生进程。选定安装后，GUI 退出，Bootstrap 等待本账号 Core 空闲，再执行平台事务并重开桌面。仍在使用的其他 Core 继续按安装范围检查。DEB 由包管理器更新，macOS 原生替换延期。
 
-GUI 复用 AGPL-3.0-only 的工作区 Updater。调用独立程序解析文本输出会重复维护进程和结果合同。现有 Updater 提供签名、下载、时限和防重放，桌面适配器只管理用户确认和进程生命周期。前端类型、Material 控件、三语言文案、Windows 定向 Clippy 和三项 Chromium 用例已通过。实际 WebView2 接入通过签名 Inno 夹具单独复验。
+GUI 复用 AGPL-3.0-only 的工作区 Updater。调用独立程序解析文本输出会重复维护进程和结果合同。现有 Updater 提供签名、下载、时限和防重放，桌面适配器只管理用户确认和进程生命周期。前端类型、Material 控件、三语言文案、Windows 定向 Clippy 和三项 Chromium 用例已通过。
+
+用 `f9bf2431` 构建 GUI 与 Bootstrap，并与已有测试组件组成签名源包。源安装包和清单 SHA-256 分别为 `5d6228683679d052afa6d64811fb8978dcbd9eeee815cde697fce5f4f1bc7325` 和 `b3a4c0053cb5da5673842901a88551fe102d0f50757c4e1e1d4e61fe54542fa2`。目标使用已签名的 `6a79c90e` Release 夹具。断网 Windows Sandbox 通过本机 HTTPS 提供合成签名声明和安装包，并用 Windows UI Automation 操作真实 WebView2。八项检查覆盖安装、仅检查签名声明、下载期间保留原版、取消确认、自动安装并重启，以及原工程和 Core 登记保全。实际 GUI 导入的 `vcruntime140_1.dll` 已纳入生产打包固定摘要。Updater 11 项与 xtask 5 项定向验证通过。
 
 ### 2026-11-26 Ubuntu 产品 AppImage 整包更新
 
