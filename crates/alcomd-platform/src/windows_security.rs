@@ -351,7 +351,12 @@ pub(super) fn create_machine_update_pipe(
     endpoint: &str,
     requester_sid: &str,
 ) -> io::Result<NamedPipeServer> {
-    let descriptor = security_descriptor(&format!("O:BAD:P(A;;GA;;;BA)(A;;GW;;;{requester_sid})"))?;
+    // The elevated server normally creates a high-integrity object. The
+    // upload must also accept the exact standard desktop caller at medium
+    // integrity, while continuing to deny writes from low-integrity clients.
+    let descriptor = security_descriptor(&format!(
+        "O:BAD:P(A;;GA;;;BA)(A;;GW;;;{requester_sid})S:(ML;;NW;;;ME)"
+    ))?;
     let mut attributes = machine_file_attributes(&descriptor);
     // SAFETY: the descriptor and attributes remain alive through creation. The
     // pipe does not inherit handles or retain the attributes pointer.
