@@ -10,8 +10,8 @@ use alcomd_platform::{
     WindowsInstallationUpdate, check_windows_core_registration,
     create_windows_machine_installation_directory, create_windows_machine_installation_record,
     hold_windows_installation, open_owned_installation_record,
-    open_windows_machine_installation_record, publish_path_no_replace,
-    receive_windows_machine_update, resolve_plain_storage_directory, send_windows_machine_update,
+    open_windows_machine_installation_record, prepare_windows_machine_update,
+    publish_path_no_replace, receive_windows_machine_update, resolve_plain_storage_directory,
     start_core_process, start_elevated_windows_program, sync_directory,
     validate_installation_record_parent, validate_windows_machine_installation_record_parent,
     windows_current_user_installation_root, windows_installation_bootstrap,
@@ -325,6 +325,7 @@ fn request_machine_update(
     let input = open_owned_installation_record(asset)?;
     update.asset().verify_file(asset)?;
     let transfer = Uuid::new_v4().simple().to_string();
+    let output = prepare_windows_machine_update(&transfer)?;
     let pid = std::process::id().to_string();
     let channel = match channel {
         Channel::Stable => "stable",
@@ -344,7 +345,8 @@ fn request_machine_update(
         ],
     )
     .context("could not elevate Windows all-users update maintenance")?;
-    send_windows_machine_update(&transfer, &worker, &bytes, input, update.asset().bytes())
+    output
+        .send(&worker, &bytes, input, update.asset().bytes())
         .context("could not transfer the signed Windows update to machine maintenance")?;
     worker
         .wait()

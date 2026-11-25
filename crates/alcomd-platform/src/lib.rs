@@ -129,8 +129,9 @@ pub use windows::{
 };
 #[cfg(windows)]
 pub use windows::{
-    WindowsElevatedProcess, WindowsMachineUpdateInput, receive_windows_machine_update,
-    send_windows_machine_update, start_elevated_windows_program, windows_process_is_elevated,
+    WindowsElevatedProcess, WindowsMachineUpdateInput, WindowsMachineUpdateOutput,
+    prepare_windows_machine_update, receive_windows_machine_update, start_elevated_windows_program,
+    windows_process_is_elevated,
 };
 
 /// Locates the state database without creating or changing the data directory.

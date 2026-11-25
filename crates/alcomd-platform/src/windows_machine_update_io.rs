@@ -11,7 +11,9 @@ use std::ptr::{null, null_mut};
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, ServerOptions};
+use tokio::net::windows::named_pipe::{
+    ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions,
+};
 use tokio::runtime::{Builder, Runtime};
 use tokio::time::{Instant, sleep, timeout_at};
 use windows_sys::Win32::Foundation::{
@@ -35,9 +37,7 @@ use windows_sys::Win32::UI::Shell::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
-use super::security::{
-    create_machine_update_pipe, process_user_sid_string, push_quoted_argument, wide_process_value,
-};
+use super::security::{create_machine_update_pipe, push_quoted_argument, wide_process_value};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(180);
@@ -174,7 +174,7 @@ pub fn start_elevated_windows_program(
 /// The elevated worker's read-only view of the signed update transfer.
 pub struct WindowsMachineUpdateInput {
     runtime: Runtime,
-    pipe: NamedPipeServer,
+    pipe: NamedPipeClient,
     deadline: Instant,
     _requester: OwnedHandle,
 }
@@ -189,7 +189,7 @@ impl Read for WindowsMachineUpdateInput {
     }
 }
 
-/// Accepts one authenticated local caller on a dedicated write-only upload endpoint.
+/// Opens the requester's endpoint read-only after verifying the owning process.
 pub fn receive_windows_machine_update(
     transfer: &str,
     requester_pid: u32,
@@ -203,58 +203,11 @@ pub fn receive_windows_machine_update(
     }
     // SAFETY: ownership of the live process handle transfers here.
     let requester = unsafe { OwnedHandle::from_raw_handle(process.cast()) };
-    let sid = process_user_sid_string(requester.as_raw_handle().cast())?;
     let runtime = Builder::new_current_thread().enable_all().build()?;
     let pipe = runtime.block_on(async {
-        let pipe = create_machine_update_pipe(
-            ServerOptions::new()
-                .first_pipe_instance(true)
-                .max_instances(1)
-                .access_outbound(false)
-                .reject_remote_clients(true),
-            &endpoint,
-            &sid,
-        )?;
-        timeout_at(Instant::now() + CONNECT_TIMEOUT, pipe.connect())
-            .await
-            .map_err(|_| transfer_timeout())??;
-        let mut client = 0;
-        // SAFETY: pipe is a live server pipe and the client PID output is writable.
-        if unsafe { GetNamedPipeClientProcessId(pipe.as_raw_handle().cast(), &mut client) } == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        if client != requester_pid {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "wrong Windows update sender",
-            ));
-        }
-        Ok(pipe)
-    })?;
-    Ok(WindowsMachineUpdateInput {
-        runtime,
-        pipe,
-        deadline: Instant::now() + TRANSFER_TIMEOUT,
-        _requester: requester,
-    })
-}
-
-/// Sends the signed envelope followed by its declared number of installer bytes.
-pub fn send_windows_machine_update(
-    transfer: &str,
-    worker: &WindowsElevatedProcess,
-    envelope: &[u8],
-    mut asset: impl Read,
-    size: u64,
-) -> io::Result<()> {
-    let endpoint = endpoint(transfer)?;
-    let expected_server = worker.id()?;
-    let length = u32::try_from(envelope.len()).map_err(|_| io::ErrorKind::InvalidInput)?;
-    let runtime = Builder::new_current_thread().enable_all().build()?;
-    runtime.block_on(async {
         let mut options = ClientOptions::new();
-        options.read(false).security_qos_flags(SECURITY_IDENTIFICATION);
-        let mut pipe = timeout_at(Instant::now() + CONNECT_TIMEOUT, async {
+        options.write(false).security_qos_flags(SECURITY_IDENTIFICATION);
+        let pipe = timeout_at(Instant::now() + CONNECT_TIMEOUT, async {
             loop {
                 match options.open(&endpoint) {
                     Ok(pipe) => return Ok(pipe),
@@ -272,26 +225,91 @@ pub fn send_windows_machine_update(
         if unsafe { GetNamedPipeServerProcessId(pipe.as_raw_handle().cast(), &mut server) } == 0 {
             return Err(io::Error::last_os_error());
         }
-        if server != expected_server {
-            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "wrong Windows update receiver"));
+        if server != requester_pid {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "wrong Windows update sender",
+            ));
         }
-        timeout_at(Instant::now() + TRANSFER_TIMEOUT, async {
-            pipe.write_all(&length.to_le_bytes()).await?;
-            pipe.write_all(envelope).await?;
-            let mut buffer = vec![0_u8; 64 * 1024];
-            let mut asset = (&mut asset).take(size);
-            while asset.limit() != 0 {
-                let count = asset.read(&mut buffer)?;
-                if count == 0 {
-                    return Err(io::ErrorKind::UnexpectedEof.into());
-                }
-                pipe.write_all(&buffer[..count]).await?;
-            }
-            Ok(())
-        })
-        .await
-        .map_err(|_| transfer_timeout())?
+        Ok(pipe)
+    })?;
+    Ok(WindowsMachineUpdateInput {
+        runtime,
+        pipe,
+        deadline: Instant::now() + TRANSFER_TIMEOUT,
+        _requester: requester,
     })
+}
+
+/// Owns the standard requester's one-shot outbound endpoint.
+pub struct WindowsMachineUpdateOutput {
+    runtime: Runtime,
+    pipe: NamedPipeServer,
+}
+
+/// Creates an endpoint owned by the caller before requesting elevation.
+pub fn prepare_windows_machine_update(transfer: &str) -> io::Result<WindowsMachineUpdateOutput> {
+    let endpoint = endpoint(transfer)?;
+    let runtime = Builder::new_current_thread().enable_all().build()?;
+    let pipe = runtime.block_on(async {
+        create_machine_update_pipe(
+            ServerOptions::new()
+                .first_pipe_instance(true)
+                .max_instances(1)
+                .access_inbound(false)
+                .reject_remote_clients(true),
+            &endpoint,
+        )
+    })?;
+    Ok(WindowsMachineUpdateOutput { runtime, pipe })
+}
+
+impl WindowsMachineUpdateOutput {
+    /// Sends only to the exact elevated process returned by the broker.
+    pub fn send(
+        mut self,
+        worker: &WindowsElevatedProcess,
+        envelope: &[u8],
+        asset: impl Read,
+        size: u64,
+    ) -> io::Result<()> {
+        let expected_client = worker.id()?;
+        let length = u32::try_from(envelope.len()).map_err(|_| io::ErrorKind::InvalidInput)?;
+        self.runtime.block_on(async {
+            timeout_at(Instant::now() + CONNECT_TIMEOUT, self.pipe.connect())
+                .await
+                .map_err(|_| transfer_timeout())??;
+            let mut client = 0;
+            // SAFETY: pipe is a live server pipe and the client PID output is writable.
+            if unsafe { GetNamedPipeClientProcessId(self.pipe.as_raw_handle().cast(), &mut client) }
+                == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            if client != expected_client {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "wrong Windows update receiver",
+                ));
+            }
+            timeout_at(Instant::now() + TRANSFER_TIMEOUT, async {
+                self.pipe.write_all(&length.to_le_bytes()).await?;
+                self.pipe.write_all(envelope).await?;
+                let mut buffer = vec![0_u8; 64 * 1024];
+                let mut asset = asset.take(size);
+                while asset.limit() != 0 {
+                    let count = asset.read(&mut buffer)?;
+                    if count == 0 {
+                        return Err(io::ErrorKind::UnexpectedEof.into());
+                    }
+                    self.pipe.write_all(&buffer[..count]).await?;
+                }
+                Ok(())
+            })
+            .await
+            .map_err(|_| transfer_timeout())?
+        })
+    }
 }
 
 fn endpoint(transfer: &str) -> io::Result<String> {

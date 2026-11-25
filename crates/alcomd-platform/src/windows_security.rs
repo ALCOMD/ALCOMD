@@ -349,13 +349,12 @@ fn descriptor_for_sid(sid: &str) -> io::Result<LocalSecurityDescriptor> {
 pub(super) fn create_machine_update_pipe(
     options: &ServerOptions,
     endpoint: &str,
-    requester_sid: &str,
 ) -> io::Result<NamedPipeServer> {
-    // The elevated server normally creates a high-integrity object. The
-    // upload must also accept the exact standard desktop caller at medium
-    // integrity, while continuing to deny writes from low-integrity clients.
+    let requester_sid = current_user_sid_string()?;
+    // The standard desktop owns the outbound endpoint. Administrators may
+    // read from it after elevation. The elevated side has no upload endpoint.
     let descriptor = security_descriptor(&format!(
-        "O:BAD:P(A;;GA;;;BA)(A;;GW;;;{requester_sid})S:(ML;;NW;;;ME)"
+        "O:{requester_sid}D:P(A;;GA;;;{requester_sid})(A;;GR;;;BA)"
     ))?;
     let mut attributes = machine_file_attributes(&descriptor);
     // SAFETY: the descriptor and attributes remain alive through creation. The

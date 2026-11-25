@@ -27,8 +27,9 @@ mod machine_update_io;
 mod security;
 
 pub use machine_update_io::{
-    WindowsElevatedProcess, WindowsMachineUpdateInput, receive_windows_machine_update,
-    send_windows_machine_update, start_elevated_windows_program, windows_process_is_elevated,
+    WindowsElevatedProcess, WindowsMachineUpdateInput, WindowsMachineUpdateOutput,
+    prepare_windows_machine_update, receive_windows_machine_update, start_elevated_windows_program,
+    windows_process_is_elevated,
 };
 
 pub use file_identity::{WindowsFileIdentity, file_identity, file_link_count};
