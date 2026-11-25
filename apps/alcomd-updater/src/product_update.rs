@@ -207,31 +207,73 @@ pub fn product_update_origin() -> anyhow::Result<Url> {
     Url::parse(&product.product.homepage_url).context("invalid embedded product update origin")
 }
 
-/// Rechecks a saved update against the product's configured trusted origin and replay state.
-pub fn verify_saved_product_update(
-    envelope: &std::path::Path,
+/// Accepts the exact envelope bytes a Windows installation transaction will retain.
+#[cfg(windows)]
+pub fn accept_windows_product_update(
+    bytes: &[u8],
     asset: &std::path::Path,
     replay_directory: &std::path::Path,
-    stream: UpdateStream,
+    channel: Channel,
     installed_version: &Version,
-) -> anyhow::Result<VerifiedUpdate> {
+) -> anyhow::Result<(VerifiedUpdate, i64)> {
     let origin = product_update_origin()?;
     let host = origin
         .host_str()
         .context("missing product update origin host")?;
-    let body = crate::read_limited(envelope, MAX_UPDATE_RESPONSE_BYTES as u64)?;
-    verify_and_record_update(
+    let now = Utc::now();
+    let update = verify_and_record_update(
         replay_directory,
-        &body,
+        bytes,
         &UpdateRequest {
-            stream,
+            stream: UpdateStream {
+                channel,
+                target: Target::Windows,
+                format: UpdateFormat::Inno,
+            },
             installed_version,
             allowed_asset_hosts: &[host],
-            now: chrono::Utc::now(),
+            now,
             previous: None,
         },
         asset,
-    )
+    )?;
+    Ok((update, now.timestamp_micros()))
+}
+
+/// Rechecks only the signed update previously accepted into a durable Windows transaction.
+#[cfg(windows)]
+pub fn reverify_interrupted_windows_update(
+    bytes: &[u8],
+    acceptance: AcceptedUpdate,
+    accepted_at: i64,
+    installed_version: &Version,
+) -> anyhow::Result<VerifiedUpdate> {
+    ensure!(
+        acceptance.stream.target == Target::Windows
+            && acceptance.stream.format == UpdateFormat::Inno,
+        "interrupted update has the wrong target or format"
+    );
+    let origin = product_update_origin()?;
+    let host = origin
+        .host_str()
+        .context("missing product update origin host")?;
+    let now = DateTime::from_timestamp_micros(accepted_at)
+        .context("invalid Windows update acceptance time")?;
+    let update = verify_update(
+        bytes,
+        &UpdateRequest {
+            stream: acceptance.stream,
+            installed_version,
+            allowed_asset_hosts: &[host],
+            now,
+            previous: Some(acceptance),
+        },
+    )?;
+    ensure!(
+        update.acceptance() == acceptance,
+        "interrupted update does not match the accepted manifest"
+    );
+    Ok(update)
 }
 
 /// Verifies the body of a successful JSON response with the embedded release key.

@@ -63,6 +63,8 @@ pub fn registered_core_executable(config: &DataConfig) -> io::Result<Option<Path
             error
         }
     })?;
+    #[cfg(windows)]
+    registration::check_registered_runtime_is_active(&runtime)?;
     Ok(Some(candidate))
 }
 
@@ -78,9 +80,11 @@ fn read_runtime_directory(file: &std::fs::File) -> io::Result<PathBuf> {
 mod registration;
 #[cfg(windows)]
 pub use registration::{
-    check_windows_core_registration, hold_windows_installation, publish_windows_core_registration,
-    remove_windows_core_registration, windows_current_user_installation_root,
-    windows_installation_bootstrap, windows_installation_runtime,
+    WINDOWS_ACTIVE_RUNTIME_RECORD, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME, WINDOWS_CLI_EXECUTABLE_NAME,
+    WINDOWS_UPDATE_INTENT_RECORD, WindowsInstallationUpdate, check_windows_core_registration,
+    hold_windows_installation, publish_windows_core_registration, remove_windows_core_registration,
+    windows_current_user_installation_root, windows_installation_bootstrap,
+    windows_installation_runtime,
 };
 
 #[cfg(target_os = "linux")]
@@ -399,6 +403,11 @@ mod tests {
         }
         assert!(windows_installation_bootstrap(&cli).is_err());
         fs::write(&bootstrap, b"fixture").expect("test bootstrap");
+        fs::write(
+            root.join(WINDOWS_ACTIVE_RUNTIME_RECORD),
+            concat!(env!("CARGO_PKG_VERSION"), "\n"),
+        )
+        .expect("test active runtime");
         let expected = bootstrap.canonicalize().expect("canonical bootstrap");
         for entry in [&gui, &cli] {
             assert_eq!(
@@ -415,6 +424,19 @@ mod tests {
                 .kind(),
             io::ErrorKind::PermissionDenied
         );
+        let next = root.join("runtime").join("99.9.9-test");
+        fs::create_dir_all(&next).expect("next runtime");
+        let next_bootstrap = next.join(WINDOWS_BOOTSTRAP_EXECUTABLE_NAME);
+        for file in [&next_bootstrap, &next.join(CORE_EXECUTABLE_NAME)] {
+            fs::write(file, b"fixture").expect("next executable");
+        }
+        fs::write(root.join(WINDOWS_ACTIVE_RUNTIME_RECORD), "99.9.9-test\n")
+            .expect("switch active runtime");
+        assert_eq!(
+            windows_installation_bootstrap(&cli).expect("stable CLI"),
+            Some(next_bootstrap.canonicalize().expect("active bootstrap"))
+        );
+        assert!(windows_installation_bootstrap(&gui).is_err());
         fs::remove_dir_all(root).expect("remove isolated fixture");
     }
 
@@ -441,6 +463,11 @@ mod tests {
         }
         let preserved = data.join("state.db");
         fs::write(&preserved, "synthetic state").expect("fixture");
+        fs::write(
+            root.join(WINDOWS_ACTIVE_RUNTIME_RECORD),
+            concat!(env!("CARGO_PKG_VERSION"), "\n"),
+        )
+        .expect("test active runtime");
         let runtime = windows_installation_runtime(&pending.join(CORE_EXECUTABLE_NAME))
             .expect("trusted versioned runtime");
         let other_runtime = fs::canonicalize(other_runtime).expect("other canonical path");

@@ -37,9 +37,11 @@ pub use core_installation::{
 };
 #[cfg(windows)]
 pub use core_installation::{
-    check_windows_core_registration, hold_windows_installation, publish_windows_core_registration,
-    remove_windows_core_registration, windows_current_user_installation_root,
-    windows_installation_bootstrap, windows_installation_runtime,
+    WINDOWS_ACTIVE_RUNTIME_RECORD, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME, WINDOWS_CLI_EXECUTABLE_NAME,
+    WINDOWS_UPDATE_INTENT_RECORD, WindowsInstallationUpdate, check_windows_core_registration,
+    hold_windows_installation, publish_windows_core_registration, remove_windows_core_registration,
+    windows_current_user_installation_root, windows_installation_bootstrap,
+    windows_installation_runtime,
 };
 pub use credential_vault::{delete_credential, read_credential, write_credential};
 pub use external_path::external_filesystem_path;

@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -56,15 +57,27 @@ pub(super) fn export(
     );
 
     let mut files = String::new();
+    let mut update_files = String::new();
+    let mut uninstall_files = String::new();
+    let mut runtime_directories = BTreeSet::new();
+    let mut runtime_file_count = 0;
     for relative in verified.files().chain([MANIFEST_NAME, SIGNATURE_NAME]) {
         ensure!(
             relative.split('/').all(plain_segment),
             "invalid Inno runtime path"
         );
-        add_file(
-            &mut files,
-            &format!("runtime\\{version}\\{}", relative.replace('/', "\\")),
+        let relative = relative.replace('/', "\\");
+        let installed = format!("runtime\\{version}\\{relative}");
+        add_file(&mut files, &installed)?;
+        add_uninstall_file(&mut uninstall_files, &installed)?;
+        writeln!(
+            update_files,
+            "  if not CopyRuntimeFile(Directory, '{relative}') then Exit;"
         )?;
+        if let Some((directory, _)) = installed.rsplit_once('\\') {
+            runtime_directories.insert(directory.to_owned());
+        }
+        runtime_file_count += 1;
     }
     for entry in [
         format!("{}.exe", product.binaries.cli),
@@ -72,8 +85,15 @@ pub(super) fn export(
     ] {
         add_file(&mut files, &format!("bin\\{entry}"))?;
     }
+    for directory in runtime_directories.iter().rev() {
+        writeln!(
+            uninstall_files,
+            "Type: dirifempty; Name: \"{{app}}\\{directory}\"; Check: IsUpdateInstallation"
+        )?;
+    }
 
     let bootstrap = format!("{}.exe", product.binaries.bootstrap);
+    let cli = format!("{}.exe", product.binaries.cli);
     let bootstrap_digest = verified
         .file_sha256(&bootstrap)
         .context("Bootstrap missing from verified Inno runtime")?;
@@ -89,6 +109,7 @@ pub(super) fn export(
         .replace("@FAMILY_NAME@", &product.product.family_name)
         .replace("@INSTALL_DIRECTORY@", &product.identity.install_directory)
         .replace("@GUI_NAME@", &product.binaries.gui)
+        .replace("@CLI_FILE@", &cli)
         .replace("@BOOTSTRAP_FILE@", &bootstrap)
         .replace("@BOOTSTRAP_DIGEST@", &format_digest(bootstrap_digest))
         .replace("@CRT_FILE@", WINDOWS_CRT_FILE)
@@ -96,11 +117,19 @@ pub(super) fn export(
         .replace("@SOURCE_SHA@", &candidate.source_commit)
         .replace("@MANIFEST_NAME@", MANIFEST_NAME)
         .replace("@UPDATE_STAGE_PREFIX@", WINDOWS_UPDATE_STAGE_PREFIX)
+        .replace("@RUNTIME_FILE_COUNT@", &runtime_file_count.to_string())
         .replace(
             "@MANIFEST_DIGEST@",
             &format_digest(&verified.manifest_sha256),
         )
+        .replace("@UPDATE_FILES@", update_files.trim_end())
+        .replace("@UNINSTALL_FILES@", uninstall_files.trim_end())
         .replace("@FILES@", files.trim_end());
+    publish_file(
+        layout,
+        "active-runtime-v1",
+        format!("{version}\n").as_bytes(),
+    )?;
     publish_file(layout, "alcomd.iss", script.as_bytes())
 }
 
@@ -118,6 +147,13 @@ fn add_file(list: &mut String, relative: &str) -> std::fmt::Result {
         .expect("package file has a directory");
     writeln!(
         list,
-        "Source: \"{relative}\"; DestDir: \"{{app}}\\{parent}\"; Flags: ignoreversion"
+        "Source: \"{relative}\"; DestDir: \"{{app}}\\{parent}\"; Flags: ignoreversion; Check: IsFreshInstallation"
+    )
+}
+
+fn add_uninstall_file(list: &mut String, relative: &str) -> std::fmt::Result {
+    writeln!(
+        list,
+        "Type: files; Name: \"{{app}}\\{relative}\"; Check: IsUpdateInstallation"
     )
 }

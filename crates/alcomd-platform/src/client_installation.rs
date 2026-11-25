@@ -421,6 +421,12 @@ mod tests {
         }
         let core = runtime.join(core_installation::CORE_EXECUTABLE_NAME);
         stage(&core, true);
+        #[cfg(windows)]
+        fs::write(
+            root.join(crate::WINDOWS_ACTIVE_RUNTIME_RECORD),
+            concat!(env!("CARGO_PKG_VERSION"), "\n"),
+        )
+        .expect("isolated active runtime fixture");
         let registration =
             crate::core_installation_registration(&data).expect("isolated installer fixture");
         stage(&registration, false);

@@ -30,16 +30,13 @@ enum Command {
     UnregisterInstalledCore(InstallCoreArguments),
     #[cfg(windows)]
     /// Prepare a verified update for a current-user Windows installation.
-    StageInstalledUpdate {
-        #[arg(long)]
-        envelope: PathBuf,
-        #[arg(long)]
-        asset: PathBuf,
-        #[arg(long)]
-        replay_directory: PathBuf,
-        #[arg(long, value_enum)]
-        channel: Channel,
-    },
+    StageInstalledUpdate(UpdateArguments),
+    #[cfg(windows)]
+    /// Install a verified update in the current-user Windows scope.
+    ApplyInstalledUpdate(UpdateArguments),
+    #[cfg(windows)]
+    /// Recover an interrupted current-user Windows update.
+    ResumeInstalledUpdate,
     #[cfg(any(windows, target_os = "linux"))]
     #[command(hide = true)]
     StartInstalledCore,
@@ -58,6 +55,30 @@ struct InstallCoreArguments {
     source_sha: String,
     #[arg(long, hide = true)]
     data_dir: Option<PathBuf>,
+}
+
+#[cfg(windows)]
+#[derive(Debug, Args)]
+struct UpdateArguments {
+    #[arg(long)]
+    envelope: PathBuf,
+    #[arg(long)]
+    asset: PathBuf,
+    #[arg(long)]
+    replay_directory: PathBuf,
+    #[arg(long, value_enum)]
+    channel: Channel,
+}
+
+#[cfg(windows)]
+impl UpdateArguments {
+    fn absolute_paths(&self) -> std::io::Result<[PathBuf; 3]> {
+        Ok([
+            std::path::absolute(&self.envelope)?,
+            std::path::absolute(&self.asset)?,
+            std::path::absolute(&self.replay_directory)?,
+        ])
+    }
 }
 
 #[derive(Debug, Args)]
@@ -111,19 +132,33 @@ fn main() -> anyhow::Result<()> {
             );
         }
         #[cfg(windows)]
-        Command::StageInstalledUpdate {
-            envelope,
-            asset,
-            replay_directory,
-            channel,
-        } => {
+        Command::StageInstalledUpdate(arguments) => {
+            let [envelope, asset, replay_directory] = arguments.absolute_paths()?;
             let staged = alcomd_bootstrap::stage_installed_update(
-                &std::path::absolute(envelope)?,
-                &std::path::absolute(asset)?,
-                &std::path::absolute(replay_directory)?,
-                channel,
+                &envelope,
+                &asset,
+                &replay_directory,
+                arguments.channel,
             )?;
             println!("Verified update staged at {}", staged.display());
+            return Ok(());
+        }
+        #[cfg(windows)]
+        Command::ApplyInstalledUpdate(arguments) => {
+            let [envelope, asset, replay_directory] = arguments.absolute_paths()?;
+            alcomd_bootstrap::apply_installed_update(
+                &envelope,
+                &asset,
+                &replay_directory,
+                arguments.channel,
+            )?;
+            println!("Windows product update applied");
+            return Ok(());
+        }
+        #[cfg(windows)]
+        Command::ResumeInstalledUpdate => {
+            alcomd_bootstrap::resume_installed_update()?;
+            println!("Windows product update resumed");
             return Ok(());
         }
         #[cfg(any(windows, target_os = "linux"))]
