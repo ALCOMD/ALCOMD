@@ -12,6 +12,8 @@ const MAX_RUNTIME_PATH_BYTES: usize = 4096;
 pub const PRODUCT_PAYLOAD_MANIFEST_NAME: &str = "product-payload.json";
 /// Required app-local runtime DLL on Windows.
 pub const WINDOWS_CRT_FILE: &str = "vcruntime140.dll";
+/// Machine-owned record that leaves account initialization to the bridge.
+pub const WINDOWS_BRIDGE_ACCOUNT_RECORD: &str = "account-migration-v1";
 /// App-local DLL names permitted by the Windows product layout.
 pub const WINDOWS_PRODUCT_SIDECARS: &[&str] =
     &[WINDOWS_CRT_FILE, "vcruntime140_1.dll", "WebView2Loader.dll"];
@@ -100,6 +102,10 @@ pub use registration::{
 pub use registration::{
     WINDOWS_SCOPE_DESTINATION_COMMIT_RECORD, WINDOWS_SCOPE_DESTINATION_RECORD,
     WindowsScopeTransitionDestination,
+};
+#[cfg(windows)]
+pub use registration::{
+    approve_windows_empty_bridge_profile, check_windows_bridge_profile_for_startup,
 };
 
 #[cfg(target_os = "linux")]

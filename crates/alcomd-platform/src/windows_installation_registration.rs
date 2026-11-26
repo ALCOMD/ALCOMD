@@ -27,6 +27,12 @@ pub use scope_destination::{
     WindowsScopeTransitionDestination,
 };
 
+#[path = "windows_bridge_profile.rs"]
+mod bridge_profile;
+pub use bridge_profile::{
+    approve_windows_empty_bridge_profile, check_windows_bridge_profile_for_startup,
+};
+
 // The Inno uninstaller takes this byte exclusively. It is beyond the bounded
 // signed manifest, so verification can still read the complete file.
 const MANIFEST_LEASE_OFFSET: u64 = 1 << 32;

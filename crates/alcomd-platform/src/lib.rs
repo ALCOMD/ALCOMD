@@ -26,14 +26,18 @@ mod unity_hub_open;
 mod unity_registration;
 
 pub use core_installation::{
-    CORE_EXECUTABLE_NAME, PRODUCT_PAYLOAD_MANIFEST_NAME, WINDOWS_CRT_FILE,
-    WINDOWS_PRODUCT_SIDECARS, core_installation_registration, open_owned_installation_record,
-    registered_core_executable, validate_installation_record_parent,
+    CORE_EXECUTABLE_NAME, PRODUCT_PAYLOAD_MANIFEST_NAME, WINDOWS_BRIDGE_ACCOUNT_RECORD,
+    WINDOWS_CRT_FILE, WINDOWS_PRODUCT_SIDECARS, core_installation_registration,
+    open_owned_installation_record, registered_core_executable, validate_installation_record_parent,
 };
 #[cfg(windows)]
 pub use core_installation::{
     WINDOWS_SCOPE_DESTINATION_COMMIT_RECORD, WINDOWS_SCOPE_DESTINATION_RECORD,
     WindowsScopeTransitionDestination,
+};
+#[cfg(windows)]
+pub use core_installation::{
+    approve_windows_empty_bridge_profile, check_windows_bridge_profile_for_startup,
 };
 #[cfg(target_os = "linux")]
 pub use core_installation::{

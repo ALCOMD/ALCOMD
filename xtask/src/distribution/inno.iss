@@ -43,6 +43,7 @@ const
   ShellReceipts = 'previous-shell-v1';
   UpdateInstalled = 'installed-v1';
   PreviousShortcutFile = 'previous-start-menu.lnk';
+  MachineBridgeAccount = '@MACHINE_BRIDGE_ACCOUNT@';
   CandidateShortcutFile = 'candidate-start-menu.lnk';
   MissingFile = 2;
   MissingPath = 3;
@@ -1318,6 +1319,7 @@ begin
   end;
   PublishStartMenuEntry;
   if not SyncUninstallRegistration or
+    (IsAdminInstallMode and not PublishRecord(Root + '\' + MachineBridgeAccount, '1' + #10)) or
     not PublishRecord(Root + '\' + ActiveRuntime, '@APP_VERSION@' + #10) then begin
     ReportIncompleteInstallation('ALCOMD could not activate the migrated installation. Retry with the same bridge.');
     Exit;
@@ -1438,6 +1440,8 @@ begin
       if (RetiredUninstallDigest <> '') and
         PlainFileMatches(Root + '\' + ScopeTransition, RetiredUninstallDigest) then
         DeleteFile(Root + '\' + ScopeTransition);
+      if IsAdminInstallMode and RecordMatches(Root + '\' + MachineBridgeAccount, '1' + #10) then
+        DeleteFile(Root + '\' + MachineBridgeAccount);
       RemoveDir(Root);
     end;
     Exit;

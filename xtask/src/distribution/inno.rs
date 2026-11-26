@@ -152,6 +152,10 @@ pub(super) fn export(
         .replace("@SOURCE_SHA@", &candidate.source_commit)
         .replace("@MANIFEST_NAME@", MANIFEST_NAME)
         .replace("@FRESH_STAGE_PREFIX@", WINDOWS_FRESH_STAGE_PREFIX)
+        .replace(
+            "@MACHINE_BRIDGE_ACCOUNT@",
+            alcomd_platform::WINDOWS_BRIDGE_ACCOUNT_RECORD,
+        )
         .replace("@UPDATE_STAGE_PREFIX@", WINDOWS_UPDATE_STAGE_PREFIX)
         .replace("@RUNTIME_FILE_COUNT@", &runtime_file_count.to_string())
         .replace(
