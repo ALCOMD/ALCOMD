@@ -1451,7 +1451,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "Win11 标准账号用冻结 v3.4.0 桌面更新器走隔离 HTTPS，实测 stable 204、beta 同频道重定向、签名匹配后下载并启动准确的当前用户外层、冻结参数与取消保全，以及同名不同字节签名被拒。全用户交接、交互凭据提升和 Win10 另验。"
+description = "Win11 标准账号用冻结 v3.4.0 桌面更新器走隔离 HTTPS，实测 stable 204、beta 同频道重定向、实际下载和启动同一签名外层、两种安装范围的冻结参数与取消保全，以及同名不同字节签名被拒。全用户提交、交互凭据提升和 Win10 另验。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/windows_bridge.rs"]
 
 [[test]]
