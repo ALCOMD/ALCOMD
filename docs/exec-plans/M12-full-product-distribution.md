@@ -469,6 +469,12 @@ Windows 协议登记使用受保护定位记录里的安装根拼写，避免自
 
 该 SHA 在干净检出通过本机整仓聚合检查，Rust 测试共 1107 项，Chromium 765 项。从 `2a1f93b9` 起逐笔验签 12 笔提交后普通快进到主仓 `main`。该 SHA 上的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均通过整仓、外部 SDK、Release 和 Tauri 构建，每个平台的 Chromium 均通过 765 项。四项 CodeQL 全部通过。Hosted 终态回执 SHA-256 为 `7465ae2125a1dd8d8ef15ee3cf9279ec50ba749b47e109ced4d32f7f83f2f94f`。macOS 原生客户端仍延期，正式发行继续按 A-017 验收。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45898023638) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45898023276)
 
+### 2026-11-27 Windows 全用户自定义目录整包升级
+
+在断网 Windows 11 24H2（`26100.9974`）来宾的既有管理员会话中，用上述 `2a1f93b9` 安装包和修正 Inno 后的 `16e5184a` 目标载荷执行全用户整包升级。安装根的父目录与末级目录均含空格和 Unicode。正常升级通过九项。机器部署不抢先初始化账号资料，机器升级保留旧的逐账号登记，原账号重开后才登记新版 Core。原安装根、机器 PATH 与开始菜单仍指向该实例，真实 WebView2 和稳定 CLI 可读回原工程。CLI 冷启动耗时 1552 毫秒，卸载后数据库、逐账号登记和目录内的无关文件保全。正常回执 SHA-256 为 `96e3ffc15dd320a44b37b85dfb325eacbdda88b6b0ef167b3b714cdf7d595fe0`。
+
+文件占用与进程终止复验各通过十二项。文件占用用例在新版本已落盘时因稳定 CLI 文件仍被占用而停在持久提交阶段。进程终止用例在同一持久点实际终止了该请求的维护进程树。两次中断均保留原版本选择器和资料，稳定 CLI 和两版 Core 均被门禁阻止启动。解除占用并删除原下载后，Bootstrap 用事务保留的签名包恢复，CLI 冷启动分别耗时 1112 和 857 毫秒。文件占用和进程终止的回执 SHA-256 分别为 `dd682f499804afb061d5065f912fae117854bfe36afea73356f20163e903b79b`、`3e7a85a3a6fcd022941a86ee2da851bd5a212ad8e7fe2942fe7c4d108257d8f1`。真实标准账号的交互 UAC、Win10 与最终发行候选另验。
+
 ### 2026-11-27 Windows 协议事务并发复验
 
 Win11 断网夹具先复现了已完成的第三方写入被稍后提交的安装器覆盖。安装器改为在注册表事务中暂存变更后重新核对公开键树的归属、值与形状。若第三方在最终核对后成功改写已参与事务的键，Windows 终止事务。范围转换在最后发布和退役清理时仍须确认归属，遇到第三方登记返回可重试结果。[Windows 注册表事务](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regopenkeytransactedw)

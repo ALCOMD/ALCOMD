@@ -36,9 +36,11 @@ Windows 当前用户的版本切换和提交恢复已通过原生验收。完整
 
 Windows 全用户切换使用签名源码 `d1555aa3` 的断网夹具通过 6 项正常升级和 8 项中断恢复检查。修复源码 `20a9d8f7` 另通过 6 项不同 SID 的传输及升级检查和 8 项实际终止与恢复复验。两个账号在一次连接内分别接入新版 Core 并保留资料。干净 Release 的首次冷启动和交互凭据提升另验。[Windows 全用户版本切换与中断恢复](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-全用户版本切换与中断恢复)
 
-Windows 同范围缺失文件修复已通过两种 Win11 安装范围验收。同一 `310065bf` 完整 Inno 实包在两种范围各通过 8 项自定义目录检查，覆盖 Unicode 与空格目录、缺失卸载登记后的修复、Core 冷启动和卸载归属。Win10、双向范围转换和全用户自定义目录整包更新继续验收。[Windows 修复与转换维护锁](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-同范围修复与转换维护锁)
+Windows 同范围缺失文件修复已通过两种 Win11 安装范围验收。同一 `310065bf` 完整 Inno 实包在两种范围各通过 8 项自定义目录检查，覆盖 Unicode 与空格目录、缺失卸载登记后的修复、Core 冷启动和卸载归属。Win10 与双向范围转换继续验收。[Windows 修复与转换维护锁](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-同范围修复与转换维护锁)
 
 Win11 当前用户的签名整包升级发现 Inno 与 Bootstrap 的自定义根暂存路径不一致。修正后，同源完整实包通过 7 项正常升级和 10 项实际中断恢复，原安装根、项目和无关文件均保全，新版 WebView2 与 CLI 正常接回 Core。[Windows 自定义目录整包升级](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-当前用户自定义目录整包升级)
+
+Win11 全用户签名完整包在已有管理员会话通过 9 项自定义目录正常升级，文件占用和进程终止恢复各通过 12 项。在同一安装根恢复并由原账号重开，机器入口与资料保全。真实标准账号的交互 UAC 另验。[Windows 全用户自定义目录升级](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户自定义目录整包升级)
 
 Win11 隔离夹具已通过协议登记和移除的中断恢复，以及七种第三方抢先改写的时序。完整 Inno 候选 `2a1f93b9` 用 Sandbox 登录账号在当前用户和全用户两种范围验证了真实 Shell 冷启动、单窗口转发和卸载清理。标准账号及双向范围转换继续验收。[Windows 协议事务复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-协议事务并发复验)
 
