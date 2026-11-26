@@ -1442,8 +1442,17 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "断网 Win11 在实际标准账号，以冻结的四个参数直接运行 b605e19b 完整外层，验证取消与合成数据提交、活动版本和迁移日志、实际 Core 读取及 v3 保全重开。相同外层后经原钥签发分离签名，并以冻结公钥独立验签。旧更新器下载启动另验。"
+description = "断网 Win11 在实际标准账号，以冻结的四个参数直接运行 b605e19b 完整外层，验证取消与合成数据提交、活动版本和迁移日志、实际 Core 读取及 v3 保全重开。相同外层后经原钥签发分离签名，并以冻结公钥独立验签。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/windows_bridge.rs", "migrations/v3/app/alcomd-migrate-v3/src/windows_bridge/mod.rs"]
+
+[[test]]
+id = "installer.windows.bridge-frozen-updater-transport"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "Win11 标准账号用冻结 v3.4.0 桌面更新器走隔离 HTTPS，实测 stable 204、beta 同频道重定向、签名匹配后下载并启动准确的当前用户外层、冻结参数与取消保全，以及同名不同字节签名被拒。全用户交接、交互凭据提升和 Win10 另验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/windows_bridge.rs"]
 
 [[test]]
 id = "updater.linux.v3-native-appimage-bridge"
