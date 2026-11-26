@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::Path;
 
+use alcomd_platform::WINDOWS_PRODUCT_SIDECARS;
 use alcomd_updater::distribution::{
     Candidate, MANIFEST_NAME, SIGNATURE_NAME, Target, VerifiedRuntime, WINDOWS_CRT_FILE,
     WINDOWS_FRESH_STAGE_PREFIX, WINDOWS_UPDATE_STAGE_PREFIX, format_digest,
@@ -125,6 +126,21 @@ pub(super) fn export(
     let crt_digest = verified
         .file_sha256(WINDOWS_CRT_FILE)
         .context("CRT missing from verified Inno runtime")?;
+    let mut root_worker_checks = String::new();
+    let mut root_worker_copies = String::new();
+    for file in WINDOWS_PRODUCT_SIDECARS {
+        if let Some(digest) = verified.file_sha256(file) {
+            write!(
+                root_worker_checks,
+                " and\n    PlainFileMatches(Directory + '\\{file}', '{}')",
+                format_digest(digest)
+            )?;
+            writeln!(
+                root_worker_copies,
+                "  if not FileCopy(Runtime + '\\{file}', InstallRootWorker + '\\{file}', True) then Exit;"
+            )?;
+        }
+    }
     let webview2_code = include_str!("inno-webview2.iss")
         .replace("@WEBVIEW2_BOOTSTRAPPER_NAME@", BOOTSTRAPPER_NAME)
         .replace("@WEBVIEW2_BOOTSTRAPPER_DIGEST@", &webview2.bootstrapper)
@@ -136,6 +152,8 @@ pub(super) fn export(
     let script = include_str!("inno.iss")
         .replace("@SCOPE_CODE@", include_str!("inno-scope.iss").trim_end())
         .replace("@WEBVIEW2_CODE@", webview2_code.trim_end())
+        .replace("@ROOT_WORKER_CHECKS@", &root_worker_checks)
+        .replace("@ROOT_WORKER_COPIES@", root_worker_copies.trim_end())
         .replace("@APP_ID@", app_id)
         .replace("@APP_NAME@", &product.product.display_name)
         .replace("@APP_AUMID@", &product.identity.windows_aumid)

@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -39,6 +40,7 @@ pub use bridge_profile::{
 const MANIFEST_LEASE_OFFSET: u64 = 1 << 32;
 const MAX_VERSION_BYTES: usize = 80;
 const MAX_INTENT_BYTES: usize = 8192;
+const MAX_INSTALLATION_ROOT_RECORD_BYTES: usize = super::MAX_RUNTIME_PATH_BYTES + 50;
 
 /// Basename of the signed Windows Bootstrap executable.
 pub const WINDOWS_BOOTSTRAP_EXECUTABLE_NAME: &str = concat!(env!("ALCOMD_BOOTSTRAP_NAME"), ".exe");
@@ -58,25 +60,194 @@ pub const WINDOWS_UPDATE_INTENT_RECORD: &str = "update-intent-v1";
 /// A durable scope conversion fence keeps the source runtime inactive across restarts.
 pub const WINDOWS_SCOPE_TRANSITION_RECORD: &str = "scope-transition-v1";
 
-/// Resolves the current user's standard Windows product root for maintenance.
+/// Each installation scope keeps its root independently of the Inno uninstall entry.
+pub const WINDOWS_INSTALLATION_ROOT_RECORD: &str =
+    concat!(".", env!("ALCOMD_INSTALL_DIRECTORY"), "-install-root-v1");
+
+/// Resolves the current user's protected Windows product root for maintenance.
 pub fn windows_current_user_installation_root() -> io::Result<PathBuf> {
-    let path = crate::local_app_data_directory()?
-        .join("Programs")
-        .join(env!("ALCOMD_INSTALL_DIRECTORY"));
-    resolve_plain_storage_directory(&path).map(|(path, _)| path)
+    owned_installation_root(InstallationTrust::User)
 }
 
-fn machine_installation_path() -> io::Result<PathBuf> {
-    let program_files = crate::windows::program_files_64_directory()?;
-    let (directory, _) = resolve_plain_storage_directory(&program_files)?;
-    Ok(directory.join(env!("ALCOMD_INSTALL_DIRECTORY")))
-}
-
-/// Resolves the protected all-users product root in native Program Files.
+/// Resolves the protected all-users product root independently of the uninstall entry.
 pub fn windows_machine_installation_root() -> io::Result<PathBuf> {
-    let path = machine_installation_path()?;
-    InstallationTrust::Machine.validate_parent(&path.join(WINDOWS_ACTIVE_RUNTIME_RECORD))?;
-    resolve_plain_storage_directory(&path).map(|(resolved, _)| resolved)
+    owned_installation_root(InstallationTrust::Machine)
+}
+
+fn installation_root_record(trust: InstallationTrust) -> io::Result<PathBuf> {
+    let directory = match trust {
+        InstallationTrust::User => crate::local_app_data_directory()?,
+        InstallationTrust::Machine => crate::windows::program_files_64_directory()?,
+    };
+    Ok(directory.join(WINDOWS_INSTALLATION_ROOT_RECORD))
+}
+
+fn encode_root_identity(identity: &[u8]) -> String {
+    let mut hex = String::with_capacity(identity.len() * 2);
+    for byte in identity {
+        write!(hex, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    hex
+}
+
+fn open_installation_root_record(trust: InstallationTrust) -> io::Result<File> {
+    let path = installation_root_record(trust)?;
+    fs::symlink_metadata(&path)?;
+    trust.open_record(&path)
+}
+
+fn read_installation_root(file: &File, trust: InstallationTrust) -> io::Result<PathBuf> {
+    let mut bytes = Vec::new();
+    file.take((MAX_INSTALLATION_ROOT_RECORD_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_INSTALLATION_ROOT_RECORD_BYTES {
+        return Err(invalid_registration());
+    }
+    let (path, identity) = std::str::from_utf8(&bytes)
+        .ok()
+        .and_then(|record| record.strip_suffix('\n'))
+        .and_then(|record| record.split_once('\n'))
+        .ok_or_else(invalid_registration)?;
+    if path.contains(['"', ';', '%']) {
+        return Err(invalid_registration());
+    }
+    let selected = parse_runtime_directory(format!("{path}\n").as_bytes())?;
+    trust.validate_parent(&selected.join(WINDOWS_ACTIVE_RUNTIME_RECORD))?;
+    let (root, current_identity) = resolve_plain_storage_directory(&selected)?;
+    if identity != encode_root_identity(&current_identity) {
+        return Err(invalid_registration());
+    }
+    Ok(root)
+}
+
+fn owned_installation_root(trust: InstallationTrust) -> io::Result<PathBuf> {
+    let file = open_installation_root_record(trust)?;
+    // A present locator whose target disappeared is invalid, not an absent installation.
+    read_installation_root(&file, trust).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            invalid_registration()
+        } else {
+            error
+        }
+    })
+}
+
+fn scope_trust(machine: bool) -> InstallationTrust {
+    if machine {
+        InstallationTrust::Machine
+    } else {
+        InstallationTrust::User
+    }
+}
+
+/// Checks that the installer is operating on the directory reserved for this scope.
+pub fn validate_windows_installation_root(machine: bool, selected: &Path) -> io::Result<()> {
+    let trust = scope_trust(machine);
+    trust.validate_parent(&selected.join(WINDOWS_ACTIVE_RUNTIME_RECORD))?;
+    let (selected, _) = resolve_plain_storage_directory(selected)?;
+    if owned_installation_root(trust)? != selected {
+        return Err(invalid_registration());
+    }
+    Ok(())
+}
+
+/// Reserves an absent root before Setup writes an installation or publishes a conversion.
+pub fn reserve_windows_installation_root(machine: bool, selected: &Path) -> io::Result<()> {
+    let trust = scope_trust(machine);
+    if machine && !crate::windows_process_is_elevated()? {
+        return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+    }
+    let record = installation_root_record(trust)?;
+    trust.validate_parent(&record)?;
+    match fs::symlink_metadata(&record) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+        Ok(_) => return validate_windows_installation_root(machine, selected),
+    }
+    let line = registration_line(selected)?;
+    // The stable CLI is added as a literal entry in Windows' expandable PATH value.
+    if line.contains(['"', ';', '%']) {
+        return Err(invalid_registration());
+    }
+    let parent = selected.parent().ok_or_else(invalid_registration)?;
+    let mut existing = parent;
+    let mut missing = Vec::new();
+    loop {
+        match fs::symlink_metadata(existing) {
+            Ok(_) => break,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                missing.push(existing);
+                existing = existing.parent().ok_or_else(invalid_registration)?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    trust.validate_parent(&existing.join(WINDOWS_ACTIVE_RUNTIME_RECORD))?;
+    let (parent_directory, _) = resolve_plain_storage_directory(existing)?;
+    let relative = selected
+        .strip_prefix(existing)
+        .map_err(|_| invalid_registration())?;
+    let target = parent_directory.join(relative);
+    let app_data = crate::local_app_data_directory()?;
+    let (app_data_directory, _) = resolve_plain_storage_directory(&app_data)?;
+    let state = crate::state_database_location(&DataConfig::default())?;
+    let data = state
+        .parent()
+        .and_then(|directory| directory.strip_prefix(app_data).ok())
+        .ok_or_else(invalid_registration)?;
+    let data = app_data_directory.join(data);
+    if target.starts_with(&data) || data.starts_with(&target) {
+        return Err(invalid_registration());
+    }
+    let opposing_scope = if machine {
+        InstallationTrust::User
+    } else {
+        InstallationTrust::Machine
+    };
+    match owned_installation_root(opposing_scope) {
+        Ok(other) if target.starts_with(&other) || other.starts_with(&target) => {
+            return Err(invalid_registration());
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    for directory in missing.into_iter().rev().chain(std::iter::once(selected)) {
+        trust.validate_parent(directory)?;
+        if machine {
+            crate::windows::create_machine_directory(directory)?;
+        } else {
+            fs::create_dir(directory)?;
+        }
+        trust.validate_parent(&directory.join(WINDOWS_ACTIVE_RUNTIME_RECORD))?;
+        sync_directory(directory.parent().ok_or_else(invalid_registration)?)?;
+    }
+    let (_, identity) = resolve_plain_storage_directory(selected)?;
+    let bytes = format!("{line}{}\n", encode_root_identity(&identity));
+    publish_owned_record(&record, bytes.as_bytes(), None, trust)
+}
+
+/// Releases the exact scope locator after the recorded installation has been removed.
+pub fn release_windows_installation_root(machine: bool, selected: &Path) -> io::Result<()> {
+    let trust = scope_trust(machine);
+    if machine && !crate::windows_process_is_elevated()? {
+        return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+    }
+    let path = installation_root_record(trust)?;
+    let file = trust.open_record_for_removal(&path)?;
+    let root = read_installation_root(&file, trust)?;
+    if resolve_plain_storage_directory(selected)?.0 != root {
+        return Err(invalid_registration());
+    }
+    for name in [
+        WINDOWS_ACTIVE_RUNTIME_RECORD,
+        WINDOWS_SCOPE_TRANSITION_RECORD,
+        WINDOWS_UPDATE_INTENT_RECORD,
+    ] {
+        require_no_maintenance_record(&root, name)?;
+    }
+    delete_open_file(file)?;
+    sync_directory(path.parent().ok_or_else(invalid_registration)?)
 }
 
 /// Rejects writable or redirected ancestors of a machine maintenance record.
@@ -103,12 +274,11 @@ pub fn create_windows_machine_installation_record(path: &Path) -> io::Result<Fil
 
 fn installation_trust(root: &Path) -> io::Result<InstallationTrust> {
     let (root, _) = resolve_plain_storage_directory(root)?;
-    if has_name(&root, env!("ALCOMD_INSTALL_DIRECTORY"))
-        && root.parent() == machine_installation_path()?.parent()
-    {
-        Ok(InstallationTrust::Machine)
-    } else {
-        Ok(InstallationTrust::User)
+    match windows_machine_installation_root() {
+        Ok(machine) if root == machine => Ok(InstallationTrust::Machine),
+        Ok(_) => Ok(InstallationTrust::User),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(InstallationTrust::User),
+        Err(error) => Err(error),
     }
 }
 
@@ -1019,6 +1189,43 @@ fn other_registration_owner() -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unicode_root_locator_rejects_a_replaced_directory() -> io::Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time is after the Unix epoch")
+            .as_nanos();
+        let parent = crate::local_app_data_directory()?.join(format!("alcomd-custom-{stamp}"));
+        fs::create_dir(&parent)?;
+        let root = parent.join("ALCOMD 测试 安装");
+        fs::create_dir(&root)?;
+        let (resolved, identity) = resolve_plain_storage_directory(&root)?;
+        let locator = parent.join(WINDOWS_INSTALLATION_ROOT_RECORD);
+        let content = format!(
+            "{}{}\n",
+            registration_line(&root)?,
+            encode_root_identity(&identity)
+        );
+        fs::write(&locator, &content)?;
+        let read = || {
+            read_installation_root(
+                &InstallationTrust::User.open_record(&locator)?,
+                InstallationTrust::User,
+            )
+        };
+        assert_eq!(read()?, resolved);
+        fs::write(&locator, format!("{content}extra"))?;
+        assert!(read().is_err());
+        fs::write(&locator, &content)?;
+        fs::rename(&root, parent.join("old"))?;
+        fs::create_dir(&root)?;
+        fs::write(root.join("unknown.txt"), b"preserve")?;
+        assert!(read().is_err());
+        assert_eq!(fs::read(root.join("unknown.txt"))?, b"preserve");
+        fs::remove_dir_all(parent)
+    }
+
     #[test]
     fn installed_core_lease_excludes_maintenance_without_locking_manifest_contents()
     -> io::Result<()> {

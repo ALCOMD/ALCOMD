@@ -33,6 +33,16 @@ enum Command {
     UnregisterInstalledCore(InstallCoreArguments),
     #[cfg(windows)]
     #[command(hide = true)]
+    WindowsInstallRoot {
+        #[arg(long, value_enum)]
+        action: WindowsInstallRootAction,
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long)]
+        machine: bool,
+    },
+    #[cfg(windows)]
+    #[command(hide = true)]
     VerifyInstalledUninstall {
         #[arg(long)]
         source_sha: String,
@@ -190,6 +200,14 @@ enum Command {
 }
 
 #[cfg(windows)]
+#[derive(Clone, Debug, clap::ValueEnum)]
+enum WindowsInstallRootAction {
+    Check,
+    Reserve,
+    Release,
+}
+
+#[cfg(windows)]
 #[derive(Debug, Args)]
 struct InstallCoreArguments {
     #[arg(long)]
@@ -315,6 +333,29 @@ fn main() -> anyhow::Result<()> {
                 arguments.source_sha,
                 arguments.data_dir.as_deref(),
             );
+        }
+        #[cfg(windows)]
+        Command::WindowsInstallRoot {
+            action,
+            root,
+            machine,
+        } => {
+            use alcomd_platform::{
+                release_windows_installation_root, reserve_windows_installation_root,
+                validate_windows_installation_root,
+            };
+            match action {
+                WindowsInstallRootAction::Check => {
+                    validate_windows_installation_root(machine, &root)?
+                }
+                WindowsInstallRootAction::Reserve => {
+                    reserve_windows_installation_root(machine, &root)?
+                }
+                WindowsInstallRootAction::Release => {
+                    release_windows_installation_root(machine, &root)?
+                }
+            }
+            return Ok(());
         }
         #[cfg(windows)]
         Command::VerifyInstalledUninstall { source_sha } => {

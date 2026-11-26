@@ -29,7 +29,7 @@ var
   Profiles: TArrayOfString;
   RegistryRoot: Cardinal;
   Index: Integer;
-  Key, OwnerKey, OldRuntime, Manifest: String;
+  Key, OwnerKey, OldRuntime, Manifest, Reserved: String;
   ManifestSize: Int64;
 begin
   Result := False;
@@ -44,7 +44,8 @@ begin
       Exit;
     for Index := 0 to GetArrayLength(Profiles) - 1 do begin
       OwnerKey := Profiles[Index] + '\' + UninstallKey;
-      if PlainSid(Profiles[Index]) and RegKeyExists(HKEY_USERS, OwnerKey) then begin
+      if PlainSid(Profiles[Index]) and (RegKeyExists(HKEY_USERS, OwnerKey) or
+        RegValueExists(HKEY_USERS, Profiles[Index] + '\' + UserScopeLocatorKey, 'OwnedRoot')) then begin
         if ScopeRequester <> '' then
           Exit;
         ScopeRequester := Profiles[Index];
@@ -69,8 +70,12 @@ begin
   if (Pos('"', ScopeUninstaller) <> 0) or
     (CompareText(ExtractFileDir(ScopeUninstaller), ScopeSourceRoot) <> 0) then
     Exit;
-  if not IsAdminInstallMode and
-    (CompareText(ScopeSourceRoot, ExpandConstant('{commonpf}\@INSTALL_DIRECTORY@')) <> 0) then
+  if IsAdminInstallMode then begin
+    if not RegQueryStringValue(HKEY_USERS, ScopeRequester + '\' + UserScopeLocatorKey, 'OwnedRoot', Reserved) then
+      Exit;
+  end else if not ReadScopeRoot(True, Reserved) then
+    Exit;
+  if CompareText(ScopeSourceRoot, Reserved) <> 0 then
     Exit;
   OldRuntime := ScopeSourceRoot + '\runtime\' + ScopeSourceVersion;
   Manifest := OldRuntime + '\@MANIFEST_NAME@';
@@ -137,6 +142,8 @@ begin
     Exit;
 
   Result := 'The signed Windows conversion payload could not be prepared.';
+  if not ReservePreparedRoot(Root) then
+    Exit;
   Parent := ExtractFileDir(Root);
   ExtractTemporaryFiles('{app}\runtime\@APP_VERSION@\*');
   Extracted := ExpandConstant('{tmp}\') + '{app}\runtime\@APP_VERSION@';
@@ -168,7 +175,7 @@ begin
     Exit;
   ScopeDestinationIntent := AddBackslash(Parent) + '.@INSTALL_DIRECTORY@-scope-' + ScopePlanDigest;
   if EntryIsMissing(ScopeDestinationIntent) then begin
-    if not EntryIsMissing(Root) or RegKeyExists(InstallRegistryRoot, UninstallKey) or
+    if not EmptyPreparedRoot(Root) or RegKeyExists(InstallRegistryRoot, UninstallKey) or
       not PublishRecord(ScopeDestinationIntent, ScopePlanDigest + #10) then
       Exit;
   end else if not RecordMatches(ScopeDestinationIntent, ScopePlanDigest + #10) then

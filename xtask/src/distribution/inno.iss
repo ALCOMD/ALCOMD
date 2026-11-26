@@ -3,8 +3,8 @@ AppId={@APP_ID@
 AppName=@APP_NAME@
 AppVersion=@APP_VERSION@
 AppPublisher=@APP_PUBLISHER@
-DefaultDirName={autopf}\@INSTALL_DIRECTORY@
-DisableDirPage=yes
+DefaultDirName={code:DefaultProductRoot}
+DisableDirPage=no
 DisableProgramGroupPage=yes
 AllowNoIcons=yes
 UsePreviousAppDir=no
@@ -35,6 +35,9 @@ Name: "{tmp}\candidate-start-menu"; Filename: "{app}\runtime\@APP_VERSION@\@GUI_
 [Code]
 const
   UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\@APP_ID@_is1';
+  UserScopeLocatorKey = 'Software\@APP_PUBLISHER@\@FAMILY_NAME@\WindowsInstaller';
+  RootLocator = '.@INSTALL_DIRECTORY@-install-root-v1';
+  RootUninstallGuard = '.@INSTALL_DIRECTORY@-uninstall-root-v1';
   ActiveRuntime = 'active-runtime-v1';
   UpdateIntent = 'update-intent-v1';
   ScopeTransition = 'scope-transition-v1';
@@ -70,7 +73,7 @@ type
 
 var
   ProgramLease: Integer;
-  CommittingUpdate, UpdateEntriesReady, Repairing, CompletingBridge: Boolean;
+  CommittingUpdate, UpdateEntriesReady, Repairing, RebuildUninstallRegistration, CompletingBridge: Boolean;
   BridgeJournal, BridgeStage, BridgeExtracted, BridgeIntent, BridgeProof: String;
   ConvertingScope, ScopeSourceRetired: Boolean;
   InstallationIncomplete: Boolean;
@@ -81,6 +84,8 @@ var
   ScopeDestinationIntent: String;
   RetiredUninstallDigest: String;
   UninstallScopePlan: String;
+  InstallRootWorker: String;
+  UninstallRootGuardPath: String;
 
 function OpenLeaseFile(FileName: String; Access, Share: Cardinal; Security: Integer;
   Disposition, Flags: Cardinal; Template: Integer): Integer;
@@ -251,6 +256,129 @@ begin
   Result := True;
 end;
 
+function ScopeRootLocator(Machine: Boolean): String;
+begin
+  if Machine then
+    Result := ExpandConstant('{commonpf64}\') + RootLocator
+  else
+    Result := ExpandConstant('{localappdata}\') + RootLocator;
+end;
+
+function ReadScopeRoot(Machine: Boolean; var Root: String): Boolean;
+var
+  Locator: String;
+  Bytes: AnsiString;
+  Size: Int64;
+  Separator: Integer;
+begin
+  Result := False;
+  Locator := ScopeRootLocator(Machine);
+  if not PlainFile(Locator) or not FileSize64(Locator, Size) or (Size < 51) or
+    (Size > 4146) or not LoadStringFromFile(Locator, Bytes) or (Length(Bytes) <> Size) then
+    Exit;
+  Separator := Pos(#10, Bytes);
+  if (Separator < 4) or (Length(Bytes) <> Separator + 49) or (Bytes[Length(Bytes)] <> #10) then
+    Exit;
+  Root := Utf8Decode(Copy(Bytes, 1, Separator - 1));
+  Result := (Root <> '') and (Pos('"', Root) = 0) and (Pos(#13, Root) = 0) and
+    PlainDirectoryChain(Root, False);
+end;
+
+function DefaultProductRoot(Param: String): String;
+begin
+  if not ReadScopeRoot(IsAdminInstallMode, Result) then
+    Result := ExpandConstant('{autopf}\@INSTALL_DIRECTORY@');
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = wpSelectDir) and (CommittingUpdate or CompletingBridge or
+    not EntryIsMissing(ScopeRootLocator(IsAdminInstallMode)));
+end;
+
+function PlainFileMatches(FileName, Digest: String): Boolean;
+  forward;
+
+function RootWorkerMatches(Directory: String): Boolean;
+begin
+  Result := PlainFileMatches(Directory + '\@BOOTSTRAP_FILE@', '@BOOTSTRAP_DIGEST@')@ROOT_WORKER_CHECKS@;
+end;
+
+function RunRootWorker(Action, Root: String): Boolean;
+var
+  Arguments: String;
+  ExitCode: Integer;
+begin
+  Result := False;
+  if (Root = '') or (Pos('"', Root) <> 0) or (Pos(#13, Root) <> 0) or (Pos(#10, Root) <> 0) or
+    not RootWorkerMatches(InstallRootWorker) then
+    Exit;
+  Arguments := 'windows-install-root --action ' + Action + ' --root "' + Root + '"';
+  if IsAdminInstallMode then
+    Arguments := Arguments + ' --machine';
+  Result := Exec(InstallRootWorker + '\@BOOTSTRAP_FILE@', Arguments, InstallRootWorker, SW_HIDE,
+    ewWaitUntilTerminated, ExitCode) and (ExitCode = 0);
+end;
+
+function PrepareRootWorker: Boolean;
+begin
+  if InstallRootWorker = '' then begin
+    ExtractTemporaryFiles('{app}\runtime\@APP_VERSION@\@BOOTSTRAP_FILE@');
+    ExtractTemporaryFiles('{app}\runtime\@APP_VERSION@\*.dll');
+    InstallRootWorker := ExpandConstant('{tmp}\') + '{app}\runtime\@APP_VERSION@';
+  end;
+  Result := RootWorkerMatches(InstallRootWorker);
+end;
+
+function MatchesReservedRoot(Root: String): Boolean;
+var
+  Registered: String;
+begin
+  Result := ReadScopeRoot(IsAdminInstallMode, Registered) and (CompareText(Root, Registered) = 0);
+end;
+
+function CheckPreparedRoot(Root: String): Boolean;
+begin
+  Result := MatchesReservedRoot(Root) and PrepareRootWorker and RunRootWorker('check', Root);
+end;
+
+function ReservePreparedRoot(Root: String): Boolean;
+begin
+  Result := PrepareRootWorker and RunRootWorker('reserve', Root) and CheckPreparedRoot(Root);
+  if Result and not IsAdminInstallMode then
+    Result := RegWriteStringValue(HKEY_CURRENT_USER, UserScopeLocatorKey, 'OwnedRoot', Root);
+end;
+
+function PreserveUninstallRootWorker(Runtime: String): Boolean;
+begin
+  Result := False;
+  if not RootWorkerMatches(Runtime) then
+    Exit;
+  InstallRootWorker := ExpandConstant('{tmp}');
+  if not FileCopy(Runtime + '\@BOOTSTRAP_FILE@', InstallRootWorker + '\@BOOTSTRAP_FILE@', True) then
+    Exit;
+@ROOT_WORKER_COPIES@
+  Result := RootWorkerMatches(InstallRootWorker);
+end;
+
+function EmptyPreparedRoot(Root: String): Boolean;
+var
+  Entry: TFindRec;
+begin
+  Result := False;
+  if not CheckPreparedRoot(Root) or not FindFirst(AddBackslash(Root) + '*', Entry) then
+    Exit;
+  try
+    repeat
+      if (Entry.Name <> '.') and (Entry.Name <> '..') then
+        Exit;
+    until not FindNext(Entry);
+    Result := True;
+  finally
+    FindClose(Entry);
+  end;
+end;
+
 function ConflictWithLoadedProfile: Boolean;
 var
   Profiles: TArrayOfString;
@@ -260,7 +388,8 @@ begin
   if not RegGetSubkeyNames(HKEY_USERS, '', Profiles) then
     Exit;
   for Index := 0 to GetArrayLength(Profiles) - 1 do
-    if RegKeyExists(HKEY_USERS, Profiles[Index] + '\' + UninstallKey) then
+    if RegKeyExists(HKEY_USERS, Profiles[Index] + '\' + UninstallKey) or
+      RegValueExists(HKEY_USERS, Profiles[Index] + '\' + UserScopeLocatorKey, 'OwnedRoot') then
       Exit;
   Result := False;
 end;
@@ -270,6 +399,7 @@ begin
   // An interrupted update can have deleted the machine uninstall key without
   // removing its installation. A different user must still see the conflict.
   Result := RegKeyExists(HKEY_LOCAL_MACHINE_64, UninstallKey) or
+    not EntryIsMissing(ScopeRootLocator(True)) or
     not EntryIsMissing(ExpandConstant('{commonpf}\@INSTALL_DIRECTORY@'));
 end;
 
@@ -288,19 +418,32 @@ function PrepareFreshBridge(Root: String; var NeedsRestart: Boolean): String;
 function PrepareScopeConversion(Root: String; var NeedsRestart: Boolean): String;
   forward;
 
+function InstallRegistryRoot: Cardinal;
+  forward;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Root, PrerequisiteError: String;
+  ScopeReserved: Boolean;
 begin
-  Result := 'Use the standard ALCOMD installation folder on a local fixed drive.';
+  Result := 'Use an ALCOMD installation folder on a local fixed drive with a protected parent.';
   Root := RemoveBackslashUnlessRoot(WizardDirValue);
-  if (CompareText(Root, ExpandConstant('{autopf}\@INSTALL_DIRECTORY@')) <> 0) or
-    not PlainDirectoryChain(ExtractFileDir(Root), True) then
+  if not PlainDirectoryChain(ExtractFileDir(Root), True) or (Pos('"', Root) <> 0) then
     Exit;
+  ScopeReserved := not EntryIsMissing(ScopeRootLocator(IsAdminInstallMode));
+  if not ScopeReserved and (CompareText(Root, ExpandConstant('{autopf}\@INSTALL_DIRECTORY@')) <> 0) and
+    not EntryIsMissing(ExpandConstant('{autopf}\@INSTALL_DIRECTORY@')) then begin
+    Result := 'An existing folder at the default ALCOMD location must be verified before selecting another root.';
+    Exit;
+  end;
+  if ScopeReserved and not CheckPreparedRoot(Root) then begin
+    Result := 'The reserved ALCOMD installation root could not be verified.';
+    Exit;
+  end;
 
   if CommittingUpdate then begin
     Result := 'The ALCOMD update could not verify the existing installation or its recovery records.';
-    if PrepareUpdate(Root, NeedsRestart, PrerequisiteError) then
+    if ScopeReserved and PrepareUpdate(Root, NeedsRestart, PrerequisiteError) then
       Result := ''
     else if PrerequisiteError <> '' then
       Result := PrerequisiteError;
@@ -318,7 +461,7 @@ begin
   end;
 
   Result := 'The destination already exists or could not be checked. Its contents were kept.';
-  if GetAttributes(Root) <> InvalidFileAttributes then begin
+  if not EntryIsMissing(Root) and not (ScopeReserved and EmptyPreparedRoot(Root)) then begin
     Repairing := PrepareRepair(Root);
     if Repairing then begin
       Result := EnsureWebView2(NeedsRestart);
@@ -327,8 +470,6 @@ begin
     end;
     Exit;
   end;
-  if not MissingEntry(DLLGetLastError) then
-    Exit;
   if not EntryIsMissing(AddBackslash(ExtractFileDir(Root)) +
     '.@INSTALL_DIRECTORY@@FRESH_STAGE_PREFIX@@MANIFEST_DIGEST@') then begin
     Result := 'An ALCOMD migration is staged. Resume it with the migration bridge.';
@@ -336,11 +477,14 @@ begin
   end;
 
   Result := 'An existing ALCOMD installation was found or could not be ruled out.';
-  if MachineInstallationPresent or RegKeyExists(HKEY_CURRENT_USER, UninstallKey) then
+  if (not IsAdminInstallMode and MachineInstallationPresent) or
+    RegKeyExists(InstallRegistryRoot, UninstallKey) then
     Exit;
   if IsAdminInstallMode and ConflictWithLoadedProfile then
     Exit;
   Result := EnsureWebView2(NeedsRestart);
+  if (Result = '') and not ReservePreparedRoot(Root) then
+    Result := 'The ALCOMD installation directory could not be reserved safely.';
 end;
 
 function OwnedUninstallRoot(Root: String): Boolean;
@@ -348,14 +492,12 @@ var
   RegisteredRoot: String;
 begin
   Result := False;
+  if not MatchesReservedRoot(Root) then
+    Exit;
   if IsAdminInstallMode then begin
-    if CompareText(Root, ExpandConstant('{commonpf}\@INSTALL_DIRECTORY@')) <> 0 then
-      Exit;
     if not RegQueryStringValue(HKEY_LOCAL_MACHINE_64, UninstallKey, 'InstallLocation', RegisteredRoot) then
       Exit;
   end else begin
-    if CompareText(Root, ExpandConstant('{localappdata}\Programs\@INSTALL_DIRECTORY@')) <> 0 then
-      Exit;
     if not RegQueryStringValue(HKEY_CURRENT_USER, UninstallKey, 'InstallLocation', RegisteredRoot) then
       Exit;
   end;
@@ -419,7 +561,7 @@ begin
       (PreviousVersion = '') and (PreviousDigest = '');
     Exit;
   end;
-  Root := ExpandConstant('{autopf}\@INSTALL_DIRECTORY@');
+  Root := DefaultProductRoot('');
   Parent := ExtractFileDir(Root);
   if (BridgeJournal <> '') or (PreviousVersion <> '') or (PreviousDigest <> '') or UpdateScopeConflicts then
     Exit;
@@ -427,7 +569,8 @@ begin
     // The migration bridge checks the complete installer before requesting an
     // inactive sibling copy. This path creates neither an install nor a selector.
     if (Digest <> '') or (FreshDigest <> '@MANIFEST_DIGEST@') or
-      not EntryIsMissing(Root) or RegKeyExists(InstallRegistryRoot, UninstallKey) or
+      not EntryIsMissing(Root) or not EntryIsMissing(ScopeRootLocator(IsAdminInstallMode)) or
+      RegKeyExists(InstallRegistryRoot, UninstallKey) or
       not PlainDirectoryChain(Parent, True) or not ForceDirectories(Parent) or
       not PlainDirectoryChain(Parent, False) then
       Exit;
@@ -439,7 +582,7 @@ begin
     Prefix := '@FRESH_STAGE_PREFIX@';
     Digest := FreshDigest;
   end else begin
-    if (Digest <> '@MANIFEST_DIGEST@') or not OwnedUninstallRoot(Root) or
+    if (Digest <> '@MANIFEST_DIGEST@') or not CheckPreparedRoot(Root) or not OwnedUninstallRoot(Root) or
       not PlainDirectoryChain(Root, False) then
       Exit;
     Prefix := '@UPDATE_STAGE_PREFIX@';
@@ -461,7 +604,7 @@ end;
 
 function IsRepairInstallation: Boolean;
 begin
-  Result := Repairing;
+  Result := Repairing and not RebuildUninstallRegistration;
 end;
 
 function IsInitialActivation: Boolean;
@@ -471,12 +614,12 @@ end;
 
 function IsUpdateInstallation: Boolean;
 begin
-  Result := CommittingUpdate or ConvertingScope or CompletingBridge;
+  Result := CommittingUpdate or ConvertingScope or CompletingBridge or RebuildUninstallRegistration;
 end;
 
 function IsBridgeInstallation: Boolean;
 begin
-  Result := CompletingBridge;
+  Result := CompletingBridge or RebuildUninstallRegistration;
 end;
 
 function CreateFreshIcon: Boolean;
@@ -1034,14 +1177,18 @@ begin
   Result := False;
   Runtime := Root + '\runtime\@APP_VERSION@';
   Manifest := Runtime + '\@MANIFEST_NAME@';
-  if not OwnedUninstallRoot(Root) or UpdateScopeConflicts or
-    not RegQueryStringValue(InstallRegistryRoot, UninstallKey, 'DisplayVersion', InstalledVersion) or
-    (InstalledVersion <> '@APP_VERSION@') or not PlainDirectoryChain(Runtime, False) or
+  if not CheckPreparedRoot(Root) or UpdateScopeConflicts or not PlainDirectoryChain(Runtime, False) or
     not EntryIsMissing(Root + '\' + UpdateIntent) or
     not EntryIsMissing(Root + '\' + ScopeTransition) or
     not RecordMatches(Root + '\' + ActiveRuntime, '@APP_VERSION@' + #10) or
     not PlainFileMatches(Manifest, '@MANIFEST_DIGEST@') then
     Exit;
+  RebuildUninstallRegistration := not RegKeyExists(InstallRegistryRoot, UninstallKey);
+  if not RebuildUninstallRegistration then
+    if not OwnedUninstallRoot(Root) or
+      not RegQueryStringValue(InstallRegistryRoot, UninstallKey, 'DisplayVersion', InstalledVersion) or
+      (InstalledVersion <> '@APP_VERSION@') then
+      Exit;
   if ProgramLease <= 0 then
     if not AcquireProgramLease(Manifest) then
       Exit;
@@ -1184,6 +1331,8 @@ begin
     Exit;
   Result := 'The prepared migration installation could not be resumed safely.';
   if not PublishRecord(BridgeIntent, BridgeProof) then
+    Exit;
+  if not ReservePreparedRoot(Root) then
     Exit;
 
   // A complete runtime crosses into the installation root in a single rename.
@@ -1383,7 +1532,9 @@ begin
   if CurStep <> ssPostInstall then
     Exit;
   if Repairing then begin
-    if not RepairFilesMatch(ExpandConstant('{app}'), True) then
+    if not RepairFilesMatch(ExpandConstant('{app}'), True) or
+      (RebuildUninstallRegistration and (not OwnedUninstallRoot(ExpandConstant('{app}')) or
+        not SyncUninstallRegistration)) then
       ReportIncompleteInstallation('ALCOMD could not verify the repaired program files.');
     Exit;
   end;
@@ -1425,7 +1576,7 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  Root, Runtime, Manifest, BootstrapCommand, RetirementDigest: String;
+  Root, Runtime, Manifest, BootstrapCommand, RetirementDigest, ProfileRoot: String;
   ExitCode: Integer;
   Retired, Verified: Boolean;
 begin
@@ -1442,7 +1593,16 @@ begin
         DeleteFile(Root + '\' + ScopeTransition);
       if IsAdminInstallMode and RecordMatches(Root + '\' + MachineBridgeAccount, '1' + #10) then
         DeleteFile(Root + '\' + MachineBridgeAccount);
-      RemoveDir(Root);
+      if RecordMatches(UninstallRootGuardPath, '@MANIFEST_DIGEST@' + #10) and
+        RunRootWorker('release', Root) then begin
+        if not IsAdminInstallMode and
+          RegQueryStringValue(HKEY_CURRENT_USER, UserScopeLocatorKey, 'OwnedRoot', ProfileRoot) and
+          (CompareText(ProfileRoot, Root) = 0) then
+          RegDeleteValue(HKEY_CURRENT_USER, UserScopeLocatorKey, 'OwnedRoot');
+        if DeleteFile(UninstallRootGuardPath) then
+          RemoveDir(Root);
+      end else
+        Log('The ALCOMD installation locator was kept for recovery.');
     end;
     Exit;
   end;
@@ -1459,7 +1619,9 @@ begin
   else
     Verified := EntryIsMissing(Root + '\' + ScopeTransition) and
       RecordMatches(Root + '\' + ActiveRuntime, '@APP_VERSION@' + #10);
-  if not OwnedUninstallRoot(Root) or not PlainDirectoryChain(Runtime, False) or
+  if not MatchesReservedRoot(Root) or
+    (RegKeyExists(InstallRegistryRoot, UninstallKey) and not OwnedUninstallRoot(Root)) or
+    not PlainDirectoryChain(Runtime, False) or
     not PlainDirectoryChain(Root + '\bin', False) or
     not EntryIsMissing(Root + '\' + UpdateIntent) or
     not Verified or
@@ -1473,6 +1635,10 @@ begin
     Log('Could not lock the installed ALCOMD runtime. No files were removed.');
     SuppressibleMsgBox('Close ALCOMD in all signed-in accounts and try uninstalling again.',
       mbError, MB_OK, IDOK);
+    Abort;
+  end;
+  if not PreserveUninstallRootWorker(Runtime) or not RunRootWorker('check', Root) then begin
+    Log('The protected ALCOMD installation locator could not be verified. No files were removed.');
     Abort;
   end;
   if not EntryIsMissing(Root + '\' + ScopeDestinationPrepared) or
@@ -1503,6 +1669,12 @@ begin
       mbError, MB_OK, IDOK);
     Abort;
   end;
+  // Keep the protected directory identity available until post-uninstall releases its locator.
+  UninstallRootGuardPath := Root + '\' + RootUninstallGuard;
+  if not RecordMatches(UninstallRootGuardPath, '@MANIFEST_DIGEST@' + #10) and
+    (not EntryIsMissing(UninstallRootGuardPath) or
+      not PublishRecord(UninstallRootGuardPath, '@MANIFEST_DIGEST@' + #10)) then
+    Abort;
   if not RemoveOwnedCliPath then begin
     Log('Could not remove the ALCOMD-owned CLI PATH entry.');
     SuppressibleMsgBox('The ALCOMD CLI entry could not be removed from PATH.',
@@ -1538,4 +1710,6 @@ end;
 procedure DeinitializeUninstall;
 begin
   ReleaseProgramLease;
+  if (UninstallRootGuardPath <> '') and RecordMatches(UninstallRootGuardPath, '@MANIFEST_DIGEST@' + #10) then
+    DeleteFile(UninstallRootGuardPath);
 end;
