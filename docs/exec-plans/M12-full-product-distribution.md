@@ -397,6 +397,10 @@ DEB 在隔离网络内用回环 APT 仓库验证真实首装、`dpkg --unpack` �
 
 在隔离 Ubuntu 22.04 核对 `310065bf` 的 AppImage 与 DEB 摘要后解包。检查 AppImage 外层加载器及两个包内所有普通文件的 ELF 标识和 x86_64 机器类型。AppImage 为加载器和七个运行组件，共 8 个。DEB 为七个运行组件和 `/usr/bin/alcomd-cli`，也为 8 个。两包最高所需 glibc 符号均为 `GLIBC_2.34`，各自对应上一节已运行 Ubuntu 24.04 的完整资产。以 Ubuntu 24.04 的 Bash ELF 做负样本，`scripts/check-glibc.sh` 对 `GLIBC_2.38` 返回失败。逐文件扫描日志 SHA-256 为 `f27651c4ea68961e1f6bbf50f7f1ee906b83375df54e9ba4bf8b2bd175e223ed`，负样本日志为 `7ce45d9704888fbcc060df8311c40c6cd3b89afb9771f97c3f39da6a0d4d1772`。
 
+### 2026-11-27 Linux Orca 读屏冒烟
+
+隔离 Ubuntu 22.04 中的 Orca 42 和 Speech Dispatcher 运行在独立 X11 与 D-Bus 会话。启动 SHA-256 为 `9eed4fdbc6d9cd6e3493e7c85a9c3fb26667cca27fc6ff4f4cdbb215daa0fba5` 的签名 AppImage，打开真实 WebKit 窗口。原生 Tab 键使项目搜索、列表视图和创建项目依次获得焦点。Orca 实际朗读了三个控件名称，并在隔离虚拟声卡捕获了 179,432 个单声道合成音频样本。总日志和键盘阶段的 Orca 日志摘要分别为 `60d0faf20aaa3c5506ef47827eff8b5347331c419c7e3a9fba8400a8527ecfba`、`a3d9644e1887c6688970f72ac79c5d7f435a3b866b4f36fec7c5f8ea984e80f1`。Windows Narrator、macOS VoiceOver 以及最终发行摘要对应的复验仍按发行矩阵执行。[Orca 使用说明](https://help.gnome.org/orca/introduction.html)
+
 ### 2026-11-26 隔离发行停推与恢复演练
 
 仓库的隔离演练只在回环 HTTPS 提供合成签名 feed，生产 Updater 验证下载和持久防重放。断网 Win11 Sandbox 使用 `6a79c90efc95738ca9ab4851033a7068d23554c8` 的既有完整 Inno 资产，文件 SHA-256 为 `a4922ecd6d48805475357cd474ab051f3e726443570a733ce59744279f6a8bf1`，运行清单 SHA-256 为 `545c375c31f7f2d0853797610032430ffde993cf67548f505d23f3aae132674e`。九项检查覆盖发布前 204、同频道签名下载、跨频道隔离、老客户端与新客户端的停推响应、过时序号、同摘要恢复、等长篡改和恢复后的新客户端下载。该脚本用于按最终候选与平台格式重复演练。

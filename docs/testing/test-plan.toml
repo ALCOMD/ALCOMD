@@ -598,7 +598,8 @@ stage = "M12"
 kind = "manual-accessibility"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "planned"
-description = "在真实发布客户端分别执行 Windows Narrator、macOS VoiceOver 与 Linux available screen reader minimum smoke；Hosted runner、Playwright DOM automation和截图均不能替代。"
+description = "Ubuntu 22.04 的签名 AppImage 310065bf 已用原生 Orca 42 验证 Tab 焦点、三个实际 WebKit 控件的语音和虚拟声卡音频。Windows Narrator、macOS VoiceOver 以及最终发行包复验仍待执行。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
 id = "settings.authoritative-storage"
