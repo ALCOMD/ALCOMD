@@ -15,6 +15,7 @@ use crate::{ProductConfig, read_toml};
 mod build;
 mod inno;
 mod package;
+mod webview2;
 
 const FIXTURE_KEY: [u8; 32] = [37; 32];
 
@@ -70,6 +71,18 @@ struct Arguments {
     /// Pinned SHA-256 of the exact app-local Windows VC runtime companion DLL.
     #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout"])]
     windows_crt_companion_sha256: Option<String>,
+    /// Microsoft's online Evergreen Bootstrapper for a Windows release Inno layout.
+    #[arg(long, requires_all = ["package_layout", "webview2_bootstrapper_sha256"], conflicts_with = "fixture")]
+    webview2_bootstrapper: Option<PathBuf>,
+    /// Pinned SHA-256 of the exact WebView2 Bootstrapper.
+    #[arg(long, requires = "webview2_bootstrapper")]
+    webview2_bootstrapper_sha256: Option<String>,
+    /// Microsoft's x64 Evergreen Standalone installer for offline deployment.
+    #[arg(long, requires_all = ["webview2_bootstrapper", "webview2_standalone_sha256"])]
+    webview2_standalone: Option<PathBuf>,
+    /// Pinned SHA-256 of the exact x64 WebView2 Standalone installer.
+    #[arg(long, requires = "webview2_standalone")]
+    webview2_standalone_sha256: Option<String>,
 }
 
 pub fn run(root: &Path) -> anyhow::Result<()> {
@@ -101,6 +114,21 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
     };
     if args.package_layout {
         let output = std::path::absolute(args.output.context("package output is required")?)?;
+        let webview2 = args
+            .webview2_bootstrapper
+            .zip(args.webview2_bootstrapper_sha256)
+            .map(|(path, sha256)| webview2::Inputs {
+                bootstrapper: webview2::PinnedInstaller { path, sha256 },
+                standalone: args
+                    .webview2_standalone
+                    .zip(args.webview2_standalone_sha256)
+                    .map(|(path, sha256)| webview2::PinnedInstaller { path, sha256 }),
+            });
+        let variant = if args.fixture {
+            package::Variant::Fixture
+        } else {
+            package::Variant::Release(webview2.as_ref())
+        };
         package::export(
             root,
             &path,
@@ -108,7 +136,7 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
             &product,
             &candidate,
             args.format.context("package format is required")?,
-            args.fixture,
+            variant,
         )?;
     } else if args.build {
         let extension = std::path::absolute(
@@ -309,7 +337,7 @@ mod tests {
                 &product,
                 &candidate,
                 package::Format::Inno,
-                true,
+                package::Variant::Fixture,
             )
             .is_err()
         );
@@ -318,9 +346,26 @@ mod tests {
             (&deb, package::Format::Deb),
             (&appimage, package::Format::Appimage),
         ] {
-            package::export(&root, &stage, name, &product, &candidate, format, true)?;
+            package::export(
+                &root,
+                &stage,
+                name,
+                &product,
+                &candidate,
+                format,
+                package::Variant::Fixture,
+            )?;
             assert!(
-                package::export(&root, &stage, name, &product, &candidate, format, true).is_err()
+                package::export(
+                    &root,
+                    &stage,
+                    name,
+                    &product,
+                    &candidate,
+                    format,
+                    package::Variant::Fixture
+                )
+                .is_err()
             );
         }
         assert!(deb.join("deb-root/DEBIAN/control").is_file());
@@ -361,7 +406,7 @@ mod tests {
                 &product,
                 &candidate,
                 package::Format::Deb,
-                true,
+                package::Variant::Fixture,
             )
             .is_err()
         );

@@ -8,13 +8,17 @@ use alcomd_updater::distribution::{
 };
 use anyhow::{Context, ensure};
 
-use super::{ProductConfig, publish_file};
+use super::{
+    ProductConfig, publish_file,
+    webview2::{BOOTSTRAPPER_NAME, STANDALONE_NAME, StagedDigests},
+};
 
 pub(super) fn export(
     layout: &Path,
     product: &ProductConfig,
     candidate: &Candidate,
     verified: &VerifiedRuntime,
+    webview2: &StagedDigests,
 ) -> anyhow::Result<()> {
     ensure!(
         candidate.target == Target::Windows,
@@ -57,6 +61,16 @@ pub(super) fn export(
     );
 
     let mut files = String::new();
+    writeln!(
+        files,
+        "Source: \"webview2\\{BOOTSTRAPPER_NAME}\"; Flags: dontcopy noencryption"
+    )?;
+    if webview2.standalone.is_some() {
+        writeln!(
+            files,
+            "Source: \"webview2\\{STANDALONE_NAME}\"; Flags: dontcopy noencryption"
+        )?;
+    }
     let mut update_files = String::new();
     let mut uninstall_files = String::new();
     let mut runtime_directories = BTreeSet::new();
@@ -100,7 +114,16 @@ pub(super) fn export(
     let crt_digest = verified
         .file_sha256(WINDOWS_CRT_FILE)
         .context("CRT missing from verified Inno runtime")?;
+    let webview2_code = include_str!("inno-webview2.iss")
+        .replace("@WEBVIEW2_BOOTSTRAPPER_NAME@", BOOTSTRAPPER_NAME)
+        .replace("@WEBVIEW2_BOOTSTRAPPER_DIGEST@", &webview2.bootstrapper)
+        .replace("@WEBVIEW2_STANDALONE_NAME@", STANDALONE_NAME)
+        .replace(
+            "@WEBVIEW2_STANDALONE_DIGEST@",
+            webview2.standalone.as_deref().unwrap_or(""),
+        );
     let script = include_str!("inno.iss")
+        .replace("@WEBVIEW2_CODE@", webview2_code.trim_end())
         .replace("@APP_ID@", app_id)
         .replace("@APP_NAME@", &product.product.display_name)
         .replace("@APP_AUMID@", &product.identity.windows_aumid)

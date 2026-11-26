@@ -125,6 +125,8 @@ begin
     (Attributes and (FILE_ATTRIBUTE_DIRECTORY or FILE_ATTRIBUTE_REPARSE_POINT) = 0);
 end;
 
+@WEBVIEW2_CODE@
+
 function RecordText(Path: String; MaxSize: Integer; var Content: String): Boolean;
 var
   Size: Int64;
@@ -258,7 +260,7 @@ begin
     not EntryIsMissing(ExpandConstant('{commonpf}\@INSTALL_DIRECTORY@'));
 end;
 
-function PrepareUpdate(Root: String): Boolean;
+function PrepareUpdate(Root: String; var NeedsRestart: Boolean; var PrerequisiteError: String): Boolean;
   forward;
 
 function PrepareRepair(Root: String): Boolean;
@@ -266,7 +268,7 @@ function PrepareRepair(Root: String): Boolean;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
-  Root: String;
+  Root, PrerequisiteError: String;
 begin
   Result := 'Use the standard ALCOMD installation folder on a local fixed drive.';
   Root := RemoveBackslashUnlessRoot(WizardDirValue);
@@ -276,8 +278,10 @@ begin
 
   if CommittingUpdate then begin
     Result := 'The ALCOMD update could not verify the existing installation or its recovery records.';
-    if PrepareUpdate(Root) then
-      Result := '';
+    if PrepareUpdate(Root, NeedsRestart, PrerequisiteError) then
+      Result := ''
+    else if PrerequisiteError <> '' then
+      Result := PrerequisiteError;
     Exit;
   end;
 
@@ -285,7 +289,7 @@ begin
   if GetAttributes(Root) <> InvalidFileAttributes then begin
     Repairing := PrepareRepair(Root);
     if Repairing then
-      Result := '';
+      Result := EnsureWebView2(NeedsRestart);
     Exit;
   end;
   if not MissingEntry(DLLGetLastError) then
@@ -296,7 +300,7 @@ begin
     Exit;
   if IsAdminInstallMode and ConflictWithLoadedProfile then
     Exit;
-  Result := '';
+  Result := EnsureWebView2(NeedsRestart);
 end;
 
 function OwnedUninstallRoot(Root: String): Boolean;
@@ -853,7 +857,7 @@ begin
     PublishCopy(UpdateStage + '\' + Name, Root + '\bin\' + Name, Candidate, Prior, UpdateJournal);
 end;
 
-function PrepareUpdate(Root: String): Boolean;
+function PrepareUpdate(Root: String; var NeedsRestart: Boolean; var PrerequisiteError: String): Boolean;
 var
   OldRuntime, NewRuntime, CandidateRuntime, Manifest, Intent: String;
   Resuming: Boolean;
@@ -883,6 +887,9 @@ begin
     not UpdateLeaseIsHeld(Manifest) or not UpdateRegistryMatches(Root, Resuming) or
     not StableBinOwned(Root, OldRuntime, '@CLI_FILE@') or
     not StableBinOwned(Root, OldRuntime, '@CRT_FILE@') then
+    Exit;
+  PrerequisiteError := EnsureWebView2(NeedsRestart);
+  if PrerequisiteError <> '' then
     Exit;
   if Resuming then begin
     if not ReadShellSnapshot then

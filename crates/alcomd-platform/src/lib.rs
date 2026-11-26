@@ -143,6 +143,15 @@ pub use windows::{
     windows_process_is_elevated,
 };
 
+/// Verifies the Windows trust chain and the exact organization of an executable's signer.
+#[cfg(windows)]
+pub fn verify_windows_program_publisher(
+    path: &std::path::Path,
+    publisher: &str,
+) -> std::io::Result<()> {
+    windows::verify_program_publisher(path, publisher)
+}
+
 /// Locates the state database without creating or changing the data directory.
 pub fn state_database_location(config: &DataConfig) -> std::io::Result<std::path::PathBuf> {
     #[cfg(unix)]
