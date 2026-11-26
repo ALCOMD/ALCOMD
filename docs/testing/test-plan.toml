@@ -1557,7 +1557,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "Win11 断网夹具通过四项基线和七项并发复验，覆盖协议认领与移除的实际进程终止、准确归属和重试、第三方命令及子键写入保全，以及范围转换遇到归属变化的可重试结果。完整发行包的 Shell 调用及双向范围转换继续验收。"
+description = "Win11 断网夹具通过四项基线和七项并发复验。完整 Inno 2a1f93b9 在 Sandbox 登录账号的当前用户范围验证真实 Shell 冷启动与热转发、Unicode 路径和自有登记卸载。标准账号、全用户及双向范围转换继续验收。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno-protocol.iss"]
 
 [[test]]
