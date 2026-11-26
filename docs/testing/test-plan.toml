@@ -611,6 +611,15 @@ description = "隔离 Windows 11 24H2 用 2a1f93b9 的真实 Inno 工程包验�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
+id = "gui.m12-windows-native-theme"
+stage = "M12"
+kind = "manual-accessibility"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "隔离 Windows 11 24H2 用 2a1f93b9 的真实 Inno 工程包验证系统明暗主题。保持同一 WebView2 窗口运行，验证浅色到深色再到浅色的重绘，以及深色下三个项目控件可聚焦。Win10 和最终发行包仍按矩阵复验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
+
+[[test]]
 id = "settings.authoritative-storage"
 stage = "M7"
 kind = "integration"

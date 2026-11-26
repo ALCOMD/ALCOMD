@@ -64,6 +64,8 @@ Ubuntu 22.04 已用 `310065bf` 的签名 AppImage 通过原生 Orca 读屏冒烟
 
 `2a1f93b9` 的 Windows Inno 在隔离 Win11 已通过系统高对比切换和三个项目控件的 Tab 焦点复验。Windows 讲述人已观察到焦点框，来宾的语音回顾对应用和系统对照控件均无记录。实际朗读和 125% 原生缩放仍待验收。[Windows 原生辅助功能复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-高对比度与讲述人复验)
 
+同一 Windows Inno 工程包也已通过 Win11 的系统浅色、深色和恢复浅色复验，同一个 WebView2 窗口持续运行，深色下三个项目控件仍可聚焦。[Windows 原生明暗主题复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-原生明暗主题复验)
+
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
 主仓工程候选 `595fc2ab` 已通过本机整仓、762 项 Chromium、三平台 Hosted CI 和 CodeQL。Windows 原生 Inno 入口的 11 项验收对应上文单独记录的 `62b6f562` 实包。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45552186695) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45552185931)
