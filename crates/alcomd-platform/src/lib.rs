@@ -122,19 +122,12 @@ mod windows;
 #[cfg(windows)]
 mod windows_app_identity;
 #[cfg(windows)]
-mod windows_installation_ui;
-#[cfg(windows)]
 mod windows_unity_window;
 #[cfg(windows)]
 mod windows_url_handler;
 
 #[cfg(windows)]
 pub use windows_app_identity::set_current_process_app_user_model_id;
-#[cfg(windows)]
-pub use windows_installation_ui::{
-    confirm_windows_installation, notify_windows_installation,
-    read_windows_installation_registry_string,
-};
 #[cfg(windows)]
 pub use windows_unity_window::{
     UnityWindowFocus, UnityWindowMonitor, UnityWindowReader, UnityWindowSnapshot, UnityWindowState,
@@ -159,8 +152,9 @@ pub use windows::{
 #[cfg(windows)]
 pub use windows::{
     WindowsElevatedProcess, WindowsMachineUpdateInput, WindowsMachineUpdateOutput,
-    prepare_windows_machine_update, receive_windows_machine_update, start_elevated_windows_program,
-    windows_process_is_elevated,
+    confirm_windows_installation, notify_windows_installation, prepare_windows_machine_update,
+    read_windows_installation_registry_string, receive_windows_machine_update,
+    start_elevated_windows_program, windows_process_is_elevated,
 };
 
 /// Verifies the Windows trust chain and the exact organization of an executable's signer.
