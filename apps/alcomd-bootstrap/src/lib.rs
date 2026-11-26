@@ -1,5 +1,7 @@
 //! Coordinates migration against a verified product and a fresh per-user data directory.
 
+#[cfg(all(target_os = "linux", feature = "appimage-bridge"))]
+pub mod appimage_bridge;
 mod journal;
 #[cfg(target_os = "linux")]
 mod linux_bridge;
@@ -909,10 +911,25 @@ struct HealthProof {
 
 impl HealthProof {
     fn matches(&self, expected: &HealthChallenge) -> bool {
-        self.schema == expected.schema
-            && self.product_version == expected.product_version
-            && self.install_scope == expected.install_scope
-            && self.payload_manifest_sha256 == expected.payload_manifest_sha256
+        self.matches_release(
+            expected.schema,
+            &expected.product_version,
+            expected.install_scope,
+            expected.payload_manifest_sha256,
+        )
+    }
+
+    fn matches_release(
+        &self,
+        schema: u32,
+        version: &str,
+        scope: InstallScope,
+        payload: [u8; 32],
+    ) -> bool {
+        self.schema == schema
+            && self.product_version == version
+            && self.install_scope == scope
+            && self.payload_manifest_sha256 == payload
             && self.test_evidence_sha256 != [0; 32]
             && self.core_rpc
             && self.cli
@@ -923,18 +940,21 @@ impl HealthProof {
 }
 
 fn check_platform_health(challenge: &HealthChallenge, report: &HealthReport) -> anyhow::Result<()> {
-    let (report_path, _) = isolated_child(&report.report)?;
-    let (signature_path, _) = isolated_child(&report.signature)?;
-    let report_bytes = read_limited(&report_path, OUTPUT_LIMIT)?;
-    let signature_bytes = read_limited(&signature_path, 130)?;
-    alcomd_updater::verify_health_report(&report_bytes, &signature_bytes)?;
-    let proof: HealthProof =
-        serde_json::from_slice(&report_bytes).context("invalid platform health report")?;
+    let proof = read_platform_health(report)?;
     ensure!(
         proof.matches(challenge),
         "platform health or reconciliation evidence is incomplete"
     );
     Ok(())
+}
+
+fn read_platform_health(report: &HealthReport) -> anyhow::Result<HealthProof> {
+    let (report_path, _) = isolated_child(&report.report)?;
+    let (signature_path, _) = isolated_child(&report.signature)?;
+    let report_bytes = read_limited(&report_path, OUTPUT_LIMIT)?;
+    let signature_bytes = read_limited(&signature_path, 130)?;
+    alcomd_updater::verify_health_report(&report_bytes, &signature_bytes)?;
+    serde_json::from_slice(&report_bytes).context("invalid platform health report")
 }
 
 fn state_evidence(path: &Path) -> anyhow::Result<StateEvidence> {

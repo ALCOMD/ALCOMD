@@ -24,7 +24,8 @@ use crate::{
 };
 
 // Installer SHA-256 values pinned in docs/baselines/source-lock.toml.
-const V3_APPIMAGE_SHA256: &str = "846d150f4c1707664238283f62262dea560724f42bd524e4c1ec58147ed7b67a";
+pub(super) const V3_APPIMAGE_SHA256: &str =
+    "846d150f4c1707664238283f62262dea560724f42bd524e4c1ec58147ed7b67a";
 const V3_DEB_SHA256: &str = "0775e0208ccf77bb2f8a851d5ba83d8eb99494914ec35605d2a2b8de3bb57d6c";
 const V3_DEB_PACKAGE: &str = "alcomd3";
 
@@ -109,7 +110,7 @@ pub fn bridge_linux_v3(
     )
 }
 
-fn migration_workspace(destination: &Path) -> PathBuf {
+pub(super) fn migration_workspace(destination: &Path) -> PathBuf {
     destination.with_file_name(format!(".{CORE_EXECUTABLE_NAME}-v3-migration"))
 }
 

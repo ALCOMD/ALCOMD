@@ -15,6 +15,66 @@ use crate::{
 
 pub const MANIFEST_NAME: &str = MANIFEST;
 
+/// Paths inside the standalone AppImage bridge archive.
+pub mod appimage {
+    use std::path::Path;
+
+    use anyhow::ensure;
+    use serde::{Deserialize, Serialize};
+
+    use crate::Channel;
+    use crate::product_update::{UpdateFormat, VerifiedUpdate};
+
+    pub const LAUNCHER: &str = "alcomd-v3-appimage-bridge";
+    pub const MIGRATION: &str = "migration";
+    pub const RELEASE: &str = "product";
+    pub const OFFER: &str = "offer.json";
+    pub const HEALTH_REPORT: &str = "health.json";
+    pub const HEALTH_SIGNATURE: &str = "health.sig";
+
+    /// Exact release inputs compiled into the separately authenticated launcher.
+    #[derive(Debug, Deserialize, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct AssetPins {
+        pub name: String,
+        pub bytes: u64,
+        pub sha256: [u8; 32],
+        pub product_manifest_sha256: [u8; 32],
+        pub migration_manifest_sha256: [u8; 32],
+        pub channel: Channel,
+    }
+
+    impl AssetPins {
+        pub fn from_offer(
+            offer: &VerifiedUpdate,
+            migration_manifest_sha256: [u8; 32],
+        ) -> anyhow::Result<Self> {
+            ensure!(
+                offer.acceptance().stream.format == UpdateFormat::Appimage,
+                "not an AppImage release offer"
+            );
+            let asset = offer.asset();
+            Ok(Self {
+                name: asset.name().to_owned(),
+                bytes: asset.bytes(),
+                sha256: asset.sha256(),
+                product_manifest_sha256: offer.payload_manifest_sha256(),
+                migration_manifest_sha256,
+                channel: offer.acceptance().stream.channel,
+            })
+        }
+
+        pub fn verify_file(&self, path: &Path) -> anyhow::Result<()> {
+            let (file, _) = alcomd_platform::open_plain_file(path)?;
+            ensure!(
+                crate::hash_exact(file, self.bytes)? == self.sha256,
+                "AppImage bytes differ from the verified standalone release"
+            );
+            Ok(())
+        }
+    }
+}
+
 /// Returns the exact v1 bridge signature message, which is the raw manifest file.
 ///
 /// The caller supplies a complete runtime previously authenticated by

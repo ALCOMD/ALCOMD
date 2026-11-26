@@ -19,21 +19,26 @@ alcomd-migrate-v3 export --source-root <绝对的已确认源目录> --output <�
 
 下载并核对完整 v4 程序包和与它配对的签名迁移载荷。退出正在使用的 v3 和 v4 进程。用需要迁移资料的普通账号运行下列步骤。`DATA_PARENT` 是当前账号的绝对数据父目录，默认是 `${XDG_DATA_HOME:-$HOME/.local/share}`。`SOURCE` 是已经核实的 v3.4.0 资料目录。它和 `PAYLOAD` 都使用绝对路径。
 
-AppImage 使用不同的文件路径保留旧版和新版。旧版可由冻结更新器的归档解出，也可保留原下载。两者字节相同。运行新版时显式进入桥接入口。
-
-执行新版前，可用已独立验签的 `alcomd-updater` 核对外层完整 AppImage 的签名声明、字节数与 SHA-256。`OFFER` 为对应频道的 v4 签名更新声明，`RELEASE_HOST` 为获批的下载域名。桥接运行时还会核对内层产品载荷和迁移载荷的配对。
+AppImage 使用单独下载的桥接归档。先用发行者公布的公钥和分离签名验签整个归档，再解包到当前账号可控制的独立目录。冻结 v3.4.0 的原始镜像与更新归档中的镜像字节相同，两者均可作为旧版恢复源。`NEW_APPIMAGE` 使用当前账号拥有的目标目录，并选择与旧镜像不同的绝对路径。保留解包后的桥接目录直到迁移提交或回滚。
 
 ```sh
-alcomd-updater verify-product-update --envelope "$OFFER" --asset "$NEW_APPIMAGE" \
-    --channel stable --target x86_64-unknown-linux-gnu --format appimage \
-    --installed-version 3.4.0 --allow-host "$RELEASE_HOST"
+./alcomd-v3-appimage-bridge stage \
+    --source-root "$SOURCE" --recovery-image "$OLD_APPIMAGE" --install-image "$NEW_APPIMAGE"
+
+./alcomd-v3-appimage-bridge commit \
+    --source-root "$SOURCE" --recovery-image "$OLD_APPIMAGE" --install-image "$NEW_APPIMAGE"
 ```
 
+`stage` 在执行新镜像前核对整个镜像的编译期摘要、签名产品清单和配套迁移载荷，并从解包目录启动迁移准备，输出本机暂存核对信息。审阅后执行 `commit`，将同一镜像发布到所选路径、完成原迁移日志事务并启动新版。用 `./alcomd-v3-appimage-bridge rollback` 撤回提交点之前的暂存。Beta 归档在 `stage` 和 `commit` 均附 `--channel beta`。归档在打包时核对仍有效的签名更新声明，运行中的提交恢复使用已编译入引导器的精确摘要和同一签名载荷，可离线完成。
+
+发行者在干净的签名 Linux 检出中组装独立归档，随后按发行流程对输出归档签名。
+
 ```sh
-"$NEW_APPIMAGE" --bridge-v3 \
-    --source-root "$SOURCE" --recovery-executable "$OLD_APPIMAGE" \
-    --destination "$DATA_PARENT/alcomd" --work-directory "$DATA_PARENT/.alcomd-v3-migration" \
-    --staged-payload "$PAYLOAD" --channel stable
+cargo xtask dist --target x86_64-unknown-linux-gnu --package-appimage-bridge \
+    --source-sha "$SOURCE_SHA" --staging "$SIGNED_PRODUCT_RUNTIME" \
+    --signed-bridge "$PAYLOAD" --bridge-channel stable \
+    --bridge-appimage "$PRODUCT_APPIMAGE" --bridge-appimage-offer "$SIGNED_OFFER" \
+    --bridge-appimage-health "$APPIMAGE_HEALTH" --bridge-output "$BRIDGE_ARCHIVE"
 ```
 
 DEB 先用 APT 安装 v4，保留已经配置好的 v3.4.0 和原始 `.deb`。系统包安装和账号迁移分别执行。`V4_VERSION` 使用所安装产品的实际版本。
@@ -45,7 +50,9 @@ DEB 先用 APT 安装 v4，保留已经配置好的 v3.4.0 和原始 `.deb`。�
     --staged-payload "$PAYLOAD" --channel stable
 ```
 
-首次调用输出待核对报告并保留暂存。核对通过后，用同一命令追加 `--health-report` 和 `--health-signature` 对应的签名证明。两次均使用原发行频道。现有迁移日志阻止普通 AppImage 和 DEB 首启在确认前创建空数据目录。提交后会打开正常 v4 桌面。提交点之前，可用配套 Bootstrap 的 `rollback-v3 --work-directory "$DATA_PARENT/.alcomd-v3-migration"` 撤回。需要重做时先将已完成回滚的日志归档到同一账号的私有目录。旧 AppImage 和旧 DEB 都保持原位。撤回已部署的 DEB 或批准移除一个已核实的 v3 包时，由 APT 或 dpkg 处理。
+DEB 首次调用输出待核对报告并保留暂存。核对通过后，用同一命令追加 `--health-report` 和 `--health-signature` 对应的签名证明。提交点之前，可用配套 Bootstrap 的 `rollback-v3 --work-directory "$DATA_PARENT/.alcomd-v3-migration"` 撤回。撤回已部署的 DEB 或批准移除一个已核实的 v3 包时，由 APT 或 dpkg 处理。
+
+现有迁移日志阻止普通 AppImage 和 DEB 首启在确认前创建空数据目录。需要重做时先将已完成回滚的日志归档到同一账号的私有目录。旧 AppImage、旧 DEB 和用户选择保存的独立新版 AppImage 都保持原位。
 
 迁移器的自动化测试用合成 v3 配置、LiteDB 页和模板验证解析与原子导出。真实脱敏样本按 `fixtures/README.md` 采集和登记。LiteDB 页格式参考 [LiteDB v5 HeaderPage](https://github.com/litedb-org/LiteDB/blob/v5.0.21/LiteDB/Engine/Pages/HeaderPage.cs)、[BasePage](https://github.com/litedb-org/LiteDB/blob/v5.0.21/LiteDB/Engine/Pages/BasePage.cs) 与 [DataBlock](https://github.com/litedb-org/LiteDB/blob/v5.0.21/LiteDB/Engine/Structures/DataBlock.cs)。
 

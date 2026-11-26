@@ -351,44 +351,19 @@ fn verify(
     key: &VerifyingKey,
     local_record: Option<&str>,
 ) -> anyhow::Result<VerifiedRuntime> {
-    ensure!(
-        version.major == 4 && version.build.is_empty(),
-        "invalid product version"
-    );
     let (root, identity) = alcomd_platform::resolve_plain_storage_directory(root)?;
     let bytes = read_limited(&root.join(MANIFEST_NAME), MANIFEST_LIMIT)?;
     let signature = read_limited(&root.join(SIGNATURE_NAME), 128)?;
-    let signature = std::str::from_utf8(&signature)?;
-    ensure!(
-        signature.bytes().all(is_lower_hex),
-        "invalid product payload signature encoding"
-    );
-    let signature = Signature::from_bytes(&decode_hex(signature)?);
-    let mut message = SIGNATURE_DOMAIN.to_vec();
-    message.extend_from_slice(&bytes);
-    key.verify_strict(&message, &signature)
-        .context("product payload signature is invalid")?;
-
-    let payload: Payload = serde_json::from_slice(&bytes)?;
-    validate_source_commit(&payload.source_commit, purpose)?;
+    let payload = signed_manifest(
+        &bytes,
+        &signature,
+        target,
+        version,
+        source_commit,
+        purpose,
+        key,
+    )?;
     let product: Product = toml::from_str(PRODUCT)?;
-    ensure!(
-        payload.schema == 1
-            && payload.product_id == product.identity.bundle_identifier
-            && payload.target == target
-            && &payload.version == version
-            && source_commit.is_none_or(|source_commit| payload.source_commit == source_commit)
-            && payload.purpose == purpose,
-        "product payload does not match the candidate"
-    );
-    ensure!(
-        payload
-            .files
-            .iter()
-            .all(|file| file.size > 0 && file.sha256.bytes().all(is_lower_hex)),
-        "invalid product payload file metadata"
-    );
-
     let mut observed = observe(&root)?;
     if let Some(record) = local_record {
         ensure!(observed.remove(record), "missing local installation record");
@@ -419,6 +394,109 @@ fn verify(
         manifest_sha256: Sha256::digest(bytes).into(),
         file_digests,
     })
+}
+
+fn signed_manifest(
+    bytes: &[u8],
+    signature: &[u8],
+    target: Target,
+    version: &Version,
+    source_commit: Option<&str>,
+    purpose: Purpose,
+    key: &VerifyingKey,
+) -> anyhow::Result<Payload> {
+    ensure!(
+        version.major == 4 && version.build.is_empty(),
+        "invalid product version"
+    );
+    let signature = std::str::from_utf8(signature)?;
+    ensure!(
+        signature.bytes().all(is_lower_hex),
+        "invalid product payload signature encoding"
+    );
+    let signature = Signature::from_bytes(&decode_hex(signature)?);
+    let mut message = SIGNATURE_DOMAIN.to_vec();
+    message.extend_from_slice(bytes);
+    key.verify_strict(&message, &signature)
+        .context("product payload signature is invalid")?;
+
+    let payload: Payload = serde_json::from_slice(bytes)?;
+    validate_source_commit(&payload.source_commit, purpose)?;
+    let product: Product = toml::from_str(PRODUCT)?;
+    ensure!(
+        payload.schema == 1
+            && payload.product_id == product.identity.bundle_identifier
+            && payload.target == target
+            && &payload.version == version
+            && source_commit.is_none_or(|source_commit| payload.source_commit == source_commit)
+            && payload.purpose == purpose,
+        "product payload does not match the candidate"
+    );
+    ensure!(
+        payload
+            .files
+            .iter()
+            .all(|file| file.size > 0 && file.sha256.bytes().all(is_lower_hex)),
+        "invalid product payload file metadata"
+    );
+
+    Ok(payload)
+}
+
+/// Checks that the AppImage offer's product manifest and an authenticated bridge agree before launch.
+pub fn verify_appimage_bridge_release(
+    manifest_directory: &Path,
+    expected_digest: [u8; 32],
+    bridge: &crate::VerifiedPayload,
+) -> anyhow::Result<()> {
+    let (root, identity) = alcomd_platform::resolve_plain_storage_directory(manifest_directory)?;
+    let bytes = read_limited(&root.join(MANIFEST_NAME), MANIFEST_LIMIT)?;
+    let signature = read_limited(&root.join(SIGNATURE_NAME), 128)?;
+    let manifest_sha256: [u8; 32] = Sha256::digest(&bytes).into();
+    ensure!(
+        manifest_sha256 == expected_digest,
+        "the AppImage release binds a different product manifest"
+    );
+    let payload = signed_manifest(
+        &bytes,
+        &signature,
+        Target::Linux,
+        bridge.version(),
+        None,
+        Purpose::Release,
+        &release_trust()?,
+    )?;
+    let product = toml::from_str(PRODUCT)?;
+    let mut file_digests = BTreeMap::new();
+    let mut total = 0;
+    ensure!(
+        payload.files.len() <= MAX_FILES,
+        "the product manifest contains too many files"
+    );
+    for file in payload.files {
+        check_payload_size(&mut total, file.size)?;
+        ensure!(
+            file_digests
+                .insert(file.path, decode_hex(&file.sha256)?)
+                .is_none(),
+            "duplicate product manifest file"
+        );
+    }
+    validate_layout(
+        &product,
+        Target::Linux,
+        Purpose::Release,
+        &file_digests.keys().cloned().collect(),
+    )?;
+    ensure!(
+        alcomd_platform::resolve_plain_storage_directory(&root)?.1 == identity,
+        "product manifest directory changed"
+    );
+    VerifiedRuntime {
+        manifest_sha256,
+        file_digests,
+    }
+    .verify_bridge_pair(bridge)
 }
 
 fn observe(root: &Path) -> anyhow::Result<BTreeSet<String>> {

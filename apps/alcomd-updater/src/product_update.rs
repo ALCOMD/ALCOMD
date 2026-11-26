@@ -214,6 +214,29 @@ pub fn product_update_origin() -> anyhow::Result<Url> {
     Url::parse(&product.product.homepage_url).context("invalid embedded product update origin")
 }
 
+/// Authenticates an offline Linux bridge offer using the product update trust and origin.
+pub fn verify_v3_appimage_offer(path: &Path, channel: Channel) -> anyhow::Result<VerifiedUpdate> {
+    let origin = product_update_origin()?;
+    let host = origin
+        .host_str()
+        .context("missing product update origin host")?;
+    let envelope = crate::read_limited(path, MAX_UPDATE_RESPONSE_BYTES as u64)?;
+    verify_update(
+        &envelope,
+        &UpdateRequest {
+            stream: UpdateStream {
+                channel,
+                target: Target::Linux,
+                format: UpdateFormat::Appimage,
+            },
+            installed_version: &Version::new(3, 4, 0),
+            allowed_asset_hosts: &[host],
+            now: Utc::now(),
+            previous: None,
+        },
+    )
+}
+
 /// Discovers and stages updates for the current desktop build and its channel.
 pub struct InstalledProductUpdater {
     origin: Url,

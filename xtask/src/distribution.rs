@@ -13,6 +13,7 @@ use ed25519_dalek::{Signer, SigningKey};
 
 use crate::{ProductConfig, read_toml};
 
+mod appimage_bridge;
 mod bridge;
 mod build;
 mod inno;
@@ -26,8 +27,9 @@ const FIXTURE_KEY: [u8; 32] = [37; 32];
 #[command(
     bin_name = "cargo xtask dist",
     about = "Prepare and verify an offline v4 runtime candidate",
-    group(ArgGroup::new("action").args(["build", "prepare", "check", "package_layout", "prepare_bridge", "package_windows_bridge"]).required(true)),
-    group(ArgGroup::new("bridge_action").args(["prepare_bridge", "package_windows_bridge"]))
+    group(ArgGroup::new("action").args(["build", "prepare", "check", "package_layout", "prepare_bridge", "package_windows_bridge", "package_appimage_bridge"]).required(true)),
+    group(ArgGroup::new("bridge_action").args(["prepare_bridge", "package_windows_bridge", "package_appimage_bridge"])),
+    group(ArgGroup::new("bridge_package").args(["package_windows_bridge", "package_appimage_bridge"]))
 )]
 struct Arguments {
     #[arg(long, value_enum)]
@@ -50,15 +52,27 @@ struct Arguments {
     /// Assemble a standalone unsigned Windows launcher for the frozen v3 updater.
     #[arg(long, requires_all = ["staging", "bridge_output", "bridge_channel", "signed_bridge", "bridge_installer", "bridge_installer_sha256", "bridge_current_user_health", "bridge_all_users_health"], conflicts_with = "fixture")]
     package_windows_bridge: bool,
-    /// New migration staging or standalone bridge output directory.
+    /// Assemble an unsigned standalone Linux AppImage bridge archive.
+    #[arg(long, requires_all = ["staging", "bridge_output", "bridge_channel", "signed_bridge", "bridge_appimage", "bridge_appimage_offer", "bridge_appimage_health"], conflicts_with = "fixture")]
+    package_appimage_bridge: bool,
+    /// New migration staging directory or standalone bridge output.
     #[arg(long, requires = "bridge_action")]
     bridge_output: Option<PathBuf>,
     /// Channel of the existing v1 bridge payload.
     #[arg(long, value_enum, requires = "bridge_action")]
     bridge_channel: Option<Channel>,
     /// Exact signed migration input prepared separately from the ordinary product.
-    #[arg(long, requires = "package_windows_bridge")]
+    #[arg(long, requires = "bridge_package")]
     signed_bridge: Option<PathBuf>,
+    /// Complete product AppImage authenticated by the v4 update declaration.
+    #[arg(long, requires = "package_appimage_bridge")]
+    bridge_appimage: Option<PathBuf>,
+    /// Live signed v4 update declaration for the complete AppImage.
+    #[arg(long, requires = "package_appimage_bridge")]
+    bridge_appimage_offer: Option<PathBuf>,
+    /// Directory containing signed AppImage-scope health evidence.
+    #[arg(long, requires = "package_appimage_bridge")]
+    bridge_appimage_health: Option<PathBuf>,
     /// Complete Windows Inno product installer.
     #[arg(long, requires = "package_windows_bridge")]
     bridge_installer: Option<PathBuf>,
@@ -143,7 +157,30 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
         (None, None) => None,
         _ => anyhow::bail!("supply both --windows-crt-sha256 and --windows-crt-companion-sha256"),
     };
-    if args.package_windows_bridge {
+    if args.package_appimage_bridge {
+        let output = std::path::absolute(args.bridge_output.context("bridge output is required")?)?;
+        let paths = appimage_bridge::Inputs {
+            runtime: path,
+            migration: args.signed_bridge.context("signed bridge is required")?,
+            image: args
+                .bridge_appimage
+                .context("complete AppImage is required")?,
+            offer: args
+                .bridge_appimage_offer
+                .context("signed AppImage offer is required")?,
+            health: args
+                .bridge_appimage_health
+                .context("AppImage health is required")?,
+        };
+        appimage_bridge::package(
+            root,
+            &output,
+            &product,
+            &candidate,
+            args.bridge_channel.context("bridge channel is required")?,
+            &paths,
+        )?;
+    } else if args.package_windows_bridge {
         let output = std::path::absolute(args.bridge_output.context("bridge output is required")?)?;
         let paths = windows_bridge::Inputs {
             runtime: path,

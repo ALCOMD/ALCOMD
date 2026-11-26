@@ -57,6 +57,12 @@ impl PortableImage {
         Ok(image)
     }
 
+    /// Checks a protected, account-owned destination for a newly staged AppImage.
+    pub fn check_destination(path: &Path) -> io::Result<()> {
+        validate_absolute_path(path)?;
+        update_parent(path).map(drop)
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }
