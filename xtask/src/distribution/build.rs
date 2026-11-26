@@ -27,33 +27,12 @@ pub(super) fn runtime(
     extension_digest: &str,
     windows_crt: Option<WindowsCrtInputs<'_>>,
 ) -> anyhow::Result<()> {
-    let target = candidate
-        .target
-        .to_possible_value()
-        .context("unsupported target")?;
-    let triple = target.get_name();
-    ensure!(
-        triple.starts_with(std::env::consts::ARCH)
-            && match candidate.target {
-                Target::Windows => cfg!(target_os = "windows"),
-                Target::Linux => cfg!(target_os = "linux"),
-                Target::MacOs => cfg!(target_os = "macos"),
-            },
-        "build the product runtime on the matching operating system and architecture"
-    );
+    let triple = native_target(candidate.target)?;
     ensure!(
         (candidate.target == Target::Windows) == windows_crt.is_some(),
         "the Windows build requires both app-local VC runtime files and their SHA-256 pins"
     );
-    check_source_commit(root, &candidate.source_commit)?;
-    let signature = Command::new("git")
-        .args(["verify-commit", &candidate.source_commit])
-        .current_dir(root)
-        .output()?;
-    ensure!(
-        signature.status.success(),
-        "source commit signature could not be verified with the configured Git trust"
-    );
+    require_signed_source(root, &candidate.source_commit)?;
     let parent = staging
         .parent()
         .context("staging requires a parent directory")?;
@@ -102,23 +81,18 @@ pub(super) fn runtime(
     alcomd_platform::prepare_storage_directory(&build_cache)?;
     let (build_root, _) = alcomd_platform::resolve_plain_storage_directory(&build_cache)?;
     let binaries = runtime_binaries(product);
-    compile(root, &build_root, triple, &binaries, &product.binaries.gui)?;
-    let executables = build_root.join(triple).join("release");
+    compile(root, &build_root, &triple, &binaries, &product.binaries.gui)?;
+    let executables = build_root.join(&triple).join("release");
     for binary in binaries {
         let name = format!("{binary}{}", candidate.target.executable_suffix());
         copy_component(&executables.join(&name), &staged.join(&name))?;
     }
-    let platform_gate = match candidate.target {
-        Target::Windows => None,
-        Target::Linux => Some("scripts/check-glibc.sh"),
-        Target::MacOs => Some("scripts/check-macos-target.sh"),
-    };
-    if let Some(script) = platform_gate {
-        let mut gate = Command::new("bash");
-        gate.arg(script)
-            .args(binaries.map(|binary| staged.join(binary)));
-        run(gate, root, &build_root, "runtime platform baseline check")?;
-    }
+    check_platform_baseline(
+        root,
+        &build_root,
+        candidate.target,
+        binaries.map(|binary| staged.join(binary)),
+    )?;
     copy_component(&root.join("LICENSE"), &staged.join("LICENSE"))?;
     copy_component(
         &root.join("THIRD_PARTY_NOTICES.md"),
@@ -146,7 +120,35 @@ pub(super) fn runtime(
     Ok(())
 }
 
-fn check_source_commit(root: &Path, expected: &str) -> anyhow::Result<()> {
+pub(super) fn native_target(target: Target) -> anyhow::Result<String> {
+    let value = target.to_possible_value().context("unsupported target")?;
+    let triple = value.get_name();
+    ensure!(
+        triple.starts_with(std::env::consts::ARCH)
+            && match target {
+                Target::Windows => cfg!(target_os = "windows"),
+                Target::Linux => cfg!(target_os = "linux"),
+                Target::MacOs => cfg!(target_os = "macos"),
+            },
+        "build the product runtime on the matching operating system and architecture"
+    );
+    Ok(triple.to_owned())
+}
+
+pub(super) fn require_signed_source(root: &Path, expected: &str) -> anyhow::Result<()> {
+    check_source_commit(root, expected)?;
+    let signature = Command::new("git")
+        .args(["verify-commit", expected])
+        .current_dir(root)
+        .output()?;
+    ensure!(
+        signature.status.success(),
+        "source commit signature could not be verified with the configured Git trust"
+    );
+    Ok(())
+}
+
+pub(super) fn check_source_commit(root: &Path, expected: &str) -> anyhow::Result<()> {
     let head = Command::new("git")
         .args(["rev-parse", "--verify", "HEAD"])
         .current_dir(root)
@@ -218,7 +220,23 @@ fn compile(
     run(gui, root, build_root, "Tauri runtime build")
 }
 
-fn run(
+pub(super) fn check_platform_baseline(
+    root: &Path,
+    build_root: &Path,
+    target: Target,
+    files: impl IntoIterator<Item = std::path::PathBuf>,
+) -> anyhow::Result<()> {
+    let script = match target {
+        Target::Windows => return Ok(()),
+        Target::Linux => "scripts/check-glibc.sh",
+        Target::MacOs => "scripts/check-macos-target.sh",
+    };
+    let mut gate = Command::new("bash");
+    gate.arg(script).args(files);
+    run(gate, root, build_root, "runtime platform baseline check")
+}
+
+pub(super) fn run(
     mut command: Command,
     root: &Path,
     build_root: &Path,

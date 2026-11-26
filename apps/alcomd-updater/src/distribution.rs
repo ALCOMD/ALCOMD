@@ -23,6 +23,8 @@ pub const SIGNATURE_NAME: &str = "product-payload.sig";
 pub const SIGNATURE_DOMAIN: &[u8] = b"ALCOMD product payload v1\0";
 pub const WINDOWS_CRT_COMPANION_FILE: &str = "vcruntime140_1.dll";
 pub const WINDOWS_UPDATE_STAGE_PREFIX: &str = ".update-";
+/// Installation-root sibling used by a verified, inactive Windows bridge.
+pub const WINDOWS_FRESH_STAGE_PREFIX: &str = "-bridge-";
 const LICENSE: &str = "LICENSE";
 const NOTICES: &str = "THIRD_PARTY_NOTICES.md";
 const DISCORD_PACKAGE: &str = "extensions/discord.alcomdextension";
@@ -476,7 +478,11 @@ fn is_license_path(path: &str) -> bool {
         })
 }
 
-fn check_executable_header(file: &mut File, target: Target, dll: bool) -> anyhow::Result<()> {
+pub(super) fn check_executable_header(
+    file: &mut File,
+    target: Target,
+    dll: bool,
+) -> anyhow::Result<()> {
     #[cfg(unix)]
     if target != Target::Windows {
         use std::os::unix::fs::PermissionsExt as _;

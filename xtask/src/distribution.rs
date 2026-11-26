@@ -2,6 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use alcomd_updater::Channel;
 use alcomd_updater::distribution::{
     Candidate, MANIFEST_NAME, SIGNATURE_DOMAIN, SIGNATURE_NAME, Target, WindowsCrtDigests,
     format_digest, prepare_fixture, prepare_release, verify_fixture, verify_release,
@@ -12,6 +13,7 @@ use ed25519_dalek::{Signer, SigningKey};
 
 use crate::{ProductConfig, read_toml};
 
+mod bridge;
 mod build;
 mod inno;
 mod package;
@@ -23,7 +25,7 @@ const FIXTURE_KEY: [u8; 32] = [37; 32];
 #[command(
     bin_name = "cargo xtask dist",
     about = "Prepare and verify an offline v4 runtime candidate",
-    group(ArgGroup::new("action").args(["build", "prepare", "check", "package_layout"]).required(true))
+    group(ArgGroup::new("action").args(["build", "prepare", "check", "package_layout", "prepare_bridge"]).required(true))
 )]
 struct Arguments {
     #[arg(long, value_enum)]
@@ -40,6 +42,15 @@ struct Arguments {
     /// Export signed product packaging inputs or development fixtures.
     #[arg(long, requires_all = ["staging", "format", "output"])]
     package_layout: bool,
+    /// Prepare a v3 migration payload from the verified, complete release runtime.
+    #[arg(long, requires_all = ["staging", "bridge_output", "bridge_channel"], conflicts_with = "fixture")]
+    prepare_bridge: bool,
+    /// New, independent migration staging directory and signature message.
+    #[arg(long, requires = "prepare_bridge")]
+    bridge_output: Option<PathBuf>,
+    /// Channel of the existing v1 bridge payload.
+    #[arg(long, value_enum, requires = "prepare_bridge")]
+    bridge_channel: Option<Channel>,
     #[arg(long, value_enum, requires = "package_layout")]
     format: Option<package::Format>,
     #[arg(long, requires = "package_layout")]
@@ -57,19 +68,19 @@ struct Arguments {
     #[arg(long, requires = "build")]
     discord_package: Option<PathBuf>,
     /// Pinned SHA-256 of the first-party extension archive.
-    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout", "prepare_bridge"])]
     discord_sha256: Option<String>,
     /// The x64 vcruntime140.dll from a licensed Visual Studio redistributable directory.
     #[arg(long, requires_all = ["build", "windows_crt_sha256"])]
     windows_crt: Option<PathBuf>,
     /// Pinned SHA-256 of the exact app-local Windows VC runtime DLL.
-    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout", "prepare_bridge"])]
     windows_crt_sha256: Option<String>,
     /// The x64 vcruntime140_1.dll from the same Visual Studio redistributable directory.
     #[arg(long, requires_all = ["build", "windows_crt_companion_sha256"])]
     windows_crt_companion: Option<PathBuf>,
     /// Pinned SHA-256 of the exact app-local Windows VC runtime companion DLL.
-    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout", "prepare_bridge"])]
     windows_crt_companion_sha256: Option<String>,
     /// Microsoft's online Evergreen Bootstrapper for a Windows release Inno layout.
     #[arg(long, requires_all = ["package_layout", "webview2_bootstrapper_sha256"], conflicts_with = "fixture")]
@@ -112,7 +123,17 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
         (None, None) => None,
         _ => anyhow::bail!("supply both --windows-crt-sha256 and --windows-crt-companion-sha256"),
     };
-    if args.package_layout {
+    if args.prepare_bridge {
+        let output = std::path::absolute(args.bridge_output.context("bridge output is required")?)?;
+        bridge::export(
+            root,
+            &path,
+            &output,
+            &product,
+            &candidate,
+            args.bridge_channel.context("bridge channel is required")?,
+        )?;
+    } else if args.package_layout {
         let output = std::path::absolute(args.output.context("package output is required")?)?;
         let webview2 = args
             .webview2_bootstrapper
@@ -315,6 +336,44 @@ mod tests {
         };
         create_fixture(root.path(), &product, &candidate)?;
         Ok((root, candidate))
+    }
+
+    #[test]
+    fn bridge_manifest_covers_verified_runtime_files_and_the_migration_reader() -> anyhow::Result<()>
+    {
+        use alcomd_updater::bridge::prepare_manifest;
+
+        let (runtime, candidate) = fixture(Target::Windows)?;
+        let key = SigningKey::from_bytes(&FIXTURE_KEY).verifying_key();
+        let verified = verify_fixture(runtime.path(), &candidate, &key)?;
+        let stage = tempfile::tempdir_in(std::env::temp_dir().canonicalize()?)?;
+        bridge::copy_runtime(runtime.path(), stage.path(), &verified)?;
+        let product: ProductConfig = toml::from_str(include_str!("../../alcomd.product.toml"))?;
+        let reader = format!("{}.exe", product.binaries.migration_v3);
+        let reader_path = stage.path().join(&reader);
+        fs::write(&reader_path, synthetic_executable(candidate.target))?;
+        let bytes = prepare_manifest(stage.path(), &candidate, &verified, Channel::Beta)?;
+        assert_eq!(
+            bytes,
+            prepare_manifest(stage.path(), &candidate, &verified, Channel::Beta)?
+        );
+        let manifest: serde_json::Value = serde_json::from_slice(&bytes)?;
+        assert_eq!(manifest["schema"], 1);
+        assert_eq!(manifest["target"], "windows-x86_64");
+        assert_eq!(manifest["channel"], "beta");
+        let files = manifest["files"].as_array().context("bridge files")?;
+        assert_eq!(files.len(), verified.files().count() + 1);
+        assert!(files.iter().any(|file| file["path"] == reader));
+        assert!(!stage.path().join(MANIFEST_NAME).exists());
+        assert!(!stage.path().join(SIGNATURE_NAME).exists());
+
+        let foreign_manifest = stage.path().join(MANIFEST_NAME);
+        fs::write(&foreign_manifest, b"unexpected release metadata")?;
+        assert!(prepare_manifest(stage.path(), &candidate, &verified, Channel::Beta).is_err());
+        fs::remove_file(foreign_manifest)?;
+        fs::write(stage.path().join("LICENSE"), b"changed signed file")?;
+        assert!(prepare_manifest(stage.path(), &candidate, &verified, Channel::Beta).is_err());
+        Ok(())
     }
 
     #[test]

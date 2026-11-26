@@ -10,6 +10,7 @@ use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+pub mod bridge;
 pub mod distribution;
 pub mod product_update;
 
@@ -40,7 +41,7 @@ struct ProductIdentity {
     bundle_identifier: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Payload {
     schema: u32,
