@@ -1594,7 +1594,7 @@ stage = "M12"
 kind = "native-installer"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "Win11 24H2 以 2a1f93b9 安装和版本派生 16e5184a 的完整载荷复现自定义暂存路径错误。修正 Inno 后通过 7 项正常升级和 10 项进程终止恢复，删除原下载也能恢复并在原 Unicode 自定义根启动新版 WebView2 和 Core，卸载保全用户资料与无关文件。全用户、Win10 与最终发行候选另验。"
+description = "Win11 24H2 以 2a1f93b9 安装和版本派生 16e5184a 的完整载荷复现自定义暂存路径错误。修正 Inno 后通过 7 项正常升级和 10 项进程终止恢复，删除原下载也能恢复并在原 Unicode 自定义根启动新版 WebView2 和 Core，卸载保全用户资料与无关文件。修复 SHA bffef439 的完整包通过当前用户原生首装、WebView2 和卸载，并通过同 SHA 三平台 Hosted CI 与 CodeQL。全用户、Win10 与最终发行候选另验。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
 
 [[test]]

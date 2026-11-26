@@ -465,6 +465,10 @@ Windows 协议登记使用受保护定位记录里的安装根拼写，避免自
 
 用修正后的 Inno 模板重打包同一已签运行时。目标安装器 SHA-256 为 `e5c4e9462b5bc838985cf4c07bf42e5d439904d597b6da34d4f9ca459117a1d0`，目标运行清单 SHA-256 为 `b2c4843dc182d1b8967cfc2580e35b88f088d4beb56c737a7be20e5b875a004d`。正常升级通过七项。中断恢复通过十项，实际终止更新进程树，验证待完成事务阻止两版启动、篡改保留安装包被拒，以及删除原下载后仍能恢复。两次均核对原自定义根、默认根始终缺失、安装与 Core 登记、PATH、快捷方式及新版 WebView2。原工程可重开，稳定 CLI 冷启动分别为 1371 和 654 毫秒。卸载仅移除自有程序和入口，保留原资料及目录内的无关文件。正常和中断回执分别为 `60d0f52bb38029188180da9db3753eb60f10e93daaac53fcdeac0b638990ad43`、`d2c493b228c77d0327c7edae7987602930ddef3526e611afda05354245029272`。全用户、Win10 和正式发行候选另验。
 
+另从干净签名源码 `bffef43911fe7a0cc990036df8ff453ab9898ed5` 构建七个 Release 组件并生成完整 Inno 工程包。安装器 SHA-256 为 `3f39873e3dd05a197853d4426f5f1ccd59e171f24a1adbaeed46af474466950a`，运行清单为 `d424453871bb3aa10ba4f716052bd65c2fd60aa7db5a62ccf253527672acbb0f`。断网 Win11 当前用户复验真实 Unicode 自定义目录、开始菜单打开真实 WebView2、CLI 连接桌面已启动的 Core，以及卸载清理自有入口并保留数据库和无关文件。回执 SHA-256 为 `bd64243480775300c01569fac1c2ba271469121018a5cf5e07d9ff6917ce8615`。
+
+该 SHA 在干净检出通过本机整仓聚合检查，Rust 测试共 1107 项，Chromium 765 项。从 `2a1f93b9` 起逐笔验签 12 笔提交后普通快进到主仓 `main`。该 SHA 上的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均通过整仓、外部 SDK、Release 和 Tauri 构建，每个平台的 Chromium 均通过 765 项。四项 CodeQL 全部通过。Hosted 终态回执 SHA-256 为 `7465ae2125a1dd8d8ef15ee3cf9279ec50ba749b47e109ced4d32f7f83f2f94f`。macOS 原生客户端仍延期，正式发行继续按 A-017 验收。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45898023638) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45898023276)
+
 ### 2026-11-27 Windows 协议事务并发复验
 
 Win11 断网夹具先复现了已完成的第三方写入被稍后提交的安装器覆盖。安装器改为在注册表事务中暂存变更后重新核对公开键树的归属、值与形状。若第三方在最终核对后成功改写已参与事务的键，Windows 终止事务。范围转换在最后发布和退役清理时仍须确认归属，遇到第三方登记返回可重试结果。[Windows 注册表事务](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regopenkeytransactedw)
