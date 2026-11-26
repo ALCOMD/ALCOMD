@@ -1455,6 +1455,24 @@ description = "Win11 标准账号用冻结 v3.4.0 桌面更新器走隔离 HTTPS
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/windows_bridge.rs"]
 
 [[test]]
+id = "installer.linux.exact-fixture-native-health"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 用同源 310065bf 完整 AppImage 与 DEB，在隔离标准账号核验原生 GUI、Core、CLI、MCP 认证和撤销以及签名第一方扩展，AppImage 实测 FUSE。两个范围分别核验配对的隔离健康证明。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
+
+[[test]]
+id = "installer.linux.deb-frozen-native-handoff"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 24.04 的真实冻结 v3.4.0 DEB 与 310065bf v4 DEB 经离线 APT 交接。两个标准账号分别实测预提交启动阻断、撤回重开 v3，以及坏证明拒绝、签名提交、新版 GUI 与 Core 读回和 v3 保全。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
+
+[[test]]
 id = "updater.linux.v3-native-appimage-bridge"
 stage = "M12"
 kind = "system"

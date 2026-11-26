@@ -385,7 +385,11 @@ DEB 在隔离网络内用回环 APT 仓库验证真实首装、`dpkg --unpack` �
 
 定向测试 33 项通过，1 项沿用既有忽略。Clippy 和组装命令参数检查通过。定向日志 SHA-256 为 `4f9e1e9918cc5a20adbbd69789f7bb8a612ae89be2ff627294a499a6ba3abde6`，否定用例与完整原生提交及回滚日志分别为 `92033d62f4c9ffe6bc2ab20817ed98e08681832b0c2814df5de19cb3d7cc1e5b` 和 `f4b189c17f81a0ff147f28bcea30cbc4f5de12e3e094149b69bdbcda47905bfa`。原生夹具包含本轮构建的独立启动器和 Bootstrap，并复用此前构建的其余运行组件。`cargo xtask dist --package-appimage-bridge` 从干净签名候选组装的完整交付资产继续复验。
 
-专用 Ubuntu 24.04 x86_64 测试来宾通过 APT 安装真实 `alcomd3 3.4.0-1`，核验 `/usr/bin/alcomd3` 和桌面条目的 dpkg 归属及冻结二进制摘要。在最小系统中补齐系统 CA 后，断网普通账号两次打开真实 v3 WebKit 窗口。旧资料由冻结版实际生成，LiteDB 在重开前后摘要一致，未使用用户日常资料。日志 SHA-256 为 `ac89855bf5028d85405bee83a2e33b537df9820f5d03ce4831c55df6932b21b7`。同源 v4 DEB 部署及逐账号提交和回滚仍待验收。
+专用 Ubuntu 24.04 x86_64 测试来宾通过 APT 安装真实 `alcomd3 3.4.0-1`，核验 `/usr/bin/alcomd3` 和桌面条目的 dpkg 归属及冻结二进制摘要。在最小系统中补齐系统 CA 后，断网普通账号两次打开真实 v3 WebKit 窗口。旧资料由冻结版实际生成，LiteDB 在重开前后摘要一致。日志 SHA-256 为 `ac89855bf5028d85405bee83a2e33b537df9820f5d03ce4831c55df6932b21b7`。
+
+从干净签名源码 `310065bfe1b37037f30ad5d7c5d28d4526cb385c` 在 Ubuntu 22.04 构建七个 Release 组件、AppImage、DEB 和配套迁移载荷。最高符号要求为 `GLIBC_2.34`。AppImage 与 DEB 的 SHA-256 分别为 `9eed4fdbc6d9cd6e3493e7c85a9c3fb26667cca27fc6ff4f4cdbb215daa0fba5` 和 `f95f81736024130c783272f2194e9c1eb44dea973b470c333f0064c8762dcc15`。两种格式在隔离标准账号通过真实 Core IPC、CLI 工程读写、WebKit、MCP 认证与撤销、以及 Core 验签的第一方扩展发现。AppImage 实际经 FUSE 挂载。相应回执 SHA-256 为 `e89a7b006cd636b9b6c9768823b4e8044766669af982a0613998f64cbb04dd58` 和 `9d48fd85bfc3b81ddf13f57cb12a4bd4c7ed70a0559a6998d7def13bd85746ba`。按两份回执生成并独立核验隔离健康证明，总回执 SHA-256 为 `109b6076a1358dcb23046b3665811b9715ac6d185562e01e06a9c3d6b0951e7b`。
+
+在隔离 Ubuntu 24.04 用 APT 安装同一 v4 DEB。两个标准账号分别启动冻结版生成真实 v3 资料，再通过原生 Bootstrap 停在待确认点。普通首启被阻断。第一个账号回滚并重开 v3 桌面，第二个账号先验证坏健康签名拒绝，再提交并用 GUI、Core 读回迁入的合成设置。两份旧资料、旧程序和安装归档通过摘要核对。清理只移除测试账号、资料及 v4 测试包，保留已配置的冻结 v3 包。交接回执 SHA-256 为 `61b2c1682f61c2031002ada5325c430a07cc33eff95c8e674c65292bf76fc12a`。
 
 ### 2026-11-26 隔离发行停推与恢复演练
 
