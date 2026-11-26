@@ -417,6 +417,8 @@ Windows 平台定向回归验证了转换意图持久化后的启动阻断。后
 
 首轮脚本从管理账号解析用户快捷方式，并在 Inno 卸载子进程仍运行时判断结果。复验在原标准账号核对快捷方式目标，并等待原生卸载日志确认结束。实包 SHA-256 为 `b659d8b118ead96f02bc71bc2bbd79d21262c22fba3ed9e16d382a4e89c01dfc`，当前用户和全用户回执分别为 `d074646fad7b405eedc4461d1363f51a741a1a216890f85bb0820b9b1ddd73cb` 和 `287722ab02190c323901daf191f244c755934bce0c28c1a16431a4287e802fba`。Win10、双向范围转换和自定义目录整包更新另外取证。
 
+Windows 协议登记使用受保护定位记录里的安装根拼写，避免自定义目录的等价大小写写法改变归属。登记时在同一注册表事务中创建根键和写入归属标记，移除时在事务中复核只含原归属标记的叶键并删除。类型和值按原始 UTF-16 字节核验。Win11 断网夹具在两个提交点前分别强制终止实际安装器，复验未提交认领消失、删除失败时归属保留、重试、准确命令及外部登记保全。夹具 SHA-256 为 `254aacf8dc127aea30471919f67d1c22bd59df812e298da61f8cbc339e44bec3`，回执为 `e86922c23afa62037e79dadb63656ae34d859393073a40a435b8c455d8116c40`。完整发行包的 Shell 调用、并发改写和作用域转换另行取证。
+
 ### 2026-11-26 Windows WebView2 前置部署
 
 Windows Inno 发行打包接收固定摘要的 Microsoft Evergreen Bootstrapper，按需接收固定摘要的 x64 Standalone。打包校验 Microsoft Authenticode 发行者与文件摘要，安装时重新核对提取文件。安装器核对范围、归属和维护状态后，先确认 WebView2 已就绪再写产品文件。有 Standalone 时使用离线路径。当前用户优先使用已有机器运行时，也接受本账号运行时，并保护非提升安装范围。沿用 Windows 客户端基线已有的 Evergreen 依赖。[Microsoft WebView2 分发](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution)

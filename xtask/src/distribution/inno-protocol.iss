@@ -1,6 +1,34 @@
+function BeginProtocolTransaction(Security, UnitOfWork, Options, Level, Flags, Timeout: Cardinal;
+  Description: String): Integer;
+  external 'CreateTransaction@ktmw32.dll stdcall';
+
+function CommitProtocolTransaction(Transaction: Integer): Boolean;
+  external 'CommitTransaction@ktmw32.dll stdcall';
+
+function RollbackProtocolTransaction(Transaction: Integer): Boolean;
+  external 'RollbackTransaction@ktmw32.dll stdcall';
+
 function CreateProtocolKey(Root: Cardinal; Key: String; Reserved, KeyClass, Options, Access,
-  Security: Cardinal; var Handle, Disposition: Cardinal): Integer;
-  external 'RegCreateKeyExW@advapi32.dll stdcall';
+  Security: Cardinal; var Handle, Disposition: Cardinal; Transaction: Integer;
+  Extended: Cardinal): Integer;
+  external 'RegCreateKeyTransactedW@advapi32.dll stdcall';
+
+function OpenProtocolKey(Root: Cardinal; Key: String; Options, Access: Cardinal;
+  var Handle: Cardinal; Transaction: Integer; Extended: Cardinal): Integer;
+  external 'RegOpenKeyTransactedW@advapi32.dll stdcall';
+
+function DeleteProtocolKey(Root: Cardinal; Key: String; View, Reserved: Cardinal;
+  Transaction: Integer; Extended: Cardinal): Integer;
+  external 'RegDeleteKeyTransactedW@advapi32.dll stdcall';
+
+function QueryProtocolKeyCounts(Handle, KeyClass, ClassLength, Reserved: Cardinal;
+  var Subkeys: Cardinal; MaxSubkeyLength, MaxClassLength: Cardinal; var Values: Cardinal;
+  MaxValueNameLength, MaxValueLength, SecurityLength, LastWriteTime: Cardinal): Integer;
+  external 'RegQueryInfoKeyW@advapi32.dll stdcall';
+
+function QueryProtocolValue(Handle: Cardinal; Name: String; Reserved: Cardinal;
+  var ValueType: Cardinal; Value: String; var Size: Cardinal): Integer;
+  external 'RegQueryValueExW@advapi32.dll stdcall';
 
 function SetProtocolOwner(Handle: Cardinal; Name: String; Reserved, ValueType: Cardinal;
   Value: String; Size: Cardinal): Integer;
@@ -29,19 +57,32 @@ begin
     CloseRegistryKey(Handle);
 end;
 
-function ProtocolValueMatches(RegistryRoot: Cardinal; Key, Name, Expected: String): Boolean;
+function ProtocolHandleValueMatches(Handle: Cardinal; Name, Expected: String): Boolean;
 var
-  Root, View, Flags, Kind, Size: Cardinal;
+  Kind, Size, ExpectedSize: Cardinal;
   Value: String;
 begin
+  // Use the raw value so the exact type, size and single UTF-16 terminator are checked together.
+  ExpectedSize := 2 * (Length(Expected) + 1);
+  Size := ExpectedSize;
+  SetLength(Value, Length(Expected) + 1);
+  Result := (QueryProtocolValue(Handle, Name, 0, Kind, Value, Size) = 0) and
+    (Kind = StringValue) and (Size = ExpectedSize) and (Value = Expected + #0);
+end;
+
+function ProtocolValueMatches(RegistryRoot: Cardinal; Key, Name, Expected: String): Boolean;
+var
+  Root, View, Handle: Cardinal;
+begin
   ProtocolRegistryView(RegistryRoot, Root, View);
-  Flags := $00000002; // RRF_RT_REG_SZ, excluding expandable values.
-  if View <> 0 then
-    Flags := Flags or $00010000; // RRF_SUBKEY_WOW6464KEY.
-  Size := 0;
-  Result := (ReadRegistryValueType(Root, Key, Name, Flags, Kind, 0, Size) = 0) and
-    (Kind = StringValue) and (Size = 2 * (Length(Expected) + 1)) and
-    RegQueryStringValue(RegistryRoot, Key, Name, Value) and (Value = Expected);
+  Result := False;
+  if OpenRegistryKey(Root, Key, 0, KeyQueryValue or View, Handle) <> 0 then
+    Exit;
+  try
+    Result := ProtocolHandleValueMatches(Handle, Name, Expected);
+  finally
+    CloseRegistryKey(Handle);
+  end;
 end;
 
 function ProtocolKeyShape(Root: Cardinal; Key, Child: String; AllowDefault, AllowMetadata: Boolean): Boolean;
@@ -100,18 +141,63 @@ end;
 function ClaimProductProtocol(RegistryRoot: Cardinal; Root: String): Boolean;
 var
   NativeRoot, View, Handle, Disposition: Cardinal;
+  Transaction: Integer;
 begin
   ProtocolRegistryView(RegistryRoot, NativeRoot, View);
   Result := False;
-  if CreateProtocolKey(NativeRoot, ProductProtocolKey, 0, 0, 0, 2 or View, 0, Handle, Disposition) <> 0 then
+  Transaction := BeginProtocolTransaction(0, 0, 0, 0, 0, 0, 'Claim ALCOMD link protocol');
+  if Transaction = -1 then
     Exit;
   try
-    // Claim only a key created by this call, even when a different app races the preflight.
-    if Disposition = 1 then
-      Result := SetProtocolOwner(Handle, ProductProtocolOwner, 0, StringValue, Root,
-        2 * (Length(Root) + 1)) = 0;
+    if CreateProtocolKey(NativeRoot, ProductProtocolKey, 0, 0, 0, 2 or View, 0, Handle,
+      Disposition, Transaction, 0) <> 0 then
+      Exit;
+    try
+      // Before commit, a new key and its ownership marker are both private to this transaction.
+      if (Disposition <> 1) or (SetProtocolOwner(Handle, ProductProtocolOwner, 0, StringValue,
+        Root, 2 * (Length(Root) + 1)) <> 0) then
+        Exit;
+    finally
+      CloseRegistryKey(Handle);
+    end;
+    Result := CommitProtocolTransaction(Transaction);
   finally
-    CloseRegistryKey(Handle);
+    if not Result then
+      RollbackProtocolTransaction(Transaction);
+    CloseKernelHandle(Transaction);
+  end;
+end;
+
+function DeleteOwnedProtocolLeaf(RegistryRoot: Cardinal; Root: String): Boolean;
+var
+  NativeRoot, View, Handle, Subkeys, Values: Cardinal;
+  Transaction: Integer;
+begin
+  ProtocolRegistryView(RegistryRoot, NativeRoot, View);
+  Result := False;
+  Transaction := BeginProtocolTransaction(0, 0, 0, 0, 0, 0, 'Remove ALCOMD link protocol');
+  if Transaction = -1 then
+    Exit;
+  try
+    if OpenProtocolKey(NativeRoot, ProductProtocolKey, 0, KeyQueryValue or View, Handle,
+      Transaction, 0) <> 0 then
+      Exit;
+    try
+      // Recheck the leaf inside the transaction before deleting the key and its last value.
+      if (QueryProtocolKeyCounts(Handle, 0, 0, 0, Subkeys, 0, 0, Values, 0, 0, 0, 0) <> 0) or
+        (Subkeys <> 0) or (Values <> 1) or
+        not ProtocolHandleValueMatches(Handle, ProductProtocolOwner, Root) then
+        Exit;
+      if DeleteProtocolKey(NativeRoot, ProductProtocolKey, View, 0, Transaction, 0) <> 0 then
+        Exit;
+    finally
+      CloseRegistryKey(Handle);
+    end;
+    Result := CommitProtocolTransaction(Transaction);
+  finally
+    if not Result then
+      RollbackProtocolTransaction(Transaction);
+    CloseKernelHandle(Transaction);
   end;
 end;
 
@@ -136,8 +222,9 @@ var
   Root: String;
 begin
   Result := False;
-  Root := ExpandConstant('{app}');
-  if not PlainFileMatches(Root + '\runtime\@APP_VERSION@\@GUI_NAME@.exe', '@GUI_DIGEST@') then
+  if not ReadScopeRoot(IsAdminInstallMode, Root) or
+    (CompareText(ExpandConstant('{app}'), Root) <> 0) or
+    not PlainFileMatches(Root + '\runtime\@APP_VERSION@\@GUI_NAME@.exe', '@GUI_DIGEST@') then
     Exit;
   RegistryRoot := InstallRegistryRoot;
   if not CanManageProductProtocol(RegistryRoot, ProductProtocolKey, Root, '@APP_VERSION@', Previous) then begin
@@ -174,12 +261,15 @@ end;
 function RemoveOwnedProductProtocol(Root: String): Boolean;
 var
   RegistryRoot: Cardinal;
-  ShellKey, OpenKey, CommandKey: String;
+  ReservedRoot, ShellKey, OpenKey, CommandKey: String;
 begin
+  Result := False;
+  if not ReadScopeRoot(IsAdminInstallMode, ReservedRoot) or (CompareText(Root, ReservedRoot) <> 0) then
+    Exit;
   Result := True;
   RegistryRoot := InstallRegistryRoot;
   if MissingEntry(ProtocolKeyStatus(RegistryRoot, ProductProtocolKey)) or
-    not CanManageProductProtocol(RegistryRoot, ProductProtocolKey, Root, '@APP_VERSION@', '') then
+    not CanManageProductProtocol(RegistryRoot, ProductProtocolKey, ReservedRoot, '@APP_VERSION@', '') then
     Exit;
   ShellKey := ProductProtocolKey + '\shell';
   OpenKey := ShellKey + '\open';
@@ -189,8 +279,7 @@ begin
     DeleteProtocolValue(RegistryRoot, CommandKey, '') and DeleteEmptyProtocolKey(RegistryRoot, CommandKey) and
     DeleteEmptyProtocolKey(RegistryRoot, OpenKey) and DeleteEmptyProtocolKey(RegistryRoot, ShellKey) and
     DeleteProtocolValue(RegistryRoot, ProductProtocolKey, '') and
-    DeleteProtocolValue(RegistryRoot, ProductProtocolKey, ProductProtocolOwner) and
-    DeleteEmptyProtocolKey(RegistryRoot, ProductProtocolKey) and
+    DeleteOwnedProtocolLeaf(RegistryRoot, ReservedRoot) and
     FlushProductProtocol(RegistryRoot, ExtractFileDir(ProductProtocolKey));
   if Result then
     NotifyProtocolChanged($08000000, 0, 0, 0);

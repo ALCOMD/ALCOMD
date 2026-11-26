@@ -77,6 +77,7 @@ begin
     Exit;
   if CompareText(ScopeSourceRoot, Reserved) <> 0 then
     Exit;
+  ScopeSourceRoot := Reserved;
   OldRuntime := ScopeSourceRoot + '\runtime\' + ScopeSourceVersion;
   Manifest := OldRuntime + '\@MANIFEST_NAME@';
   Result := PlainDirectoryChain(OldRuntime, False) and PlainFile(Manifest) and
@@ -123,7 +124,7 @@ end;
 function ScopeProtocolCanMove(Root: String): Boolean;
 var
   SourceRegistryRoot: Cardinal;
-  SourceKey: String;
+  SourceKey, DestinationRoot: String;
 begin
   SourceRegistryRoot := HKEY_LOCAL_MACHINE_64;
   SourceKey := ProductProtocolKey;
@@ -136,8 +137,11 @@ begin
     end;
     SourceKey := ScopeRequester + '\' + SourceKey;
   end;
-  Result := CanManageProductProtocol(SourceRegistryRoot, SourceKey, ScopeSourceRoot, ScopeSourceVersion, '') and
-    CanManageProductProtocol(InstallRegistryRoot, ProductProtocolKey, Root, '@APP_VERSION@', '');
+  if not ReadScopeRoot(IsAdminInstallMode, DestinationRoot) then
+    DestinationRoot := Root;
+  Result := (CompareText(Root, DestinationRoot) = 0) and
+    CanManageProductProtocol(SourceRegistryRoot, SourceKey, ScopeSourceRoot, ScopeSourceVersion, '') and
+    CanManageProductProtocol(InstallRegistryRoot, ProductProtocolKey, DestinationRoot, '@APP_VERSION@', '');
 end;
 
 function PrepareScopeConversion(Root: String; var NeedsRestart: Boolean): String;

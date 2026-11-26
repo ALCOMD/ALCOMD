@@ -99,7 +99,7 @@ function TryLockLease(Handle: Integer; Flags, Reserved, LengthLow, LengthHigh: C
   var Range: TLeaseRange): Boolean;
   external 'LockFileEx@kernel32.dll stdcall';
 
-function CloseLeaseFile(Handle: Integer): Boolean;
+function CloseKernelHandle(Handle: Integer): Boolean;
   external 'CloseHandle@kernel32.dll stdcall';
 
 function FlushFile(Handle: Integer): Boolean;
@@ -187,7 +187,7 @@ begin
   try
     Result := FlushFile(Handle);
   finally
-    CloseLeaseFile(Handle);
+    CloseKernelHandle(Handle);
   end;
 end;
 
@@ -360,10 +360,13 @@ begin
 end;
 
 function ReservePreparedRoot(Root: String): Boolean;
+var
+  ReservedRoot: String;
 begin
   Result := PrepareRootWorker and RunRootWorker('reserve', Root) and CheckPreparedRoot(Root);
   if Result and not IsAdminInstallMode then
-    Result := RegWriteStringValue(HKEY_CURRENT_USER, UserScopeLocatorKey, 'OwnedRoot', Root);
+    Result := ReadScopeRoot(False, ReservedRoot) and
+      RegWriteStringValue(HKEY_CURRENT_USER, UserScopeLocatorKey, 'OwnedRoot', ReservedRoot);
 end;
 
 function PreserveUninstallRootWorker(Runtime: String): Boolean;
@@ -990,7 +993,7 @@ begin
     if not TryLockLease(Handle, 1, 0, 1, 0, Range) then
       Result := DLLGetLastError = LockViolation;
   finally
-    CloseLeaseFile(Handle);
+    CloseKernelHandle(Handle);
   end;
 end;
 
@@ -1612,7 +1615,7 @@ begin
   // Core shares this byte at 4 GiB. Request an exclusive lock without waiting.
   Result := TryLockLease(ProgramLease, 3, 0, 1, 0, Range);
   if not Result then begin
-    CloseLeaseFile(ProgramLease);
+    CloseKernelHandle(ProgramLease);
     ProgramLease := 0;
   end;
 end;
@@ -1745,7 +1748,7 @@ end;
 procedure ReleaseProgramLease;
 begin
   if (ProgramLease <> 0) and (ProgramLease <> -1) then
-    CloseLeaseFile(ProgramLease);
+    CloseKernelHandle(ProgramLease);
 end;
 
 procedure DeinitializeSetup;
