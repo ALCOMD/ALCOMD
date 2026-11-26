@@ -1,6 +1,6 @@
 # 项目状态
 
-最后更新：2026-11-26
+最后更新：2026-11-27
 
 ## 当前阶段
 
@@ -61,6 +61,8 @@ Linux 同源候选 `310065bf` 的 AppImage 和 DEB 在 Ubuntu 22.04 均通过原
 Ubuntu 22.04 已用 `310065bf` 的签名 AppImage 通过原生 Orca 读屏冒烟。项目搜索、列表视图和创建项目支持键盘聚焦，系统读屏器正确朗读并生成合成音频。[Linux 读屏验收](exec-plans/M12-full-product-distribution.md#2026-11-27-linux-orca-读屏冒烟)
 
 与完整 Windows Inno 同源的 Linux 工程包 `2a1f93b9` 已通过 Ubuntu 22.04 的双格式原生健康、逐个 ELF 扫描和 AppImage Orca 复验。Ubuntu 24.04 也通过同摘要 AppImage、DEB 从真实冻结 v3.4.0 回滚与提交的实包验证。[Linux 同源工程包复验](exec-plans/M12-full-product-distribution.md#2026-11-27-linux-同源工程包复验)
+
+同源 AppImage 与 DEB 在 Ubuntu 22.04 通过 GTK 100% 和 200% 启动缩放。真实 WebKit 窗口像素尺寸翻倍，三个项目控件的 Tab 顺序一致。[Ubuntu 原生 GTK 缩放复验](exec-plans/M12-full-product-distribution.md#2026-11-27-ubuntu-原生-gtk-缩放复验)
 
 `2a1f93b9` 的 Windows Inno 在隔离 Win11 已通过系统高对比切换和三个项目控件的 Tab 焦点复验。Windows 讲述人已观察到焦点框，来宾的语音回顾对应用和系统对照控件均无记录。实际朗读和 125% 原生缩放仍待验收。[Windows 原生辅助功能复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-高对比度与讲述人复验)
 

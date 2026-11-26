@@ -409,6 +409,10 @@ Ubuntu 22.04 回环隔离环境的两个标准账号通过 Core、CLI、WebKit�
 
 Ubuntu 24.04 回环隔离环境用真实冻结 v3.4.0 分别复验两种完整工程包。DEB 经离线 APT 交接，验证待确认锁、回滚重开和签名提交。AppImage 经分离验签的独立归档交接，归档摘要为 `1cfa57bab8a6e82873b176de009bf92aed1972afe437463573a158d3e00f9c6d`，验证实际 FUSE 上的旧版重开与新版启动。两种方式均核对旧资料、原程序和临时资源清理。DEB 与 AppImage 的回执分别为 `848f68b355fc03a6a35f547507a2cd2d8f99354a2915a742163e532e9d773329`、`f21c27621d732b04d09b8fb1e0418edf412759bbd1f756c335ff8c481edea49e`。
 
+### 2026-11-27 Ubuntu 原生 GTK 缩放复验
+
+在隔离 Ubuntu 22.04 的 X11 和 D-Bus 会话中，使用同源签名候选 `2a1f93b9` 的 AppImage 和 DEB，按 GTK 程序窗口缩放分别启动 100% 和 200% 两次。AppImage 实际通过 FUSE 挂载，DEB 实际经 `dpkg` 安装并登记 Core。两包分别核对文件及运行清单摘要。两种格式的真实 WebKit 窗口从 `1400 × 800` 到 `2800 × 1600` 像素，AT-SPI 观察到原生 Tab 依次聚焦项目搜索、列表视图和新建项目。200% 截图可见三个控件及焦点环。夹具移除本轮 AppImage 挂载并卸载测试 DEB。AppImage 与 DEB 原始回执 SHA-256 依次为 `077e12a0d450dbf8688dd76c313c802ca1bc2da37e99401eaf5674fcf9fea813`、`11cef2bfcff777e136b217a4fe0fcf44367ff7155024f1b94da0baae7a7a8689`。此轮覆盖启动时的 GTK 整数缩放，跨显示器切换和最终发行包留在发行矩阵中。[GTK 3 X11 缩放](https://docs.gtk.org/gtk3/x11.html)
+
 ### 2026-11-27 Windows 高对比度与讲述人复验
 
 断网 Windows 11 24H2（`26100.9974`）来宾安装签名工程候选 `2a1f93b9`。Inno 安装器 SHA-256 为 `e8dbbe0e44d8c10ebed68acee7f677700b825bf11d5ccd66d6e96e6e668ee425`，已装运行时清单为 `2c65dae115f1667122700ec2d4e944336f6976a11e844b907c103398f66dc90b`。系统高对比设置切换后，同一个运行中的 WebView2 窗口底色从 `#FFFFFF` 切换到 `#202020`，关闭高对比后恢复原配色。项目搜索、列表视图和新建项目在切换后依次可用 Tab 聚焦。通过回执和高对比截图的 SHA-256 分别为 `7e5ca3a554efb4d9d776b10af79995673af0f902cac3bab816d24b21138a54ea`、`534d6c3b29bc9e6ea4c11b6149abf94c35f3484a0b778d91acd1b7804723df25`。[Windows 高对比度接口](https://learn.microsoft.com/en-us/windows/win32/winauto/high-contrast-parameter)
