@@ -25,6 +25,9 @@ use uuid::Uuid;
 #[path = "linux_portable_update.rs"]
 mod update;
 pub use update::{apply_portable_update, resume_portable_update};
+#[path = "linux_portable_cli.rs"]
+mod cli;
+pub use cli::{PortableCliAction, PortableCliStatus, portable_cli, start_portable_cli_if_selected};
 
 // The frozen release limits a complete desktop asset to 512 MiB.
 const IMAGE_LIMIT: u64 = 512 * 1024 * 1024;

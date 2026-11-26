@@ -85,6 +85,12 @@ enum Command {
     },
     #[cfg(target_os = "linux")]
     #[command(hide = true)]
+    PortableCli {
+        #[arg(value_enum)]
+        action: alcomd_bootstrap::PortableCliAction,
+    },
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
     ApplyPortableUpdate {
         #[command(flatten)]
         update: UpdateArguments,
@@ -161,6 +167,8 @@ struct MigrateArguments {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(target_os = "linux")]
+    alcomd_bootstrap::start_portable_cli_if_selected()?;
     let arguments = match Arguments::parse().command {
         Command::MigrateV3(arguments) => arguments,
         Command::RollbackV3 { work_directory } => {
@@ -264,6 +272,14 @@ fn main() -> anyhow::Result<()> {
         #[cfg(target_os = "linux")]
         Command::StartPortable { arguments } => {
             return alcomd_bootstrap::start_portable(&arguments);
+        }
+        #[cfg(target_os = "linux")]
+        Command::PortableCli { action } => {
+            println!(
+                "{}",
+                serde_json::to_string(&alcomd_bootstrap::portable_cli(action)?)?
+            );
+            return Ok(());
         }
         #[cfg(target_os = "linux")]
         Command::ApplyPortableUpdate { update, desktop } => {

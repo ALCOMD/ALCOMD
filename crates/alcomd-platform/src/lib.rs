@@ -13,6 +13,8 @@ mod credential_vault;
 pub mod desktop;
 mod external_path;
 #[cfg(target_os = "linux")]
+mod linux_portable_cli;
+#[cfg(target_os = "linux")]
 mod linux_portable_origin;
 mod process;
 mod project_delete;
@@ -52,6 +54,11 @@ pub use core_installation::{
 };
 pub use credential_vault::{delete_credential, read_credential, write_credential};
 pub use external_path::external_filesystem_path;
+#[cfg(target_os = "linux")]
+pub use linux_portable_cli::{
+    LINUX_CLI_EXECUTABLE_NAME, PORTABLE_CLI_LAUNCHER_NAME, PortableCliEntry, PortableCliEntryState,
+    linux_portable_cli_bootstrap, lock_linux_portable_cli,
+};
 #[cfg(target_os = "linux")]
 pub use linux_portable_origin::{PORTABLE_ORIGIN_FILE, PortableImage, PortableOrigin};
 pub use storage_directories::{

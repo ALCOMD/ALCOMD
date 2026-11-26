@@ -1,6 +1,25 @@
 import type { TranslationTable } from "../i18n-types";
 
 export const productUpdateMessages: TranslationTable = {
+    "Command-line integration": { "zh-CN": "命令行集成", "ja-JP": "コマンドライン連携" },
+    "Enable CLI command": { "zh-CN": "启用 CLI 命令", "ja-JP": "CLI コマンドを有効にする" },
+    "Repair CLI command": { "zh-CN": "修复 CLI 命令", "ja-JP": "CLI コマンドを修復する" },
+    "Remove CLI command": { "zh-CN": "移除 CLI 命令", "ja-JP": "CLI コマンドを削除する" },
+    "Enable the alcomd-cli command for this account.": { "zh-CN": "为当前账号启用 alcomd-cli 命令。", "ja-JP": "このアカウントで alcomd-cli コマンドを有効にできます。" },
+    "The alcomd-cli command is available in ~/.local/bin.": { "zh-CN": "alcomd-cli 命令已安装在 ~/.local/bin。", "ja-JP": "alcomd-cli コマンドは ~/.local/bin にあります。" },
+    "The command needs repair. If the AppImage moved, reopen it from its current location.": {
+        "zh-CN": "命令需要修复。如果 AppImage 已移动，请从当前位置重新打开它。",
+        "ja-JP": "コマンドの修復が必要です。AppImage を移動した場合は、現在の場所から開き直してください。",
+    },
+    "An existing file conflicts with CLI integration. ALCOMD preserved it.": {
+        "zh-CN": "现有文件与命令行集成冲突。ALCOMD 已保留该文件。",
+        "ja-JP": "既存のファイルがコマンドライン連携と競合しています。ALCOMD はそのファイルを保持しました。",
+    },
+    "Updating CLI integration…": { "zh-CN": "正在更新命令行集成…", "ja-JP": "コマンドライン連携を更新しています…" },
+    "CLI integration could not be changed. Reopen the AppImage and retry.": {
+        "zh-CN": "无法更改命令行集成。请重新打开 AppImage 后重试。",
+        "ja-JP": "コマンドライン連携を変更できませんでした。AppImage を開き直して再試行してください。",
+    },
     "Product updates": { "zh-CN": "产品更新", "ja-JP": "製品の更新" },
     "Check for updates": { "zh-CN": "检查更新", "ja-JP": "更新を確認" },
     "Checking for updates…": { "zh-CN": "正在检查更新…", "ja-JP": "更新を確認しています…" },

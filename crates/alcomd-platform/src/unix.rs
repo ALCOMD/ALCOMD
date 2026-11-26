@@ -217,7 +217,7 @@ pub fn state_database_path(config: &DataConfig) -> io::Result<PathBuf> {
     Ok(join_data_components(base_path, components).join("state.db"))
 }
 
-fn home_directory() -> io::Result<PathBuf> {
+pub(super) fn home_directory() -> io::Result<PathBuf> {
     let home = env::var_os("HOME").ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,

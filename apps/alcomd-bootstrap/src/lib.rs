@@ -4,7 +4,10 @@ mod journal;
 #[cfg(target_os = "linux")]
 mod linux_portable;
 #[cfg(target_os = "linux")]
-pub use linux_portable::{apply_portable_update, resume_portable_update, start_portable};
+pub use linux_portable::{
+    PortableCliAction, PortableCliStatus, apply_portable_update, portable_cli,
+    resume_portable_update, start_portable, start_portable_cli_if_selected,
+};
 #[cfg(windows)]
 mod windows_installation;
 #[cfg(windows)]

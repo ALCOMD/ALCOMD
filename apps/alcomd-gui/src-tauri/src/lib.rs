@@ -12,6 +12,7 @@ mod desktop_links;
 mod events;
 mod native_clients;
 mod picker_location;
+mod portable_cli;
 mod product_updates;
 mod repository_links;
 mod rpc_clients;
@@ -1816,6 +1817,7 @@ pub fn run() {
             desktop_links::gui_take_desktop_link,
             repository_links::gui_vcc_registration_available,
             repository_links::gui_register_vcc_links,
+            portable_cli::gui_portable_cli,
             product_updates::gui_product_update,
             window_state::gui_window_state_configure,
             gui_system_status,
