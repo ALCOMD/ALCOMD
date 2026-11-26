@@ -118,16 +118,17 @@ end;
 function PrepareScopeConversion(Root: String; var NeedsRestart: Boolean): String;
 var
   Parent, Extracted, DestinationRuntime, Approval: String;
-  Remaining: Integer;
+  ExitCode, Remaining: Integer;
 begin
   Result := 'The existing Windows installation could not be identified for scope conversion.';
   if not DetectScopeSource then
     Exit;
   Approval := ExpandConstant('{param:ALCOMDConvertScope|}');
   if (Approval <> '@MANIFEST_DIGEST@') and
-    (SuppressibleMsgBox('Switch the existing ALCOMD ' + ScopeSourceVersion +
-      ' installation to the selected scope? Application files and system entries will move. ' +
-      'Project files and per-account data will be kept.', mbConfirmation, MB_YESNO, IDNO) <> IDYES) then begin
+    (SuppressibleMsgBox('Move ALCOMD ' + ScopeSourceVersion + ' from:' + #13#10 + ScopeSourceRoot + #13#10 +
+      'To @APP_VERSION@ in:' + #13#10 + Root + #13#10#13#10 +
+      'This also moves the owned PATH and Start menu entries. Project files and per-account data are kept.',
+      mbConfirmation, MB_YESNO, IDNO) <> IDYES) then begin
     Result := 'ALCOMD kept the existing installation.';
     Exit;
   end;
@@ -139,11 +140,22 @@ begin
   Parent := ExtractFileDir(Root);
   ExtractTemporaryFiles('{app}\runtime\@APP_VERSION@\*');
   Extracted := ExpandConstant('{tmp}\') + '{app}\runtime\@APP_VERSION@';
-  ScopeStage := Extracted;
-  if not PlainDirectoryChain(Extracted, False) or
-    not PlainFileMatches(Extracted + '\@MANIFEST_NAME@', '@MANIFEST_DIGEST@') then
+  // Keep the verified worker separate from the destination so ordinary Setup
+  // rollback cannot remove the worker needed to reopen the previous scope.
+  ScopeStage := AddBackslash(Parent) + '.@INSTALL_DIRECTORY@-scope-payload-@MANIFEST_DIGEST@';
+  if EntryIsMissing(ScopeStage) and not PublishStagedRuntime(Extracted, ScopeStage) then
     Exit;
-  if not IsAdminInstallMode and not ScopeBootstrapOutput('windows-scope-account-sid', ScopeRequester) then
+  Remaining := @RUNTIME_FILE_COUNT@;
+  if not RuntimeMatchesStage(ScopeStage, Extracted, 0, Remaining) or (Remaining <> 0) then
+    Exit;
+  if IsAdminInstallMode then begin
+    if not ExecAsOriginalUser(ScopeStage + '\@BOOTSTRAP_FILE@',
+      'windows-scope-account-sid --expected ' + ScopeRequester, ScopeStage, SW_HIDE,
+      ewWaitUntilTerminated, ExitCode) or (ExitCode <> 0) then begin
+      Result := 'Start the scope conversion from the account that owns the existing installation.';
+      Exit;
+    end;
+  end else if not ScopeBootstrapOutput('windows-scope-account-sid', ScopeRequester) then
     Exit;
   if not PlainSid(ScopeRequester) then
     Exit;
@@ -170,20 +182,19 @@ begin
   Remaining := @RUNTIME_FILE_COUNT@;
   if not RuntimeMatchesStage(DestinationRuntime, Extracted, 0, Remaining) or (Remaining <> 0) then
     Exit;
-  ScopeStage := DestinationRuntime;
   if not ScopeDestinationAction('prepare', False) then
     Exit;
+  ConvertingScope := True;
   Result := 'Close the previous ALCOMD installation and retry the scope conversion.';
   if not ScopeSourceAction('fence') then
     Exit;
-  ConvertingScope := True;
   Result := '';
 end;
 
 function FinishScopeConversion: Boolean;
 var
-  Root, Bootstrap, SourceScope: String;
-  ExitCode: Integer;
+  Root, Bootstrap, SourceScope, Extracted: String;
+  ExitCode, Remaining: Integer;
 begin
   Result := False;
   Root := ExpandConstant('{app}');
@@ -213,11 +224,17 @@ begin
   Result := True;
   if RecordMatches(ScopeDestinationIntent, ScopePlanDigest + #10) then
     DeleteFile(ScopeDestinationIntent);
+  Remaining := @RUNTIME_FILE_COUNT@;
+  Extracted := ExpandConstant('{tmp}\') + '{app}\runtime\@APP_VERSION@';
+  if RuntimeMatchesStage(ScopeStage, Extracted, 0, Remaining) and (Remaining = 0) then
+    DelTree(ScopeStage, True, True, True);
 end;
 
 procedure RestoreUncommittedScope;
 begin
-  if ConvertingScope and not ScopeSourceRetired then
+  if ConvertingScope and not ScopeSourceRetired and
+    PlainFileMatches(ScopeSourceRoot + '\' + ScopeTransition, ScopePlanDigest) and
+    RecordMatches(ScopeSourceRoot + '\' + ActiveRuntime, ScopeSourceVersion + #10) then
     if not ScopeSourceAction('restore') then
       Log('The Windows scope transaction must be recovered with the same installer.');
 end;

@@ -67,7 +67,10 @@ enum Command {
     },
     #[cfg(windows)]
     #[command(hide = true)]
-    WindowsScopeAccountSid,
+    WindowsScopeAccountSid {
+        #[arg(long)]
+        expected: Option<String>,
+    },
     #[cfg(windows)]
     #[command(hide = true)]
     RequestWindowsMachineScopeSource {
@@ -303,8 +306,14 @@ fn main() -> anyhow::Result<()> {
             );
         }
         #[cfg(windows)]
-        Command::WindowsScopeAccountSid => {
-            println!("{}", alcomd_platform::windows_current_account_sid()?);
+        Command::WindowsScopeAccountSid { expected } => {
+            let sid = alcomd_platform::windows_current_account_sid()?;
+            anyhow::ensure!(
+                !alcomd_platform::windows_process_is_elevated()?
+                    && expected.as_ref().is_none_or(|expected| expected == &sid),
+                "Windows scope conversion requires the original non-elevated account"
+            );
+            println!("{sid}");
             return Ok(());
         }
         #[cfg(windows)]
