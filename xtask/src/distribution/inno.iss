@@ -36,6 +36,7 @@ const
   UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\@APP_ID@_is1';
   ActiveRuntime = 'active-runtime-v1';
   UpdateIntent = 'update-intent-v1';
+  ScopeTransition = 'scope-transition-v1';
   ShellReceipts = 'previous-shell-v1';
   UpdateInstalled = 'installed-v1';
   PreviousShortcutFile = 'previous-start-menu.lnk';
@@ -852,7 +853,8 @@ var
   Remaining: Integer;
 begin
   Result := False;
-  if not PlainDirectoryChain(Root + '\bin', False) then
+  if not PlainDirectoryChain(Root + '\bin', False) or
+    not EntryIsMissing(Root + '\' + ScopeTransition) then
     Exit;
   Intent := PreviousVersion + '|' + PreviousDigest + '|@APP_VERSION@|@MANIFEST_DIGEST@' + #10;
   if not RecordMatches(Root + '\' + UpdateIntent, Intent) then
@@ -1025,6 +1027,7 @@ begin
   if not OwnedUninstallRoot(Root) or not PlainDirectoryChain(Runtime, False) or
     not PlainDirectoryChain(Root + '\bin', False) or
     not EntryIsMissing(Root + '\' + UpdateIntent) or
+    not EntryIsMissing(Root + '\' + ScopeTransition) or
     not RecordMatches(Root + '\' + ActiveRuntime, '@APP_VERSION@' + #10) or
     not PlainFileMatches(Manifest, '@MANIFEST_DIGEST@') then begin
     Log('Could not confirm installed ALCOMD program ownership. No files were removed.');
