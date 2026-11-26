@@ -26,6 +26,17 @@ pub(super) fn export(
         "Inno requires a Windows runtime"
     );
     let version = candidate.version.to_string();
+    let scheme = &product.identity.uri_scheme;
+    ensure!(
+        scheme
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_lowercase())
+            && scheme.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"+.-".contains(&byte)
+            }),
+        "invalid Inno URI scheme"
+    );
     for value in [
         &product.product.family_name,
         &product.identity.install_directory,
@@ -120,9 +131,13 @@ pub(super) fn export(
 
     let bootstrap = format!("{}.exe", product.binaries.bootstrap);
     let cli = format!("{}.exe", product.binaries.cli);
+    let gui = format!("{}.exe", product.binaries.gui);
     let bootstrap_digest = verified
         .file_sha256(&bootstrap)
         .context("Bootstrap missing from verified Inno runtime")?;
+    let gui_digest = verified
+        .file_sha256(&gui)
+        .context("GUI missing from verified Inno runtime")?;
     let crt_digest = verified
         .file_sha256(WINDOWS_CRT_FILE)
         .context("CRT missing from verified Inno runtime")?;
@@ -151,6 +166,10 @@ pub(super) fn export(
         );
     let script = include_str!("inno.iss")
         .replace("@SCOPE_CODE@", include_str!("inno-scope.iss").trim_end())
+        .replace(
+            "@PROTOCOL_CODE@",
+            include_str!("inno-protocol.iss").trim_end(),
+        )
         .replace("@WEBVIEW2_CODE@", webview2_code.trim_end())
         .replace("@ROOT_WORKER_CHECKS@", &root_worker_checks)
         .replace("@ROOT_WORKER_COPIES@", root_worker_copies.trim_end())
@@ -158,6 +177,8 @@ pub(super) fn export(
         .replace("@APP_NAME@", &product.product.display_name)
         .replace("@APP_AUMID@", &product.identity.windows_aumid)
         .replace("@APP_PUBLISHER@", &product.product.publisher_name)
+        .replace("@URI_SCHEME@", scheme)
+        .replace("@GUI_DIGEST@", &format_digest(gui_digest))
         .replace("@APP_VERSION@", &version)
         .replace("@FAMILY_NAME@", &product.product.family_name)
         .replace("@INSTALL_DIRECTORY@", &product.identity.install_directory)

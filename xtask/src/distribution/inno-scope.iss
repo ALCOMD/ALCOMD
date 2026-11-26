@@ -120,6 +120,26 @@ begin
   end;
 end;
 
+function ScopeProtocolCanMove(Root: String): Boolean;
+var
+  SourceRegistryRoot: Cardinal;
+  SourceKey: String;
+begin
+  SourceRegistryRoot := HKEY_LOCAL_MACHINE_64;
+  SourceKey := ProductProtocolKey;
+  if IsAdminInstallMode then begin
+    SourceRegistryRoot := HKEY_USERS;
+    // The original user's Classes hive must be loaded to attest a missing handler.
+    if ProtocolKeyStatus(SourceRegistryRoot, ScopeRequester + '\Software\Classes') <> 0 then begin
+      Result := False;
+      Exit;
+    end;
+    SourceKey := ScopeRequester + '\' + SourceKey;
+  end;
+  Result := CanManageProductProtocol(SourceRegistryRoot, SourceKey, ScopeSourceRoot, ScopeSourceVersion, '') and
+    CanManageProductProtocol(InstallRegistryRoot, ProductProtocolKey, Root, '@APP_VERSION@', '');
+end;
+
 function PrepareScopeConversion(Root: String; var NeedsRestart: Boolean): String;
 var
   Parent, Extracted, DestinationRuntime, Approval: String;
@@ -128,11 +148,15 @@ begin
   Result := 'The existing Windows installation could not be identified for scope conversion.';
   if not DetectScopeSource then
     Exit;
+  if not ScopeProtocolCanMove(Root) then begin
+    Result := 'The existing @URI_SCHEME@ link protocol could not be verified. The installation was kept.';
+    Exit;
+  end;
   Approval := ExpandConstant('{param:ALCOMDConvertScope|}');
   if (Approval <> '@MANIFEST_DIGEST@') and
     (SuppressibleMsgBox('Move ALCOMD ' + ScopeSourceVersion + ' from:' + #13#10 + ScopeSourceRoot + #13#10 +
       'To @APP_VERSION@ in:' + #13#10 + Root + #13#10#13#10 +
-      'This also moves the owned PATH and Start menu entries. Project files and per-account data are kept.',
+      'This also moves the owned PATH, Start menu and link protocol entries. Project files and per-account data are kept.',
       mbConfirmation, MB_YESNO, IDNO) <> IDYES) then begin
     Result := 'ALCOMD kept the existing installation.';
     Exit;
@@ -205,7 +229,7 @@ var
 begin
   Result := False;
   Root := ExpandConstant('{app}');
-  if not OwnedUninstallRoot(Root) or not SyncUninstallRegistration then
+  if not OwnedUninstallRoot(Root) or not SyncUninstallRegistration or not ScopeProtocolCanMove(Root) then
     Exit;
   if not ScopeSourceAction('retire') then
     Exit;
@@ -221,7 +245,7 @@ begin
   if not InstallCliPath then
     Exit;
   PublishStartMenuEntry;
-  if not SyncUninstallRegistration then
+  if not PublishProductProtocol('') or not SyncUninstallRegistration then
     Exit;
   SourceScope := 'current-user';
   if not IsAdminInstallMode then

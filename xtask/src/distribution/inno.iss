@@ -60,6 +60,9 @@ const
   // These claims live in the reserved root and survive loss of the stock Inno key.
   CliPathReceipt = 'cli-path-owner-v1';
   StartMenuReceipt = 'start-menu-owner-v1';
+  ProductProtocolKey = 'Software\Classes\@URI_SCHEME@';
+  ProductProtocolOwner = '@FAMILY_NAME@.InstallationRoot';
+  ProductProtocolDescription = 'URL:@APP_NAME@ protocol';
   StringValue = 1;
   ExpandStringValue = 2;
   ReadEnvironmentString = $10000006;
@@ -525,6 +528,8 @@ begin
   else
     Result := HKEY_CURRENT_USER;
 end;
+
+@PROTOCOL_CODE@
 
 function UpdateScopeConflicts: Boolean;
 begin
@@ -1502,7 +1507,7 @@ begin
     Exit;
   end;
   PublishStartMenuEntry;
-  if not SyncUninstallRegistration or
+  if not PublishProductProtocol('') or not SyncUninstallRegistration or
     (IsAdminInstallMode and not PublishRecord(Root + '\' + MachineBridgeAccount, '1' + #10)) or
     not PublishRecord(Root + '\' + ActiveRuntime, '@APP_VERSION@' + #10) then begin
     ReportIncompleteInstallation('ALCOMD could not activate the migrated installation. Retry with the same bridge.');
@@ -1530,7 +1535,7 @@ begin
     if CurStep = ssPostInstall then begin
       InstallationIncomplete := True;
       UpdateEntriesReady := OwnedUninstallRoot(ExpandConstant('{app}')) and
-        UpdateStartMenuEntry and SyncUninstallRegistration;
+        UpdateStartMenuEntry and PublishProductProtocol(PreviousVersion) and SyncUninstallRegistration;
       if not UpdateEntriesReady then
         ReportIncompleteInstallation('ALCOMD could not finish publishing its update entries.');
     end else if CurStep = ssDone then begin
@@ -1569,7 +1574,9 @@ begin
     if not RepairFilesMatch(ExpandConstant('{app}'), True) or
       (RebuildUninstallRegistration and (not OwnedUninstallRoot(ExpandConstant('{app}')) or
         not SyncUninstallRegistration)) then
-      ReportIncompleteInstallation('ALCOMD could not verify the repaired program files.');
+      ReportIncompleteInstallation('ALCOMD could not verify the repaired program files.')
+    else if not PublishProductProtocol('') then
+      ReportIncompleteInstallation('ALCOMD could not repair its link protocol.');
     Exit;
   end;
   if not OwnedUninstallRoot(ExpandConstant('{app}')) or
@@ -1583,6 +1590,8 @@ begin
       mbInformation, MB_OK, IDOK);
   end;
   PublishStartMenuEntry;
+  if not PublishProductProtocol('') then
+    ReportIncompleteInstallation('ALCOMD could not register its link protocol. Retry with the same installer.');
 end;
 
 function AcquireProgramLease(Manifest: String): Boolean;
@@ -1718,6 +1727,10 @@ begin
   end;
   if not RemoveOwnedStartMenuEntry and Retired then
     Abort;
+  if not RemoveOwnedProductProtocol(Root) then begin
+    Log('Could not remove the ALCOMD-owned link protocol.');
+    Abort;
+  end;
   if Retired then begin
     RetiredUninstallDigest := RetirementDigest;
     Exit;
