@@ -363,7 +363,11 @@ DEB 在隔离网络内用回环 APT 仓库验证真实首装、`dpkg --unpack` �
 
 `cd37b2ce` 接通普通账号的 AppImage 与 DEB 桥接。AppImage 使用独立路径运行已验签的新镜像，旧镜像保留。DEB 继续由 APT 或 dpkg 部署，并核对已发布旧包、包管理器登记及恢复资产。两种方式复用持久迁移日志，用户确认期间普通启动拒绝初始化空 v4 数据。Bootstrap 12 项、分发 7 项和定向 Clippy 通过。Bootstrap 有 1 项既有忽略用例。定向日志 SHA-256 为 `239b2de2ecec4e32616c619f0e1fcab5c131f6fcb32a11a3132fb01fb1088510`。
 
-隔离 Ubuntu 22.04 用合成信任和混合夹具验证实际 FUSE。外部 Updater 先验新 AppImage 完整文件，再运行原生桥接。待确认期间没有安装运行目录、启动桌面或创建正式状态。普通启动和坏健康签名均拒绝。提交后打开真实 WebKit 桌面并通过 CLI 接入 Core。冻结版公开 AppImage、v4 测试镜像与复制的旧设置及 LiteDB 摘要不变。原生日志 SHA-256 为 `9d7099c27d5416f27f70f719302f06f57bc5026d9c6c83c2ba264cba49b4cca6`。冻结 DEB 已在独立 dpkg 根核对 `alcomd3`、实际入口和 `3.4.0-1`，结果 SHA-256 为 `db0f50a7370c6c7881aee4e8a80420be6beb3f1ca7b82d48138976e5d5eb75c1`。完整 Ubuntu 24.04 旧桌面及 DEB 交接、独立下载式 AppImage 桥接和同 SHA 原生复验继续进行。
+隔离 Ubuntu 22.04 用合成信任和混合夹具验证实际 FUSE。外部 Updater 先验新 AppImage 完整文件，再运行原生桥接。待确认期间没有安装运行目录、启动桌面或创建正式状态。普通启动和坏健康签名均拒绝。提交后打开真实 WebKit 桌面并通过 CLI 接入 Core。冻结版公开 AppImage、v4 测试镜像与复制的旧设置及 LiteDB 摘要不变。原生日志 SHA-256 为 `9d7099c27d5416f27f70f719302f06f57bc5026d9c6c83c2ba264cba49b4cca6`。冻结 DEB 已在独立 dpkg 根核对 `alcomd3`、实际入口和 `3.4.0-1`，结果 SHA-256 为 `db0f50a7370c6c7881aee4e8a80420be6beb3f1ca7b82d48138976e5d5eb75c1`。完整 Ubuntu 24.04 旧桌面及 DEB 交接继续验收。
+
+`0ec3ed1c` 接通独立 AppImage 桥接归档。断网 Ubuntu 22.04 用合成信任独立验证归档分离签名后解包。直接确认、篡改产品签名及篡改整包镜像均在执行前拒绝。移除本地更新声明后，仍可离线暂存并显式确认。只有确认后才发布到选择的位置并进入提交阶段。实际内核 FUSE 挂载、WebKit 窗口和 CLI 接入同时通过。另一隔离资料目录在提交前撤回暂存，未发布新的镜像和 v4 资料。冻结镜像以及三份旧资料文件通过原摘要核对。
+
+定向测试 33 项通过，1 项沿用既有忽略。Clippy 和组装命令参数检查通过。定向日志 SHA-256 为 `4f9e1e9918cc5a20adbbd69789f7bb8a612ae89be2ff627294a499a6ba3abde6`，否定用例与完整原生提交及回滚日志分别为 `92033d62f4c9ffe6bc2ab20817ed98e08681832b0c2814df5de19cb3d7cc1e5b` 和 `f4b189c17f81a0ff147f28bcea30cbc4f5de12e3e094149b69bdbcda47905bfa`。原生夹具包含本轮构建的独立启动器和 Bootstrap，并复用此前构建的其余运行组件。`cargo xtask dist --package-appimage-bridge` 从干净签名候选组装的完整交付资产继续复验。
 
 ### 2026-11-26 隔离发行停推与恢复演练
 

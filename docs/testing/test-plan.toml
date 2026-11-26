@@ -1428,6 +1428,15 @@ description = "隔离 Jammy FUSE 混合夹具验新镜像，暂存后阻断普�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
 
 [[test]]
+id = "updater.linux.v3-standalone-appimage-bridge"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "隔离 Jammy 用合成签名归档验证解包前验签，未经暂存的确认、签名与整包篡改拒绝，断网暂存与提交，实际 FUSE/WebKit/IPC，以及确认前回滚保持旧镜像与旧数据。干净签名候选的完整归档组装另验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/appimage_bridge.rs", "xtask/src/distribution/appimage_bridge.rs"]
+
+[[test]]
 id = "installer.windows.exact-candidate-system-entry-points"
 stage = "M12"
 kind = "system"

@@ -48,7 +48,7 @@ Windows 桥接启用现在可以复用原迁移日志恢复。Win11 隔离 Inno 
 
 冻结 Windows 更新器的外层 EXE 和出包入口已实现。全用户桥接由每个账号迁移自己的资料，确认无旧资料的账号也可独立初始化。Win11 安装脚本覆盖机器首启门禁的发布时序及卸载，真实双账号交互和冻结更新器外层验签仍待验收。[冻结 Windows 更新器入口](exec-plans/M12-full-product-distribution.md#冻结-windows-更新器入口与逐账号首启)
 
-Linux 已接通 AppImage 和 DEB 的逐账号桥接。原生 FUSE 混合夹具通过暂存、防止提前初始化、坏签名拒绝、提交后桌面与 IPC 重开及旧资料摘要核对。独立下载式桥接、Ubuntu 24.04 的完整 DEB 交接及同 SHA 复验继续进行。[Linux 冻结版桥接](exec-plans/M12-full-product-distribution.md#2026-11-26-linux-冻结版桥接入口)
+Linux 已接通 AppImage 和 DEB 的逐账号桥接。独立 AppImage 桥接通过断网 Ubuntu 22.04 原生夹具验收，覆盖归档验签、篡改拒绝、离线暂存、确认后经 FUSE 启动真实 WebKit 并接入 Core，以及撤回暂存后保全冻结镜像和资料。同一签名源码的完整组装和 Ubuntu 24.04 的 DEB 交接继续验收。[Linux 冻结版桥接](exec-plans/M12-full-product-distribution.md#2026-11-26-linux-冻结版桥接入口)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
