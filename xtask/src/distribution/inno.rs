@@ -97,12 +97,23 @@ pub(super) fn export(
         format!("{}.exe", product.binaries.cli),
         WINDOWS_CRT_FILE.into(),
     ] {
-        add_file(&mut files, &format!("bin\\{entry}"))?;
+        let installed = format!("bin\\{entry}");
+        add_file(&mut files, &installed)?;
+        writeln!(
+            uninstall_files,
+            "Type: files; Name: \"{{app}}\\{installed}\"; Check: IsBridgeInstallation"
+        )?;
     }
     for directory in runtime_directories.iter().rev() {
         writeln!(
             uninstall_files,
             "Type: dirifempty; Name: \"{{app}}\\{directory}\"; Check: IsUpdateInstallation"
+        )?;
+    }
+    for directory in ["bin", "runtime"] {
+        writeln!(
+            uninstall_files,
+            "Type: dirifempty; Name: \"{{app}}\\{directory}\"; Check: IsBridgeInstallation"
         )?;
     }
 

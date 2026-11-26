@@ -69,8 +69,8 @@ type
 
 var
   ProgramLease: Integer;
-  CommittingUpdate, UpdateEntriesReady, Repairing, CompletingBridge, BridgeProgramReady: Boolean;
-  BridgeJournal, BridgeStage, BridgeExtracted: String;
+  CommittingUpdate, UpdateEntriesReady, Repairing, CompletingBridge: Boolean;
+  BridgeJournal, BridgeStage, BridgeExtracted, BridgeIntent, BridgeProof: String;
   ConvertingScope, ScopeSourceRetired: Boolean;
   InstallationIncomplete: Boolean;
   PreviousVersion, PreviousDigest, UpdateJournal, UpdateStage: String;
@@ -465,12 +465,17 @@ end;
 
 function IsInitialActivation: Boolean;
 begin
-  Result := IsFreshInstallation and not ConvertingScope;
+  Result := IsFreshInstallation and not ConvertingScope and not CompletingBridge;
 end;
 
 function IsUpdateInstallation: Boolean;
 begin
-  Result := CommittingUpdate or ConvertingScope;
+  Result := CommittingUpdate or ConvertingScope or CompletingBridge;
+end;
+
+function IsBridgeInstallation: Boolean;
+begin
+  Result := CompletingBridge;
 end;
 
 function CreateFreshIcon: Boolean;
@@ -563,7 +568,7 @@ end;
 function InstallCliPath: Boolean;
 var
   Root: Cardinal;
-  Entry, Path, Claim: String;
+  Entry, Path, Claim, RecordedClaim: String;
   ValueType: Cardinal;
 begin
   Result := False;
@@ -575,8 +580,6 @@ begin
     Result := True;
     Exit;
   end;
-  if RegValueExists(Root, UninstallKey, OwnedCliPath) then
-    Exit;
   Claim := 'existing|' + Entry;
   if ValueType = 0 then begin
     Claim := 'missing|' + Entry;
@@ -585,8 +588,13 @@ begin
   if Path <> '' then
     Path := Path + ';';
   Path := Path + Entry;
-  if (Length(Path) > 32766) or
-    not RegWriteStringValue(Root, UninstallKey, OwnedCliPath, Claim) then
+  if Length(Path) > 32766 then
+    Exit;
+  if RegValueExists(Root, UninstallKey, OwnedCliPath) then begin
+    if not CompletingBridge or not RegQueryStringValue(Root, UninstallKey, OwnedCliPath, RecordedClaim) or
+      (RecordedClaim <> Claim) then
+      Exit;
+  end else if not RegWriteStringValue(Root, UninstallKey, OwnedCliPath, Claim) then
     Exit;
   Result := WritePath(Path, ValueType);
   if not Result then
@@ -1064,9 +1072,65 @@ begin
   end;
 end;
 
+function BridgeRegistrationMatches(Root: String): Boolean;
+var
+  RegistryRoot: Cardinal;
+  Registered, Version: String;
+  Names: TArrayOfString;
+  Index: Integer;
+begin
+  Result := False;
+  RegistryRoot := InstallRegistryRoot;
+  if not RegKeyExists(RegistryRoot, UninstallKey) then begin
+    Result := True;
+    Exit;
+  end;
+  if not RegGetSubkeyNames(RegistryRoot, UninstallKey, Names) or (GetArrayLength(Names) <> 0) then
+    Exit;
+  // The installer writes App Path before InstallLocation and DisplayVersion.
+  if not RegValueExists(RegistryRoot, UninstallKey, 'Inno Setup: App Path') then begin
+    if not RegGetValueNames(RegistryRoot, UninstallKey, Names) then
+      Exit;
+    for Index := 0 to GetArrayLength(Names) - 1 do
+      if Names[Index] <> 'Inno Setup: Setup Version' then
+        Exit;
+    Result := True;
+    Exit;
+  end;
+  if not RegQueryStringValue(RegistryRoot, UninstallKey, 'Inno Setup: App Path', Registered) or
+    (CompareText(Registered, Root) <> 0) then
+    Exit;
+  if RegValueExists(RegistryRoot, UninstallKey, 'InstallLocation') and not OwnedUninstallRoot(Root) then
+    Exit;
+  if RegValueExists(RegistryRoot, UninstallKey, 'DisplayVersion') then
+    if not RegQueryStringValue(RegistryRoot, UninstallKey, 'DisplayVersion', Version) or
+      (Version <> '@APP_VERSION@') then
+      Exit;
+  Result := True;
+end;
+
+function BridgeRootIsPlain(Root: String): Boolean;
+var
+  Entry: TFindRec;
+begin
+  Result := False;
+  if not PlainDirectoryChain(Root, False) or not FindFirst(AddBackslash(Root) + '*', Entry) then
+    Exit;
+  try
+    repeat
+      if (Entry.Name <> '.') and (Entry.Name <> '..') and
+        (Entry.Attributes and FILE_ATTRIBUTE_REPARSE_POINT <> 0) then
+        Exit;
+    until not FindNext(Entry);
+    Result := True;
+  finally
+    FindClose(Entry);
+  end;
+end;
+
 function PrepareFreshBridge(Root: String; var NeedsRestart: Boolean): String;
 var
-  Worker, Arguments, Scope: String;
+  Worker, Arguments, Scope, Runtime, Bin: String;
   ExitCode, Remaining: Integer;
   Verified: Boolean;
 begin
@@ -1091,18 +1155,69 @@ begin
   Verified := ExecAsOriginalUser(Worker, Arguments, BridgeStage, SW_HIDE, ewWaitUntilTerminated, ExitCode);
   if not Verified or (ExitCode <> 0) then
     Exit;
-  if not EntryIsMissing(Root) then begin
-    Repairing := PrepareRepair(Root);
-    if not Repairing then
+
+  Result := 'The prepared migration installation could not be resumed safely.';
+  BridgeIntent := BridgeStage + '.commit';
+  BridgeProof := '@MANIFEST_DIGEST@|' + GetSHA256OfUnicodeString(BridgeJournal) + #10;
+  if EntryIsMissing(BridgeIntent) then begin
+    if not EntryIsMissing(Root) or RegKeyExists(InstallRegistryRoot, UninstallKey) then
       Exit;
-    Result := EnsureWebView2(NeedsRestart);
-    if (Result = '') and not ApplyRepair(Root) then
-      Result := 'ALCOMD could not finish repairing the prepared migration installation.';
-  end else if not RegKeyExists(InstallRegistryRoot, UninstallKey) then
-    Result := EnsureWebView2(NeedsRestart);
+  end else if not RecordMatches(BridgeIntent, BridgeProof) then begin
+    Log('The migration activation attempt does not match the existing intent.');
+    Exit;
+  end;
+  if not BridgeRegistrationMatches(Root) then begin
+    Log('The original uninstall registration cannot be reused.');
+    Exit;
+  end;
+  if not EntryIsMissing(Root + '\' + ActiveRuntime) then begin
+    Log('The installation already has an activation record.');
+    Exit;
+  end;
+  if not EntryIsMissing(Root) and not BridgeRootIsPlain(Root) then begin
+    Log('The prepared installation root is not a plain directory.');
+    Exit;
+  end;
+  Result := EnsureWebView2(NeedsRestart);
+  if Result <> '' then
+    Exit;
+  Result := 'The prepared migration installation could not be resumed safely.';
+  if not PublishRecord(BridgeIntent, BridgeProof) then
+    Exit;
+
+  // A complete runtime crosses into the installation root in a single rename.
+  // The staged proof and signed worker survive any subsequent Inno rollback.
+  Runtime := Root + '\runtime\@APP_VERSION@';
+  if not PlainDirectoryChain(ExtractFileDir(Runtime), True) or
+    not ForceDirectories(ExtractFileDir(Runtime)) then
+    Exit;
+  if EntryIsMissing(Runtime) and not PublishStagedRuntime(BridgeStage, Runtime) then
+    Exit;
+  RepairStage := BridgeStage;
+  UpdateStage := BridgeStage;
+  UpdateJournal := ExtractFileDir(BridgeStage);
+  Bin := Root + '\bin';
+  if not RepairFilesMatch(Root, False) then begin
+    Log('The previously published migration files do not match the signed stage.');
+    Exit;
+  end;
+  if not CopyRuntimeFile(Bin, '@CLI_FILE@') or not CopyRuntimeFile(Bin, '@CRT_FILE@') or
+    not RepairFilesMatch(Root, True) then begin
+    Log('The stable command entry could not be completed or reverified.');
+    Exit;
+  end;
+
+  if not EntryIsMissing(BridgeIntent + '.installed') then begin
+    if not RecordMatches(BridgeIntent + '.installed', BridgeProof) or not OwnedUninstallRoot(Root) then
+      Exit;
+    // This pass only completes the shell entries and selector. Inno must not
+    // recreate the uninstall key and discard the entry ownership receipts.
+    Repairing := True;
+  end;
+  Result := '';
 end;
 
-procedure FinishFreshBridge;
+procedure CleanFreshBridgeStage;
 var
   Remaining: Integer;
 begin
@@ -1136,7 +1251,7 @@ end;
 procedure PublishStartMenuEntry;
 var
   Root: Cardinal;
-  Source, Destination, Digest: String;
+  Source, Destination, Digest, Claim, RecordedClaim: String;
 begin
   if WizardNoIcons then
     Exit;
@@ -1145,14 +1260,18 @@ begin
   Destination := StartMenuEntry;
   if not PlainDirectoryChain(ExtractFileDir(Destination), False) or
     (GetAttributes(Destination) <> InvalidFileAttributes) or
-    not MissingEntry(DLLGetLastError) or
-    RegValueExists(Root, UninstallKey, OwnedStartMenu) then
+    not MissingEntry(DLLGetLastError) then
     Exit;
   if not ReadDigest(Source, Digest) then begin
     Log('Could not read the staged Start menu shortcut.');
     Exit;
   end;
-  if not RegWriteStringValue(Root, UninstallKey, OwnedStartMenu, Digest + '|' + Destination) then
+  Claim := Digest + '|' + Destination;
+  if RegValueExists(Root, UninstallKey, OwnedStartMenu) then begin
+    if not CompletingBridge or not RegQueryStringValue(Root, UninstallKey, OwnedStartMenu, RecordedClaim) or
+      (RecordedClaim <> Claim) then
+      Exit;
+  end else if not RegWriteStringValue(Root, UninstallKey, OwnedStartMenu, Claim) then
     Exit;
   // RenameFile leaves an existing destination intact.
   if not RenameFile(Source, Destination) then begin
@@ -1185,6 +1304,30 @@ begin
   InstallationIncomplete := True;
   Log(MessageText);
   SuppressibleMsgBox(MessageText, mbError, MB_OK, IDOK);
+end;
+
+procedure FinishFreshBridge;
+var
+  Root: String;
+begin
+  Root := ExpandConstant('{app}');
+  if not RecordMatches(BridgeIntent + '.installed', BridgeProof) or
+    not OwnedUninstallRoot(Root) or not RepairFilesMatch(Root, True) or not InstallCliPath then begin
+    ReportIncompleteInstallation('ALCOMD could not finish publishing the migrated installation.');
+    Exit;
+  end;
+  PublishStartMenuEntry;
+  if not SyncUninstallRegistration or
+    not PublishRecord(Root + '\' + ActiveRuntime, '@APP_VERSION@' + #10) then begin
+    ReportIncompleteInstallation('ALCOMD could not activate the migrated installation. Retry with the same bridge.');
+    Exit;
+  end;
+  InstallationIncomplete := False;
+  if RecordMatches(BridgeIntent + '.installed', BridgeProof) then
+    DeleteFile(BridgeIntent + '.installed');
+  if RecordMatches(BridgeIntent, BridgeProof) then
+    DeleteFile(BridgeIntent);
+  CleanFreshBridgeStage;
 end;
 
 function GetCustomSetupExitCode: Integer;
@@ -1225,15 +1368,21 @@ begin
     end;
     Exit;
   end;
-  if BridgeProgramReady and (CurStep = ssDone) and not InstallationIncomplete then
-    FinishFreshBridge;
+  if CompletingBridge then begin
+    if CurStep = ssPostInstall then begin
+      InstallationIncomplete := True;
+      if not OwnedUninstallRoot(ExpandConstant('{app}')) or not RepairFilesMatch(ExpandConstant('{app}'), True) or
+        not SyncUninstallRegistration or not PublishRecord(BridgeIntent + '.installed', BridgeProof) then
+        ReportIncompleteInstallation('ALCOMD could not persist the migrated program installation.');
+    end else if CurStep = ssDone then
+      FinishFreshBridge;
+    Exit;
+  end;
   if CurStep <> ssPostInstall then
     Exit;
   if Repairing then begin
     if not RepairFilesMatch(ExpandConstant('{app}'), True) then
-      ReportIncompleteInstallation('ALCOMD could not verify the repaired program files.')
-    else
-      BridgeProgramReady := CompletingBridge;
+      ReportIncompleteInstallation('ALCOMD could not verify the repaired program files.');
     Exit;
   end;
   if not OwnedUninstallRoot(ExpandConstant('{app}')) or
@@ -1247,7 +1396,6 @@ begin
       mbInformation, MB_OK, IDOK);
   end;
   PublishStartMenuEntry;
-  BridgeProgramReady := CompletingBridge;
 end;
 
 function AcquireProgramLease(Manifest: String): Boolean;
