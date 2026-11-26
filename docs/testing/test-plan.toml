@@ -1401,6 +1401,15 @@ description = "完整签名源码的 Inno 实包在 Win11 隔离环境分别验�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss", "apps/alcomd-bootstrap/src/windows_installation/bridge.rs"]
 
 [[test]]
+id = "installer.windows.bridge-activation-recovery"
+stage = "M12"
+kind = "fault-injection"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "Win11 断网 Inno 夹具用合成迁移证明覆盖两种安装范围各两个持久点的真实进程终止、同日志恢复、异日志拒绝、活动版本最后发布、原生卸载器摘要、Shell 入口与精确卸载。完整签名产物与冻结客户端另验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss", "xtask/src/distribution/inno.rs"]
+
+[[test]]
 id = "installer.windows.exact-candidate-system-entry-points"
 stage = "M12"
 kind = "system"
