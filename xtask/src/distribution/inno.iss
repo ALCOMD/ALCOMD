@@ -18,6 +18,7 @@ CloseApplications=no
 RestartApplications=no
 ChangesEnvironment=yes
 UninstallDisplayIcon={app}\runtime\@APP_VERSION@\@GUI_NAME@.exe
+Uninstallable=not IsRepairInstallation
 OutputBaseFilename=@FAMILY_NAME@_@APP_VERSION@_windows_x86_64_setup
 
 [Files]
@@ -266,6 +267,9 @@ function PrepareUpdate(Root: String; var NeedsRestart: Boolean; var Prerequisite
 function PrepareRepair(Root: String): Boolean;
   forward;
 
+function ApplyRepair(Root: String): Boolean;
+  forward;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Root, PrerequisiteError: String;
@@ -288,8 +292,11 @@ begin
   Result := 'The destination already exists or could not be checked. Its contents were kept.';
   if GetAttributes(Root) <> InvalidFileAttributes then begin
     Repairing := PrepareRepair(Root);
-    if Repairing then
+    if Repairing then begin
       Result := EnsureWebView2(NeedsRestart);
+      if (Result = '') and not ApplyRepair(Root) then
+        Result := 'ALCOMD could not restore all missing program files. Retry with the same installer.';
+    end;
     Exit;
   end;
   if not MissingEntry(DLLGetLastError) then
@@ -384,7 +391,12 @@ end;
 
 function IsFreshInstallation: Boolean;
 begin
-  Result := not CommittingUpdate;
+  Result := not CommittingUpdate and not Repairing;
+end;
+
+function IsRepairInstallation: Boolean;
+begin
+  Result := Repairing;
 end;
 
 function IsUpdateInstallation: Boolean;
@@ -960,6 +972,27 @@ begin
     RepairStage := ExpandConstant('{tmp}\') + '{app}\runtime\@APP_VERSION@';
   end;
   Result := RepairFilesMatch(Root, False);
+end;
+
+function ApplyRepair(Root: String): Boolean;
+var
+  Scratch: String;
+begin
+  Result := False;
+  Scratch := GenerateUniqueName(AddBackslash(Root), '.tmp');
+  if (Scratch = '') or not CreateDir(Scratch) then
+    Exit;
+  try
+    UpdateStage := RepairStage;
+    UpdateJournal := Scratch;
+    Result := CopyRuntime(Root + '\runtime\@APP_VERSION@') and
+      CopyRuntimeFile(Root + '\bin', '@CLI_FILE@') and
+      CopyRuntimeFile(Root + '\bin', '@CRT_FILE@') and
+      RepairFilesMatch(Root, True);
+  finally
+    if not RemoveDir(Scratch) then
+      Log('Could not remove the ALCOMD repair scratch directory.');
+  end;
 end;
 
 function SyncUninstallRegistration: Boolean;
