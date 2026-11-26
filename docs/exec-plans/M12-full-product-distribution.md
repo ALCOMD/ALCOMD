@@ -419,6 +419,12 @@ Ubuntu 24.04 回环隔离环境用真实冻结 v3.4.0 分别复验两种完整�
 
 最终源码 `73b1a108373c1b7a060b3db037017def84f336a8` 通过干净检出的本机整仓和 765 项 Chromium。两次普通快进逐笔验签。最终 SHA 的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 作业均通过整仓、外部 SDK、Release 和 Tauri 无打包构建，各自通过 765 项 Chromium。Actions、JavaScript／TypeScript、Python 和 Rust 的 CodeQL 均通过。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45696134018) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45696132490)
 
+### 2026-11-27 同源工程候选门禁
+
+签名源码 `2a1f93b978a2180f87d69a4bc54f1f9e52317491` 在干净隔离检出通过格式、整仓 Clippy、`cargo xtask check`、前端检查和生产构建。整仓 Rust 109 组共 1,106 项通过，23 项沿用现有忽略条件。首轮全量 Chromium 为 764 通过、1 项滚轮超时。原用例连续 8 次通过，随后独立全量 765 项通过。保留首轮追踪及原断言。整仓测试和最终全量 Chromium 日志 SHA-256 分别为 `87b502fb5452e9642119998fbe0419ba6eead273f01b2f9792dad36f55811ead`、`2fde025258a0e09d2a3cd0f0889c49bf7de66af106f9e2e9c175fc8a484f8879`。
+
+从 `73b1a108` 到 `2a1f93b9` 共 50 笔提交逐笔验签后普通快进。Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 都通过外部 SDK、整仓、Release、Tauri 无打包构建及各 765 项 Chromium。同 SHA 的 Actions、JavaScript／TypeScript、Python 和 Rust CodeQL 均通过。macOS 原生客户端与 A-017 公开发行条件保持待验。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45872055470) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45872054421)
+
 ### 2026-11-26 Windows 同范围修复与转换维护锁
 
 同版本 Inno 修复检查本范围的卸载登记、活动版本及包内固定清单摘要。取得 Core 程序租约后，同包逐项核对现有运行文件，仅安装缺失组件，并重新核对完整运行目录和稳定 CLI。篡改、其他范围、活跃 Core 及未完成的维护事务会保留现场。Win11 24H2 Sandbox 上的合成 Inno 夹具通过七项检查，包含 GUI、扩展和稳定 CLI 的字节恢复、无关文件保全和拒绝后的重试。测试 EXE 的 SHA-256 为 `263c594088e15e89a69d786434bca865c9449b4b900da6fb0ac1c4da3efc0ec6`。正式双范围实包和 Shell 入口修复继续按验收矩阵执行。

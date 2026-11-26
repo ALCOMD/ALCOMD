@@ -1322,6 +1322,15 @@ description = "签名候选 73b1a108 通过本机整仓和 765 项 Chromium。�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/journal.rs", ".github/workflows/ci.yml"]
 
 [[test]]
+id = "distribution.same-source-installation-candidate-gates"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "implemented"
+description = "签名工程候选 2a1f93b9 通过本机整仓、Chromium 全量复验、三平台 Hosted 整仓、外部 SDK、Release 与 Tauri 构建，各通过 765 项 Chromium。同 SHA 四项 CodeQL 通过。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", ".github/workflows/ci.yml"]
+
+[[test]]
 id = "installer.appimage.portable-cli-native"
 stage = "M12"
 kind = "system"
