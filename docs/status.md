@@ -60,6 +60,8 @@ Linux 同源候选 `310065bf` 的 AppImage 和 DEB 在 Ubuntu 22.04 均通过原
 
 Ubuntu 22.04 已用 `310065bf` 的签名 AppImage 通过原生 Orca 读屏冒烟。项目搜索、列表视图和创建项目支持键盘聚焦，系统读屏器正确朗读并生成合成音频。[Linux 读屏验收](exec-plans/M12-full-product-distribution.md#2026-11-27-linux-orca-读屏冒烟)
 
+与完整 Windows Inno 同源的 Linux 工程包 `2a1f93b9` 已通过 Ubuntu 22.04 的双格式原生健康、逐个 ELF 扫描和 AppImage Orca 复验。Ubuntu 24.04 也通过同摘要 AppImage、DEB 从真实冻结 v3.4.0 回滚与提交的实包验证。[Linux 同源工程包复验](exec-plans/M12-full-product-distribution.md#2026-11-27-linux-同源工程包复验)
+
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
 主仓工程候选 `595fc2ab` 已通过本机整仓、762 项 Chromium、三平台 Hosted CI 和 CodeQL。Windows 原生 Inno 入口的 11 项验收对应上文单独记录的 `62b6f562` 实包。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45552186695) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45552185931)

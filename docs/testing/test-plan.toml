@@ -598,7 +598,7 @@ stage = "M12"
 kind = "manual-accessibility"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "planned"
-description = "Ubuntu 22.04 的签名 AppImage 310065bf 已用原生 Orca 42 验证 Tab 焦点、三个实际 WebKit 控件的语音和虚拟声卡音频。Windows Narrator、macOS VoiceOver 以及最终发行包复验仍待执行。"
+description = "Ubuntu 22.04 的签名 AppImage 310065bf 及 2a1f93b9 均用原生 Orca 42 验证 Tab 焦点、三个实际 WebKit 控件的语音和虚拟声卡音频。Windows Narrator、macOS VoiceOver 以及最终发行包复验仍待执行。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
@@ -1461,7 +1461,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 22.04 用同源 310065bf 完整 AppImage 与 DEB，在隔离标准账号核验原生 GUI、Core、CLI、MCP 认证和撤销以及签名第一方扩展，AppImage 实测 FUSE。两个范围分别核验配对的隔离健康证明。"
+description = "Ubuntu 22.04 用 310065bf 和同源 Windows 实包候选 2a1f93b9 的完整 AppImage 与 DEB，在隔离标准账号核验原生 GUI、Core、CLI、MCP 认证和撤销以及签名第一方扩展，AppImage 实测 FUSE。两个格式分别核验配对的隔离健康证明。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
 
 [[test]]
@@ -1470,7 +1470,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 24.04 的真实冻结 v3.4.0 DEB 与 310065bf v4 DEB 经离线 APT 交接。两个标准账号分别实测预提交启动阻断、撤回重开 v3，以及坏证明拒绝、签名提交、新版 GUI 与 Core 读回和 v3 保全。"
+description = "Ubuntu 24.04 的真实冻结 v3.4.0 DEB 与 310065bf、2a1f93b9 各自的 v4 DEB 经离线 APT 交接。两个标准账号分别实测预提交启动阻断、撤回重开 v3，以及坏证明拒绝、签名提交、新版 GUI 与 Core 读回和 v3 保全。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
 
 [[test]]
@@ -1479,7 +1479,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "同源 310065bf 独立归档在 Ubuntu 24.04 先验证分离签名再解包。标准账号在两个独立资料目录中分别运行真实冻结 v3.4.0 AppImage 的 FUSE/WebKit 桌面，验证回滚重开、显式提交、同源 v4 FUSE/WebKit/IPC、旧数据保全和隔离挂载清理。"
+description = "310065bf 和 2a1f93b9 的同源独立归档在 Ubuntu 24.04 先验证分离签名再解包。标准账号在独立资料目录中分别运行真实冻结 v3.4.0 AppImage 的 FUSE/WebKit 桌面，验证回滚重开、显式提交、同源 v4 FUSE/WebKit/IPC、旧数据保全和隔离挂载清理。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/appimage_bridge.rs", "xtask/src/distribution/appimage_bridge.rs"]
 
 [[test]]
@@ -1672,7 +1672,7 @@ stage = "M12"
 kind = "compatibility"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 22.04 对 310065bf 的完整 AppImage 和 DEB 分别扫描全部 8 个 x86_64 ELF，最高要求均为 GLIBC_2.34。GLIBC_2.38 样本按 GLIBC_2.35 上限被拒；同摘要资产通过 Ubuntu 24.04 原生桌面和 Core 冒烟。"
+description = "Ubuntu 22.04 对 310065bf 与 2a1f93b9 的完整 AppImage 和 DEB 分别扫描全部 8 个 x86_64 ELF，最高要求均为 GLIBC_2.34。GLIBC_2.38 样本按 GLIBC_2.35 上限被拒。同摘要资产通过 Ubuntu 24.04 原生桌面和 Core 冒烟。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "scripts/check-glibc.sh"]
 
 [[test]]
