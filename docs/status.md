@@ -24,6 +24,8 @@ Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密
 
 Ubuntu 22.04 的 AppImage 整包更新与中断恢复已通过 10 项原生工程检查。验收覆盖同路径原子替换、实际进程终止、篡改拒绝、删除原下载后的恢复，以及新版 AppImage 经原生 FUSE 打开并读回原工程。混合夹具的冷启动有超过五秒的记录，干净 Release 仍需复验。[Ubuntu 产品 AppImage 整包更新](exec-plans/M12-full-product-distribution.md#2026-11-26-ubuntu-产品-appimage-整包更新)
 
+AppImage 可选 CLI 集成已接入「关于」页。隔离 Jammy 的合成签名夹具通过八项原生测试，覆盖启用、修复、移动重新绑定、原入口随整包更新、移除和归属保全。新增按钮的完整候选原生操作另验。[AppImage 可选 CLI 集成](exec-plans/M12-full-product-distribution.md#2026-11-26-appimage-可选-cli-集成)
+
 新建的 Ubuntu 22.04 x86_64 WSL 2 实例已复验 AppImage 首启。用此前的签名 DEB 另通过三项双格式归属检查，覆盖双向接管拒绝与 `dpkg purge` 后资料保全。[Ubuntu 双格式归属](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
 
 v4 更新声明、HTTPS 下载、有界暂存和持久防重放已接入。Windows 11 Sandbox 通过 9 项 HTTPS 验收，覆盖下载中断、四进程竞争与回执保全。另通过 6 项签名响应接力检查，覆盖原始声明与资产的离线复验。平台安装提交和回滚继续按阶段 3 实施。[更新声明、下载与暂存核验](exec-plans/M12-full-product-distribution.md#v4-更新声明离线核验)
@@ -49,6 +51,8 @@ M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows H
 当前用户版本切换候选 `b95e132f` 已通过本机整仓、762 项 Chromium、Windows／Ubuntu／macOS Hosted CI 和四项 CodeQL。五笔提交逐笔验签后普通快进至主仓 `main`。三平台 Hosted 均通过外部 SDK 消费者、Release 构建和 Chromium。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45641567398) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45641566264)
 
 全用户更新、应用内更新和 AppImage 整包更新的签名候选 `73b1a108` 已快进至主仓 `main`。本机整仓、三平台 Hosted 和四项 CodeQL 均通过。本机及每个平台的 Chromium 各通过 765 项。Ubuntu Hosted 首轮发现的迁移日志锁问题已修复，并在隔离 Jammy 连续通过 20 轮并行复验。[实施计划](exec-plans/M12-full-product-distribution.md#2026-11-26-桌面更新候选门禁) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45696134018) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45696132490)
+
+隔离发行演练使用生产 Updater 和既有完整签名 Inno 包，在断网 Win11 通过九项回环 HTTPS 检查，覆盖下载、频道隔离、停推、恢复和篡改拒绝。最终发行资产按同一脚本复验。[隔离发行演练](exec-plans/M12-full-product-distribution.md#2026-11-26-隔离发行停推与恢复演练)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 

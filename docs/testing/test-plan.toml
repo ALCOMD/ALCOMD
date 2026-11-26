@@ -1321,6 +1321,24 @@ description = "签名候选 73b1a108 通过本机整仓和 765 项 Chromium。�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/journal.rs", ".github/workflows/ci.yml"]
 
 [[test]]
+id = "installer.appimage.portable-cli-native"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Jammy 合成签名 AppImage 在原生 FUSE 与 IPC 通过八项可选 CLI 检查。覆盖启用、修复、移动、升级、移除与 DEB 或无关路径保全，新增关于页操作随完整候选复验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_cli.rs", "crates/alcomd-platform/src/linux_portable_cli.rs"]
+
+[[test]]
+id = "distribution.isolated-publication-rehearsal"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "断网 Win11 Sandbox 使用生产 Updater 和既有完整签名 Inno 包通过九项回环 HTTPS 检查，包括发布、频道隔离、停推、过时序号、恢复和等长篡改。最终资产按平台格式重复验证。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "scripts/rehearse-product-publication.mjs", "apps/alcomd-updater/examples/product_publication_rehearsal.rs"]
+
+[[test]]
 id = "installer.linux.package-format-ownership"
 stage = "M12"
 kind = "system"
