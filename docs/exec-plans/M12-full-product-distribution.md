@@ -409,6 +409,14 @@ Ubuntu 22.04 回环隔离环境的两个标准账号通过 Core、CLI、WebKit�
 
 Ubuntu 24.04 回环隔离环境用真实冻结 v3.4.0 分别复验两种完整工程包。DEB 经离线 APT 交接，验证待确认锁、回滚重开和签名提交。AppImage 经分离验签的独立归档交接，归档摘要为 `1cfa57bab8a6e82873b176de009bf92aed1972afe437463573a158d3e00f9c6d`，验证实际 FUSE 上的旧版重开与新版启动。两种方式均核对旧资料、原程序和临时资源清理。DEB 与 AppImage 的回执分别为 `848f68b355fc03a6a35f547507a2cd2d8f99354a2915a742163e532e9d773329`、`f21c27621d732b04d09b8fb1e0418edf412759bbd1f756c335ff8c481edea49e`。
 
+### 2026-11-27 Windows 高对比度与讲述人复验
+
+断网 Windows 11 24H2（`26100.9974`）来宾安装签名工程候选 `2a1f93b9`。Inno 安装器 SHA-256 为 `e8dbbe0e44d8c10ebed68acee7f677700b825bf11d5ccd66d6e96e6e668ee425`，已装运行时清单为 `2c65dae115f1667122700ec2d4e944336f6976a11e844b907c103398f66dc90b`。系统高对比设置切换后，同一个运行中的 WebView2 窗口底色从 `#FFFFFF` 切换到 `#202020`，关闭高对比后恢复原配色。项目搜索、列表视图和新建项目在切换后依次可用 Tab 聚焦。通过回执和高对比截图的 SHA-256 分别为 `7e5ca3a554efb4d9d776b10af79995673af0f902cac3bab816d24b21138a54ea`、`534d6c3b29bc9e6ea4c11b6149abf94c35f3484a0b778d91acd1b7804723df25`。[Windows 高对比度接口](https://learn.microsoft.com/en-us/windows/win32/winauto/high-contrast-parameter)
+
+原生讲述人 `10.0.26100.7015` 在该来宾启动，三个控件可通过 Tab 聚焦，讲述人焦点框可见。设置显示当前语音为 Microsoft Huihui Desktop。项目控件和标准 Windows Forms 对照控件均未在语音回顾中产生可核对文字，复制最新短语也未取得文本。回执 SHA-256 为 `1f4d78d820421a56ca5201ddd4f64cb4977e008f2ab7fd96e04ff2b85420fff4`。Windows 原生朗读仍待通过，最终发行包须按 A-017 复验。macOS VoiceOver 继续延期。[讲述人语音回顾说明](https://support.microsoft.com/en-us/accessibility/windows/narrator/complete-guide-to-narrator)
+
+同一工程安装包的 WebView2 在来宾初始为 96 DPI。直接打开显示设置和从系统设置导航两次尝试均未取得可用的缩放控件，125% 原生缩放未执行。第二次回执 SHA-256 为 `d07409b0b9c05940430aa6719612d906fa3f18d65a8c268888aa34f8d80b840c`。
+
 ### 2026-11-26 隔离发行停推与恢复演练
 
 仓库的隔离演练只在回环 HTTPS 提供合成签名 feed，生产 Updater 验证下载和持久防重放。断网 Win11 Sandbox 使用 `6a79c90efc95738ca9ab4851033a7068d23554c8` 的既有完整 Inno 资产，文件 SHA-256 为 `a4922ecd6d48805475357cd474ab051f3e726443570a733ce59744279f6a8bf1`，运行清单 SHA-256 为 `545c375c31f7f2d0853797610032430ffde993cf67548f505d23f3aae132674e`。九项检查覆盖发布前 204、同频道签名下载、跨频道隔离、老客户端与新客户端的停推响应、过时序号、同摘要恢复、等长篡改和恢复后的新客户端下载。该脚本用于按最终候选与平台格式重复演练。

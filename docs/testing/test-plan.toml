@@ -598,7 +598,16 @@ stage = "M12"
 kind = "manual-accessibility"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "planned"
-description = "Ubuntu 22.04 的签名 AppImage 310065bf 及 2a1f93b9 均用原生 Orca 42 验证 Tab 焦点、三个实际 WebKit 控件的语音和虚拟声卡音频。Windows Narrator、macOS VoiceOver 以及最终发行包复验仍待执行。"
+description = "Ubuntu 22.04 的签名 AppImage 310065bf 及 2a1f93b9 均用原生 Orca 42 验证 Tab 焦点、三个实际 WebKit 控件的语音和虚拟声卡音频。Win11 的 2a1f93b9 已验证 Tab 焦点与讲述人焦点框，应用和系统对照控件的语音回顾均无记录。Windows 实际朗读、macOS VoiceOver 以及最终发行包复验仍待通过。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
+
+[[test]]
+id = "gui.m12-windows-native-contrast"
+stage = "M12"
+kind = "manual-accessibility"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "隔离 Windows 11 24H2 用 2a1f93b9 的真实 Inno 工程包验证原生系统高对比度。保持同一 WebView2 窗口运行，系统切换后核对配色、Tab 焦点和恢复原配色。最终发行矩阵复验仍按 A-017 执行。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
