@@ -1607,6 +1607,15 @@ description = "Win11 24H2 隔离来宾的既有管理员会话，使用 2a1f93b9
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
 
 [[test]]
+id = "installer.windows.scope-refusal-native"
+stage = "M12"
+kind = "native-installer"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "Win11 24H2 隔离来宾用 bffef439 完整 Inno 实包，在双向转换分别覆盖缺少业务确认及错误的已提升发起身份。各 7 项证明原范围的系统入口、Core 登记和资料保全，仍可冷启动读回工程。错误身份留下未激活的预留目录。正向转换沿用单独发行门禁。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno-scope.iss", "apps/alcomd-bootstrap/src/main.rs"]
+
+[[test]]
 id = "installer.windows.protocol-key-interruption"
 stage = "M12"
 kind = "system"

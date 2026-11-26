@@ -42,6 +42,8 @@ Win11 当前用户的签名整包升级发现 Inno 与 Bootstrap 的自定义根
 
 Win11 全用户签名完整包在已有管理员会话通过 9 项自定义目录正常升级，文件占用和进程终止恢复各通过 12 项。在同一安装根恢复并由原账号重开，机器入口与资料保全。真实标准账号的交互 UAC 另验。[Windows 全用户自定义目录升级](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户自定义目录整包升级)
 
+`bffef439` 的同一完整包通过双向范围转换的拒绝与源范围保全复验。缺少确认或发起身份已提升时保留原范围、系统入口和账号资料。身份不符的尝试留下未激活的目标预留目录。正向转换仍需原非提升账号发起。[范围转换拒绝复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-安装范围转换拒绝复验)
+
 Win11 隔离夹具已通过协议登记和移除的中断恢复，以及七种第三方抢先改写的时序。完整 Inno 候选 `2a1f93b9` 用 Sandbox 登录账号在当前用户和全用户两种范围验证了真实 Shell 冷启动、单窗口转发和卸载清理。标准账号及双向范围转换继续验收。[Windows 协议事务复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-协议事务并发复验)
 
 Windows Inno 已接入 WebView2 作用域检测、在线 Bootstrapper 和可选离线 Standalone。隔离 Win11 验证了已有运行时、坏摘要和提升范围保护。两种工程包已编译，离线包超过冻结 v3 更新器的 256 MiB 上限。Win10 22H2 的标准账号已通过系统 UAC 取消探针，完整部署与正向提权交接另验。[WebView2 前置部署](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-webview2-前置部署)
