@@ -320,6 +320,12 @@ Ubuntu 22.04 隔离样本用合成密钥，复用已验证的 Linux 运行组件
 
 最终源码 `73b1a108373c1b7a060b3db037017def84f336a8` 通过干净检出的本机整仓和 765 项 Chromium。两次普通快进逐笔验签。最终 SHA 的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 作业均通过整仓、外部 SDK、Release 和 Tauri 无打包构建，各自通过 765 项 Chromium。Actions、JavaScript／TypeScript、Python 和 Rust 的 CodeQL 均通过。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45696134018) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45696132490)
 
+### 2026-11-26 Windows 同范围修复与转换维护锁
+
+同版本 Inno 修复检查本范围的卸载登记、活动版本及包内固定清单摘要。取得 Core 程序租约后，同包逐项核对现有运行文件，仅安装缺失组件，并重新核对完整运行目录和稳定 CLI。篡改、其他范围、活跃 Core 及未完成的维护事务会保留现场。Win11 24H2 Sandbox 上的合成 Inno 夹具通过七项检查，包含 GUI、扩展和稳定 CLI 的字节恢复、无关文件保全和拒绝后的重试。测试 EXE 的 SHA-256 为 `263c594088e15e89a69d786434bca865c9449b4b900da6fb0ac1c4da3efc0ec6`。正式双范围实包和 Shell 入口修复继续按验收矩阵执行。
+
+Windows 平台定向回归验证了转换意图持久化后的启动阻断。后台维护进程退出后，源 Core、GUI、稳定 CLI 和同范围更新仍拒绝启动或写入。匹配的事务可重新取得租约和撤销准备，不同事务无法替换或删除已有意图。Inno 更新和普通卸载也会拒绝待转换的安装。双向转换仍需接通新范围激活、逐账号登记与精确清理。
+
 ### 2026-11-25 Ubuntu 产品 AppImage 首启
 
 签名源码 `b324627eba5305457294bc4d921674535ead6dd8` 在隔离 Ubuntu 22.04 x86_64 构建七个 Release 程序，最高 glibc 符号版本为 `GLIBC_2.34`。合成密钥签名后的运行清单摘要为 `b82591144c327f87058905947ec9e12a3144aecb922422a708763fc948f99673`。用已固定摘要的 appimagetool 和 Type 2 runtime 生成 AppImage，文件 SHA-256 为 `e3c5e4dc60d39ca1966cd34180e05873a99b0f672b33357c2e6672b9fe381bdb`。
