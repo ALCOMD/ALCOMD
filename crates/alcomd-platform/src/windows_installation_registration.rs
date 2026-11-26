@@ -327,6 +327,7 @@ fn has_name(path: &Path, name: &str) -> bool {
 pub struct WindowsScopeTransitionSource {
     root: PathBuf,
     trust: InstallationTrust,
+    source_version: Version,
     _lease: File,
     _instance: Option<DaemonInstance>,
 }
@@ -357,21 +358,28 @@ impl WindowsScopeTransitionSource {
         }
         trust.check_executable(executable)?;
         let runtime = windows_installation_runtime(executable)?;
+        let source_version = path_version(&runtime)?;
         if runtime_root(&runtime)? != root
-            || path_version(&runtime)? != parse_version(env!("CARGO_PKG_VERSION"))?
+            || source_version != parse_version(env!("CARGO_PKG_VERSION"))?
         {
             return Err(invalid_registration());
         }
         trust.check_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
         let lease = lease_runtime(&runtime, true, trust)?;
         require_no_update_intent(&root)?;
-        if active_version(&root, trust)? != path_version(&runtime)? {
-            return Err(installation_not_ready());
+        match active_version(&root, trust) {
+            Ok(version) if version == source_version => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                trust.open_record(&root.join(WINDOWS_SCOPE_TRANSITION_RECORD))?;
+            }
+            Err(error) => return Err(error),
+            _ => return Err(installation_not_ready()),
         }
         let instance = maintenance_instance(trust)?;
         Ok(Self {
             root,
             trust,
+            source_version,
             _lease: lease,
             _instance: instance,
         })
@@ -387,6 +395,7 @@ impl WindowsScopeTransitionSource {
                 sync_directory(&self.root)
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                self.require_source_activation()?;
                 publish_owned_record(&path, intent, None, self.trust)
             }
             Err(error) => Err(error),
@@ -395,12 +404,35 @@ impl WindowsScopeTransitionSource {
 
     /// Reopens the source after the coordinator has rolled back the inactive destination.
     pub fn restore(&self, expected_intent: &[u8]) -> io::Result<()> {
+        self.require_source_activation()?;
         remove_maintenance_intent(
             &self.root,
             WINDOWS_SCOPE_TRANSITION_RECORD,
             expected_intent,
             self.trust,
         )
+    }
+
+    /// Retires the source activation at the conversion commit point, retaining the intent for recovery.
+    pub fn retire(&self, expected_intent: &[u8]) -> io::Result<()> {
+        validate_maintenance_intent(expected_intent)?;
+        let intent = self
+            .trust
+            .open_record(&self.root.join(WINDOWS_SCOPE_TRANSITION_RECORD))?;
+        require_maintenance_intent(&intent, expected_intent)?;
+        remove_maintenance_intent(
+            &self.root,
+            WINDOWS_ACTIVE_RUNTIME_RECORD,
+            format!("{}\n", self.source_version).as_bytes(),
+            self.trust,
+        )
+    }
+
+    fn require_source_activation(&self) -> io::Result<()> {
+        if active_version(&self.root, self.trust)? != self.source_version {
+            return Err(installation_not_ready());
+        }
+        Ok(())
     }
 }
 
@@ -1012,6 +1044,46 @@ mod tests {
         assert!(WindowsInstallationUpdate::acquire_at(&bootstrap, &next, root.clone()).is_err());
         fs::create_dir(&intent)?;
         assert!(crate::registered_core_executable(&config).is_err());
+
+        let retiring_root = root.join("scope-source");
+        let retiring_runtime = retiring_root.join("runtime").join(current.to_string());
+        fs::create_dir_all(&retiring_runtime)?;
+        let retiring_bootstrap = retiring_runtime.join(WINDOWS_BOOTSTRAP_EXECUTABLE_NAME);
+        let retiring_core = retiring_runtime.join(CORE_EXECUTABLE_NAME);
+        for path in [
+            &retiring_bootstrap,
+            &retiring_core,
+            &retiring_runtime.join(PRODUCT_PAYLOAD_MANIFEST_NAME),
+        ] {
+            fs::write(path, [])?;
+        }
+        let retiring_selector = retiring_root.join(WINDOWS_ACTIVE_RUNTIME_RECORD);
+        fs::write(&retiring_selector, format!("{current}\n"))?;
+        let retirement = WindowsScopeTransitionSource::acquire_at(
+            &retiring_bootstrap,
+            retiring_root.clone(),
+            InstallationTrust::User,
+        )?;
+        assert!(retirement.retire(scope_intent).is_err());
+        retirement.fence(scope_intent)?;
+        assert!(retirement.retire(b"another intent").is_err());
+        assert!(retiring_selector.is_file());
+        retirement.retire(scope_intent)?;
+        assert!(retirement.restore(scope_intent).is_err());
+        assert!(!retiring_selector.exists());
+        drop(retirement);
+        assert!(hold_windows_installation(&retiring_core).is_err());
+        let retirement = WindowsScopeTransitionSource::acquire_at(
+            &retiring_bootstrap,
+            retiring_root.clone(),
+            InstallationTrust::User,
+        )?;
+        retirement.retire(scope_intent)?;
+        drop(retirement);
+        assert_eq!(
+            fs::read(retiring_root.join(WINDOWS_SCOPE_TRANSITION_RECORD))?,
+            scope_intent
+        );
         fs::remove_dir_all(root)
     }
 }

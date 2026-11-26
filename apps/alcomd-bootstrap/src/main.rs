@@ -35,6 +35,16 @@ enum Command {
         source_sha: String,
     },
     #[cfg(windows)]
+    #[command(hide = true)]
+    CheckWindowsScopeTransition {
+        #[arg(long, value_enum)]
+        destination: alcomd_bootstrap::WindowsInstallScope,
+        #[arg(long)]
+        destination_version: String,
+        #[arg(long)]
+        staged_runtime: PathBuf,
+    },
+    #[cfg(windows)]
     /// Prepare a verified update for a current-user Windows installation.
     StageInstalledUpdate(UpdateArguments),
     #[cfg(windows)]
@@ -175,6 +185,20 @@ fn main() -> anyhow::Result<()> {
         #[cfg(windows)]
         Command::VerifyInstalledUninstall { source_sha } => {
             return alcomd_bootstrap::verify_installed_machine_uninstall(source_sha);
+        }
+        #[cfg(windows)]
+        Command::CheckWindowsScopeTransition {
+            destination,
+            destination_version,
+            staged_runtime,
+        } => {
+            let plan = alcomd_bootstrap::check_windows_scope_transition(
+                destination,
+                &destination_version,
+                &std::path::absolute(staged_runtime)?,
+            )?;
+            println!("{plan}");
+            return Ok(());
         }
         #[cfg(windows)]
         Command::ApplyMachineUpdateWorker {

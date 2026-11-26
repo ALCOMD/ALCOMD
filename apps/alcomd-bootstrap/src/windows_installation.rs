@@ -13,7 +13,9 @@ use alcomd_updater::distribution::{
 };
 use anyhow::{Context, ensure};
 
+mod scope;
 mod update;
+pub use scope::{WindowsInstallScope, check_windows_scope_transition};
 pub use update::{
     apply_installed_update, apply_machine_update_worker, resume_installed_update,
     resume_machine_update_worker, stage_installed_update, with_windows_desktop_restart,
