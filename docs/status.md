@@ -50,7 +50,7 @@ Windows 桥接启用现在可以复用原迁移日志恢复。Win11 隔离 Inno 
 
 Windows 签名源码 `b605e19b` 的完整 Inno 与配套迁移载荷已在断网 Win11 标准账号通过冻结 v3.4.0 实际首启、惰性暂存、迁移副本上的项目读写、提交前回滚及 v3 桌面重开。全用户实包验证尚未迁移的标准账号无法登记 Core 或创建数据。同包两种安装范围均通过 Core RPC、CLI、WebView2、MCP 和第一方扩展的原生健康检查。[冻结 Windows 更新器入口](exec-plans/M12-full-product-distribution.md#冻结-windows-更新器入口与逐账号首启)
 
-Linux 已接通 AppImage 和 DEB 的逐账号桥接。独立 AppImage 桥接通过断网 Ubuntu 22.04 原生夹具验收，覆盖归档验签、篡改拒绝、离线暂存、确认后经 FUSE 启动真实 WebKit 并接入 Core，以及撤回暂存后保全冻结镜像和资料。同一签名源码的完整组装和 Ubuntu 24.04 的 DEB 交接继续验收。[Linux 冻结版桥接](exec-plans/M12-full-product-distribution.md#2026-11-26-linux-冻结版桥接入口)
+Linux 已接通 AppImage 和 DEB 的逐账号桥接。独立 AppImage 桥接通过断网 Ubuntu 22.04 原生夹具验收，覆盖归档验签、篡改拒绝、离线暂存、确认后经 FUSE 启动真实 WebKit 并接入 Core，以及撤回暂存后保全冻结镜像和资料。Ubuntu 24.04 已通过 APT 部署真实冻结版 DEB，并在断网标准账号实测 v3 桌面首启及重开，LiteDB 摘要一致。同源 v4 DEB 的完整交接继续验收。[Linux 冻结版桥接](exec-plans/M12-full-product-distribution.md#2026-11-26-linux-冻结版桥接入口)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
