@@ -1969,6 +1969,7 @@ if (productUpdateFixture !== null) {
         state: productUpdateFixture === "recovery" ? "recovery" : "idle",
     };
     mockIPC((command, args) => {
+        if (command === "gui_portable_cli") return "unsupported";
         if (command !== "gui_product_update" || typeof args !== "object" || args === null || !("action" in args)) {
             return undefined;
         }
