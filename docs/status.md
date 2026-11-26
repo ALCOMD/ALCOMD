@@ -46,6 +46,10 @@ Windows 签名源码 `12057897` 的完整 Inno 与临时迁移载荷通过合成
 
 Windows 桥接启用现在可以复用原迁移日志恢复。Win11 隔离 Inno 夹具在两种范围各实际终止两次进程，复验原生卸载登记、活动版本、Shell 入口和无关文件保全，共 8 项通过。同源完整实包再通过双范围暂存的 8 项检查。原账号的数据提交和启用仍待冻结版交接验收。[安装程序中断恢复](exec-plans/M12-full-product-distribution.md#安装程序中断恢复)
 
+冻结 Windows 更新器的外层 EXE 和出包入口已实现。全用户桥接由每个账号迁移自己的资料，确认无旧资料的账号也可独立初始化。Win11 安装脚本覆盖机器首启门禁的发布时序及卸载，真实双账号交互和冻结更新器外层验签仍待验收。[冻结 Windows 更新器入口](exec-plans/M12-full-product-distribution.md#冻结-windows-更新器入口与逐账号首启)
+
+Linux 已接通 AppImage 和 DEB 的逐账号桥接。原生 FUSE 混合夹具通过暂存、防止提前初始化、坏签名拒绝、提交后桌面与 IPC 重开及旧资料摘要核对。独立下载式桥接、Ubuntu 24.04 的完整 DEB 交接及同 SHA 复验继续进行。[Linux 冻结版桥接](exec-plans/M12-full-product-distribution.md#2026-11-26-linux-冻结版桥接入口)
+
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
 主仓工程候选 `595fc2ab` 已通过本机整仓、762 项 Chromium、三平台 Hosted CI 和 CodeQL。Windows 原生 Inno 入口的 11 项验收对应上文单独记录的 `62b6f562` 实包。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45552186695) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45552185931)

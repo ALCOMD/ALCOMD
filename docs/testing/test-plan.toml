@@ -1410,6 +1410,24 @@ description = "Win11 断网 Inno 夹具用合成迁移证明覆盖两种安装�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss", "xtask/src/distribution/inno.rs"]
 
 [[test]]
+id = "installer.windows.bridge-profile-readiness"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "Win11 隔离 Inno 夹具验证机器账号门禁在活动选择器前写入、当前用户范围不写入及卸载清理。Windows 定向测试覆盖普通启动拒绝空资料、回执归属以及无旧资料启用证明与候选和安装范围绑定。真实多账号 UAC 和冻结外层另验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "crates/alcomd-platform/src/windows_bridge_profile.rs", "apps/alcomd-bootstrap/src/windows_installation/bridge.rs"]
+
+[[test]]
+id = "updater.linux.v3-native-appimage-bridge"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "隔离 Jammy FUSE 混合夹具验新镜像，暂存后阻断普通首启，拒绝坏健康证明，持久提交后启动真实 WebKit 和 Core，保全冻结 AppImage 及旧资料。独立下载资产和同 SHA 交接另验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
+
+[[test]]
 id = "installer.windows.exact-candidate-system-entry-points"
 stage = "M12"
 kind = "system"
