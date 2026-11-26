@@ -119,12 +119,19 @@ mod windows;
 #[cfg(windows)]
 mod windows_app_identity;
 #[cfg(windows)]
+mod windows_installation_ui;
+#[cfg(windows)]
 mod windows_unity_window;
 #[cfg(windows)]
 mod windows_url_handler;
 
 #[cfg(windows)]
 pub use windows_app_identity::set_current_process_app_user_model_id;
+#[cfg(windows)]
+pub use windows_installation_ui::{
+    confirm_windows_installation, notify_windows_installation,
+    read_windows_installation_registry_string,
+};
 #[cfg(windows)]
 pub use windows_unity_window::{
     UnityWindowFocus, UnityWindowMonitor, UnityWindowReader, UnityWindowSnapshot, UnityWindowState,

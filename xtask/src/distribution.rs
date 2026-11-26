@@ -18,6 +18,7 @@ mod build;
 mod inno;
 mod package;
 mod webview2;
+mod windows_bridge;
 
 const FIXTURE_KEY: [u8; 32] = [37; 32];
 
@@ -25,7 +26,8 @@ const FIXTURE_KEY: [u8; 32] = [37; 32];
 #[command(
     bin_name = "cargo xtask dist",
     about = "Prepare and verify an offline v4 runtime candidate",
-    group(ArgGroup::new("action").args(["build", "prepare", "check", "package_layout", "prepare_bridge"]).required(true))
+    group(ArgGroup::new("action").args(["build", "prepare", "check", "package_layout", "prepare_bridge", "package_windows_bridge"]).required(true)),
+    group(ArgGroup::new("bridge_action").args(["prepare_bridge", "package_windows_bridge"]))
 )]
 struct Arguments {
     #[arg(long, value_enum)]
@@ -45,12 +47,30 @@ struct Arguments {
     /// Prepare a v3 migration payload from the verified, complete release runtime.
     #[arg(long, requires_all = ["staging", "bridge_output", "bridge_channel"], conflicts_with = "fixture")]
     prepare_bridge: bool,
-    /// New, independent migration staging directory and signature message.
-    #[arg(long, requires = "prepare_bridge")]
+    /// Assemble a standalone unsigned Windows launcher for the frozen v3 updater.
+    #[arg(long, requires_all = ["staging", "bridge_output", "bridge_channel", "signed_bridge", "bridge_installer", "bridge_installer_sha256", "bridge_current_user_health", "bridge_all_users_health"], conflicts_with = "fixture")]
+    package_windows_bridge: bool,
+    /// New migration staging or standalone bridge output directory.
+    #[arg(long, requires = "bridge_action")]
     bridge_output: Option<PathBuf>,
     /// Channel of the existing v1 bridge payload.
-    #[arg(long, value_enum, requires = "prepare_bridge")]
+    #[arg(long, value_enum, requires = "bridge_action")]
     bridge_channel: Option<Channel>,
+    /// Exact signed migration input prepared separately from the ordinary product.
+    #[arg(long, requires = "package_windows_bridge")]
+    signed_bridge: Option<PathBuf>,
+    /// Complete Windows Inno product installer.
+    #[arg(long, requires = "package_windows_bridge")]
+    bridge_installer: Option<PathBuf>,
+    /// Reviewed digest of the complete Inno installer.
+    #[arg(long, requires = "package_windows_bridge")]
+    bridge_installer_sha256: Option<String>,
+    /// Current-user health.json and health.sig directory.
+    #[arg(long, requires = "package_windows_bridge")]
+    bridge_current_user_health: Option<PathBuf>,
+    /// All-users health.json and health.sig directory.
+    #[arg(long, requires = "package_windows_bridge")]
+    bridge_all_users_health: Option<PathBuf>,
     #[arg(long, value_enum, requires = "package_layout")]
     format: Option<package::Format>,
     #[arg(long, requires = "package_layout")]
@@ -68,19 +88,19 @@ struct Arguments {
     #[arg(long, requires = "build")]
     discord_package: Option<PathBuf>,
     /// Pinned SHA-256 of the first-party extension archive.
-    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout", "prepare_bridge"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout", "bridge_action"])]
     discord_sha256: Option<String>,
     /// The x64 vcruntime140.dll from a licensed Visual Studio redistributable directory.
     #[arg(long, requires_all = ["build", "windows_crt_sha256"])]
     windows_crt: Option<PathBuf>,
     /// Pinned SHA-256 of the exact app-local Windows VC runtime DLL.
-    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout", "prepare_bridge"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout", "bridge_action"])]
     windows_crt_sha256: Option<String>,
     /// The x64 vcruntime140_1.dll from the same Visual Studio redistributable directory.
     #[arg(long, requires_all = ["build", "windows_crt_companion_sha256"])]
     windows_crt_companion: Option<PathBuf>,
     /// Pinned SHA-256 of the exact app-local Windows VC runtime companion DLL.
-    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout", "prepare_bridge"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout", "bridge_action"])]
     windows_crt_companion_sha256: Option<String>,
     /// Microsoft's online Evergreen Bootstrapper for a Windows release Inno layout.
     #[arg(long, requires_all = ["package_layout", "webview2_bootstrapper_sha256"], conflicts_with = "fixture")]
@@ -123,7 +143,33 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
         (None, None) => None,
         _ => anyhow::bail!("supply both --windows-crt-sha256 and --windows-crt-companion-sha256"),
     };
-    if args.prepare_bridge {
+    if args.package_windows_bridge {
+        let output = std::path::absolute(args.bridge_output.context("bridge output is required")?)?;
+        let paths = windows_bridge::Inputs {
+            runtime: path,
+            migration: args.signed_bridge.context("signed bridge is required")?,
+            installer: args
+                .bridge_installer
+                .context("bridge installer is required")?,
+            installer_sha256: args
+                .bridge_installer_sha256
+                .context("reviewed installer digest is required")?,
+            current_user_health: args
+                .bridge_current_user_health
+                .context("current-user health is required")?,
+            all_users_health: args
+                .bridge_all_users_health
+                .context("all-users health is required")?,
+        };
+        windows_bridge::package(
+            root,
+            &output,
+            &product,
+            &candidate,
+            args.bridge_channel.context("bridge channel is required")?,
+            &paths,
+        )?;
+    } else if args.prepare_bridge {
         let output = std::path::absolute(args.bridge_output.context("bridge output is required")?)?;
         bridge::export(
             root,
@@ -325,6 +371,46 @@ fn synthetic_executable(target: Target) -> [u8; 90] {
 mod tests {
     use super::*;
     use alcomd_updater::distribution::{WINDOWS_CRT_COMPANION_FILE, WINDOWS_CRT_FILE};
+
+    #[test]
+    fn windows_bridge_packaging_requires_both_reviewed_health_inputs() -> anyhow::Result<()> {
+        let mut base = vec![
+            "dist",
+            "--target",
+            "x86_64-pc-windows-msvc",
+            "--staging",
+            "runtime",
+            "--source-sha",
+            "source",
+            "--bridge-output",
+            "output",
+            "--bridge-channel",
+            "beta",
+        ];
+        let preparation =
+            Arguments::try_parse_from(base.iter().copied().chain(["--prepare-bridge"]))?;
+        assert!(preparation.prepare_bridge);
+        base.extend([
+            "--package-windows-bridge",
+            "--signed-bridge",
+            "migration",
+            "--bridge-installer",
+            "setup.exe",
+            "--bridge-installer-sha256",
+            "digest",
+            "--bridge-current-user-health",
+            "current-user",
+        ]);
+        assert!(Arguments::try_parse_from(&base).is_err());
+        base.extend(["--bridge-all-users-health", "all-users"]);
+        assert!(Arguments::try_parse_from(&base)?.package_windows_bridge);
+        assert!(Arguments::try_parse_from(base.iter().copied().chain(["--fixture"])).is_err());
+        assert!(
+            Arguments::try_parse_from(base.into_iter().chain(["--discord-sha256", "digest"]))
+                .is_err()
+        );
+        Ok(())
+    }
 
     fn fixture(target: Target) -> anyhow::Result<(tempfile::TempDir, Candidate)> {
         let product: ProductConfig = toml::from_str(include_str!("../../alcomd.product.toml"))?;
