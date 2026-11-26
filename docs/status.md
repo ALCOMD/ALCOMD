@@ -42,6 +42,8 @@ Windows Inno 已接入 WebView2 作用域检测、在线 Bootstrapper 和可选�
 
 Windows 和 AppImage 的「关于」页已接入产品更新。三项 Chromium 用例覆盖用户确认前保留当前进程、取消下载和恢复确认。Windows 签名夹具另通过 8 项真实 WebView2 检查，覆盖仅检查声明、下载保留原版、取消确认、自动安装重启及新版 Core 读回原工程。Windows 正式包签名前须核对两只 Microsoft x64 CRT 的固定摘要。[应用内产品更新](exec-plans/M12-full-product-distribution.md#2026-11-26-应用内产品更新)
 
+Windows 签名源码 `12057897` 的完整 Inno 与临时迁移载荷通过合成签名和摘要配对。Win11 Sandbox 的两种安装范围共通过 8 项原生检查，覆盖惰性暂存、重试、未知目录保全及缺少有效迁移日志时拒绝启用。完整冻结版更新交接继续验收。[Windows 桥接程序双范围暂存](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-桥接程序双范围暂存)
+
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
 主仓工程候选 `595fc2ab` 已通过本机整仓、762 项 Chromium、三平台 Hosted CI 和 CodeQL。Windows 原生 Inno 入口的 11 项验收对应上文单独记录的 `62b6f562` 实包。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45552186695) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45552185931)

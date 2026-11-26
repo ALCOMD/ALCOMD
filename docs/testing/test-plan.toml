@@ -1392,6 +1392,15 @@ description = "Win11 原生 Inno 验证两种范围的开始菜单位置、实�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss", "xtask/src/distribution/inno.rs"]
 
 [[test]]
+id = "installer.windows.bridge-inactive-staging"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "完整签名源码的 Inno 实包在 Win11 隔离环境分别验证两种安装范围的同卷未激活暂存、逐文件摘要、重试、错摘要与混用参数拒绝、未知目录保全和缺已提交账号日志时拒绝启用。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss", "apps/alcomd-bootstrap/src/windows_installation/bridge.rs"]
+
+[[test]]
 id = "installer.windows.exact-candidate-system-entry-points"
 stage = "M12"
 kind = "system"
