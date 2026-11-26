@@ -1428,6 +1428,15 @@ description = "断网 Win11 使用同一 b605e19b Windows Release Inno 和配套
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/bridge.rs"]
 
 [[test]]
+id = "installer.windows.bridge-native-dual-scope-health"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "断网 Win11 使用同一 b605e19b 完整 Inno，验证两种范围的 Core RPC、稳定 CLI、实际 WebView2、凭据 MCP 和签名第一方扩展发现。全用户在独立标准账号先验证迁移首启门禁。原账号交互提升与冻结外层验签另验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "crates/alcomd-platform/src/windows_bridge_profile.rs"]
+
+[[test]]
 id = "updater.linux.v3-native-appimage-bridge"
 stage = "M12"
 kind = "system"

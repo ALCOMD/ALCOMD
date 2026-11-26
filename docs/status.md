@@ -48,7 +48,7 @@ Windows 桥接启用现在可以复用原迁移日志恢复。Win11 隔离 Inno 
 
 冻结 Windows 更新器的外层 EXE 和出包入口已实现。全用户桥接由每个账号迁移自己的资料，确认无旧资料的账号也可独立初始化。Win11 安装脚本覆盖机器首启门禁的发布时序及卸载，真实双账号交互和冻结更新器外层验签仍待验收。[冻结 Windows 更新器入口](exec-plans/M12-full-product-distribution.md#冻结-windows-更新器入口与逐账号首启)
 
-Windows 签名源码 `b605e19b` 的完整 Inno 与配套迁移载荷已在断网 Win11 标准账号通过冻结 v3.4.0 实际首启、惰性暂存、迁移副本上的项目读写、提交前回滚及 v3 桌面重开。全用户实包也通过逐账号首启拦截，验证尚未迁移的标准账号无法登记 Core 或创建数据。[冻结 Windows 更新器入口](exec-plans/M12-full-product-distribution.md#冻结-windows-更新器入口与逐账号首启)
+Windows 签名源码 `b605e19b` 的完整 Inno 与配套迁移载荷已在断网 Win11 标准账号通过冻结 v3.4.0 实际首启、惰性暂存、迁移副本上的项目读写、提交前回滚及 v3 桌面重开。全用户实包验证尚未迁移的标准账号无法登记 Core 或创建数据。同包两种安装范围均通过 Core RPC、CLI、WebView2、MCP 和第一方扩展的原生健康检查。[冻结 Windows 更新器入口](exec-plans/M12-full-product-distribution.md#冻结-windows-更新器入口与逐账号首启)
 
 Linux 已接通 AppImage 和 DEB 的逐账号桥接。独立 AppImage 桥接通过断网 Ubuntu 22.04 原生夹具验收，覆盖归档验签、篡改拒绝、离线暂存、确认后经 FUSE 启动真实 WebKit 并接入 Core，以及撤回暂存后保全冻结镜像和资料。同一签名源码的完整组装和 Ubuntu 24.04 的 DEB 交接继续验收。[Linux 冻结版桥接](exec-plans/M12-full-product-distribution.md#2026-11-26-linux-冻结版桥接入口)
 
