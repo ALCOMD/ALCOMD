@@ -1422,7 +1422,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "Windows 11 24H2 Sandbox 合成 Inno 夹具通过同范围缺失文件修复、无关文件保全、篡改与活跃租约拒绝、待完成维护和相反范围拒绝以及重试。正式双范围实包与 Shell 入口修复另验。"
+description = "Windows 11 24H2 两种安装范围各通过 15 项原生工程检查。完整签名运行载荷和修订后的 Inno 恢复缺失文件，保留原卸载记录，自有 Shell 入口随后正常移除。已覆盖篡改、活跃租约、待完成维护和重试。整包同 SHA 和 Win10 复验另列。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss"]
 
 [[test]]
