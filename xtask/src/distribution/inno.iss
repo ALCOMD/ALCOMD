@@ -545,6 +545,11 @@ end;
 function PublishStagedRuntime(Source, Destination: String): Boolean;
   forward;
 
+function ProductStagePath(Root, Prefix, Digest: String): String;
+begin
+  Result := AddBackslash(ExtractFileDir(Root)) + '.' + ExtractFileName(Root) + Prefix + Digest;
+end;
+
 function InitializeSetup: Boolean;
 var
   Digest, FreshDigest, FinishDigest, Commit, Scope, Root, Parent, Prefix, Destination, Extracted: String;
@@ -610,7 +615,7 @@ begin
     Prefix := '@UPDATE_STAGE_PREFIX@';
   end;
   // Both success and failure leave the normal Inno installation path unused.
-  Destination := AddBackslash(Parent) + '.@INSTALL_DIRECTORY@' + Prefix + Digest;
+  Destination := ProductStagePath(Root, Prefix, Digest);
   if not EntryIsMissing(Destination) then
     Exit;
   ExtractTemporaryFiles('{app}\runtime\@APP_VERSION@\*');
@@ -1147,8 +1152,7 @@ begin
   Intent := PreviousVersion + '|' + PreviousDigest + '|@APP_VERSION@|@MANIFEST_DIGEST@' + #10;
   if not RecordMatches(Root + '\' + UpdateIntent, Intent) then
     Exit;
-  UpdateStage := AddBackslash(ExtractFileDir(Root)) +
-    '.@INSTALL_DIRECTORY@@UPDATE_STAGE_PREFIX@@MANIFEST_DIGEST@';
+  UpdateStage := ProductStagePath(Root, '@UPDATE_STAGE_PREFIX@', '@MANIFEST_DIGEST@');
   UpdateJournal := UpdateStage + '.transaction';
   if not PlainDirectoryChain(UpdateStage, False) or not PlainDirectoryChain(UpdateJournal, False) or
     not EntryIsMissing(UpdateJournal + '\' + UpdateInstalled) or
