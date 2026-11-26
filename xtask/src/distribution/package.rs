@@ -281,7 +281,7 @@ fn export_product_appimage(
     let app = layout.join("AppDir");
     let bootstrap = &product.binaries.bootstrap;
     let launcher = format!(
-        "#!/bin/sh\nexec \"${{APPDIR:?AppImage mount is unavailable}}/{runtime}/{bootstrap}\" start-portable -- \"$@\"\n"
+        "#!/bin/sh\nworker=\"${{APPDIR:?AppImage mount is unavailable}}/{runtime}/{bootstrap}\"\nif [ \"${{1-}}\" = --bridge-v3 ]; then\n    shift\n    exec \"$worker\" bridge-linux-v3 --install-scope appimage \"$@\"\nfi\nexec \"$worker\" start-portable -- \"$@\"\n"
     );
     publish_file(&app, "AppRun", launcher.as_bytes())?;
     let id = &product.identity.linux_desktop_id;

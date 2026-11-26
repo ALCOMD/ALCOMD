@@ -2,6 +2,10 @@
 
 mod journal;
 #[cfg(target_os = "linux")]
+mod linux_bridge;
+#[cfg(target_os = "linux")]
+pub use linux_bridge::{bridge_linux_v3, start_linux_bridge_desktop};
+#[cfg(target_os = "linux")]
 mod linux_portable;
 #[cfg(target_os = "linux")]
 pub use linux_portable::{
@@ -28,6 +32,7 @@ pub fn start_installed_core() -> anyhow::Result<()> {
     use std::os::unix::process::CommandExt;
 
     let data = alcomd_platform::DataConfig::default();
+    linux_bridge::check_startup(&data)?;
     let runtime = alcomd_platform::linux_installation_runtime(&std::env::current_exe()?, &data)?;
     let version = env!("CARGO_PKG_VERSION").parse()?;
     if runtime == alcomd_platform::linux_portable_runtime(&data)? {
@@ -203,6 +208,15 @@ pub enum MigrationOutcome {
 /// Resume a verified migration or stage a fresh one. Program deployment and old-instance
 /// cleanup are owned by the platform installer and require their own authorization.
 pub fn migrate_v3(request: &MigrationRequest) -> anyhow::Result<MigrationOutcome> {
+    migrate_checked_v3(request, None)
+}
+
+type DeploymentCheck<'a> = dyn Fn(&VerifiedPayload, &Plan) -> anyhow::Result<()> + 'a;
+
+fn migrate_checked_v3(
+    request: &MigrationRequest,
+    check_deployment: Option<&DeploymentCheck<'_>>,
+) -> anyhow::Result<MigrationOutcome> {
     ensure!(
         request.install_scope.supported(),
         "migration scope does not match the current platform"
@@ -213,6 +227,9 @@ pub fn migrate_v3(request: &MigrationRequest) -> anyhow::Result<MigrationOutcome
         .context("signed migration reader missing")?;
     let daemon = payload.binary("daemon").context("signed Core missing")?;
     let mut plan = plan(request, &payload)?;
+    if let Some(check) = check_deployment {
+        check(&payload, &plan)?;
+    }
     let journal = Journal::open(&plan.workspace)?;
     let mut phase = latest_phase(&journal)?;
     if let Some(previous) = journal.read::<Plan>(PLAN_RECORD)? {
@@ -257,7 +274,7 @@ pub fn migrate_v3(request: &MigrationRequest) -> anyhow::Result<MigrationOutcome
         }
         _ => {}
     }
-    let outcome = steps.run(&mut phase, request.health_report.as_ref());
+    let outcome = steps.run(&mut phase, request.health_report.as_ref(), check_deployment);
     if outcome.is_err()
         && !matches!(
             phase,
@@ -408,6 +425,7 @@ impl Steps {
         &mut self,
         phase: &mut Option<Phase>,
         report: Option<&HealthReport>,
+        check_deployment: Option<&DeploymentCheck<'_>>,
     ) -> anyhow::Result<MigrationOutcome> {
         loop {
             self.journal.check()?;
@@ -430,6 +448,9 @@ impl Steps {
                     Phase::Healthy(evidence.clone())
                 }
                 Some(Phase::Healthy(evidence)) => {
+                    if let Some(check) = check_deployment {
+                        check(&self.check_payload()?, &self.plan)?;
+                    }
                     ensure_absent(&self.plan.destination)?;
                     ensure!(
                         state_evidence(&self.staged_data())? == *evidence,

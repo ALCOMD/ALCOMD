@@ -42,7 +42,7 @@ pub use core_installation::{
     linux_installation_runtime, linux_portable_runtime, linux_portable_runtime_for_version,
     linux_portable_runtime_is_known, linux_portable_update_bootstrap,
     linux_retired_deb_installation_bootstrap, publish_linux_core_registration,
-    publish_linux_portable_update_registration,
+    publish_linux_portable_update_registration, require_unprivileged_linux_installation,
 };
 #[cfg(windows)]
 pub use core_installation::{

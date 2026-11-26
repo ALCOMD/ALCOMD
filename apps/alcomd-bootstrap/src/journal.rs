@@ -15,6 +15,19 @@ pub(super) struct Journal {
 }
 
 impl Journal {
+    #[cfg(target_os = "linux")]
+    pub(super) fn inspect(path: &Path) -> anyhow::Result<Self> {
+        let (root, identity) = alcomd_platform::resolve_plain_storage_directory(path)?;
+        let lock = alcomd_platform::open_owned_installation_record(&root.join("transaction.lock"))?;
+        lock.try_lock_shared()
+            .context("another bridge is using this migration workspace")?;
+        Ok(Self {
+            root,
+            identity,
+            lock,
+        })
+    }
+
     pub fn open(path: &Path) -> anyhow::Result<Self> {
         let (path, parent_identity) = isolated_child(path)?;
         match fs::create_dir(&path) {

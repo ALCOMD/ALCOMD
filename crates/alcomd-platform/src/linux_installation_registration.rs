@@ -107,6 +107,17 @@ pub(super) fn is_portable_runtime_path(config: &DataConfig, runtime: &Path) -> i
     Ok(runtime.parent() == Some(portable_runtime_parent(config)?.as_path()))
 }
 
+/// Keeps per-account migration out of the system package manager's root process.
+pub fn require_unprivileged_linux_installation() -> io::Result<()> {
+    if geteuid().as_raw() == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "run the migration under the account that owns the data",
+        ));
+    }
+    Ok(())
+}
+
 fn portable_runtime_parent(config: &DataConfig) -> io::Result<PathBuf> {
     Ok(crate::unix::data_directory_path(config)?.join("runtime"))
 }

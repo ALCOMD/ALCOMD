@@ -22,6 +22,9 @@ enum Command {
         #[arg(long)]
         work_directory: PathBuf,
     },
+    #[cfg(target_os = "linux")]
+    /// Migrate this account using a separate AppImage or a package-manager installed DEB.
+    BridgeLinuxV3(Box<LinuxBridgeArguments>),
     #[cfg(windows)]
     /// Initialize the current user's Core and publish its installed runtime registration.
     RegisterInstalledCore(InstallCoreArguments),
@@ -247,6 +250,36 @@ struct MigrateArguments {
     discord_consent_digest: Option<String>,
 }
 
+#[cfg(target_os = "linux")]
+#[derive(Debug, Args)]
+struct LinuxBridgeArguments {
+    #[command(flatten)]
+    migration: MigrateArguments,
+    /// The retained original v3.4.0 DEB used to restore the old application through apt or dpkg.
+    #[arg(long)]
+    recovery_package: Option<PathBuf>,
+}
+
+impl From<MigrateArguments> for MigrationRequest {
+    fn from(args: MigrateArguments) -> Self {
+        Self {
+            source_root: args.source_root,
+            recovery_executable: args.recovery_executable,
+            work_directory: args.work_directory,
+            destination: args.destination,
+            staged_payload: args.staged_payload,
+            channel: args.channel,
+            install_scope: args.install_scope,
+            transfer_credentials: args.transfer_credentials,
+            discord_consent_digest: args.discord_consent_digest,
+            health_report: args
+                .health_report
+                .zip(args.health_signature)
+                .map(|(report, signature)| HealthReport { report, signature }),
+        }
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     #[cfg(target_os = "linux")]
     alcomd_bootstrap::start_portable_cli_if_selected()?;
@@ -255,6 +288,18 @@ fn main() -> anyhow::Result<()> {
         Command::RollbackV3 { work_directory } => {
             rollback_v3(&work_directory)?;
             println!("Uncommitted migration staging discarded");
+            return Ok(());
+        }
+        #[cfg(target_os = "linux")]
+        Command::BridgeLinuxV3(arguments) => {
+            let request = MigrationRequest::from(arguments.migration);
+            let outcome =
+                alcomd_bootstrap::bridge_linux_v3(&request, arguments.recovery_package.as_deref())?;
+            let committed = !matches!(outcome, MigrationOutcome::AwaitingHealth(_));
+            report_migration_outcome(outcome)?;
+            if committed {
+                return alcomd_bootstrap::start_linux_bridge_desktop(request.install_scope);
+            }
             return Ok(());
         }
         #[cfg(windows)]
@@ -476,33 +521,10 @@ fn main() -> anyhow::Result<()> {
             return alcomd_bootstrap::resume_portable_update(desktop);
         }
     };
-    let MigrateArguments {
-        source_root,
-        recovery_executable,
-        work_directory,
-        destination,
-        staged_payload,
-        channel,
-        install_scope,
-        health_report,
-        health_signature,
-        transfer_credentials,
-        discord_consent_digest,
-    } = *arguments;
-    let outcome = migrate_v3(&MigrationRequest {
-        source_root,
-        recovery_executable,
-        work_directory,
-        destination,
-        staged_payload,
-        channel,
-        install_scope,
-        transfer_credentials,
-        discord_consent_digest,
-        health_report: health_report
-            .zip(health_signature)
-            .map(|(report, signature)| HealthReport { report, signature }),
-    })?;
+    report_migration_outcome(migrate_v3(&(*arguments).into())?)
+}
+
+fn report_migration_outcome(outcome: MigrationOutcome) -> anyhow::Result<()> {
     match outcome {
         MigrationOutcome::AwaitingHealth(challenge) => {
             println!("{}", serde_json::to_string(&challenge)?)

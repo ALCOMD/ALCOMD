@@ -45,6 +45,7 @@ pub fn start_portable(arguments: &[OsString]) -> anyhow::Result<()> {
     let runtime = embedded_runtime(Path::new(&mount))?;
     let verified = verify_installed_release(&runtime, Target::Linux, &version)?;
     let data = DataConfig::default();
+    super::linux_bridge::check_startup(&data)?;
     if update::resume_from_image(&data, &image, &verified)? {
         return update::relaunch_image(image.path(), arguments);
     }
@@ -115,7 +116,7 @@ pub fn start_portable(arguments: &[OsString]) -> anyhow::Result<()> {
     .context("installed portable desktop could not start")
 }
 
-fn embedded_runtime(mount: &Path) -> anyhow::Result<PathBuf> {
+pub(super) fn embedded_runtime(mount: &Path) -> anyhow::Result<PathBuf> {
     let (mount, _) = resolve_plain_storage_directory(mount)?;
     let runtime = runtime_in_image(&mount, env!("CARGO_PKG_VERSION"));
     ensure!(
