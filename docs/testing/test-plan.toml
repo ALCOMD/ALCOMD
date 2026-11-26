@@ -1516,6 +1516,15 @@ description = "Windows 11 24H2 两种安装范围各通过 15 项原生工程检
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss"]
 
 [[test]]
+id = "installer.windows.custom-root-native-repair-uninstall"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "同一 310065bf 完整 Inno 实包在 Win11 当前用户和全用户各通过 8 项检查。覆盖带空格和 Unicode 的自定义根、重解析与第二根拒绝、标准账号 Core 冷启动、卸载登记遗失后的原根修复，以及精确卸载和资料保全。整包更新与范围转换另验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss"]
+
+[[test]]
 id = "installer.windows.webview2-preflight-fixture"
 stage = "M12"
 kind = "system"

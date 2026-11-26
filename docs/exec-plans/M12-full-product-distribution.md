@@ -405,6 +405,10 @@ DEB 在隔离网络内用回环 APT 仓库验证真实首装、`dpkg --unpack` �
 
 Windows 平台定向回归验证了转换意图持久化后的启动阻断。后台维护进程退出后，源 Core、GUI、稳定 CLI 和同范围更新仍拒绝启动或写入。匹配的事务可重新取得租约和撤销准备，不同事务无法替换或删除已有意图。Inno 更新和普通卸载也会拒绝待转换的安装。`baa2b3ba` 接通源范围停用、目标范围激活、发起账号登记切换与清理。Clippy、Inno 6.5.4 样包编译、目标端两项回归与 Bootstrap 九项测试通过，完整候选的双向转换和中断场景待 Win11、Win10 原生验收。
 
+从干净签名源码 `310065bfe1b37037f30ad5d7c5d28d4526cb385c` 生成的同一个完整 Inno 实包，在独立 Win11 Sandbox 的当前用户和全用户范围各通过 8 项。安装器拒绝重解析祖先与同范围的第二个安装根。实际标准账号在包含空格和中文的路径冷启动 Core 并登记合成 Unity 工程。删除卸载登记和一个已签运行文件后，同一安装器按受保护的定位记录恢复原目录、原文件和卸载登记，保留 PATH、快捷方式和数据摘要。卸载仅清除已拥有的程序、定位记录和 Shell 入口，保留旧资料、工程和无关文件、PATH 项及快捷方式。
+
+首轮脚本从管理账号解析用户快捷方式，并在 Inno 卸载子进程仍运行时判断结果。复验在原标准账号核对快捷方式目标，并等待原生卸载日志确认结束。实包 SHA-256 为 `b659d8b118ead96f02bc71bc2bbd79d21262c22fba3ed9e16d382a4e89c01dfc`，当前用户和全用户回执分别为 `d074646fad7b405eedc4461d1363f51a741a1a216890f85bb0820b9b1ddd73cb` 和 `287722ab02190c323901daf191f244c755934bce0c28c1a16431a4287e802fba`。Win10、双向范围转换和自定义目录整包更新另外取证。
+
 ### 2026-11-26 Windows WebView2 前置部署
 
 Windows Inno 发行打包接收固定摘要的 Microsoft Evergreen Bootstrapper，按需接收固定摘要的 x64 Standalone。打包校验 Microsoft Authenticode 发行者与文件摘要，安装时重新核对提取文件。安装器核对范围、归属和维护状态后，先确认 WebView2 已就绪再写产品文件。有 Standalone 时使用离线路径。当前用户优先使用已有机器运行时，也接受本账号运行时，并保护非提升安装范围。沿用 Windows 客户端基线已有的 Evergreen 依赖。[Microsoft WebView2 分发](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution)

@@ -36,7 +36,7 @@ Windows 当前用户的版本切换和提交恢复已通过原生验收。完整
 
 Windows 全用户切换使用签名源码 `d1555aa3` 的断网夹具通过 6 项正常升级和 8 项中断恢复检查。修复源码 `20a9d8f7` 另通过 6 项不同 SID 的传输及升级检查和 8 项实际终止与恢复复验。两个账号在一次连接内分别接入新版 Core 并保留资料。干净 Release 的首次冷启动和交互凭据提升另验。[Windows 全用户版本切换与中断恢复](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-全用户版本切换与中断恢复)
 
-Windows 同范围缺失文件修复使用完整签名运行载荷和修订后的 Inno 脚本在两个 Win11 隔离环境各通过 15 项，覆盖原卸载记录保全及卸载入口清理。安装范围转换已接通事务协调，目标端定向回归通过。整包同 SHA 的 Win10 和 Win11 修复及双向转换继续验收。[Windows 修复与转换维护锁](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-同范围修复与转换维护锁)
+Windows 同范围缺失文件修复已通过两种 Win11 安装范围验收。同一 `310065bf` 完整 Inno 实包在两种范围各通过 8 项自定义目录检查，覆盖 Unicode 与空格目录、缺失卸载登记后的修复、Core 冷启动和卸载归属。Win10、双向范围转换和自定义目录整包更新继续验收。[Windows 修复与转换维护锁](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-同范围修复与转换维护锁)
 
 Windows Inno 已接入 WebView2 作用域检测、在线 Bootstrapper 和可选离线 Standalone。隔离 Win11 验证了已有运行时、坏摘要和提升范围保护。两种工程包已编译，离线包超过冻结 v3 更新器的 256 MiB 上限。干净 Win10 的实际部署另验。[WebView2 前置部署](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-webview2-前置部署)
 
