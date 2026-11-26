@@ -16,6 +16,22 @@ use super::{hold_windows_installation, installation_trust, publish_owned_record,
 const PROFILE_APPROVAL: &str = ".machine-bridge-account-v1";
 const MARKER: &[u8] = b"1\n";
 
+/// Original-account consent stored beside the native migration journal.
+pub const WINDOWS_BRIDGE_EMPTY_PROFILE_PROOF: &str = "empty-profile-v1";
+
+/// Binds consent for a machine bridge without local legacy data to its candidate and origin SID.
+pub fn windows_empty_bridge_activation_proof(product_manifest: &str) -> io::Result<String> {
+    if product_manifest.len() != 64
+        || !product_manifest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    let sid = crate::windows_current_account_sid()?;
+    Ok(format!("{product_manifest}\n{sid}\n"))
+}
+
 /// Requires an existing store or explicit empty-profile approval in this account.
 pub fn check_windows_bridge_profile_for_startup(
     executable: &Path,

@@ -30,7 +30,8 @@ pub use scope_destination::{
 #[path = "windows_bridge_profile.rs"]
 mod bridge_profile;
 pub use bridge_profile::{
-    approve_windows_empty_bridge_profile, check_windows_bridge_profile_for_startup,
+    WINDOWS_BRIDGE_EMPTY_PROFILE_PROOF, approve_windows_empty_bridge_profile,
+    check_windows_bridge_profile_for_startup, windows_empty_bridge_activation_proof,
 };
 
 // The Inno uninstaller takes this byte exclusively. It is beyond the bounded

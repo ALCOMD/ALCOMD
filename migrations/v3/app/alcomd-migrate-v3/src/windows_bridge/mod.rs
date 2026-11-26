@@ -9,10 +9,12 @@ use std::time::{Duration, Instant};
 
 use alcomd_platform::{
     DaemonInstance, DataConfig, IpcConfig, WINDOWS_ACTIVE_RUNTIME_RECORD,
-    approve_windows_empty_bridge_profile, core_installation_registration, external_filesystem_path,
-    hold_windows_installation, local_app_data_directory, open_owned_installation_record,
+    WINDOWS_BRIDGE_EMPTY_PROFILE_PROOF, approve_windows_empty_bridge_profile,
+    core_installation_registration, external_filesystem_path, hold_windows_installation,
+    local_app_data_directory, open_owned_installation_record,
     open_windows_machine_installation_record, resolve_plain_storage_directory,
-    state_database_location, windows_current_account_sid, windows_process_is_elevated,
+    state_database_location, windows_current_account_sid, windows_empty_bridge_activation_proof,
+    windows_process_is_elevated,
 };
 use anyhow::{Context, ensure};
 use serde::{Deserialize, Serialize};
@@ -162,12 +164,10 @@ fn migrate() -> anyhow::Result<()> {
     let program_root = scope.program_root(&local, bundle.install_directory)?;
     let program_active = verify_active_program(&bundle, scope, &program_root)?;
     if source.is_none() {
-        ensure!(
-            scope == Scope::CurrentUser || program_active,
-            "an existing v3 machine installation requires a verified Windows bridge commitment"
-        );
         let action = if program_active {
             "Set up the verified ALCOMD installation for this account without importing data?"
+        } else if scope == Scope::AllUsers {
+            "Install ALCOMD for all users and set up this account without importing data? Other accounts will migrate separately."
         } else {
             "Install ALCOMD for this account without importing data?"
         };
@@ -203,8 +203,27 @@ fn migrate() -> anyhow::Result<()> {
     let _files = bundle.lock_files(&extracted)?;
 
     let Some(source) = source else {
-        if program_active && scope == Scope::AllUsers {
+        if scope == Scope::AllUsers {
+            if !program_active {
+                prepare_program_stage(&bundle, scope, &extracted, &program_root)?;
+                ensure!(
+                    legacy::detect(scope)? == old
+                        && !old.running()
+                        && legacy::source(&local)?.is_none(),
+                    "the selected Windows installation or empty profile changed during approval"
+                );
+                write_empty_activation_proof(&workspace, bundle.product_manifest)?;
+                finish_program_installation(&bundle, scope, &extracted, &workspace)?;
+                ensure!(
+                    verify_active_program(&bundle, scope, &program_root)?,
+                    "Windows bridge did not select the exact runtime"
+                );
+            }
             let runtime = program_root.join("runtime").join(bundle.version);
+            ensure!(
+                legacy::source(&local)?.is_none(),
+                "legacy data appeared before the account was initialized"
+            );
             approve_windows_empty_bridge_profile(&runtime)?;
         } else if !program_active {
             let status = start_installer(&extracted, scope, &[])?;
@@ -225,13 +244,6 @@ fn migrate() -> anyhow::Result<()> {
     };
     let journal = plan.journal(data_root);
     let agreed = workspace.join(format!("commit-{number}.json"));
-    let program_stage = program_root
-        .parent()
-        .context("missing Windows program parent")?
-        .join(format!(
-            ".{}-bridge-{}",
-            bundle.install_directory, bundle.product_manifest
-        ));
     let committed = record_present(&journal.join("phase-7.json"))?;
     let approved = read_optional::<Approval>(&agreed)?;
     if let Some(approval) = &approved {
@@ -260,18 +272,7 @@ fn migrate() -> anyhow::Result<()> {
                 .context("close this account's Core before migrating")?,
         );
     } else {
-        if !program_stage.try_exists()? {
-            let status = start_installer(
-                &extracted,
-                scope,
-                &[format!("/ALCOMDStageFresh={}", bundle.product_manifest).into()],
-            )?;
-            ensure!(
-                status == 1,
-                "private Windows bridge staging did not complete"
-            );
-        }
-        bundle.verify_program(&program_stage, scope == Scope::AllUsers)?;
+        prepare_program_stage(&bundle, scope, &extracted, &program_root)?;
     }
 
     let migration = extracted.join("migration");
@@ -363,17 +364,7 @@ fn migrate() -> anyhow::Result<()> {
     );
     drop(instance);
     if !program_active {
-        let mut journal_argument = OsString::from("/ALCOMDBridgeJournal=");
-        journal_argument.push(external_filesystem_path(&journal).as_os_str());
-        let status = start_installer(
-            &extracted,
-            scope,
-            &[
-                format!("/ALCOMDFinishFresh={}", bundle.product_manifest).into(),
-                journal_argument,
-            ],
-        )?;
-        ensure!(status == 0, "Windows bridge activation did not complete");
+        finish_program_installation(&bundle, scope, &extracted, &journal)?;
     }
     ensure!(
         verify_active_program(&bundle, scope, &program_root)?,
@@ -569,6 +560,71 @@ fn prepare_dir(path: &Path) -> anyhow::Result<()> {
         Err(error) => return Err(error.into()),
     }
     resolve_plain_storage_directory(path)?;
+    Ok(())
+}
+
+fn prepare_program_stage(
+    bundle: &Bundle,
+    scope: Scope,
+    extracted: &Path,
+    program_root: &Path,
+) -> anyhow::Result<()> {
+    let stage = program_root
+        .parent()
+        .context("missing Windows program parent")?
+        .join(format!(
+            ".{}-bridge-{}",
+            bundle.install_directory, bundle.product_manifest
+        ));
+    if !stage.try_exists()? {
+        let status = start_installer(
+            extracted,
+            scope,
+            &[format!("/ALCOMDStageFresh={}", bundle.product_manifest).into()],
+        )?;
+        ensure!(
+            status == 1,
+            "private Windows bridge staging did not complete"
+        );
+    }
+    bundle.verify_program(&stage, scope == Scope::AllUsers)
+}
+
+fn write_empty_activation_proof(workspace: &Path, product_manifest: &str) -> anyhow::Result<()> {
+    let proof = workspace.join(WINDOWS_BRIDGE_EMPTY_PROFILE_PROOF);
+    let expected = windows_empty_bridge_activation_proof(product_manifest)?;
+    if record_present(&proof)? {
+        let mut actual = Vec::new();
+        open_owned_installation_record(&proof)?
+            .take((expected.len() + 1) as u64)
+            .read_to_end(&mut actual)?;
+        ensure!(
+            actual == expected.as_bytes(),
+            "empty-profile approval changed"
+        );
+    } else {
+        assets::publish_bytes(&proof, expected.as_bytes())?;
+    }
+    Ok(())
+}
+
+fn finish_program_installation(
+    bundle: &Bundle,
+    scope: Scope,
+    extracted: &Path,
+    journal: &Path,
+) -> anyhow::Result<()> {
+    let mut journal_argument = OsString::from("/ALCOMDBridgeJournal=");
+    journal_argument.push(external_filesystem_path(journal).as_os_str());
+    let status = start_installer(
+        extracted,
+        scope,
+        &[
+            format!("/ALCOMDFinishFresh={}", bundle.product_manifest).into(),
+            journal_argument,
+        ],
+    )?;
+    ensure!(status == 0, "Windows bridge activation did not complete");
     Ok(())
 }
 

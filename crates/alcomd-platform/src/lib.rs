@@ -28,16 +28,8 @@ mod unity_registration;
 pub use core_installation::{
     CORE_EXECUTABLE_NAME, PRODUCT_PAYLOAD_MANIFEST_NAME, WINDOWS_BRIDGE_ACCOUNT_RECORD,
     WINDOWS_CRT_FILE, WINDOWS_PRODUCT_SIDECARS, core_installation_registration,
-    open_owned_installation_record, registered_core_executable, validate_installation_record_parent,
-};
-#[cfg(windows)]
-pub use core_installation::{
-    WINDOWS_SCOPE_DESTINATION_COMMIT_RECORD, WINDOWS_SCOPE_DESTINATION_RECORD,
-    WindowsScopeTransitionDestination,
-};
-#[cfg(windows)]
-pub use core_installation::{
-    approve_windows_empty_bridge_profile, check_windows_bridge_profile_for_startup,
+    open_owned_installation_record, registered_core_executable,
+    validate_installation_record_parent,
 };
 #[cfg(target_os = "linux")]
 pub use core_installation::{
@@ -53,14 +45,23 @@ pub use core_installation::{
     WINDOWS_ACTIVE_RUNTIME_RECORD, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME, WINDOWS_CLI_EXECUTABLE_NAME,
     WINDOWS_GUI_EXECUTABLE_NAME, WINDOWS_SCOPE_TRANSITION_RECORD, WINDOWS_UPDATE_INTENT_RECORD,
     WindowsInstallationUpdate, WindowsScopeRegistrationTransfer, WindowsScopeTransitionSource,
-    check_windows_core_registration,
-    create_windows_machine_installation_directory, create_windows_machine_installation_record,
-    hold_windows_installation, open_windows_machine_installation_record,
-    publish_windows_core_registration, remove_windows_core_registration,
-    validate_windows_machine_installation_record_parent, windows_current_user_installation_root,
-    windows_installation_bootstrap, windows_installation_runtime,
-    windows_machine_installation_root, windows_machine_runtime_bootstrap,
-    windows_retired_machine_installation_bootstrap,
+    check_windows_core_registration, create_windows_machine_installation_directory,
+    create_windows_machine_installation_record, hold_windows_installation,
+    open_windows_machine_installation_record, publish_windows_core_registration,
+    remove_windows_core_registration, validate_windows_machine_installation_record_parent,
+    windows_current_user_installation_root, windows_installation_bootstrap,
+    windows_installation_runtime, windows_machine_installation_root,
+    windows_machine_runtime_bootstrap, windows_retired_machine_installation_bootstrap,
+};
+#[cfg(windows)]
+pub use core_installation::{
+    WINDOWS_BRIDGE_EMPTY_PROFILE_PROOF, approve_windows_empty_bridge_profile,
+    check_windows_bridge_profile_for_startup, windows_empty_bridge_activation_proof,
+};
+#[cfg(windows)]
+pub use core_installation::{
+    WINDOWS_SCOPE_DESTINATION_COMMIT_RECORD, WINDOWS_SCOPE_DESTINATION_RECORD,
+    WindowsScopeTransitionDestination,
 };
 pub use credential_vault::{delete_credential, read_credential, write_credential};
 pub use external_path::external_filesystem_path;
