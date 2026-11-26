@@ -1419,6 +1419,15 @@ description = "Win11 隔离 Inno 夹具验证机器账号门禁在活动选择�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "crates/alcomd-platform/src/windows_bridge_profile.rs", "apps/alcomd-bootstrap/src/windows_installation/bridge.rs"]
 
 [[test]]
+id = "installer.windows.bridge-standard-account-precommit-rollback"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "断网 Win11 使用同一 b605e19b Windows Release Inno 和配套合成签名载荷，在实际标准账号启动冻结 v3.4.0、验证新程序惰性暂存、复验迁移副本项目读写，按同一计划回滚并重新打开 v3，保全源资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/bridge.rs"]
+
+[[test]]
 id = "updater.linux.v3-native-appimage-bridge"
 stage = "M12"
 kind = "system"
