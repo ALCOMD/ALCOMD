@@ -193,6 +193,10 @@ pub fn coordinate_windows_scope_destination(
     let runtime = destination.runtime();
     let version = plan.destination.version.parse()?;
     let verified = verify_installed_release(runtime, Target::Windows, &version)?;
+    let root = runtime
+        .parent()
+        .and_then(Path::parent)
+        .context("the Windows destination has no installation root")?;
     if machine {
         check_machine_runtime(runtime, &verified)?;
     }
@@ -204,7 +208,24 @@ pub fn coordinate_windows_scope_destination(
     match action {
         ScopeDestinationAction::Prepare => {
             if !machine {
-                check_scope_candidate_data(runtime, &verified, false)?;
+                // Installed Core refuses all commands before the active selector
+                // exists. Use the separate signed payload under the original SID.
+                let worker = std::env::current_exe()?;
+                let (staged, _) = resolve_plain_storage_directory(
+                    worker
+                        .parent()
+                        .context("the scope worker has no directory")?,
+                )?;
+                ensure!(
+                    staged.parent() == root.parent(),
+                    "the scope health probe must use a sibling payload"
+                );
+                let probe = verify_installed_release(&staged, Target::Windows, &version)?;
+                ensure!(
+                    probe.manifest_sha256 == verified.manifest_sha256,
+                    "the Windows scope health payload differs from the destination"
+                );
+                check_scope_candidate_data(&staged, &probe, false)?;
             }
             destination.prepare(&intent)?;
         }
@@ -213,10 +234,6 @@ pub fn coordinate_windows_scope_destination(
             let source =
                 source_root.context("conversion activation requires the retired source")?;
             verify_retired_source(source, &plan, &intent)?;
-            let root = runtime
-                .parent()
-                .and_then(Path::parent)
-                .context("the Windows destination has no installation root")?;
             verify_stable_cli(root, &verified)?;
             destination.activate(&intent)?;
         }
