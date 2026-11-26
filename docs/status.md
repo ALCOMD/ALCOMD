@@ -22,9 +22,9 @@ Ubuntu 22.04 的产品 DEB 已通过原生首装、解包中断恢复、逐账�
 
 Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密钥，验证原生 FUSE、真实桌面首启、独立 SDK 冷启动、移位拒绝与主动重新绑定。可选 CLI 集成继续按发行矩阵验收。[Ubuntu 产品 AppImage 首启](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
 
-Ubuntu 22.04 的 AppImage 整包更新与中断恢复已通过 10 项原生工程检查。验收覆盖同路径原子替换、实际进程终止、篡改拒绝、删除原下载后的恢复，以及新版 AppImage 经原生 FUSE 打开并读回原工程。混合夹具的冷启动有超过五秒的记录，干净 Release 仍需复验。[Ubuntu 产品 AppImage 整包更新](exec-plans/M12-full-product-distribution.md#2026-11-26-ubuntu-产品-appimage-整包更新)
+Ubuntu 22.04 的 AppImage 整包更新与中断恢复已通过 10 项原生工程检查。验收覆盖同路径原子替换、实际进程终止、篡改拒绝、删除原下载后的恢复，以及新版 AppImage 经原生 FUSE 打开并读回原工程。后续干净 Release 的外部 Rust SDK 冷启动单次通过，用时 817 毫秒。[AppImage 整包更新](exec-plans/M12-full-product-distribution.md#2026-11-26-ubuntu-产品-appimage-整包更新) · [完整 Linux 发行候选](exec-plans/M12-full-product-distribution.md#2026-11-26-ubuntu-完整-appimage-与-deb-原生验收)
 
-AppImage 可选 CLI 集成已接入「关于」页。隔离 Jammy 的合成签名夹具通过八项原生测试，覆盖启用、修复、移动重新绑定、原入口随整包更新、移除和归属保全。新增按钮的完整候选原生操作另验。[AppImage 可选 CLI 集成](exec-plans/M12-full-product-distribution.md#2026-11-26-appimage-可选-cli-集成)
+AppImage 可选 CLI 集成已用完整 Release 候选在真实 WebKit「关于」页验收启用、修复、取消更新、确认替换重启及移除。DEB 同源候选通过离线 APT 首装、双账号升级、dpkg 中断恢复、同数据版本回退、移除和 purge，两账号资料保全。外部 Rust SDK 的两次首次冷启动为 870 和 1076 毫秒。[完整 Linux 发行候选](exec-plans/M12-full-product-distribution.md#2026-11-26-ubuntu-完整-appimage-与-deb-原生验收)
 
 新建的 Ubuntu 22.04 x86_64 WSL 2 实例已复验 AppImage 首启。用此前的签名 DEB 另通过三项双格式归属检查，覆盖双向接管拒绝与 `dpkg purge` 后资料保全。[Ubuntu 双格式归属](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
 
