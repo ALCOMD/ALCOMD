@@ -73,12 +73,10 @@ pub fn verify_windows_bridge_commit(
         format_digest(&product.manifest_sha256) == product_manifest
             && migration.version() == &version
             && migration.identity() == plan.payload_identity
-            && migration.manifest_sha256() == plan.payload_manifest_sha256
-            && product
-                .files()
-                .all(|path| { product.file_sha256(path).copied() == migration.file_sha256(path) }),
+            && migration.manifest_sha256() == plan.payload_manifest_sha256,
         "the Windows program and committed migration have different signed inputs"
     );
+    product.verify_bridge_pair(&migration)?;
     journal.check()?;
     Ok(())
 }

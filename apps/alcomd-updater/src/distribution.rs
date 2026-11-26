@@ -213,6 +213,27 @@ impl VerifiedRuntime {
         self.file_digests.get(relative)
     }
 
+    /// Checks that the independently verified bridge has this exact runtime
+    /// and that its only additional file is the temporary migration reader.
+    pub fn verify_bridge_pair(&self, bridge: &crate::VerifiedPayload) -> anyhow::Result<()> {
+        let reader = bridge
+            .binaries
+            .get("migration_v3")
+            .and_then(|path| path.to_str())
+            .context("verified bridge has no migration reader")?;
+        ensure!(
+            bridge.file_digests.contains_key(reader)
+                && !self.file_digests.contains_key(reader)
+                && bridge.file_digests.len() == self.file_digests.len() + 1
+                && self
+                    .file_digests
+                    .iter()
+                    .all(|(path, digest)| bridge.file_digests.get(path) == Some(digest)),
+            "the verified bridge does not pair with the product runtime"
+        );
+        Ok(())
+    }
+
     /// Verifies a regular file copied to a separate entry point against the signed runtime file.
     pub fn verify_copy(&self, relative: &str, path: &Path) -> anyhow::Result<()> {
         let expected = self
@@ -533,4 +554,43 @@ pub fn format_digest(bytes: &[u8]) -> String {
         write!(formatted, "{byte:02x}").expect("writing to a String cannot fail");
     }
     formatted
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bridge_pair_accepts_only_the_exact_runtime_and_reader() {
+        let runtime = VerifiedRuntime {
+            manifest_sha256: [0; 32],
+            file_digests: BTreeMap::from([("runtime".to_owned(), [1; 32])]),
+        };
+        let mut bridge = crate::VerifiedPayload {
+            root: "unused".into(),
+            identity: vec![],
+            manifest_sha256: [0; 32],
+            version: Version::new(4, 0, 0),
+            binaries: BTreeMap::from([("migration_v3".to_owned(), "reader".into())]),
+            file_digests: BTreeMap::from([
+                ("runtime".to_owned(), [1; 32]),
+                ("reader".to_owned(), [2; 32]),
+            ]),
+        };
+        runtime
+            .verify_bridge_pair(&bridge)
+            .expect("identical runtime paired with the migration reader");
+
+        bridge.file_digests.insert("extra".to_owned(), [3; 32]);
+        assert!(runtime.verify_bridge_pair(&bridge).is_err());
+        bridge.file_digests.remove("extra");
+
+        bridge.file_digests.insert("runtime".to_owned(), [3; 32]);
+        assert!(runtime.verify_bridge_pair(&bridge).is_err());
+        bridge.file_digests.insert("runtime".to_owned(), [1; 32]);
+
+        bridge.file_digests.remove("reader");
+        bridge.file_digests.insert("extra".to_owned(), [2; 32]);
+        assert!(runtime.verify_bridge_pair(&bridge).is_err());
+    }
 }
