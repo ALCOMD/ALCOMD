@@ -1670,8 +1670,9 @@ id = "platform.linux-glibc-symbols"
 stage = "M12"
 kind = "compatibility"
 platforms = ["linux-x86_64"]
-status = "blocked"
-description = "在 Ubuntu 22.04 构建后扫描每个发行 ELF 与本地动态库，拒绝任何高于 GLIBC_2.35 的所需符号版本，并在更新 Ubuntu 上做运行冒烟。"
+status = "implemented"
+description = "Ubuntu 22.04 对 310065bf 的完整 AppImage 和 DEB 分别扫描全部 8 个 x86_64 ELF，最高要求均为 GLIBC_2.34。GLIBC_2.38 样本按 GLIBC_2.35 上限被拒；同摘要资产通过 Ubuntu 24.04 原生桌面和 Core 冒烟。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "scripts/check-glibc.sh"]
 
 [[test]]
 id = "platform.macos-deployment-unsigned"

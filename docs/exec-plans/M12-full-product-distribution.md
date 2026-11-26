@@ -393,6 +393,10 @@ DEB 在隔离网络内用回环 APT 仓库验证真实首装、`dpkg --unpack` �
 
 同一 `310065bf` 的独立 AppImage 桥接归档经正式组装入口生成，并用合成密钥签名。归档及分离签名的 SHA-256 分别为 `c33e349366875c818b096fe47c94edf1c743fdf90c2a154717750baeb6fcd33f` 和 `ad8a6944db9542e9501dc74dcf74bb5cfb9c792142c44b3d01d293a26cb7ce38`。在 Ubuntu 24.04 断网标准账号下，先用固定公钥验证归档再解包。两个独立资料目录分别由实际冻结 v3.4.0 的 FUSE/WebKit 桌面生成。回滚用例重开冻结桌面，提交用例显式确认后启动同源 v4 FUSE/WebKit 并通过实际 IPC 核对 Core 版本。两种操作均复核冻结镜像和原资料摘要。复验在最小系统补齐 `/etc/mtab` 后验证自有测试挂载与资料均已移除，回执 SHA-256 为 `c69cac1cd07feb97edf15a035410fa9fd7648383d2aa81c22796c9f130cc5f88`。
 
+### 2026-11-27 Linux 发行 ELF 扫描
+
+在隔离 Ubuntu 22.04 核对 `310065bf` 的 AppImage 与 DEB 摘要后解包。检查 AppImage 外层加载器及两个包内所有普通文件的 ELF 标识和 x86_64 机器类型。AppImage 为加载器和七个运行组件，共 8 个。DEB 为七个运行组件和 `/usr/bin/alcomd-cli`，也为 8 个。两包最高所需 glibc 符号均为 `GLIBC_2.34`，各自对应上一节已运行 Ubuntu 24.04 的完整资产。以 Ubuntu 24.04 的 Bash ELF 做负样本，`scripts/check-glibc.sh` 对 `GLIBC_2.38` 返回失败。逐文件扫描日志 SHA-256 为 `f27651c4ea68961e1f6bbf50f7f1ee906b83375df54e9ba4bf8b2bd175e223ed`，负样本日志为 `7ce45d9704888fbcc060df8311c40c6cd3b89afb9771f97c3f39da6a0d4d1772`。
+
 ### 2026-11-26 隔离发行停推与恢复演练
 
 仓库的隔离演练只在回环 HTTPS 提供合成签名 feed，生产 Updater 验证下载和持久防重放。断网 Win11 Sandbox 使用 `6a79c90efc95738ca9ab4851033a7068d23554c8` 的既有完整 Inno 资产，文件 SHA-256 为 `a4922ecd6d48805475357cd474ab051f3e726443570a733ce59744279f6a8bf1`，运行清单 SHA-256 为 `545c375c31f7f2d0853797610032430ffde993cf67548f505d23f3aae132674e`。九项检查覆盖发布前 204、同频道签名下载、跨频道隔离、老客户端与新客户端的停推响应、过时序号、同摘要恢复、等长篡改和恢复后的新客户端下载。该脚本用于按最终候选与平台格式重复演练。

@@ -56,6 +56,8 @@ Windows 签名源码 `b605e19b` 的完整 Inno 与配套迁移载荷已在断网
 
 Linux 同源候选 `310065bf` 的 AppImage 和 DEB 在 Ubuntu 22.04 均通过原生桌面、Core、CLI、MCP 和第一方扩展健康检查。两种完整工程包已在 Ubuntu 24.04 验证从真实冻结 v3.4.0 回滚、提交与旧资料保全。DEB 经 APT 交接，AppImage 通过验签的独立桥接归档和实际 FUSE 交接。[Linux 冻结版桥接](exec-plans/M12-full-product-distribution.md#2026-11-26-linux-冻结版桥接入口)
 
+同一 `310065bf` 的 AppImage 和 DEB 各 8 个发行 ELF 已逐文件验证，最高要求 `GLIBC_2.34`。Ubuntu 24.04 的 `GLIBC_2.38` 样本按 `GLIBC_2.35` 上限被拒绝。[Linux 发行 ELF 扫描](exec-plans/M12-full-product-distribution.md#2026-11-27-linux-发行-elf-扫描)
+
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 
 主仓工程候选 `595fc2ab` 已通过本机整仓、762 项 Chromium、三平台 Hosted CI 和 CodeQL。Windows 原生 Inno 入口的 11 项验收对应上文单独记录的 `62b6f562` 实包。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45552186695) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45552185931)
