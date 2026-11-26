@@ -18,8 +18,8 @@ pub use windows_installation::{
     remove_retired_windows_scope, request_windows_machine_scope_source, resume_installed_update,
     resume_machine_update_worker, stage_installed_update, start_installed_core,
     unregister_installed_core, verify_installed_machine_uninstall,
-    verify_retired_windows_scope_uninstall, windows_scope_plan_fingerprint,
-    with_windows_desktop_restart,
+    verify_retired_windows_scope_uninstall, verify_windows_bridge_commit,
+    windows_scope_plan_fingerprint, with_windows_desktop_restart,
 };
 
 /// Verifies and starts the installed Core in the calling Linux account.

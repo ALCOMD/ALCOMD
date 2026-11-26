@@ -36,6 +36,16 @@ enum Command {
     },
     #[cfg(windows)]
     #[command(hide = true)]
+    VerifyWindowsBridgeCommit {
+        #[arg(long)]
+        work_directory: PathBuf,
+        #[arg(long, value_enum)]
+        scope: alcomd_bootstrap::WindowsInstallScope,
+        #[arg(long)]
+        manifest_sha256: String,
+    },
+    #[cfg(windows)]
+    #[command(hide = true)]
     CoordinateWindowsScopeSource {
         #[arg(long, value_enum)]
         action: alcomd_bootstrap::ScopeSourceAction,
@@ -286,6 +296,18 @@ fn main() -> anyhow::Result<()> {
             )?;
             println!("{result}");
             return Ok(());
+        }
+        #[cfg(windows)]
+        Command::VerifyWindowsBridgeCommit {
+            work_directory,
+            scope,
+            manifest_sha256,
+        } => {
+            return alcomd_bootstrap::verify_windows_bridge_commit(
+                &work_directory,
+                scope,
+                &manifest_sha256,
+            );
         }
         #[cfg(windows)]
         Command::WindowsScopePlanFingerprint(plan) => {

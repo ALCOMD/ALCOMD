@@ -13,8 +13,10 @@ use alcomd_updater::distribution::{
 };
 use anyhow::{Context, ensure};
 
+mod bridge;
 mod scope;
 mod update;
+pub use bridge::verify_windows_bridge_commit;
 pub use scope::{
     ScopeDestinationAction, ScopeSourceAction, WindowsInstallScope, WindowsScopePlanArguments,
     complete_windows_scope_account, coordinate_windows_scope_destination,

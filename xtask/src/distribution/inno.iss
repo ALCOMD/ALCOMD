@@ -69,7 +69,8 @@ type
 
 var
   ProgramLease: Integer;
-  CommittingUpdate, UpdateEntriesReady, Repairing: Boolean;
+  CommittingUpdate, UpdateEntriesReady, Repairing, CompletingBridge, BridgeProgramReady: Boolean;
+  BridgeJournal, BridgeStage, BridgeExtracted: String;
   ConvertingScope, ScopeSourceRetired: Boolean;
   InstallationIncomplete: Boolean;
   PreviousVersion, PreviousDigest, UpdateJournal, UpdateStage: String;
@@ -280,6 +281,9 @@ function PrepareRepair(Root: String): Boolean;
 function ApplyRepair(Root: String): Boolean;
   forward;
 
+function PrepareFreshBridge(Root: String; var NeedsRestart: Boolean): String;
+  forward;
+
 function PrepareScopeConversion(Root: String; var NeedsRestart: Boolean): String;
   forward;
 
@@ -301,6 +305,10 @@ begin
       Result := PrerequisiteError;
     Exit;
   end;
+  if CompletingBridge then begin
+    Result := PrepareFreshBridge(Root, NeedsRestart);
+    Exit;
+  end;
 
   if (IsAdminInstallMode and ConflictWithLoadedProfile) or
     (not IsAdminInstallMode and MachineInstallationPresent) then begin
@@ -320,6 +328,11 @@ begin
   end;
   if not MissingEntry(DLLGetLastError) then
     Exit;
+  if not EntryIsMissing(AddBackslash(ExtractFileDir(Root)) +
+    '.@INSTALL_DIRECTORY@@FRESH_STAGE_PREFIX@@MANIFEST_DIGEST@') then begin
+    Result := 'An ALCOMD migration is staged. Resume it with the migration bridge.';
+    Exit;
+  end;
 
   Result := 'An existing ALCOMD installation was found or could not be ruled out.';
   if MachineInstallationPresent or RegKeyExists(HKEY_CURRENT_USER, UninstallKey) then
@@ -369,16 +382,22 @@ function PublishStagedRuntime(Source, Destination: String): Boolean;
 
 function InitializeSetup: Boolean;
 var
-  Digest, FreshDigest, Commit, Scope, Root, Parent, Prefix, Destination, Extracted: String;
+  Digest, FreshDigest, FinishDigest, Commit, Scope, Root, Parent, Prefix, Destination, Extracted: String;
+  PrerequisiteError: String;
+  NeedsRestart: Boolean;
 begin
   Digest := ExpandConstant('{param:ALCOMDStage|}');
   FreshDigest := ExpandConstant('{param:ALCOMDStageFresh|}');
+  FinishDigest := ExpandConstant('{param:ALCOMDFinishFresh|}');
+  BridgeJournal := ExpandConstant('{param:ALCOMDBridgeJournal|}');
   Commit := ExpandConstant('{param:ALCOMDCommit|}');
   Scope := ExpandConstant('{param:ALCOMDScope|}');
   PreviousVersion := ExpandConstant('{param:ALCOMDPrevious|}');
   PreviousDigest := ExpandConstant('{param:ALCOMDPreviousDigest|}');
   CommittingUpdate := Commit <> '';
-  Result := (Digest = '') and (FreshDigest = '') and (Commit = '') and (Scope = '') and
+  CompletingBridge := FinishDigest <> '';
+  Result := (Digest = '') and (FreshDigest = '') and (FinishDigest = '') and
+    (BridgeJournal = '') and (Commit = '') and (Scope = '') and
     (PreviousVersion = '') and (PreviousDigest = '');
   if Result then
     Exit;
@@ -387,14 +406,21 @@ begin
     ((Scope <> '') and ((Scope <> 'all-users') or not IsAdminInstallMode)) then
     Exit;
   if CommittingUpdate then begin
-    Result := (Digest = '') and (FreshDigest = '') and
+    Result := (Digest = '') and (FreshDigest = '') and (FinishDigest = '') and
+      (BridgeJournal = '') and
       (Commit = '@MANIFEST_DIGEST@') and PlainVersion(PreviousVersion) and
       (PreviousVersion <> '@APP_VERSION@') and LowerDigest(PreviousDigest);
     Exit;
   end;
+  if CompletingBridge then begin
+    Result := (Digest = '') and (FreshDigest = '') and (FinishDigest = '@MANIFEST_DIGEST@') and
+      (BridgeJournal <> '') and (Pos('"', BridgeJournal) = 0) and
+      (PreviousVersion = '') and (PreviousDigest = '');
+    Exit;
+  end;
   Root := ExpandConstant('{autopf}\@INSTALL_DIRECTORY@');
   Parent := ExtractFileDir(Root);
-  if (PreviousVersion <> '') or (PreviousDigest <> '') or UpdateScopeConflicts then
+  if (BridgeJournal <> '') or (PreviousVersion <> '') or (PreviousDigest <> '') or UpdateScopeConflicts then
     Exit;
   if FreshDigest <> '' then begin
     // The migration bridge checks the complete installer before requesting an
@@ -404,6 +430,11 @@ begin
       not PlainDirectoryChain(Parent, True) or not ForceDirectories(Parent) or
       not PlainDirectoryChain(Parent, False) then
       Exit;
+    PrerequisiteError := EnsureWebView2(NeedsRestart);
+    if PrerequisiteError <> '' then begin
+      Log(PrerequisiteError);
+      Exit;
+    end;
     Prefix := '@FRESH_STAGE_PREFIX@';
     Digest := FreshDigest;
   end else begin
@@ -1033,6 +1064,54 @@ begin
   end;
 end;
 
+function PrepareFreshBridge(Root: String; var NeedsRestart: Boolean): String;
+var
+  Worker, Arguments, Scope: String;
+  ExitCode, Remaining: Integer;
+  Verified: Boolean;
+begin
+  Result := 'The ALCOMD migration or staged installation could not be verified.';
+  if UpdateScopeConflicts then
+    Exit;
+  BridgeStage := AddBackslash(ExtractFileDir(Root)) + '.@INSTALL_DIRECTORY@@FRESH_STAGE_PREFIX@@MANIFEST_DIGEST@';
+  if BridgeExtracted = '' then begin
+    ExtractTemporaryFiles('{app}\runtime\@APP_VERSION@\*');
+    BridgeExtracted := ExpandConstant('{tmp}\') + '{app}\runtime\@APP_VERSION@';
+  end;
+  Remaining := @RUNTIME_FILE_COUNT@;
+  Worker := BridgeStage + '\@BOOTSTRAP_FILE@';
+  if not RuntimeMatchesStage(BridgeStage, BridgeExtracted, 0, Remaining) or (Remaining <> 0) or
+    not PlainFileMatches(Worker, '@BOOTSTRAP_DIGEST@') then
+    Exit;
+  Scope := 'current-user';
+  if IsAdminInstallMode then
+    Scope := 'all-users';
+  Arguments := 'verify-windows-bridge-commit --scope ' + Scope +
+    ' --manifest-sha256 @MANIFEST_DIGEST@ --work-directory "' + BridgeJournal + '"';
+  Verified := ExecAsOriginalUser(Worker, Arguments, BridgeStage, SW_HIDE, ewWaitUntilTerminated, ExitCode);
+  if not Verified or (ExitCode <> 0) then
+    Exit;
+  if not EntryIsMissing(Root) then begin
+    Repairing := PrepareRepair(Root);
+    if not Repairing then
+      Exit;
+    Result := EnsureWebView2(NeedsRestart);
+    if (Result = '') and not ApplyRepair(Root) then
+      Result := 'ALCOMD could not finish repairing the prepared migration installation.';
+  end else if not RegKeyExists(InstallRegistryRoot, UninstallKey) then
+    Result := EnsureWebView2(NeedsRestart);
+end;
+
+procedure FinishFreshBridge;
+var
+  Remaining: Integer;
+begin
+  Remaining := @RUNTIME_FILE_COUNT@;
+  if RuntimeMatchesStage(BridgeStage, BridgeExtracted, 0, Remaining) and (Remaining = 0) then
+    if not DelTree(BridgeStage, True, True, True) then
+      Log('Could not remove the verified ALCOMD bridge staging directory.');
+end;
+
 function SyncUninstallRegistration: Boolean;
 var
   Root, Access, Handle: Cardinal;
@@ -1146,11 +1225,15 @@ begin
     end;
     Exit;
   end;
+  if BridgeProgramReady and (CurStep = ssDone) and not InstallationIncomplete then
+    FinishFreshBridge;
   if CurStep <> ssPostInstall then
     Exit;
   if Repairing then begin
     if not RepairFilesMatch(ExpandConstant('{app}'), True) then
-      ReportIncompleteInstallation('ALCOMD could not verify the repaired program files.');
+      ReportIncompleteInstallation('ALCOMD could not verify the repaired program files.')
+    else
+      BridgeProgramReady := CompletingBridge;
     Exit;
   end;
   if not OwnedUninstallRoot(ExpandConstant('{app}')) or
@@ -1164,6 +1247,7 @@ begin
       mbInformation, MB_OK, IDOK);
   end;
   PublishStartMenuEntry;
+  BridgeProgramReady := CompletingBridge;
 end;
 
 function AcquireProgramLease(Manifest: String): Boolean;
