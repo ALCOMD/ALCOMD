@@ -1433,8 +1433,17 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "断网 Win11 使用同一 b605e19b 完整 Inno，验证两种范围的 Core RPC、稳定 CLI、实际 WebView2、凭据 MCP 和签名第一方扩展发现。全用户在独立标准账号先验证迁移首启门禁。原账号交互提升与冻结外层验签另验。"
+description = "断网 Win11 使用同一 b605e19b 完整 Inno，验证两种范围的 Core RPC、稳定 CLI、实际 WebView2、凭据 MCP 和签名第一方扩展发现。全用户在独立标准账号先验证迁移首启门禁。原账号交互提升与冻结更新器下载另验。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "crates/alcomd-platform/src/windows_bridge_profile.rs"]
+
+[[test]]
+id = "installer.windows.bridge-frozen-outer-direct"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "断网 Win11 在实际标准账号，以冻结的四个参数直接运行 b605e19b 完整外层，验证取消与合成数据提交、活动版本和迁移日志、实际 Core 读取及 v3 保全重开。相同外层后经原钥签发分离签名，并以冻结公钥独立验签。旧更新器下载启动另验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/windows_bridge.rs", "migrations/v3/app/alcomd-migrate-v3/src/windows_bridge/mod.rs"]
 
 [[test]]
 id = "updater.linux.v3-native-appimage-bridge"
