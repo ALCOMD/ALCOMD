@@ -60,6 +60,7 @@ const
   ReadEnvironmentString = $10000006;
   KeyQueryValue = 1;
   Registry64BitView = $0100;
+  IncompleteInstallation = 9;
 
 type
   TLeaseRange = record
@@ -70,6 +71,7 @@ var
   ProgramLease: Integer;
   CommittingUpdate, UpdateEntriesReady, Repairing: Boolean;
   ConvertingScope, ScopeSourceRetired: Boolean;
+  InstallationIncomplete: Boolean;
   PreviousVersion, PreviousDigest, UpdateJournal, UpdateStage: String;
   PreviousCli, PreviousShortcut, RepairStage: String;
   ScopeStage, ScopeSourceRoot, ScopeSourceVersion, ScopeSourceDigest, ScopeUninstaller: String;
@@ -1085,38 +1087,63 @@ end;
 
 @SCOPE_CODE@
 
+procedure ReportIncompleteInstallation(MessageText: String);
+begin
+  InstallationIncomplete := True;
+  Log(MessageText);
+  SuppressibleMsgBox(MessageText, mbError, MB_OK, IDOK);
+end;
+
+function GetCustomSetupExitCode: Integer;
+begin
+  // Inno treats exceptions raised after copying files as nonfatal.
+  Result := 0;
+  if InstallationIncomplete then
+    Result := IncompleteInstallation;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CommittingUpdate then begin
     if CurStep = ssPostInstall then begin
+      InstallationIncomplete := True;
       UpdateEntriesReady := OwnedUninstallRoot(ExpandConstant('{app}')) and
         RestoreCliReceipt(ExpandConstant('{app}')) and UpdateStartMenuEntry and
         SyncUninstallRegistration;
       if not UpdateEntriesReady then
-        RaiseException('ALCOMD could not finish publishing its update entries.');
+        ReportIncompleteInstallation('ALCOMD could not finish publishing its update entries.');
     end else if CurStep = ssDone then begin
-      if not UpdateEntriesReady or
-        not PublishRecord(UpdateJournal + '\' + UpdateInstalled, '@MANIFEST_DIGEST@' + #10) then
-        RaiseException('ALCOMD could not persist the update completion receipt.');
+      if UpdateEntriesReady then begin
+        if PublishRecord(UpdateJournal + '\' + UpdateInstalled, '@MANIFEST_DIGEST@' + #10) then
+          InstallationIncomplete := False
+        else
+          ReportIncompleteInstallation('ALCOMD could not persist the update completion receipt.');
+      end;
     end;
     Exit;
   end;
   if ConvertingScope then begin
-    if (CurStep = ssDone) and not FinishScopeConversion then
-      RaiseException('Could not finish Windows scope conversion. Retry with the same installer.');
+    if CurStep = ssDone then begin
+      InstallationIncomplete := True;
+      if FinishScopeConversion then
+        InstallationIncomplete := False
+      else
+        ReportIncompleteInstallation('Could not finish Windows scope conversion. Retry with the same installer.');
+    end;
     Exit;
   end;
   if CurStep <> ssPostInstall then
     Exit;
   if Repairing then begin
     if not RepairFilesMatch(ExpandConstant('{app}'), True) then
-      RaiseException('ALCOMD could not verify the repaired program files.');
+      ReportIncompleteInstallation('ALCOMD could not verify the repaired program files.');
     Exit;
   end;
-  if not OwnedUninstallRoot(ExpandConstant('{app}')) then
+  if not OwnedUninstallRoot(ExpandConstant('{app}')) or
+    not RecordMatches(ExpandConstant('{app}\') + ActiveRuntime, '@APP_VERSION@' + #10) then begin
+    ReportIncompleteInstallation('ALCOMD could not establish the active installation version.');
     Exit;
-  if not RecordMatches(ExpandConstant('{app}\') + ActiveRuntime, '@APP_VERSION@' + #10) then
-    RaiseException('ALCOMD could not establish the active installation version.');
+  end;
   if not InstallCliPath then begin
     Log('ALCOMD CLI PATH integration failed. The existing PATH was preserved.');
     SuppressibleMsgBox('ALCOMD was installed, but its CLI could not be added to PATH.',

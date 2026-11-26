@@ -361,7 +361,11 @@ pub fn remove_retired_windows_scope(
     } else {
         super::super::run_command(&expected, &root, &arguments)?;
     }
-    Ok(())
+    match std::fs::symlink_metadata(root.join(WINDOWS_SCOPE_TRANSITION_RECORD)) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+        Ok(_) => anyhow::bail!("the previous Windows scope cleanup did not complete"),
+    }
 }
 
 /// Verifies an already retired source before Inno cleans its exact installed files.

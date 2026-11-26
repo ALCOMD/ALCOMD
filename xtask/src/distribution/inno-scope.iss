@@ -198,9 +198,8 @@ var
 begin
   Result := False;
   Root := ExpandConstant('{app}');
-  if not OwnedUninstallRoot(Root) or not InstallCliPath or not SyncUninstallRegistration then
+  if not OwnedUninstallRoot(Root) or not SyncUninstallRegistration then
     Exit;
-  PublishStartMenuEntry;
   if not ScopeSourceAction('retire') then
     Exit;
   ScopeSourceRetired := True;
@@ -211,6 +210,11 @@ begin
     not ExecAsOriginalUser(Bootstrap, 'complete-windows-scope-account --requester-sid ' +
       ScopeRequester + ' --source-sha @SOURCE_SHA@', ExtractFileDir(Bootstrap), SW_HIDE,
       ewWaitUntilTerminated, ExitCode) or (ExitCode <> 0) then
+    Exit;
+  if not InstallCliPath then
+    Exit;
+  PublishStartMenuEntry;
+  if not SyncUninstallRegistration then
     Exit;
   SourceScope := 'current-user';
   if not IsAdminInstallMode then
