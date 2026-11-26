@@ -52,7 +52,7 @@ Windows 签名源码 `b605e19b` 的完整 Inno 与配套迁移载荷已在断网
 
 同一 Windows 外层桥接包在 Win11 标准账号通过取消保全和从预检到 v4 激活的提交，并独立通过原 v3 公钥的离线分离签名验证。冻结 v3.4.0 更新器已通过当前用户及全用户 beta 的实际下载、启动与取消，并拒绝同名旧资产的签名。全用户原账号的交互 UAC 和迁移提交继续验收。[外层桥接验收](exec-plans/M12-full-product-distribution.md#冻结-windows-更新器入口与逐账号首启)
 
-Linux 同源候选 `310065bf` 的 AppImage 和 DEB 在 Ubuntu 22.04 均通过原生桌面、Core、CLI、MCP 和第一方扩展健康检查。Ubuntu 24.04 已走真实 APT 交接，从冻结 v3.4.0 DEB 完成逐账号回滚和提交，验证旧资料保全与新版读回。AppImage 桥接已通过原生混合夹具，完全同源的发布归档和冻结桌面交接继续验收。[Linux 冻结版桥接](exec-plans/M12-full-product-distribution.md#2026-11-26-linux-冻结版桥接入口)
+Linux 同源候选 `310065bf` 的 AppImage 和 DEB 在 Ubuntu 22.04 均通过原生桌面、Core、CLI、MCP 和第一方扩展健康检查。两种完整工程包已在 Ubuntu 24.04 验证从真实冻结 v3.4.0 回滚、提交与旧资料保全。DEB 经 APT 交接，AppImage 通过验签的独立桥接归档和实际 FUSE 交接。[Linux 冻结版桥接](exec-plans/M12-full-product-distribution.md#2026-11-26-linux-冻结版桥接入口)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)
 

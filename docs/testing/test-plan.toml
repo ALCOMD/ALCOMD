@@ -1473,6 +1473,15 @@ description = "Ubuntu 24.04 的真实冻结 v3.4.0 DEB 与 310065bf v4 DEB 经�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
 
 [[test]]
+id = "updater.linux.exact-frozen-appimage-handoff"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "同源 310065bf 独立归档在 Ubuntu 24.04 先验证分离签名再解包。标准账号在两个独立资料目录中分别运行真实冻结 v3.4.0 AppImage 的 FUSE/WebKit 桌面，验证回滚重开、显式提交、同源 v4 FUSE/WebKit/IPC、旧数据保全和隔离挂载清理。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/appimage_bridge.rs", "xtask/src/distribution/appimage_bridge.rs"]
+
+[[test]]
 id = "updater.linux.v3-native-appimage-bridge"
 stage = "M12"
 kind = "system"
