@@ -43,7 +43,7 @@ const
   ScopeTransition = 'scope-transition-v1';
   ScopeDestinationPrepared = 'scope-destination-v1';
   ScopeDestinationCommit = 'scope-destination-commit-v1';
-  ShellReceipts = 'previous-shell-v1';
+  ShortcutSnapshot = 'previous-start-menu-v1';
   UpdateInstalled = 'installed-v1';
   PreviousShortcutFile = 'previous-start-menu.lnk';
   MachineBridgeAccount = '@MACHINE_BRIDGE_ACCOUNT@';
@@ -57,8 +57,9 @@ const
   WriteThrough = 8;
   UserEnvironment = 'Environment';
   MachineEnvironment = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
-  OwnedCliPath = '@FAMILY_NAME@OwnedCliPath';
-  OwnedStartMenu = '@FAMILY_NAME@OwnedStartMenu';
+  // These claims live in the reserved root and survive loss of the stock Inno key.
+  CliPathReceipt = 'cli-path-owner-v1';
+  StartMenuReceipt = 'start-menu-owner-v1';
   StringValue = 1;
   ExpandStringValue = 2;
   ReadEnvironmentString = $10000006;
@@ -78,7 +79,7 @@ var
   ConvertingScope, ScopeSourceRetired: Boolean;
   InstallationIncomplete: Boolean;
   PreviousVersion, PreviousDigest, UpdateJournal, UpdateStage: String;
-  PreviousCli, PreviousShortcut, RepairStage: String;
+  PreviousShortcut, RepairStage: String;
   ScopeStage, ScopeSourceRoot, ScopeSourceVersion, ScopeSourceDigest, ScopeUninstaller: String;
   ScopeDestination, ScopeRequester, ScopePlanArguments, ScopePlanDigest: String;
   ScopeDestinationIntent: String;
@@ -145,13 +146,19 @@ end;
 
 @WEBVIEW2_CODE@
 
-function RecordText(Path: String; MaxSize: Integer; var Content: String): Boolean;
+function RecordBytes(Path: String; MaxSize: Integer; var Bytes: AnsiString): Boolean;
 var
   Size: Int64;
-  Bytes: AnsiString;
 begin
   Result := PlainFile(Path) and FileSize64(Path, Size) and (Size > 0) and
     (Size <= MaxSize) and LoadStringFromFile(Path, Bytes) and (Length(Bytes) = Size);
+end;
+
+function RecordText(Path: String; MaxSize: Integer; var Content: String): Boolean;
+var
+  Bytes: AnsiString;
+begin
+  Result := RecordBytes(Path, MaxSize, Bytes);
   if Result then
     Content := String(Bytes);
 end;
@@ -181,6 +188,15 @@ begin
   end;
 end;
 
+function StageRecord(Path: String; Bytes: AnsiString): String;
+begin
+  Result := GenerateUniqueName(AddBackslash(ExtractFileDir(Path)), '.tmp');
+  if (Result <> '') and (not SaveStringToFile(Result, Bytes, False) or not SyncPlainFile(Result)) then begin
+    DeleteFile(Result);
+    Result := '';
+  end;
+end;
+
 function PublishRecord(Path, Content: String): Boolean;
 var
   Temporary: String;
@@ -188,13 +204,11 @@ begin
   Result := RecordMatches(Path, Content);
   if Result or not EntryIsMissing(Path) then
     Exit;
-  Temporary := GenerateUniqueName(AddBackslash(ExtractFileDir(Path)), '.tmp');
+  Temporary := StageRecord(Path, AnsiString(Content));
   if Temporary = '' then
     Exit;
-  if not SaveStringToFile(Temporary, AnsiString(Content), False) then
-    Exit;
   try
-    Result := SyncPlainFile(Temporary) and PublishFile(Temporary, Path, WriteThrough);
+    Result := PublishFile(Temporary, Path, WriteThrough);
   finally
     if not Result then
       DeleteFile(Temporary);
@@ -709,15 +723,60 @@ begin
     Result := 0;
 end;
 
+function ReadShellReceipt(Path: String; var Claim: String): Boolean;
+var
+  Bytes: AnsiString;
+begin
+  // A protected scope can be installed at a Unicode path.
+  Result := RecordBytes(Path, 131072, Bytes);
+  if not Result then
+    Exit;
+  Claim := Utf8Decode(Bytes);
+  Result := Utf8Encode(Claim) = Bytes;
+end;
+
+function ShellReceiptMatches(Path, Claim: String): Boolean;
+var
+  Recorded: String;
+begin
+  Result := ReadShellReceipt(Path, Recorded) and (Recorded = Claim);
+end;
+
+function WriteShellReceipt(Path, Claim, Previous: String): Boolean;
+var
+  Temporary: String;
+begin
+  Result := ShellReceiptMatches(Path, Claim);
+  if Result then
+    Exit;
+  Temporary := StageRecord(Path, Utf8Encode(Claim));
+  if Temporary = '' then
+    Exit;
+  try
+    if Previous = '' then
+      Result := EntryIsMissing(Path) and PublishFile(Temporary, Path, WriteThrough)
+    else
+      Result := ShellReceiptMatches(Path, Previous) and
+        PublishFile(Temporary, Path, ReplaceExisting or WriteThrough);
+  finally
+    if not Result then
+      DeleteFile(Temporary);
+  end;
+end;
+
+function ClearShellReceipt(Path, Claim: String): Boolean;
+begin
+  Result := ShellReceiptMatches(Path, Claim) and DeleteFile(Path);
+end;
+
 function InstallCliPath: Boolean;
 var
-  Root: Cardinal;
-  Entry, Path, Claim, RecordedClaim: String;
+  Entry, Path, Claim, Receipt: String;
   ValueType: Cardinal;
 begin
   Result := False;
-  Root := InstallRegistryRoot;
   Entry := ExpandConstant('{app}\bin');
+  Receipt := ExpandConstant('{app}\') + CliPathReceipt;
   if (Pos(';', Entry) <> 0) or (Pos('%', Entry) <> 0) or not ReadPath(Path, ValueType) then
     Exit;
   if PathEntryIsPresent(Path, Entry) then begin
@@ -734,28 +793,23 @@ begin
   Path := Path + Entry;
   if Length(Path) > 32766 then
     Exit;
-  if RegValueExists(Root, UninstallKey, OwnedCliPath) then begin
-    if not CompletingBridge or not RegQueryStringValue(Root, UninstallKey, OwnedCliPath, RecordedClaim) or
-      (RecordedClaim <> Claim) then
-      Exit;
-  end else if not RegWriteStringValue(Root, UninstallKey, OwnedCliPath, Claim) then
+  if not (CompletingBridge or EntryIsMissing(Receipt)) or not WriteShellReceipt(Receipt, Claim, '') then
     Exit;
   Result := WritePath(Path, ValueType);
   if not Result then
-    if not RegDeleteValue(Root, UninstallKey, OwnedCliPath) then
+    if not ClearShellReceipt(Receipt, Claim) then
       Log('Could not clear the CLI PATH ownership receipt.');
 end;
 
 function RemoveOwnedCliPath: Boolean;
 var
-  Root: Cardinal;
-  Entry, Path, Claim, Token: String;
+  Entry, Path, Claim, Token, Receipt: String;
   ValueType: Cardinal;
   Position: Integer;
 begin
   Result := True;
-  Root := InstallRegistryRoot;
-  if not RegQueryStringValue(Root, UninstallKey, OwnedCliPath, Claim) then
+  Receipt := ExpandConstant('{app}\') + CliPathReceipt;
+  if not ReadShellReceipt(Receipt, Claim) then
     Exit;
   Entry := ExpandConstant('{app}\bin');
   if (Claim <> 'missing|' + Entry) and (Claim <> 'existing|' + Entry) then
@@ -767,16 +821,20 @@ begin
   Path := ';' + Path + ';';
   Token := ';' + Entry + ';';
   Position := ExactPathSlot(Path, Token);
-  if Position = 0 then
-    Exit;
-  Delete(Path, Position, Length(Token) - 1);
-  if Length(Path) > 1 then
-    Path := Copy(Path, 2, Length(Path) - 2)
-  else
-    Path := '';
-  if (Path = '') and (Claim = 'missing|' + Entry) then
-    ValueType := 0;
-  Result := WritePath(Path, ValueType);
+  if Position <> 0 then begin
+    Delete(Path, Position, Length(Token) - 1);
+    if Length(Path) > 1 then
+      Path := Copy(Path, 2, Length(Path) - 2)
+    else
+      Path := '';
+    if (Path = '') and (Claim = 'missing|' + Entry) then
+      ValueType := 0;
+    if not WritePath(Path, ValueType) then begin
+      Result := False;
+      Exit;
+    end;
+  end;
+  Result := ClearShellReceipt(Receipt, Claim);
 end;
 
 function ReadDigest(FileName: String; var Digest: String): Boolean;
@@ -836,74 +894,50 @@ begin
   end;
 end;
 
-function SnapshotShellEntries(Root: String): Boolean;
+function ReadStartMenuReceipt(Path, Destination: String; var Digest: String): Boolean;
 var
-  Claim, Entry, Path, Shortcut: String;
-  ValueType, RegistryRoot: Cardinal;
+  Claim: String;
 begin
   Result := False;
-  RegistryRoot := InstallRegistryRoot;
-  PreviousCli := 'none';
-  PreviousShortcut := 'none';
-  Entry := Root + '\bin';
-  if not ReadPath(Path, ValueType) then
+  if not ReadShellReceipt(Path, Claim) or (Copy(Claim, 65, Length(Claim)) <> '|' + Destination) then
     Exit;
-  if RegQueryStringValue(RegistryRoot, UninstallKey, OwnedCliPath, Claim) and
-    ((Claim = 'existing|' + Entry) or (Claim = 'missing|' + Entry)) and
-    (ExactPathSlot(';' + Path + ';', ';' + Entry + ';') <> 0) then
-    PreviousCli := Copy(Claim, 1, Pos('|', Claim) - 1);
-  Shortcut := StartMenuEntry;
-  if RegQueryStringValue(RegistryRoot, UninstallKey, OwnedStartMenu, Claim) and
-    (Copy(Claim, 65, Length(Claim)) = '|' + Shortcut) and
-    PlainDirectoryChain(ExtractFileDir(Shortcut), False) then begin
-    Claim := Copy(Claim, 1, 64);
-    if LowerDigest(Claim) and PlainFileMatches(Shortcut, Claim) then begin
-      if not PublishCopy(Shortcut, UpdateJournal + '\' + PreviousShortcutFile, Claim, '', UpdateJournal) then
-        Exit;
-      PreviousShortcut := Claim;
-    end;
-  end;
-  Result := PublishRecord(UpdateJournal + '\' + ShellReceipts,
-    PreviousCli + #10 + PreviousShortcut + #10);
+  Digest := Copy(Claim, 1, 64);
+  Result := LowerDigest(Digest);
 end;
 
-function ReadShellSnapshot: Boolean;
+function SnapshotStartMenu(Root: String): Boolean;
+var
+  Shortcut, Digest: String;
+begin
+  Result := False;
+  PreviousShortcut := 'none';
+  Shortcut := StartMenuEntry;
+  if ReadStartMenuReceipt(Root + '\' + StartMenuReceipt, Shortcut, Digest) and
+    PlainDirectoryChain(ExtractFileDir(Shortcut), False) and PlainFileMatches(Shortcut, Digest) then begin
+    if not PublishCopy(Shortcut, UpdateJournal + '\' + PreviousShortcutFile, Digest, '', UpdateJournal) then
+      Exit;
+    PreviousShortcut := Digest;
+  end;
+  Result := PublishRecord(UpdateJournal + '\' + ShortcutSnapshot, PreviousShortcut + #10);
+end;
+
+function ReadShortcutSnapshot: Boolean;
 var
   Content: String;
-  Delimiter: Integer;
 begin
   Result := False;
-  if not RecordText(UpdateJournal + '\' + ShellReceipts, 74, Content) then
+  if not RecordText(UpdateJournal + '\' + ShortcutSnapshot, 65, Content) then
     Exit;
-  Delimiter := Pos(#10, Content);
-  if (Delimiter = 0) or (Content[Length(Content)] <> #10) then
+  if Content[Length(Content)] <> #10 then
     Exit;
-  PreviousCli := Copy(Content, 1, Delimiter - 1);
-  PreviousShortcut := Copy(Content, Delimiter + 1, Length(Content) - Delimiter - 1);
-  Result := ((PreviousCli = 'existing') or (PreviousCli = 'missing') or (PreviousCli = 'none')) and
-    ((PreviousShortcut = 'none') or (LowerDigest(PreviousShortcut) and
-      PlainFileMatches(UpdateJournal + '\' + PreviousShortcutFile, PreviousShortcut)));
-end;
-
-function RestoreCliReceipt(Root: String): Boolean;
-var
-  Entry, Path: String;
-  ValueType: Cardinal;
-begin
-  Result := True;
-  if PreviousCli = 'none' then
-    Exit;
-  Result := ReadPath(Path, ValueType);
-  if not Result then
-    Exit;
-  Entry := Root + '\bin';
-  if ExactPathSlot(';' + Path + ';', ';' + Entry + ';') <> 0 then
-    Result := RegWriteStringValue(InstallRegistryRoot, UninstallKey, OwnedCliPath, PreviousCli + '|' + Entry);
+  PreviousShortcut := Copy(Content, 1, Length(Content) - 1);
+  Result := (PreviousShortcut = 'none') or (LowerDigest(PreviousShortcut) and
+    PlainFileMatches(UpdateJournal + '\' + PreviousShortcutFile, PreviousShortcut));
 end;
 
 function UpdateStartMenuEntry: Boolean;
 var
-  Candidate, Destination, Digest, Extracted: String;
+  Candidate, Destination, Digest, Extracted, Receipt, PreviousClaim: String;
 begin
   Result := True;
   if PreviousShortcut = 'none' then
@@ -911,6 +945,8 @@ begin
   Destination := StartMenuEntry;
   if not PlainDirectoryChain(ExtractFileDir(Destination), False) then
     Exit;
+  Receipt := ExpandConstant('{app}\') + StartMenuReceipt;
+  PreviousClaim := PreviousShortcut + '|' + Destination;
   Candidate := UpdateJournal + '\' + CandidateShortcutFile;
   if EntryIsMissing(Candidate) then begin
     // Inno produces this link with the permanent AUMID. Keep its exact bytes for retries.
@@ -920,14 +956,14 @@ begin
     Result := ReadDigest(Candidate, Digest);
   if not Result then
     Exit;
-  if PlainFileMatches(Destination, PreviousShortcut) then begin
+  if ShellReceiptMatches(Receipt, PreviousClaim) and PlainFileMatches(Destination, PreviousShortcut) then begin
     Result := PublishCopy(Candidate, Destination, Digest, PreviousShortcut, ExtractFileDir(Destination));
     if not Result then
       Exit;
   end;
   // If the user replaced or removed the prior link, preserve their choice.
-  if PlainFileMatches(Destination, Digest) then
-    Result := RegWriteStringValue(InstallRegistryRoot, UninstallKey, OwnedStartMenu, Digest + '|' + Destination);
+  if PlainFileMatches(Destination, Digest) and ShellReceiptMatches(Receipt, PreviousClaim) then
+    Result := WriteShellReceipt(Receipt, Digest + '|' + Destination, PreviousClaim);
 end;
 
 function UpdateLeaseIsHeld(Manifest: String): Boolean;
@@ -1110,7 +1146,7 @@ begin
     not EntryIsMissing(UpdateJournal + '\' + UpdateInstalled) or
     not PlainFileMatches(UpdateStage + '\@MANIFEST_NAME@', '@MANIFEST_DIGEST@') then
     Exit;
-  Resuming := not EntryIsMissing(UpdateJournal + '\' + ShellReceipts);
+  Resuming := not EntryIsMissing(UpdateJournal + '\' + ShortcutSnapshot);
   if not RecordMatches(Root + '\' + ActiveRuntime, PreviousVersion + #10) and
     not (Resuming and RecordMatches(Root + '\' + ActiveRuntime, '@APP_VERSION@' + #10)) then
     Exit;
@@ -1125,9 +1161,9 @@ begin
   if PrerequisiteError <> '' then
     Exit;
   if Resuming then begin
-    if not ReadShellSnapshot then
+    if not ReadShortcutSnapshot then
       Exit;
-  end else if not SnapshotShellEntries(Root) then
+  end else if not SnapshotStartMenu(Root) then
     Exit;
 
   // All copy work lives in the transaction until a complete, signed runtime can be renamed.
@@ -1400,13 +1436,12 @@ end;
 
 procedure PublishStartMenuEntry;
 var
-  Root: Cardinal;
-  Source, Destination, Digest, Claim, RecordedClaim: String;
+  Source, Destination, Digest, Claim, Receipt: String;
 begin
   if WizardNoIcons then
     Exit;
-  Root := InstallRegistryRoot;
   Source := ExpandConstant('{app}\start-menu.lnk');
+  Receipt := ExpandConstant('{app}\') + StartMenuReceipt;
   Destination := StartMenuEntry;
   if not PlainDirectoryChain(ExtractFileDir(Destination), False) or
     (GetAttributes(Destination) <> InvalidFileAttributes) or
@@ -1417,34 +1452,34 @@ begin
     Exit;
   end;
   Claim := Digest + '|' + Destination;
-  if RegValueExists(Root, UninstallKey, OwnedStartMenu) then begin
-    if not CompletingBridge or not RegQueryStringValue(Root, UninstallKey, OwnedStartMenu, RecordedClaim) or
-      (RecordedClaim <> Claim) then
-      Exit;
-  end else if not RegWriteStringValue(Root, UninstallKey, OwnedStartMenu, Claim) then
+  if not (CompletingBridge or EntryIsMissing(Receipt)) or not WriteShellReceipt(Receipt, Claim, '') then
     Exit;
   // RenameFile leaves an existing destination intact.
   if not RenameFile(Source, Destination) then begin
     Log('Could not publish the Start menu shortcut.');
-    if not RegDeleteValue(Root, UninstallKey, OwnedStartMenu) then
+    if not ClearShellReceipt(Receipt, Claim) then
       Log('Could not clear the Start menu ownership receipt.');
   end;
 end;
 
 function RemoveOwnedStartMenuEntry: Boolean;
 var
-  Destination, Claim: String;
+  Destination, Receipt, Digest: String;
 begin
   Result := True;
   Destination := StartMenuEntry;
-  if RegQueryStringValue(InstallRegistryRoot, UninstallKey, OwnedStartMenu, Claim) and
-    (Copy(Claim, 65, Length(Claim)) = '|' + Destination) and
-    PlainDirectoryChain(ExtractFileDir(Destination), False) and
-    PlainFileMatches(Destination, Copy(Claim, 1, 64)) then
+  Receipt := ExpandConstant('{app}\') + StartMenuReceipt;
+  if not ReadStartMenuReceipt(Receipt, Destination, Digest) then
+    Exit;
+  if PlainDirectoryChain(ExtractFileDir(Destination), False) and PlainFileMatches(Destination, Digest) then
     if not DeleteFile(Destination) then begin
       Result := False;
       Log('Could not remove the ALCOMD-owned Start menu shortcut.');
+      Exit;
     end;
+  Result := ClearShellReceipt(Receipt, Digest + '|' + Destination);
+  if not Result then
+    Log('Could not clear the Start menu ownership receipt.');
 end;
 
 @SCOPE_CODE@
@@ -1495,8 +1530,7 @@ begin
     if CurStep = ssPostInstall then begin
       InstallationIncomplete := True;
       UpdateEntriesReady := OwnedUninstallRoot(ExpandConstant('{app}')) and
-        RestoreCliReceipt(ExpandConstant('{app}')) and UpdateStartMenuEntry and
-        SyncUninstallRegistration;
+        UpdateStartMenuEntry and SyncUninstallRegistration;
       if not UpdateEntriesReady then
         ReportIncompleteInstallation('ALCOMD could not finish publishing its update entries.');
     end else if CurStep = ssDone then begin
