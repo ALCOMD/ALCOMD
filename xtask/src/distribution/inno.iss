@@ -369,15 +369,16 @@ function PublishStagedRuntime(Source, Destination: String): Boolean;
 
 function InitializeSetup: Boolean;
 var
-  Digest, Commit, Scope, Root, Destination, Extracted: String;
+  Digest, FreshDigest, Commit, Scope, Root, Parent, Prefix, Destination, Extracted: String;
 begin
   Digest := ExpandConstant('{param:ALCOMDStage|}');
+  FreshDigest := ExpandConstant('{param:ALCOMDStageFresh|}');
   Commit := ExpandConstant('{param:ALCOMDCommit|}');
   Scope := ExpandConstant('{param:ALCOMDScope|}');
   PreviousVersion := ExpandConstant('{param:ALCOMDPrevious|}');
   PreviousDigest := ExpandConstant('{param:ALCOMDPreviousDigest|}');
   CommittingUpdate := Commit <> '';
-  Result := (Digest = '') and (Commit = '') and (Scope = '') and
+  Result := (Digest = '') and (FreshDigest = '') and (Commit = '') and (Scope = '') and
     (PreviousVersion = '') and (PreviousDigest = '');
   if Result then
     Exit;
@@ -386,26 +387,39 @@ begin
     ((Scope <> '') and ((Scope <> 'all-users') or not IsAdminInstallMode)) then
     Exit;
   if CommittingUpdate then begin
-    Result := (Digest = '') and
+    Result := (Digest = '') and (FreshDigest = '') and
       (Commit = '@MANIFEST_DIGEST@') and PlainVersion(PreviousVersion) and
       (PreviousVersion <> '@APP_VERSION@') and LowerDigest(PreviousDigest);
     Exit;
   end;
-  // Bootstrap verifies this installer and supplies the expected payload digest.
-  // Both success and failure leave the normal Inno installation path unused.
-  if (Digest <> '@MANIFEST_DIGEST@') or (PreviousVersion <> '') or (PreviousDigest <> '') then
-    Exit;
   Root := ExpandConstant('{autopf}\@INSTALL_DIRECTORY@');
-  if not OwnedUninstallRoot(Root) or not PlainDirectoryChain(Root, False) or UpdateScopeConflicts then
+  Parent := ExtractFileDir(Root);
+  if (PreviousVersion <> '') or (PreviousDigest <> '') or UpdateScopeConflicts then
     Exit;
-  Destination := AddBackslash(ExtractFileDir(Root)) +
-    '.@INSTALL_DIRECTORY@@UPDATE_STAGE_PREFIX@' + Digest;
+  if FreshDigest <> '' then begin
+    // The migration bridge checks the complete installer before requesting an
+    // inactive sibling copy. This path creates neither an install nor a selector.
+    if (Digest <> '') or (FreshDigest <> '@MANIFEST_DIGEST@') or
+      not EntryIsMissing(Root) or RegKeyExists(InstallRegistryRoot, UninstallKey) or
+      not PlainDirectoryChain(Parent, True) or not ForceDirectories(Parent) or
+      not PlainDirectoryChain(Parent, False) then
+      Exit;
+    Prefix := '@FRESH_STAGE_PREFIX@';
+    Digest := FreshDigest;
+  end else begin
+    if (Digest <> '@MANIFEST_DIGEST@') or not OwnedUninstallRoot(Root) or
+      not PlainDirectoryChain(Root, False) then
+      Exit;
+    Prefix := '@UPDATE_STAGE_PREFIX@';
+  end;
+  // Both success and failure leave the normal Inno installation path unused.
+  Destination := AddBackslash(Parent) + '.@INSTALL_DIRECTORY@' + Prefix + Digest;
   if not EntryIsMissing(Destination) then
     Exit;
   ExtractTemporaryFiles('{app}\runtime\@APP_VERSION@\*');
   Extracted := ExpandConstant('{tmp}\') + '{app}\runtime\@APP_VERSION@';
   if not PublishStagedRuntime(Extracted, Destination) then
-    Log('Could not publish the ALCOMD update staging directory.');
+    Log('Could not publish the ALCOMD staging directory.');
 end;
 
 function IsFreshInstallation: Boolean;

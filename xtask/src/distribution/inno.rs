@@ -4,7 +4,7 @@ use std::path::Path;
 
 use alcomd_updater::distribution::{
     Candidate, MANIFEST_NAME, SIGNATURE_NAME, Target, VerifiedRuntime, WINDOWS_CRT_FILE,
-    WINDOWS_UPDATE_STAGE_PREFIX, format_digest,
+    WINDOWS_FRESH_STAGE_PREFIX, WINDOWS_UPDATE_STAGE_PREFIX, format_digest,
 };
 use anyhow::{Context, ensure};
 
@@ -140,6 +140,7 @@ pub(super) fn export(
         .replace("@CRT_DIGEST@", &format_digest(crt_digest))
         .replace("@SOURCE_SHA@", &candidate.source_commit)
         .replace("@MANIFEST_NAME@", MANIFEST_NAME)
+        .replace("@FRESH_STAGE_PREFIX@", WINDOWS_FRESH_STAGE_PREFIX)
         .replace("@UPDATE_STAGE_PREFIX@", WINDOWS_UPDATE_STAGE_PREFIX)
         .replace("@RUNTIME_FILE_COUNT@", &runtime_file_count.to_string())
         .replace(
