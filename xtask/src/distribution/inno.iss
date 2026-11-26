@@ -23,7 +23,7 @@ OutputBaseFilename=@FAMILY_NAME@_@APP_VERSION@_windows_x86_64_setup
 
 [Files]
 @FILES@
-Source: "active-runtime-v1"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: IsFreshInstallation
+Source: "active-runtime-v1"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Check: IsInitialActivation
 
 [Icons]
 Name: "{app}\start-menu"; Filename: "{app}\runtime\@APP_VERSION@\@GUI_NAME@.exe"; AppUserModelID: "@APP_AUMID@"; Flags: createonlyiffileexists; Check: CreateFreshIcon
@@ -38,6 +38,8 @@ const
   ActiveRuntime = 'active-runtime-v1';
   UpdateIntent = 'update-intent-v1';
   ScopeTransition = 'scope-transition-v1';
+  ScopeDestinationPrepared = 'scope-destination-v1';
+  ScopeDestinationCommit = 'scope-destination-commit-v1';
   ShellReceipts = 'previous-shell-v1';
   UpdateInstalled = 'installed-v1';
   PreviousShortcutFile = 'previous-start-menu.lnk';
@@ -67,8 +69,14 @@ type
 var
   ProgramLease: Integer;
   CommittingUpdate, UpdateEntriesReady, Repairing: Boolean;
+  ConvertingScope, ScopeSourceRetired: Boolean;
   PreviousVersion, PreviousDigest, UpdateJournal, UpdateStage: String;
   PreviousCli, PreviousShortcut, RepairStage: String;
+  ScopeStage, ScopeSourceRoot, ScopeSourceVersion, ScopeSourceDigest, ScopeUninstaller: String;
+  ScopeDestination, ScopeRequester, ScopePlanArguments, ScopePlanDigest: String;
+  ScopeDestinationIntent: String;
+  RetiredUninstallDigest: String;
+  UninstallScopePlan: String;
 
 function OpenLeaseFile(FileName: String; Access, Share: Cardinal; Security: Integer;
   Disposition, Flags: Cardinal; Template: Integer): Integer;
@@ -270,6 +278,9 @@ function PrepareRepair(Root: String): Boolean;
 function ApplyRepair(Root: String): Boolean;
   forward;
 
+function PrepareScopeConversion(Root: String; var NeedsRestart: Boolean): String;
+  forward;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Root, PrerequisiteError: String;
@@ -286,6 +297,12 @@ begin
       Result := ''
     else if PrerequisiteError <> '' then
       Result := PrerequisiteError;
+    Exit;
+  end;
+
+  if (IsAdminInstallMode and ConflictWithLoadedProfile) or
+    (not IsAdminInstallMode and MachineInstallationPresent) then begin
+    Result := PrepareScopeConversion(Root, NeedsRestart);
     Exit;
   end;
 
@@ -399,9 +416,14 @@ begin
   Result := Repairing;
 end;
 
+function IsInitialActivation: Boolean;
+begin
+  Result := IsFreshInstallation and not ConvertingScope;
+end;
+
 function IsUpdateInstallation: Boolean;
 begin
-  Result := CommittingUpdate;
+  Result := CommittingUpdate or ConvertingScope;
 end;
 
 function CreateFreshIcon: Boolean;
@@ -1045,18 +1067,23 @@ begin
   end;
 end;
 
-procedure RemoveOwnedStartMenuEntry;
+function RemoveOwnedStartMenuEntry: Boolean;
 var
   Destination, Claim: String;
 begin
+  Result := True;
   Destination := StartMenuEntry;
   if RegQueryStringValue(InstallRegistryRoot, UninstallKey, OwnedStartMenu, Claim) and
     (Copy(Claim, 65, Length(Claim)) = '|' + Destination) and
     PlainDirectoryChain(ExtractFileDir(Destination), False) and
     PlainFileMatches(Destination, Copy(Claim, 1, 64)) then
-    if not DeleteFile(Destination) then
+    if not DeleteFile(Destination) then begin
+      Result := False;
       Log('Could not remove the ALCOMD-owned Start menu shortcut.');
+    end;
 end;
+
+@SCOPE_CODE@
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
@@ -1072,6 +1099,11 @@ begin
         not PublishRecord(UpdateJournal + '\' + UpdateInstalled, '@MANIFEST_DIGEST@' + #10) then
         RaiseException('ALCOMD could not persist the update completion receipt.');
     end;
+    Exit;
+  end;
+  if ConvertingScope then begin
+    if (CurStep = ssDone) and not FinishScopeConversion then
+      RaiseException('Could not finish Windows scope conversion. Retry with the same installer.');
     Exit;
   end;
   if CurStep <> ssPostInstall then
@@ -1118,20 +1150,42 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  Root, Runtime, Manifest, BootstrapCommand: String;
+  Root, Runtime, Manifest, BootstrapCommand, RetirementDigest: String;
   ExitCode: Integer;
-  Verified: Boolean;
+  Retired, Verified: Boolean;
 begin
+  Root := ExpandConstant('{app}');
+  if CurUninstallStep = usPostUninstall then begin
+    if EntryIsMissing(Root + '\' + ActiveRuntime) then begin
+      if (UninstallScopePlan <> '') and
+        RecordMatches(Root + '\' + ScopeDestinationPrepared, UninstallScopePlan) and
+        RecordMatches(Root + '\' + ScopeDestinationCommit, UninstallScopePlan) then
+        if DeleteFile(Root + '\' + ScopeDestinationPrepared) then
+          DeleteFile(Root + '\' + ScopeDestinationCommit);
+      if (RetiredUninstallDigest <> '') and
+        PlainFileMatches(Root + '\' + ScopeTransition, RetiredUninstallDigest) then
+        DeleteFile(Root + '\' + ScopeTransition);
+      RemoveDir(Root);
+    end;
+    Exit;
+  end;
   if CurUninstallStep <> usUninstall then
     Exit;
-  Root := ExpandConstant('{app}');
   Runtime := Root + '\runtime\@APP_VERSION@';
   Manifest := Runtime + '\@MANIFEST_NAME@';
+  RetirementDigest := ExpandConstant('{param:ALCOMDRetireScope|}');
+  Retired := RetirementDigest <> '';
+  if Retired then
+    Verified := LowerDigest(RetirementDigest) and
+      PlainFileMatches(Root + '\' + ScopeTransition, RetirementDigest) and
+      EntryIsMissing(Root + '\' + ActiveRuntime)
+  else
+    Verified := EntryIsMissing(Root + '\' + ScopeTransition) and
+      RecordMatches(Root + '\' + ActiveRuntime, '@APP_VERSION@' + #10);
   if not OwnedUninstallRoot(Root) or not PlainDirectoryChain(Runtime, False) or
     not PlainDirectoryChain(Root + '\bin', False) or
     not EntryIsMissing(Root + '\' + UpdateIntent) or
-    not EntryIsMissing(Root + '\' + ScopeTransition) or
-    not RecordMatches(Root + '\' + ActiveRuntime, '@APP_VERSION@' + #10) or
+    not Verified or
     not PlainFileMatches(Manifest, '@MANIFEST_DIGEST@') then begin
     Log('Could not confirm installed ALCOMD program ownership. No files were removed.');
     SuppressibleMsgBox('The installed ALCOMD files could not be verified.',
@@ -1144,7 +1198,18 @@ begin
       mbError, MB_OK, IDOK);
     Abort;
   end;
-  if IsAdminInstallMode then
+  if not EntryIsMissing(Root + '\' + ScopeDestinationPrepared) or
+    not EntryIsMissing(Root + '\' + ScopeDestinationCommit) then
+    if not RecordText(Root + '\' + ScopeDestinationPrepared, 8192, UninstallScopePlan) or
+      not RecordMatches(Root + '\' + ScopeDestinationCommit, UninstallScopePlan) then begin
+      Log('Could not verify the committed Windows scope records. No files were removed.');
+      Abort;
+    end;
+  if Retired then begin
+    BootstrapCommand := 'verify-retired-windows-scope-uninstall --approved-plan ' + RetirementDigest;
+    if IsAdminInstallMode then
+      BootstrapCommand := BootstrapCommand + ' --machine';
+  end else if IsAdminInstallMode then
     BootstrapCommand := 'verify-installed-uninstall'
   else
     BootstrapCommand := 'unregister-installed-core';
@@ -1165,8 +1230,15 @@ begin
     Log('Could not remove the ALCOMD-owned CLI PATH entry.');
     SuppressibleMsgBox('The ALCOMD CLI entry could not be removed from PATH.',
       mbInformation, MB_OK, IDOK);
+    if Retired then
+      Abort;
   end;
-  RemoveOwnedStartMenuEntry;
+  if not RemoveOwnedStartMenuEntry and Retired then
+    Abort;
+  if Retired then begin
+    RetiredUninstallDigest := RetirementDigest;
+    Exit;
+  end;
   if not RecordMatches(Root + '\' + ActiveRuntime, '@APP_VERSION@' + #10) or
     not DeleteFile(Root + '\' + ActiveRuntime) then begin
     Log('Could not remove the ALCOMD active-runtime record.');
@@ -1182,6 +1254,7 @@ end;
 
 procedure DeinitializeSetup;
 begin
+  RestoreUncommittedScope;
   ReleaseProgramLease;
 end;
 

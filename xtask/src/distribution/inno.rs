@@ -123,6 +123,7 @@ pub(super) fn export(
             webview2.standalone.as_deref().unwrap_or(""),
         );
     let script = include_str!("inno.iss")
+        .replace("@SCOPE_CODE@", include_str!("inno-scope.iss").trim_end())
         .replace("@WEBVIEW2_CODE@", webview2_code.trim_end())
         .replace("@APP_ID@", app_id)
         .replace("@APP_NAME@", &product.product.display_name)

@@ -15,7 +15,13 @@ use anyhow::{Context, ensure};
 
 mod scope;
 mod update;
-pub use scope::{WindowsInstallScope, check_windows_scope_transition};
+pub use scope::{
+    ScopeDestinationAction, ScopeSourceAction, WindowsInstallScope, WindowsScopePlanArguments,
+    complete_windows_scope_account, coordinate_windows_scope_destination,
+    coordinate_windows_scope_source, remove_retired_windows_scope,
+    request_windows_machine_scope_source, verify_retired_windows_scope_uninstall,
+    windows_scope_plan_fingerprint,
+};
 pub use update::{
     apply_installed_update, apply_machine_update_worker, resume_installed_update,
     resume_machine_update_worker, stage_installed_update, with_windows_desktop_restart,
@@ -26,8 +32,11 @@ pub fn register_installed_core(
     source_commit: String,
     data_dir: Option<&Path>,
 ) -> anyhow::Result<()> {
-    let (runtime, _) = verified_runtime(source_commit)?;
+    let (runtime, verified) = verified_runtime(source_commit)?;
     let config = data_config(data_dir);
+    if data_dir.is_none() {
+        scope::rebind_scope_registration(&runtime, &verified)?;
+    }
     if check_windows_core_registration(&config, &runtime)? {
         return Ok(());
     }
@@ -77,12 +86,13 @@ pub fn verify_installed_machine_uninstall(source_commit: String) -> anyhow::Resu
 /// Starts and registers Core for the current user after verifying the installed runtime.
 pub fn start_installed_core() -> anyhow::Result<()> {
     let runtime = windows_installation_runtime(&std::env::current_exe()?)?;
-    verify_installed_release(
+    let verified = verify_installed_release(
         &runtime,
         Target::Windows,
         &env!("CARGO_PKG_VERSION").parse()?,
     )
     .context("Windows installed product payload did not verify")?;
+    scope::rebind_scope_registration(&runtime, &verified)?;
     start_core_process(
         &runtime.join(CORE_EXECUTABLE_NAME),
         [OsStr::new("register-installation"), OsStr::new("--serve")],

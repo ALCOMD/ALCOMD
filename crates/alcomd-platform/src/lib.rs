@@ -30,6 +30,11 @@ pub use core_installation::{
     WINDOWS_PRODUCT_SIDECARS, core_installation_registration, open_owned_installation_record,
     registered_core_executable, validate_installation_record_parent,
 };
+#[cfg(windows)]
+pub use core_installation::{
+    WINDOWS_SCOPE_DESTINATION_COMMIT_RECORD, WINDOWS_SCOPE_DESTINATION_RECORD,
+    WindowsScopeTransitionDestination,
+};
 #[cfg(target_os = "linux")]
 pub use core_installation::{
     LINUX_BOOTSTRAP_EXECUTABLE_NAME, LINUX_GUI_EXECUTABLE_NAME, check_linux_core_registration,
@@ -43,7 +48,8 @@ pub use core_installation::{
 pub use core_installation::{
     WINDOWS_ACTIVE_RUNTIME_RECORD, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME, WINDOWS_CLI_EXECUTABLE_NAME,
     WINDOWS_GUI_EXECUTABLE_NAME, WINDOWS_SCOPE_TRANSITION_RECORD, WINDOWS_UPDATE_INTENT_RECORD,
-    WindowsInstallationUpdate, WindowsScopeTransitionSource, check_windows_core_registration,
+    WindowsInstallationUpdate, WindowsScopeRegistrationTransfer, WindowsScopeTransitionSource,
+    check_windows_core_registration,
     create_windows_machine_installation_directory, create_windows_machine_installation_record,
     hold_windows_installation, open_windows_machine_installation_record,
     publish_windows_core_registration, remove_windows_core_registration,
@@ -134,7 +140,7 @@ pub use unix_local_ipc::{UnixIpcIdentity, connect_verified_local_socket};
 pub use windows::{
     CoreStartupGuard, DaemonInstance, IpcListener, IpcStream, WindowsFileIdentity, connect,
     connect_verified_local_pipe, endpoint_display, file_identity, file_link_count,
-    local_app_data_directory, start_core_process, state_database_path,
+    local_app_data_directory, start_core_process, state_database_path, windows_current_account_sid,
 };
 #[cfg(windows)]
 pub use windows::{

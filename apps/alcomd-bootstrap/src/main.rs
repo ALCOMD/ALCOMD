@@ -36,13 +36,81 @@ enum Command {
     },
     #[cfg(windows)]
     #[command(hide = true)]
-    CheckWindowsScopeTransition {
+    CoordinateWindowsScopeSource {
+        #[arg(long, value_enum)]
+        action: alcomd_bootstrap::ScopeSourceAction,
         #[arg(long, value_enum)]
         destination: alcomd_bootstrap::WindowsInstallScope,
+        #[arg(long)]
+        requester_sid: String,
+        #[arg(long)]
+        source_version: String,
         #[arg(long)]
         destination_version: String,
         #[arg(long)]
         staged_runtime: PathBuf,
+        #[arg(long)]
+        approved_plan: Option<String>,
+    },
+    #[cfg(windows)]
+    #[command(hide = true)]
+    WindowsScopePlanFingerprint(alcomd_bootstrap::WindowsScopePlanArguments),
+    #[cfg(windows)]
+    #[command(hide = true)]
+    CoordinateWindowsScopeDestination {
+        #[arg(long, value_enum)]
+        action: alcomd_bootstrap::ScopeDestinationAction,
+        #[command(flatten)]
+        plan: alcomd_bootstrap::WindowsScopePlanArguments,
+        #[arg(long)]
+        source_root: Option<PathBuf>,
+    },
+    #[cfg(windows)]
+    #[command(hide = true)]
+    WindowsScopeAccountSid,
+    #[cfg(windows)]
+    #[command(hide = true)]
+    RequestWindowsMachineScopeSource {
+        #[arg(long, value_enum)]
+        action: alcomd_bootstrap::ScopeSourceAction,
+        #[arg(long)]
+        source_version: String,
+        #[arg(long)]
+        destination_version: String,
+        #[arg(long)]
+        staged_runtime: PathBuf,
+        #[arg(long)]
+        approved_plan: String,
+    },
+    #[cfg(windows)]
+    #[command(hide = true)]
+    CompleteWindowsScopeAccount {
+        #[arg(long)]
+        requester_sid: String,
+        #[arg(long)]
+        source_sha: String,
+    },
+    #[cfg(windows)]
+    #[command(hide = true)]
+    RemoveRetiredWindowsScope {
+        #[arg(long, value_enum)]
+        source: alcomd_bootstrap::WindowsInstallScope,
+        #[arg(long)]
+        requester_sid: String,
+        #[arg(long)]
+        uninstaller: PathBuf,
+        #[arg(long)]
+        approved_plan: String,
+    },
+    #[cfg(windows)]
+    #[command(hide = true)]
+    VerifyRetiredWindowsScopeUninstall {
+        #[arg(long)]
+        source_sha: String,
+        #[arg(long)]
+        approved_plan: String,
+        #[arg(long)]
+        machine: bool,
     },
     #[cfg(windows)]
     /// Prepare a verified update for a current-user Windows installation.
@@ -195,18 +263,98 @@ fn main() -> anyhow::Result<()> {
             return alcomd_bootstrap::verify_installed_machine_uninstall(source_sha);
         }
         #[cfg(windows)]
-        Command::CheckWindowsScopeTransition {
+        Command::CoordinateWindowsScopeSource {
+            action,
             destination,
+            requester_sid,
+            source_version,
             destination_version,
             staged_runtime,
+            approved_plan,
         } => {
-            let plan = alcomd_bootstrap::check_windows_scope_transition(
+            let result = alcomd_bootstrap::coordinate_windows_scope_source(
+                action,
                 destination,
+                &requester_sid,
+                &source_version,
                 &destination_version,
                 &std::path::absolute(staged_runtime)?,
+                approved_plan.as_deref(),
             )?;
-            println!("{plan}");
+            println!("{result}");
             return Ok(());
+        }
+        #[cfg(windows)]
+        Command::WindowsScopePlanFingerprint(plan) => {
+            let digest = alcomd_bootstrap::windows_scope_plan_fingerprint(plan)?;
+            println!("{digest}");
+            return Ok(());
+        }
+        #[cfg(windows)]
+        Command::CoordinateWindowsScopeDestination {
+            action,
+            plan,
+            source_root,
+        } => {
+            return alcomd_bootstrap::coordinate_windows_scope_destination(
+                action,
+                plan,
+                source_root.as_deref(),
+            );
+        }
+        #[cfg(windows)]
+        Command::WindowsScopeAccountSid => {
+            println!("{}", alcomd_platform::windows_current_account_sid()?);
+            return Ok(());
+        }
+        #[cfg(windows)]
+        Command::RequestWindowsMachineScopeSource {
+            action,
+            source_version,
+            destination_version,
+            staged_runtime,
+            approved_plan,
+        } => {
+            return alcomd_bootstrap::request_windows_machine_scope_source(
+                action,
+                &source_version,
+                &destination_version,
+                &std::path::absolute(staged_runtime)?,
+                &approved_plan,
+            );
+        }
+        #[cfg(windows)]
+        Command::CompleteWindowsScopeAccount {
+            requester_sid,
+            source_sha,
+        } => {
+            return alcomd_bootstrap::complete_windows_scope_account(&requester_sid, source_sha);
+        }
+        #[cfg(windows)]
+        Command::RemoveRetiredWindowsScope {
+            source,
+            requester_sid,
+            uninstaller,
+            approved_plan,
+        } => {
+            return alcomd_bootstrap::remove_retired_windows_scope(
+                source,
+                &requester_sid,
+                &std::path::absolute(uninstaller)?,
+                &approved_plan,
+            );
+        }
+        #[cfg(windows)]
+        Command::VerifyRetiredWindowsScopeUninstall {
+            source_sha,
+            approved_plan,
+            machine,
+        } => {
+            return alcomd_bootstrap::verify_retired_windows_scope_uninstall(
+                source_sha,
+                &approved_plan,
+                machine,
+            );
         }
         #[cfg(windows)]
         Command::ApplyMachineUpdateWorker {

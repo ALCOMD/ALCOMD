@@ -20,6 +20,13 @@ use crate::{
     resolve_plain_storage_directory, sync_directory,
 };
 
+#[path = "windows_scope_destination.rs"]
+mod scope_destination;
+pub use scope_destination::{
+    WINDOWS_SCOPE_DESTINATION_COMMIT_RECORD, WINDOWS_SCOPE_DESTINATION_RECORD,
+    WindowsScopeTransitionDestination,
+};
+
 // The Inno uninstaller takes this byte exclusively. It is beyond the bounded
 // signed manifest, so verification can still read the complete file.
 const MANIFEST_LEASE_OFFSET: u64 = 1 << 32;
@@ -153,6 +160,7 @@ pub fn windows_installation_bootstrap(entry_point: &Path) -> io::Result<Option<P
                 Ok(_) => {
                     let trust = installation_trust(root)?;
                     require_no_scope_transition(root)?;
+                    scope_destination::require_committed_scope_destination(root, trust)?;
                     let version = active_version(root, trust)?;
                     versions.join(version.to_string())
                 }
@@ -246,6 +254,7 @@ fn require_active_runtime(runtime: &Path, trust: InstallationTrust) -> io::Resul
     let root = runtime_root(runtime)?;
     require_no_update_intent(root)?;
     require_no_scope_transition(root)?;
+    scope_destination::require_committed_scope_destination(root, trust)?;
     let version = active_version(root, trust)?;
     if runtime.file_name().and_then(|name| name.to_str()) != Some(version.to_string().as_str()) {
         return Err(installation_not_ready());
@@ -326,6 +335,7 @@ fn has_name(path: &Path, name: &str) -> bool {
 /// The caller verifies the signed payload and coordinates destination activation.
 pub struct WindowsScopeTransitionSource {
     root: PathBuf,
+    runtime: PathBuf,
     trust: InstallationTrust,
     source_version: Version,
     _lease: File,
@@ -333,8 +343,8 @@ pub struct WindowsScopeTransitionSource {
 }
 
 impl WindowsScopeTransitionSource {
-    /// Acquires the installed Bootstrap's source scope without consulting an arbitrary root.
-    pub fn acquire(executable: &Path, machine: bool) -> io::Result<Self> {
+    /// Acquires an installed source version in the selected fixed scope.
+    pub fn acquire(machine: bool, version: &str) -> io::Result<Self> {
         let (root, trust) = if machine {
             if !crate::windows_process_is_elevated()? {
                 return Err(io::Error::from(io::ErrorKind::PermissionDenied));
@@ -349,7 +359,12 @@ impl WindowsScopeTransitionSource {
                 InstallationTrust::User,
             )
         };
-        Self::acquire_at(executable, root, trust)
+        let version = parse_version(version)?;
+        let executable = root
+            .join("runtime")
+            .join(version.to_string())
+            .join(WINDOWS_BOOTSTRAP_EXECUTABLE_NAME);
+        Self::acquire_at(&executable, root, trust)
     }
 
     fn acquire_at(executable: &Path, root: PathBuf, trust: InstallationTrust) -> io::Result<Self> {
@@ -359,9 +374,7 @@ impl WindowsScopeTransitionSource {
         trust.check_executable(executable)?;
         let runtime = windows_installation_runtime(executable)?;
         let source_version = path_version(&runtime)?;
-        if runtime_root(&runtime)? != root
-            || source_version != parse_version(env!("CARGO_PKG_VERSION"))?
-        {
+        if runtime_root(&runtime)? != root {
             return Err(invalid_registration());
         }
         trust.check_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
@@ -378,11 +391,18 @@ impl WindowsScopeTransitionSource {
         let instance = maintenance_instance(trust)?;
         Ok(Self {
             root,
+            runtime,
             trust,
             source_version,
             _lease: lease,
             _instance: instance,
         })
+    }
+
+    /// The retained installed source, opened before verifying its signed payload.
+    #[must_use]
+    pub fn runtime(&self) -> &Path {
+        &self.runtime
     }
 
     /// Persists the exact conversion intent and prevents normal launch or updates.
@@ -428,6 +448,28 @@ impl WindowsScopeTransitionSource {
         )
     }
 
+    /// Identifies the durable source state for this exact conversion plan.
+    pub fn phase(&self, expected_intent: &[u8]) -> io::Result<&'static str> {
+        validate_maintenance_intent(expected_intent)?;
+        match self
+            .trust
+            .open_record(&self.root.join(WINDOWS_SCOPE_TRANSITION_RECORD))
+        {
+            Ok(file) => require_maintenance_intent(&file, expected_intent)?,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                self.require_source_activation()?;
+                return Ok("active");
+            }
+            Err(error) => return Err(error),
+        }
+        match active_version(&self.root, self.trust) {
+            Ok(version) if version == self.source_version => Ok("fenced"),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok("retired"),
+            Err(error) => Err(error),
+            _ => Err(installation_not_ready()),
+        }
+    }
+
     fn require_source_activation(&self) -> io::Result<()> {
         if active_version(&self.root, self.trust)? != self.source_version {
             return Err(installation_not_ready());
@@ -463,6 +505,122 @@ fn require_maintenance_intent(file: &File, expected: &[u8]) -> io::Result<()> {
         return Err(invalid_registration());
     }
     Ok(())
+}
+
+/// An account-owned registration awaiting a verified transfer from a retired Windows scope.
+pub struct WindowsScopeRegistrationTransfer {
+    registration: PathBuf,
+    registration_identity: WindowsFileIdentity,
+    source_runtime: PathBuf,
+    destination_runtime: PathBuf,
+    source_trust: InstallationTrust,
+    intent: Vec<u8>,
+    _instance: DaemonInstance,
+}
+
+impl WindowsScopeRegistrationTransfer {
+    /// Acquires the calling account's registration, only when a different scope has retired.
+    pub fn acquire(config: &DataConfig, destination_runtime: &Path) -> io::Result<Option<Self>> {
+        let registration = core_installation_registration(config)?;
+        let file = match open_registration(&registration) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let source_runtime = read_runtime_directory(&file)?;
+        if source_runtime == destination_runtime {
+            return Ok(None);
+        }
+        let Ok(source_root) = runtime_root(&source_runtime) else {
+            return Ok(None);
+        };
+        let destination_root = runtime_root(destination_runtime)?;
+        let source_trust = match installation_trust(source_root) {
+            Ok(trust) => trust,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let destination_trust = installation_trust(destination_root)?;
+        if source_trust == destination_trust {
+            return Ok(None);
+        }
+        let intent_path = source_root.join(WINDOWS_SCOPE_TRANSITION_RECORD);
+        let intent = match source_trust.open_record(&intent_path) {
+            Ok(intent) => intent,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if crate::windows_process_is_elevated()? {
+            return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+        }
+        let expected_user_root = windows_current_user_installation_root()?;
+        let user_root = if source_trust == InstallationTrust::User {
+            source_root
+        } else {
+            destination_root
+        };
+        if user_root != expected_user_root
+            || validate_runtime(&source_runtime, source_trust)? != source_runtime
+            || validate_runtime(destination_runtime, destination_trust)? != destination_runtime
+        {
+            return Err(invalid_registration());
+        }
+        let instance =
+            maintenance_instance(InstallationTrust::User)?.ok_or_else(invalid_registration)?;
+        require_no_maintenance_record(source_root, WINDOWS_ACTIVE_RUNTIME_RECORD)?;
+        require_active_runtime(destination_runtime, destination_trust)?;
+        let mut bytes = Vec::new();
+        intent
+            .take((MAX_INTENT_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)?;
+        validate_maintenance_intent(&bytes)?;
+        Ok(Some(Self {
+            registration,
+            registration_identity: file_identity_from_file(&file)?,
+            source_runtime,
+            destination_runtime: destination_runtime.to_path_buf(),
+            source_trust,
+            intent: bytes,
+            _instance: instance,
+        }))
+    }
+
+    /// The still-retained source whose signed runtime must be checked by Bootstrap.
+    #[must_use]
+    pub fn source_runtime(&self) -> &Path {
+        &self.source_runtime
+    }
+
+    /// Whether the trusted source belonged to the all-users installation.
+    #[must_use]
+    pub fn source_is_machine(&self) -> bool {
+        self.source_trust == InstallationTrust::Machine
+    }
+
+    /// The immutable plan that authorized retirement of the source scope.
+    #[must_use]
+    pub fn intent(&self) -> &[u8] {
+        &self.intent
+    }
+
+    /// Atomically transfers this account's registration after Bootstrap verifies both payloads.
+    pub fn publish(self) -> io::Result<()> {
+        let source_root = runtime_root(&self.source_runtime)?;
+        let intent = self
+            .source_trust
+            .open_record(&source_root.join(WINDOWS_SCOPE_TRANSITION_RECORD))?;
+        require_maintenance_intent(&intent, &self.intent)?;
+        require_no_maintenance_record(source_root, WINDOWS_ACTIVE_RUNTIME_RECORD)?;
+        let destination_trust = installation_trust(runtime_root(&self.destination_runtime)?)?;
+        require_active_runtime(&self.destination_runtime, destination_trust)?;
+        let line = registration_line(&self.destination_runtime)?;
+        publish_owned_record(
+            &self.registration,
+            line.as_bytes(),
+            Some(self.registration_identity),
+            InstallationTrust::User,
+        )
+    }
 }
 
 fn remove_maintenance_intent(
@@ -1065,10 +1223,14 @@ mod tests {
             InstallationTrust::User,
         )?;
         assert!(retirement.retire(scope_intent).is_err());
+        assert_eq!(retirement.phase(scope_intent)?, "active");
         retirement.fence(scope_intent)?;
+        assert_eq!(retirement.phase(scope_intent)?, "fenced");
+        assert!(retirement.phase(b"another intent").is_err());
         assert!(retirement.retire(b"another intent").is_err());
         assert!(retiring_selector.is_file());
         retirement.retire(scope_intent)?;
+        assert_eq!(retirement.phase(scope_intent)?, "retired");
         assert!(retirement.restore(scope_intent).is_err());
         assert!(!retiring_selector.exists());
         drop(retirement);

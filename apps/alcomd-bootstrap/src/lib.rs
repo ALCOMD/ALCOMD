@@ -12,10 +12,14 @@ pub use linux_portable::{
 mod windows_installation;
 #[cfg(windows)]
 pub use windows_installation::{
-    WindowsInstallScope, apply_installed_update, apply_machine_update_worker,
-    check_windows_scope_transition, register_installed_core, resume_installed_update,
+    ScopeDestinationAction, ScopeSourceAction, WindowsInstallScope, WindowsScopePlanArguments,
+    apply_installed_update, apply_machine_update_worker, complete_windows_scope_account,
+    coordinate_windows_scope_destination, coordinate_windows_scope_source, register_installed_core,
+    remove_retired_windows_scope, request_windows_machine_scope_source, resume_installed_update,
     resume_machine_update_worker, stage_installed_update, start_installed_core,
-    unregister_installed_core, verify_installed_machine_uninstall, with_windows_desktop_restart,
+    unregister_installed_core, verify_installed_machine_uninstall,
+    verify_retired_windows_scope_uninstall, windows_scope_plan_fingerprint,
+    with_windows_desktop_restart,
 };
 
 /// Verifies and starts the installed Core in the calling Linux account.

@@ -87,14 +87,19 @@ mod registration;
 pub use registration::{
     WINDOWS_ACTIVE_RUNTIME_RECORD, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME, WINDOWS_CLI_EXECUTABLE_NAME,
     WINDOWS_GUI_EXECUTABLE_NAME, WINDOWS_SCOPE_TRANSITION_RECORD, WINDOWS_UPDATE_INTENT_RECORD,
-    WindowsInstallationUpdate, WindowsScopeTransitionSource, check_windows_core_registration,
-    create_windows_machine_installation_directory, create_windows_machine_installation_record,
-    hold_windows_installation, open_windows_machine_installation_record,
-    publish_windows_core_registration, remove_windows_core_registration,
-    validate_windows_machine_installation_record_parent, windows_current_user_installation_root,
-    windows_installation_bootstrap, windows_installation_runtime,
-    windows_machine_installation_root, windows_machine_runtime_bootstrap,
-    windows_retired_machine_installation_bootstrap,
+    WindowsInstallationUpdate, WindowsScopeRegistrationTransfer, WindowsScopeTransitionSource,
+    check_windows_core_registration, create_windows_machine_installation_directory,
+    create_windows_machine_installation_record, hold_windows_installation,
+    open_windows_machine_installation_record, publish_windows_core_registration,
+    remove_windows_core_registration, validate_windows_machine_installation_record_parent,
+    windows_current_user_installation_root, windows_installation_bootstrap,
+    windows_installation_runtime, windows_machine_installation_root,
+    windows_machine_runtime_bootstrap, windows_retired_machine_installation_bootstrap,
+};
+#[cfg(windows)]
+pub use registration::{
+    WINDOWS_SCOPE_DESTINATION_COMMIT_RECORD, WINDOWS_SCOPE_DESTINATION_RECORD,
+    WindowsScopeTransitionDestination,
 };
 
 #[cfg(target_os = "linux")]

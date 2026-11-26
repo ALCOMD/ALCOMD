@@ -44,6 +44,11 @@ pub(crate) use local_ipc::{client_process_id, client_process_image};
 pub use security::start_core_process;
 pub(crate) use security::{create_machine_directory, create_machine_record};
 
+/// Returns the SID from the calling process's Windows account token.
+pub fn windows_current_account_sid() -> io::Result<String> {
+    security::current_user_sid_string()
+}
+
 /// Coordinates the current user's native clients while one launches Core.
 pub struct CoreStartupGuard {
     _lock: security::WindowsInstanceGuard,
