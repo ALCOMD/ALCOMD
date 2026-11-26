@@ -38,7 +38,7 @@ Windows 全用户切换使用签名源码 `d1555aa3` 的断网夹具通过 6 项
 
 Windows 同范围缺失文件修复已通过两种 Win11 安装范围验收。同一 `310065bf` 完整 Inno 实包在两种范围各通过 8 项自定义目录检查，覆盖 Unicode 与空格目录、缺失卸载登记后的修复、Core 冷启动和卸载归属。Win10、双向范围转换和自定义目录整包更新继续验收。[Windows 修复与转换维护锁](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-同范围修复与转换维护锁)
 
-Win11 隔离夹具已通过协议根键创建和移除的中断恢复。强制终止安装器后，重试可使用受保护的自定义根登记协议，并能精确移除自有登记、保留外部登记。完整发行包的协议启动和跨范围接管继续验收。[Windows 协议登记恢复](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-同范围修复与转换维护锁)
+Win11 隔离夹具已通过协议登记和移除的中断恢复，以及七种第三方抢先改写的时序。登记和移除保全第三方写入，范围转换遇到归属变化返回可重试结果。完整发行包的协议启动和跨范围接管继续验收。[Windows 协议事务复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-协议事务并发复验)
 
 Windows Inno 已接入 WebView2 作用域检测、在线 Bootstrapper 和可选离线 Standalone。隔离 Win11 验证了已有运行时、坏摘要和提升范围保护。两种工程包已编译，离线包超过冻结 v3 更新器的 256 MiB 上限。干净 Win10 的实际部署另验。[WebView2 前置部署](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-webview2-前置部署)
 

@@ -249,7 +249,7 @@ begin
   if not InstallCliPath then
     Exit;
   PublishStartMenuEntry;
-  if not PublishProductProtocol('') or not SyncUninstallRegistration then
+  if not ScopeProtocolCanMove(Root) or not PublishProductProtocol('', True) or not SyncUninstallRegistration then
     Exit;
   SourceScope := 'current-user';
   if not IsAdminInstallMode then

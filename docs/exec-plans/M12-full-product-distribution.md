@@ -419,6 +419,12 @@ Windows 平台定向回归验证了转换意图持久化后的启动阻断。后
 
 Windows 协议登记使用受保护定位记录里的安装根拼写，避免自定义目录的等价大小写写法改变归属。登记时在同一注册表事务中创建根键和写入归属标记，移除时在事务中复核只含原归属标记的叶键并删除。类型和值按原始 UTF-16 字节核验。Win11 断网夹具在两个提交点前分别强制终止实际安装器，复验未提交认领消失、删除失败时归属保留、重试、准确命令及外部登记保全。夹具 SHA-256 为 `254aacf8dc127aea30471919f67d1c22bd59df812e298da61f8cbc339e44bec3`，回执为 `e86922c23afa62037e79dadb63656ae34d859393073a40a435b8c455d8116c40`。完整发行包的 Shell 调用、并发改写和作用域转换另行取证。
 
+### 2026-11-27 Windows 协议事务并发复验
+
+Win11 断网夹具先复现了已完成的第三方写入被稍后提交的安装器覆盖。安装器改为在注册表事务中暂存变更后重新核对公开键树的归属、值与形状。若第三方在最终核对后成功改写已参与事务的键，Windows 终止事务。范围转换在最后发布和退役清理时仍须确认归属，遇到第三方登记返回可重试结果。[Windows 注册表事务](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regopenkeytransactedw)
+
+同一 Win11 合成夹具通过四项基线和七项并发检查。覆盖认领和移除的提交前进程终止、受保护的根路径拼写、外部登记保全、暂存前命令和子键改写、最终核对后写入，以及范围转换的可重试结果。Inno 6.5.4 也用合成载荷编译了完整安装脚本。原生夹具 SHA-256 为 `5767f8caddbe62ef785a14933d711b2c658246e37b21cb35802b2b6a390beca5`，回执为 `be377a828ca8e9d08499b4ba3b1bc5d184dddc9711b627943b7e091a03093c3`。待用完整发行包验证 Shell 启动和双向范围转换。
+
 ### 2026-11-26 Windows WebView2 前置部署
 
 Windows Inno 发行打包接收固定摘要的 Microsoft Evergreen Bootstrapper，按需接收固定摘要的 x64 Standalone。打包校验 Microsoft Authenticode 发行者与文件摘要，安装时重新核对提取文件。安装器核对范围、归属和维护状态后，先确认 WebView2 已就绪再写产品文件。有 Standalone 时使用离线路径。当前用户优先使用已有机器运行时，也接受本账号运行时，并保护非提升安装范围。沿用 Windows 客户端基线已有的 Evergreen 依赖。[Microsoft WebView2 分发](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution)

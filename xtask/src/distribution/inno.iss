@@ -1510,7 +1510,7 @@ begin
     Exit;
   end;
   PublishStartMenuEntry;
-  if not PublishProductProtocol('') or not SyncUninstallRegistration or
+  if not PublishProductProtocol('', False) or not SyncUninstallRegistration or
     (IsAdminInstallMode and not PublishRecord(Root + '\' + MachineBridgeAccount, '1' + #10)) or
     not PublishRecord(Root + '\' + ActiveRuntime, '@APP_VERSION@' + #10) then begin
     ReportIncompleteInstallation('ALCOMD could not activate the migrated installation. Retry with the same bridge.');
@@ -1538,7 +1538,7 @@ begin
     if CurStep = ssPostInstall then begin
       InstallationIncomplete := True;
       UpdateEntriesReady := OwnedUninstallRoot(ExpandConstant('{app}')) and
-        UpdateStartMenuEntry and PublishProductProtocol(PreviousVersion) and SyncUninstallRegistration;
+        UpdateStartMenuEntry and PublishProductProtocol(PreviousVersion, False) and SyncUninstallRegistration;
       if not UpdateEntriesReady then
         ReportIncompleteInstallation('ALCOMD could not finish publishing its update entries.');
     end else if CurStep = ssDone then begin
@@ -1578,7 +1578,7 @@ begin
       (RebuildUninstallRegistration and (not OwnedUninstallRoot(ExpandConstant('{app}')) or
         not SyncUninstallRegistration)) then
       ReportIncompleteInstallation('ALCOMD could not verify the repaired program files.')
-    else if not PublishProductProtocol('') then
+    else if not PublishProductProtocol('', False) then
       ReportIncompleteInstallation('ALCOMD could not repair its link protocol.');
     Exit;
   end;
@@ -1593,7 +1593,7 @@ begin
       mbInformation, MB_OK, IDOK);
   end;
   PublishStartMenuEntry;
-  if not PublishProductProtocol('') then
+  if not PublishProductProtocol('', False) then
     ReportIncompleteInstallation('ALCOMD could not register its link protocol. Retry with the same installer.');
 end;
 
@@ -1730,7 +1730,7 @@ begin
   end;
   if not RemoveOwnedStartMenuEntry and Retired then
     Abort;
-  if not RemoveOwnedProductProtocol(Root) then begin
+  if not RemoveOwnedProductProtocol(Root, Retired) then begin
     Log('Could not remove the ALCOMD-owned link protocol.');
     Abort;
   end;

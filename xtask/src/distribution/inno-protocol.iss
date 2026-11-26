@@ -1,3 +1,6 @@
+type
+  TProtocolState = (ProtocolMissing, ProtocolOwned, ProtocolForeign, ProtocolFailed);
+
 function BeginProtocolTransaction(Security, UnitOfWork, Options, Level, Flags, Timeout: Cardinal;
   Description: String): Integer;
   external 'CreateTransaction@ktmw32.dll stdcall';
@@ -30,7 +33,7 @@ function QueryProtocolValue(Handle: Cardinal; Name: String; Reserved: Cardinal;
   var ValueType: Cardinal; Value: String; var Size: Cardinal): Integer;
   external 'RegQueryValueExW@advapi32.dll stdcall';
 
-function SetProtocolOwner(Handle: Cardinal; Name: String; Reserved, ValueType: Cardinal;
+function SetProtocolValue(Handle: Cardinal; Name: String; Reserved, ValueType: Cardinal;
   Value: String; Size: Cardinal): Integer;
   external 'RegSetValueExW@advapi32.dll stdcall';
 
@@ -57,54 +60,37 @@ begin
     CloseRegistryKey(Handle);
 end;
 
-function ProtocolHandleValueMatches(Handle: Cardinal; Name, Expected: String): Boolean;
+function ProtocolValueStatus(Handle: Cardinal; Name, Expected: String): Integer;
 var
   Kind, Size, ExpectedSize: Cardinal;
   Value: String;
 begin
-  // Use the raw value so the exact type, size and single UTF-16 terminator are checked together.
+  // Check the exact type, bytes, and single UTF-16 terminator.
   ExpectedSize := 2 * (Length(Expected) + 1);
   Size := ExpectedSize;
   SetLength(Value, Length(Expected) + 1);
-  Result := (QueryProtocolValue(Handle, Name, 0, Kind, Value, Size) = 0) and
-    (Kind = StringValue) and (Size = ExpectedSize) and (Value = Expected + #0);
+  Result := QueryProtocolValue(Handle, Name, 0, Kind, Value, Size);
+  if (Result = 0) and ((Kind <> StringValue) or (Size <> ExpectedSize) or
+    (Value <> Expected + #0)) then
+    Result := 13; // ERROR_INVALID_DATA.
 end;
 
-function ProtocolValueMatches(RegistryRoot: Cardinal; Key, Name, Expected: String): Boolean;
+function CheckProtocolValue(Handle: Cardinal; Name, Expected, Previous: String;
+  Required: Boolean; var KnownValues: Cardinal): TProtocolState;
 var
-  Root, View, Handle: Cardinal;
+  Status: Integer;
 begin
-  ProtocolRegistryView(RegistryRoot, Root, View);
-  Result := False;
-  if OpenRegistryKey(Root, Key, 0, KeyQueryValue or View, Handle) <> 0 then
-    Exit;
-  try
-    Result := ProtocolHandleValueMatches(Handle, Name, Expected);
-  finally
-    CloseRegistryKey(Handle);
-  end;
-end;
-
-function ProtocolKeyShape(Root: Cardinal; Key, Child: String; AllowDefault, AllowMetadata: Boolean): Boolean;
-var
-  Names: TArrayOfString;
-  Index, Status: Integer;
-begin
-  Status := ProtocolKeyStatus(Root, Key);
-  Result := MissingEntry(Status);
-  if Result or (Status <> 0) then
-    Exit;
-  if not RegGetValueNames(Root, Key, Names) then
-    Exit;
-  for Index := 0 to GetArrayLength(Names) - 1 do
-    if not ((AllowDefault and (Names[Index] = '')) or (AllowMetadata and
-      ((CompareText(Names[Index], ProductProtocolOwner) = 0) or
-        (CompareText(Names[Index], 'URL Protocol') = 0)))) then
-      Exit;
-  if not RegGetSubkeyNames(Root, Key, Names) then
-    Exit;
-  Result := (GetArrayLength(Names) = 0) or ((GetArrayLength(Names) = 1) and
-    (Child <> '') and (CompareText(Names[0], Child) = 0));
+  Status := ProtocolValueStatus(Handle, Name, Expected);
+  if ((Status = 13) or (Status = 234)) and (Previous <> '') then
+    Status := ProtocolValueStatus(Handle, Name, Previous);
+  Result := ProtocolFailed;
+  if Status = 0 then begin
+    KnownValues := KnownValues + 1;
+    Result := ProtocolOwned;
+  end else if MissingEntry(Status) and not Required then
+    Result := ProtocolOwned
+  else if MissingEntry(Status) or (Status = 13) or (Status = 234) then
+    Result := ProtocolForeign;
 end;
 
 function ProductProtocolCommand(Root, Version: String): String;
@@ -112,102 +98,167 @@ begin
   Result := '"' + Root + '\runtime\' + Version + '\@GUI_NAME@.exe" "%1"';
 end;
 
+function ProtocolKeyAtDepth(Key: String; Depth: Integer): String;
+begin
+  case Depth of
+    0: Result := Key;
+    1: Result := Key + '\shell';
+    2: Result := Key + '\shell\open';
+    3: Result := Key + '\shell\open\command';
+  end;
+end;
+
+function InspectProtocolNode(NativeRoot, View: Cardinal; Key, Root, Command, PriorCommand: String;
+  Depth, Transaction: Integer; var LastDepth: Integer): TProtocolState;
+var
+  Handle, Subkeys, Values, KnownValues: Cardinal;
+  Status: Integer;
+  NodeKey: String;
+begin
+  // The cross-scope preflight is only a read. Mutations always use transacted handles here.
+  NodeKey := ProtocolKeyAtDepth(Key, Depth);
+  if Transaction = 0 then
+    Status := OpenRegistryKey(NativeRoot, NodeKey, 0, KeyQueryValue or View, Handle)
+  else
+    Status := OpenProtocolKey(NativeRoot, NodeKey, 0, KeyQueryValue or View, Handle, Transaction, 0);
+  Result := ProtocolFailed;
+  if MissingEntry(Status) then begin
+    Result := ProtocolMissing;
+    Exit;
+  end;
+  if Status <> 0 then
+    Exit;
+  try
+    if QueryProtocolKeyCounts(Handle, 0, 0, 0, Subkeys, 0, 0, Values, 0, 0, 0, 0) <> 0 then
+      Exit;
+    KnownValues := 0;
+    Result := ProtocolOwned;
+    if Depth = 0 then begin
+      Result := CheckProtocolValue(Handle, ProductProtocolOwner, Root, '', True, KnownValues);
+      if Result = ProtocolOwned then
+        Result := CheckProtocolValue(Handle, '', ProductProtocolDescription, '', False, KnownValues);
+      if Result = ProtocolOwned then
+        Result := CheckProtocolValue(Handle, 'URL Protocol', '', '', False, KnownValues);
+    end else if Depth = 3 then
+      Result := CheckProtocolValue(Handle, '', Command, PriorCommand, False, KnownValues);
+    if Result <> ProtocolOwned then
+      Exit;
+    // The exact known values account for the entire node, without enumerating unknown names.
+    if (Values <> KnownValues) or ((Depth = 3) and (Subkeys <> 0)) or (Subkeys > 1) then begin
+      Result := ProtocolForeign;
+      Exit;
+    end;
+    LastDepth := Depth;
+    if Subkeys = 1 then begin
+      Result := InspectProtocolNode(NativeRoot, View, Key, Root, Command, PriorCommand,
+        Depth + 1, Transaction, LastDepth);
+      if Result = ProtocolMissing then
+        Result := ProtocolForeign;
+    end;
+  finally
+    CloseRegistryKey(Handle);
+  end;
+end;
+
+function InspectProductProtocol(NativeRoot, View: Cardinal; Key, Root, Version, Previous: String;
+  Transaction: Integer; var LastDepth: Integer): TProtocolState;
+var
+  PreviousCommand: String;
+begin
+  LastDepth := -1;
+  PreviousCommand := '';
+  if Previous <> '' then
+    PreviousCommand := ProductProtocolCommand(Root, Previous);
+  Result := InspectProtocolNode(NativeRoot, View, Key, Root, ProductProtocolCommand(Root, Version),
+    PreviousCommand, 0, Transaction, LastDepth);
+end;
+
 function CanManageProductProtocol(RegistryRoot: Cardinal; Key, Root, Version, Previous: String): Boolean;
 var
-  Status: Integer;
-  CommandKey: String;
-begin
-  Status := ProtocolKeyStatus(RegistryRoot, Key);
-  Result := MissingEntry(Status);
-  if Result or (Status <> 0) then
-    Exit;
-  CommandKey := Key + '\shell\open\command';
-  // A partial write is repairable only under this instance's exact root marker.
-  Result := ProtocolValueMatches(RegistryRoot, Key, ProductProtocolOwner, Root) and
-    ProtocolKeyShape(RegistryRoot, Key, 'shell', True, True) and
-    ProtocolKeyShape(RegistryRoot, Key + '\shell', 'open', False, False) and
-    ProtocolKeyShape(RegistryRoot, Key + '\shell\open', 'command', False, False) and
-    ProtocolKeyShape(RegistryRoot, CommandKey, '', True, False) and
-    (not RegValueExists(RegistryRoot, Key, '') or
-      ProtocolValueMatches(RegistryRoot, Key, '', ProductProtocolDescription)) and
-    (not RegValueExists(RegistryRoot, Key, 'URL Protocol') or
-      ProtocolValueMatches(RegistryRoot, Key, 'URL Protocol', '')) and
-    (not RegValueExists(RegistryRoot, CommandKey, '') or
-      ProtocolValueMatches(RegistryRoot, CommandKey, '', ProductProtocolCommand(Root, Version)) or
-      ((Previous <> '') and
-        ProtocolValueMatches(RegistryRoot, CommandKey, '', ProductProtocolCommand(Root, Previous))));
-end;
-
-function ClaimProductProtocol(RegistryRoot: Cardinal; Root: String): Boolean;
-var
-  NativeRoot, View, Handle, Disposition: Cardinal;
-  Transaction: Integer;
+  NativeRoot, View: Cardinal;
+  State: TProtocolState;
+  LastDepth: Integer;
 begin
   ProtocolRegistryView(RegistryRoot, NativeRoot, View);
+  State := InspectProductProtocol(NativeRoot, View, Key, Root, Version, Previous, 0, LastDepth);
+  Result := (State = ProtocolOwned) or (State = ProtocolMissing);
+end;
+
+function WriteProtocolValue(Handle: Cardinal; Name, Value: String): Boolean;
+begin
+  Result := SetProtocolValue(Handle, Name, 0, StringValue, Value + #0, 2 * (Length(Value) + 1)) = 0;
+end;
+
+function OpenProtocolTreeForWrite(NativeRoot, View: Cardinal; Depth, Transaction, LastDepth: Integer;
+  var Handle: Cardinal): Boolean;
+var
+  Access, Disposition: Cardinal;
+  Key: String;
+begin
+  Access := KeyQueryValue;
+  if (Depth = 0) or (Depth = 3) then
+    Access := 2; // KEY_SET_VALUE.
+  Key := ProtocolKeyAtDepth(ProductProtocolKey, Depth);
+  if Depth <= LastDepth then begin
+    Result := OpenProtocolKey(NativeRoot, Key, 0, Access or View, Handle, Transaction, 0) = 0;
+    Exit;
+  end;
   Result := False;
-  Transaction := BeginProtocolTransaction(0, 0, 0, 0, 0, 0, 'Claim ALCOMD link protocol');
-  if Transaction = -1 then
+  if CreateProtocolKey(NativeRoot, Key, 0, 0, 0, Access or View, 0, Handle,
+    Disposition, Transaction, 0) <> 0 then
+    Exit;
+  // A newly appeared key cannot become an owned claim, even if its name is expected.
+  Result := Disposition = 1;
+  if not Result then
+    CloseRegistryKey(Handle);
+end;
+
+function WriteProtocolTree(NativeRoot, View: Cardinal; Root: String; Transaction, LastDepth: Integer): Boolean;
+var
+  Handle, ChildHandle: Cardinal;
+  Depth: Integer;
+begin
+  Result := False;
+  if not OpenProtocolTreeForWrite(NativeRoot, View, 0, Transaction, LastDepth, Handle) then
     Exit;
   try
-    if CreateProtocolKey(NativeRoot, ProductProtocolKey, 0, 0, 0, 2 or View, 0, Handle,
-      Disposition, Transaction, 0) <> 0 then
-      Exit;
-    try
-      // Before commit, a new key and its ownership marker are both private to this transaction.
-      if (Disposition <> 1) or (SetProtocolOwner(Handle, ProductProtocolOwner, 0, StringValue,
-        Root, 2 * (Length(Root) + 1)) <> 0) then
+    for Depth := 1 to 3 do begin
+      if not OpenProtocolTreeForWrite(NativeRoot, View, Depth, Transaction, LastDepth, ChildHandle) then
         Exit;
-    finally
-      CloseRegistryKey(Handle);
+      try
+        if (Depth = 3) and
+          not WriteProtocolValue(ChildHandle, '', ProductProtocolCommand(Root, '@APP_VERSION@')) then
+          Exit;
+      finally
+        CloseRegistryKey(ChildHandle);
+      end;
     end;
-    Result := CommitProtocolTransaction(Transaction);
+    Result := ((LastDepth >= 0) or WriteProtocolValue(Handle, ProductProtocolOwner, Root)) and
+      WriteProtocolValue(Handle, '', ProductProtocolDescription) and WriteProtocolValue(Handle, 'URL Protocol', '');
   finally
-    if not Result then
-      RollbackProtocolTransaction(Transaction);
-    CloseKernelHandle(Transaction);
+    CloseRegistryKey(Handle);
   end;
 end;
 
-function DeleteOwnedProtocolLeaf(RegistryRoot: Cardinal; Root: String): Boolean;
+function DeleteProtocolTree(NativeRoot, View: Cardinal; Transaction, LastDepth: Integer): Boolean;
 var
-  NativeRoot, View, Handle, Subkeys, Values: Cardinal;
-  Transaction: Integer;
+  Depth: Integer;
 begin
-  ProtocolRegistryView(RegistryRoot, NativeRoot, View);
   Result := False;
-  Transaction := BeginProtocolTransaction(0, 0, 0, 0, 0, 0, 'Remove ALCOMD link protocol');
-  if Transaction = -1 then
-    Exit;
-  try
-    if OpenProtocolKey(NativeRoot, ProductProtocolKey, 0, KeyQueryValue or View, Handle,
+  // Delete only inspected nodes, leaf first. The native API refuses keys with subkeys.
+  for Depth := LastDepth downto 0 do
+    if DeleteProtocolKey(NativeRoot, ProtocolKeyAtDepth(ProductProtocolKey, Depth), View, 0,
       Transaction, 0) <> 0 then
       Exit;
-    try
-      // Recheck the leaf inside the transaction before deleting the key and its last value.
-      if (QueryProtocolKeyCounts(Handle, 0, 0, 0, Subkeys, 0, 0, Values, 0, 0, 0, 0) <> 0) or
-        (Subkeys <> 0) or (Values <> 1) or
-        not ProtocolHandleValueMatches(Handle, ProductProtocolOwner, Root) then
-        Exit;
-      if DeleteProtocolKey(NativeRoot, ProductProtocolKey, View, 0, Transaction, 0) <> 0 then
-        Exit;
-    finally
-      CloseRegistryKey(Handle);
-    end;
-    Result := CommitProtocolTransaction(Transaction);
-  finally
-    if not Result then
-      RollbackProtocolTransaction(Transaction);
-    CloseKernelHandle(Transaction);
-  end;
+  Result := True;
 end;
 
-function FlushProductProtocol(RegistryRoot: Cardinal; Key: String): Boolean;
+function FlushProductProtocol(NativeRoot, View: Cardinal; Key: String): Boolean;
 var
-  Root, View, Handle: Cardinal;
+  Handle: Cardinal;
 begin
-  ProtocolRegistryView(RegistryRoot, Root, View);
   Result := False;
-  if OpenRegistryKey(Root, Key, 0, KeyQueryValue or View, Handle) <> 0 then
+  if OpenRegistryKey(NativeRoot, Key, 0, KeyQueryValue or View, Handle) <> 0 then
     Exit;
   try
     Result := FlushRegistryKey(Handle) = 0;
@@ -216,71 +267,76 @@ begin
   end;
 end;
 
-function PublishProductProtocol(Previous: String): Boolean;
+function ChangeProductProtocol(Root, Previous: String; Removing, RequireOwnership: Boolean): Boolean;
 var
-  RegistryRoot: Cardinal;
-  Root: String;
+  NativeRoot, View: Cardinal;
+  State, PublicState: TProtocolState;
+  LastDepth, PublicDepth, Transaction: Integer;
+  Mutated, Committed: Boolean;
 begin
+  ProtocolRegistryView(InstallRegistryRoot, NativeRoot, View);
   Result := False;
-  if not ReadScopeRoot(IsAdminInstallMode, Root) or
-    (CompareText(ExpandConstant('{app}'), Root) <> 0) or
-    not PlainFileMatches(Root + '\runtime\@APP_VERSION@\@GUI_NAME@.exe', '@GUI_DIGEST@') then
+  Committed := False;
+  Transaction := BeginProtocolTransaction(0, 0, 0, 0, 0, 0, 'Maintain ALCOMD link protocol');
+  if Transaction = -1 then
     Exit;
-  RegistryRoot := InstallRegistryRoot;
-  if not CanManageProductProtocol(RegistryRoot, ProductProtocolKey, Root, '@APP_VERSION@', Previous) then begin
-    Log('The existing @URI_SCHEME@ link protocol is not owned by this installation. It was kept.');
-    Result := True;
-    Exit;
+  try
+    State := InspectProductProtocol(NativeRoot, View, ProductProtocolKey, Root, '@APP_VERSION@',
+      Previous, Transaction, LastDepth);
+    if State = ProtocolFailed then
+      Exit;
+    if State = ProtocolForeign then begin
+      Log('The existing @URI_SCHEME@ link protocol is not owned by this installation. It was kept.');
+      Result := not RequireOwnership;
+      Exit;
+    end;
+    if Removing and (State = ProtocolMissing) then begin
+      Result := True;
+      Exit;
+    end;
+    if Removing then
+      Mutated := DeleteProtocolTree(NativeRoot, View, Transaction, LastDepth)
+    else
+      Mutated := WriteProtocolTree(NativeRoot, View, Root, Transaction, LastDepth);
+    if not Mutated then
+      Exit;
+    // Reading a transacted key does not prevent a competing write before we stage changes.
+    // Check the still-public tree after staging, while the touched keys are enlisted.
+    PublicState := InspectProductProtocol(NativeRoot, View, ProductProtocolKey, Root,
+      '@APP_VERSION@', Previous, 0, PublicDepth);
+    if PublicState = ProtocolForeign then begin
+      Log('The existing @URI_SCHEME@ link protocol changed during this operation. It was kept.');
+      Result := not RequireOwnership;
+      Exit;
+    end;
+    if (PublicState <> State) or (PublicDepth <> LastDepth) then
+      Exit;
+    Committed := CommitProtocolTransaction(Transaction);
+  finally
+    if not Committed then
+      RollbackProtocolTransaction(Transaction);
+    CloseKernelHandle(Transaction);
   end;
-  if MissingEntry(ProtocolKeyStatus(RegistryRoot, ProductProtocolKey)) and
-    not ClaimProductProtocol(RegistryRoot, Root) then
-    Exit;
-  if not CanManageProductProtocol(RegistryRoot, ProductProtocolKey, Root, '@APP_VERSION@', Previous) then
-    Exit;
-  // Publish the executable command before making a new key a URL protocol handler.
-  Result := RegWriteStringValue(RegistryRoot, ProductProtocolKey, '', ProductProtocolDescription) and
-    RegWriteStringValue(RegistryRoot, ProductProtocolKey + '\shell\open\command', '',
-      ProductProtocolCommand(Root, '@APP_VERSION@')) and
-    RegWriteStringValue(RegistryRoot, ProductProtocolKey, 'URL Protocol', '') and
-    FlushProductProtocol(RegistryRoot, ProductProtocolKey);
+  Result := Committed and FlushProductProtocol(NativeRoot, View, ExtractFileDir(ProductProtocolKey));
   // Bridge and scope conversion can publish after Inno's standard notification phase.
   if Result then
     NotifyProtocolChanged($08000000, 0, 0, 0); // SHCNE_ASSOCCHANGED, SHCNF_IDLIST.
 end;
 
-function DeleteProtocolValue(RegistryRoot: Cardinal; Key, Name: String): Boolean;
-begin
-  Result := not RegValueExists(RegistryRoot, Key, Name) or RegDeleteValue(RegistryRoot, Key, Name);
-end;
-
-function DeleteEmptyProtocolKey(RegistryRoot: Cardinal; Key: String): Boolean;
-begin
-  Result := MissingEntry(ProtocolKeyStatus(RegistryRoot, Key)) or RegDeleteKeyIfEmpty(RegistryRoot, Key);
-end;
-
-function RemoveOwnedProductProtocol(Root: String): Boolean;
+function PublishProductProtocol(Previous: String; RequireOwnership: Boolean): Boolean;
 var
-  RegistryRoot: Cardinal;
-  ReservedRoot, ShellKey, OpenKey, CommandKey: String;
+  Root: String;
 begin
-  Result := False;
-  if not ReadScopeRoot(IsAdminInstallMode, ReservedRoot) or (CompareText(Root, ReservedRoot) <> 0) then
-    Exit;
-  Result := True;
-  RegistryRoot := InstallRegistryRoot;
-  if MissingEntry(ProtocolKeyStatus(RegistryRoot, ProductProtocolKey)) or
-    not CanManageProductProtocol(RegistryRoot, ProductProtocolKey, ReservedRoot, '@APP_VERSION@', '') then
-    Exit;
-  ShellKey := ProductProtocolKey + '\shell';
-  OpenKey := ShellKey + '\open';
-  CommandKey := OpenKey + '\command';
-  // Delete only owned values, then prune keys that are still empty.
-  Result := DeleteProtocolValue(RegistryRoot, ProductProtocolKey, 'URL Protocol') and
-    DeleteProtocolValue(RegistryRoot, CommandKey, '') and DeleteEmptyProtocolKey(RegistryRoot, CommandKey) and
-    DeleteEmptyProtocolKey(RegistryRoot, OpenKey) and DeleteEmptyProtocolKey(RegistryRoot, ShellKey) and
-    DeleteProtocolValue(RegistryRoot, ProductProtocolKey, '') and
-    DeleteOwnedProtocolLeaf(RegistryRoot, ReservedRoot) and
-    FlushProductProtocol(RegistryRoot, ExtractFileDir(ProductProtocolKey));
-  if Result then
-    NotifyProtocolChanged($08000000, 0, 0, 0);
+  Result := ReadScopeRoot(IsAdminInstallMode, Root) and
+    (CompareText(ExpandConstant('{app}'), Root) = 0) and
+    PlainFileMatches(Root + '\runtime\@APP_VERSION@\@GUI_NAME@.exe', '@GUI_DIGEST@') and
+    ChangeProductProtocol(Root, Previous, False, RequireOwnership);
+end;
+
+function RemoveOwnedProductProtocol(Root: String; RequireOwnership: Boolean): Boolean;
+var
+  ReservedRoot: String;
+begin
+  Result := ReadScopeRoot(IsAdminInstallMode, ReservedRoot) and (CompareText(Root, ReservedRoot) = 0) and
+    ChangeProductProtocol(ReservedRoot, '', True, RequireOwnership);
 end;
