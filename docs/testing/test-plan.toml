@@ -1354,7 +1354,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "断网 Win11 Sandbox 使用生产 Updater 和既有完整签名 Inno 包通过九项回环 HTTPS 检查，包括发布、频道隔离、停推、过时序号、恢复和等长篡改。最终资产按平台格式重复验证。"
+description = "断网 Win11 Sandbox 的完整 Inno 与隔离 Ubuntu 22.04 的完整 AppImage 2a1f93b9 各通过九项生产 Updater 回环 HTTPS 检查，包括发布、频道隔离、停推、过时序号、恢复和等长篡改。最终资产按平台格式重复验证。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "scripts/rehearse-product-publication.mjs", "apps/alcomd-updater/examples/product_publication_rehearsal.rs"]
 
 [[test]]

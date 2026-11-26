@@ -76,7 +76,7 @@ M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows H
 
 安装器与迁移工程候选 `2a1f93b9` 已逐笔验签并快进至主仓 `main`。本机整仓测试通过 1,106 项，三平台 Hosted 各通过 765 项 Chromium，四项 CodeQL 均通过。Windows Inno、Linux AppImage 与 DEB 的完整工程包均已用同一源码构建并进行原生复验。[实施计划](exec-plans/M12-full-product-distribution.md#2026-11-27-同源工程候选门禁) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45872055470) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45872054421)
 
-隔离发行演练使用生产 Updater 和既有完整签名 Inno 包，在断网 Win11 通过九项回环 HTTPS 检查，覆盖下载、频道隔离、停推、恢复和篡改拒绝。最终发行资产按同一脚本复验。[隔离发行演练](exec-plans/M12-full-product-distribution.md#2026-11-26-隔离发行停推与恢复演练)
+隔离发行演练使用生产 Updater，分别以完整 Inno 和 `2a1f93b9` 的同源 AppImage 通过各九项回环 HTTPS 检查，覆盖下载、频道隔离、停推、恢复和篡改拒绝。最终发行资产继续按同一脚本复验。[隔离发行演练](exec-plans/M12-full-product-distribution.md#2026-11-26-隔离发行停推与恢复演练)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 
