@@ -336,6 +336,12 @@ Ubuntu 22.04 隔离环境的签名 AppImage 夹具通过八项原生 FUSE 和 IP
 
 Windows 平台定向回归验证了转换意图持久化后的启动阻断。后台维护进程退出后，源 Core、GUI、稳定 CLI 和同范围更新仍拒绝启动或写入。匹配的事务可重新取得租约和撤销准备，不同事务无法替换或删除已有意图。Inno 更新和普通卸载也会拒绝待转换的安装。双向转换仍需接通新范围激活、逐账号登记与精确清理。
 
+### 2026-11-26 Windows WebView2 前置部署
+
+Windows Inno 发行打包接收固定摘要的 Microsoft Evergreen Bootstrapper，按需接收固定摘要的 x64 Standalone。打包校验 Microsoft Authenticode 发行者与文件摘要，安装时重新核对提取文件。安装器核对范围、归属和维护状态后，先确认 WebView2 已就绪再写产品文件。有 Standalone 时使用离线路径。当前用户优先使用已有机器运行时，也接受本账号运行时，并保护非提升安装范围。沿用 Windows 客户端基线已有的 Evergreen 依赖。[Microsoft WebView2 分发](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution)
+
+Win11 Sandbox 夹具通过已装运行时跳过、缺失时拒绝提升环境下的当前用户部署、坏摘要拒绝和清除失败后重试。用既有签名运行载荷和实际 Microsoft 输入编译的工程 Inno EXE，在线版 `30,860,133` 字节，离线版 `325,059,060` 字节。在线版在冻结 v3 更新器 256 MiB 约束内，离线版超出该上限。完整候选的 v3 自动桥接使用在线包尺寸约束，独立离线交付另列资产。Win10 缺失运行时的在线、离线和取消恢复仍需实际客户端取证。
+
 ### 2026-11-25 Ubuntu 产品 AppImage 首启
 
 签名源码 `b324627eba5305457294bc4d921674535ead6dd8` 在隔离 Ubuntu 22.04 x86_64 构建七个 Release 程序，最高 glibc 符号版本为 `GLIBC_2.34`。合成密钥签名后的运行清单摘要为 `b82591144c327f87058905947ec9e12a3144aecb922422a708763fc948f99673`。用已固定摘要的 appimagetool 和 Type 2 runtime 生成 AppImage，文件 SHA-256 为 `e3c5e4dc60d39ca1966cd34180e05873a99b0f672b33357c2e6672b9fe381bdb`。

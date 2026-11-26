@@ -38,6 +38,8 @@ Windows 全用户切换使用签名源码 `d1555aa3` 的断网夹具通过 6 项
 
 Windows 同范围缺失文件修复已通过 Win11 隔离夹具的七项检查。安装范围转换的持久维护锁通过启动阻断和匹配意图恢复回归。正式实包修复、双向转换的激活和旧范围清理仍需验收。[Windows 修复与转换维护锁](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-同范围修复与转换维护锁)
 
+Windows Inno 已接入 WebView2 作用域检测、在线 Bootstrapper 和可选离线 Standalone。隔离 Win11 验证了已有运行时、坏摘要和提升范围保护。两种工程包已编译，离线包超过冻结 v3 更新器的 256 MiB 上限。干净 Win10 的实际部署另验。[WebView2 前置部署](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-webview2-前置部署)
+
 Windows 和 AppImage 的「关于」页已接入产品更新。三项 Chromium 用例覆盖用户确认前保留当前进程、取消下载和恢复确认。Windows 签名夹具另通过 8 项真实 WebView2 检查，覆盖仅检查声明、下载保留原版、取消确认、自动安装重启及新版 Core 读回原工程。Windows 正式包签名前须核对两只 Microsoft x64 CRT 的固定摘要。[应用内产品更新](exec-plans/M12-full-product-distribution.md#2026-11-26-应用内产品更新)
 
 M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows Hosted 和 Ubuntu Hosted 的整仓检查均通过，三处 Chromium 各通过 762 项，四项 CodeQL 也通过。macOS Hosted 重跑取得运行器，整仓检查中 5 个打包夹具失败，后续 Chromium 与构建步骤未执行。macOS 原生验收继续延期，正式发行继续按 A-017 放行。[首批工程候选门禁](exec-plans/M12-full-product-distribution.md#2026-11-25-首批工程候选门禁)

@@ -1426,6 +1426,15 @@ description = "Windows 11 24H2 Sandbox 合成 Inno 夹具通过同范围缺失�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss"]
 
 [[test]]
+id = "installer.windows.webview2-preflight-fixture"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "隔离 Win11 夹具覆盖 Evergreen 已装跳过、错误摘要与提升范围保护、重试；使用 Microsoft 签名的固定 Bootstrapper 和 Standalone 完成两种工程 EXE 编译并对账冻结 v3 下载上限。干净 Win10 的实际部署另验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno-webview2.iss", "xtask/src/distribution/webview2.rs"]
+
+[[test]]
 id = "installer.windows.path-cleanup"
 stage = "M12"
 kind = "system"
