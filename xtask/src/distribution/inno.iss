@@ -64,10 +64,10 @@ type
   end;
 
 var
-  UninstallLease: Integer;
-  CommittingUpdate, UpdateEntriesReady: Boolean;
+  ProgramLease: Integer;
+  CommittingUpdate, UpdateEntriesReady, Repairing: Boolean;
   PreviousVersion, PreviousDigest, UpdateJournal, UpdateStage: String;
-  PreviousCli, PreviousShortcut: String;
+  PreviousCli, PreviousShortcut, RepairStage: String;
 
 function OpenLeaseFile(FileName: String; Access, Share: Cardinal; Security: Integer;
   Disposition, Flags: Cardinal; Template: Integer): Integer;
@@ -261,6 +261,9 @@ end;
 function PrepareUpdate(Root: String): Boolean;
   forward;
 
+function PrepareRepair(Root: String): Boolean;
+  forward;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Root: String;
@@ -279,8 +282,12 @@ begin
   end;
 
   Result := 'The destination already exists or could not be checked. Its contents were kept.';
-  if GetAttributes(Root) <> InvalidFileAttributes then
+  if GetAttributes(Root) <> InvalidFileAttributes then begin
+    Repairing := PrepareRepair(Root);
+    if Repairing then
+      Result := '';
     Exit;
+  end;
   if not MissingEntry(DLLGetLastError) then
     Exit;
 
@@ -383,7 +390,7 @@ end;
 
 function CreateFreshIcon: Boolean;
 begin
-  Result := not CommittingUpdate and not WizardNoIcons;
+  Result := not CommittingUpdate and not Repairing and not WizardNoIcons;
 end;
 
 function CreateUpdateIcon: Boolean;
@@ -901,6 +908,53 @@ begin
   Result := PublishStableBin(Root, OldRuntime, '@CLI_FILE@') and PublishStableBin(Root, OldRuntime, '@CRT_FILE@');
 end;
 
+function AcquireProgramLease(Manifest: String): Boolean;
+  forward;
+
+function RepairFilesMatch(Root: String; Complete: Boolean): Boolean;
+var
+  Runtime, Cli, Crt, Digest: String;
+  Remaining: Integer;
+begin
+  Result := False;
+  Runtime := Root + '\runtime\@APP_VERSION@';
+  Cli := Root + '\bin\@CLI_FILE@';
+  Crt := Root + '\bin\@CRT_FILE@';
+  Remaining := @RUNTIME_FILE_COUNT@;
+  if not PlainDirectoryChain(Root + '\bin', not Complete) or
+    not RuntimeMatchesStage(Runtime, RepairStage, 0, Remaining) or
+    (Complete and (Remaining <> 0)) or
+    not ReadDigest(RepairStage + '\@CLI_FILE@', Digest) or
+    not (PlainFileMatches(Cli, Digest) or (not Complete and EntryIsMissing(Cli))) then
+    Exit;
+  Result := PlainFileMatches(Crt, '@CRT_DIGEST@') or (not Complete and EntryIsMissing(Crt));
+end;
+
+function PrepareRepair(Root: String): Boolean;
+var
+  Runtime, Manifest, InstalledVersion: String;
+begin
+  Result := False;
+  Runtime := Root + '\runtime\@APP_VERSION@';
+  Manifest := Runtime + '\@MANIFEST_NAME@';
+  if not OwnedUninstallRoot(Root) or UpdateScopeConflicts or
+    not RegQueryStringValue(InstallRegistryRoot, UninstallKey, 'DisplayVersion', InstalledVersion) or
+    (InstalledVersion <> '@APP_VERSION@') or not PlainDirectoryChain(Runtime, False) or
+    not EntryIsMissing(Root + '\' + UpdateIntent) or
+    not EntryIsMissing(Root + '\' + ScopeTransition) or
+    not RecordMatches(Root + '\' + ActiveRuntime, '@APP_VERSION@' + #10) or
+    not PlainFileMatches(Manifest, '@MANIFEST_DIGEST@') then
+    Exit;
+  if ProgramLease <= 0 then
+    if not AcquireProgramLease(Manifest) then
+      Exit;
+  if RepairStage = '' then begin
+    ExtractTemporaryFiles('{app}\runtime\@APP_VERSION@\*');
+    RepairStage := ExpandConstant('{tmp}\') + '{app}\runtime\@APP_VERSION@';
+  end;
+  Result := RepairFilesMatch(Root, False);
+end;
+
 function SyncUninstallRegistration: Boolean;
 var
   Root, Access, Handle: Cardinal;
@@ -982,6 +1036,11 @@ begin
   end;
   if CurStep <> ssPostInstall then
     Exit;
+  if Repairing then begin
+    if not RepairFilesMatch(ExpandConstant('{app}'), True) then
+      RaiseException('ALCOMD could not verify the repaired program files.');
+    Exit;
+  end;
   if not OwnedUninstallRoot(ExpandConstant('{app}')) then
     Exit;
   if not RecordMatches(ExpandConstant('{app}\') + ActiveRuntime, '@APP_VERSION@' + #10) then
@@ -994,15 +1053,15 @@ begin
   PublishStartMenuEntry;
 end;
 
-function AcquireUninstallLease(Manifest: String): Boolean;
+function AcquireProgramLease(Manifest: String): Boolean;
 var
   Range: TLeaseRange;
 begin
   Result := False;
   // GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, OPEN_EXISTING,
   // FILE_FLAG_OPEN_REPARSE_POINT. Deletion is allowed once Core is excluded.
-  UninstallLease := OpenLeaseFile(Manifest, $80000000, 5, 0, 3, $00200000, 0);
-  if UninstallLease = -1 then
+  ProgramLease := OpenLeaseFile(Manifest, $80000000, 5, 0, 3, $00200000, 0);
+  if ProgramLease = -1 then
     Exit;
   Range.Internal := 0;
   Range.InternalHigh := 0;
@@ -1010,7 +1069,11 @@ begin
   Range.OffsetHigh := 1;
   Range.EventHandle := 0;
   // Core shares this byte at 4 GiB. Request an exclusive lock without waiting.
-  Result := TryLockLease(UninstallLease, 3, 0, 1, 0, Range);
+  Result := TryLockLease(ProgramLease, 3, 0, 1, 0, Range);
+  if not Result then begin
+    CloseLeaseFile(ProgramLease);
+    ProgramLease := 0;
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -1035,7 +1098,7 @@ begin
       mbError, MB_OK, IDOK);
     Abort;
   end;
-  if not AcquireUninstallLease(Manifest) then begin
+  if not AcquireProgramLease(Manifest) then begin
     Log('Could not lock the installed ALCOMD runtime. No files were removed.');
     SuppressibleMsgBox('Close ALCOMD in all signed-in accounts and try uninstalling again.',
       mbError, MB_OK, IDOK);
@@ -1071,8 +1134,18 @@ begin
   end;
 end;
 
+procedure ReleaseProgramLease;
+begin
+  if (ProgramLease <> 0) and (ProgramLease <> -1) then
+    CloseLeaseFile(ProgramLease);
+end;
+
+procedure DeinitializeSetup;
+begin
+  ReleaseProgramLease;
+end;
+
 procedure DeinitializeUninstall;
 begin
-  if (UninstallLease <> 0) and (UninstallLease <> -1) then
-    CloseLeaseFile(UninstallLease);
+  ReleaseProgramLease;
 end;

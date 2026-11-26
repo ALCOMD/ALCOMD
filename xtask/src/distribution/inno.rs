@@ -147,7 +147,7 @@ fn add_file(list: &mut String, relative: &str) -> std::fmt::Result {
         .expect("package file has a directory");
     writeln!(
         list,
-        "Source: \"{relative}\"; DestDir: \"{{app}}\\{parent}\"; Flags: ignoreversion; Check: IsFreshInstallation"
+        "Source: \"{relative}\"; DestDir: \"{{app}}\\{parent}\"; Flags: ignoreversion onlyifdoesntexist; Check: IsFreshInstallation"
     )
 }
 
