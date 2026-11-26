@@ -40,7 +40,7 @@ Windows 同范围缺失文件修复已通过两种 Win11 安装范围验收。�
 
 Win11 隔离夹具已通过协议登记和移除的中断恢复，以及七种第三方抢先改写的时序。完整 Inno 候选 `2a1f93b9` 用 Sandbox 登录账号在当前用户和全用户两种范围验证了真实 Shell 冷启动、单窗口转发和卸载清理。标准账号及双向范围转换继续验收。[Windows 协议事务复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-协议事务并发复验)
 
-Windows Inno 已接入 WebView2 作用域检测、在线 Bootstrapper 和可选离线 Standalone。隔离 Win11 验证了已有运行时、坏摘要和提升范围保护。两种工程包已编译，离线包超过冻结 v3 更新器的 256 MiB 上限。干净 Win10 的实际部署另验。[WebView2 前置部署](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-webview2-前置部署)
+Windows Inno 已接入 WebView2 作用域检测、在线 Bootstrapper 和可选离线 Standalone。隔离 Win11 验证了已有运行时、坏摘要和提升范围保护。两种工程包已编译，离线包超过冻结 v3 更新器的 256 MiB 上限。Win10 22H2 的标准账号已通过系统 UAC 取消探针，完整部署与正向提权交接另验。[WebView2 前置部署](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-webview2-前置部署)
 
 Windows 和 AppImage 的「关于」页已接入产品更新。三项 Chromium 用例覆盖用户确认前保留当前进程、取消下载和恢复确认。Windows 签名夹具另通过 8 项真实 WebView2 检查，覆盖仅检查声明、下载保留原版、取消确认、自动安装重启及新版 Core 读回原工程。Windows 正式包签名前须核对两只 Microsoft x64 CRT 的固定摘要。[应用内产品更新](exec-plans/M12-full-product-distribution.md#2026-11-26-应用内产品更新)
 

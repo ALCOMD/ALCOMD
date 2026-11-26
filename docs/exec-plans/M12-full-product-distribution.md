@@ -441,6 +441,8 @@ Windows Inno 发行打包接收固定摘要的 Microsoft Evergreen Bootstrapper�
 
 Win11 Sandbox 夹具通过已装运行时跳过、缺失时拒绝提升环境下的当前用户部署、坏摘要拒绝和清除失败后重试。用既有签名运行载荷和实际 Microsoft 输入编译的工程 Inno EXE，在线版 `30,860,133` 字节，离线版 `325,059,060` 字节。在线版在冻结 v3 更新器 256 MiB 约束内，离线版超出该上限。完整候选的 v3 自动桥接使用在线包尺寸约束，独立离线交付另列资产。Win10 缺失运行时的在线、离线和取消恢复仍需实际客户端取证。
 
+隔离 Windows 10 22H2（构建 19045）的标准账号已验证系统 UAC 取消。探针经 Windows Shell 请求提升，安全桌面取消后返回 Win32 错误 `1223`，回执 SHA-256 为 `df242b888f6aa187897a946eb2110db7af3f8d9787e3936432f045bc3fddfc4b`。该回执覆盖系统提示和取消行为。完整安装器的取消恢复、正向交接与 WebView2 安装仍需客户端复验。
+
 ### 2026-11-25 Ubuntu 产品 AppImage 首启
 
 签名源码 `b324627eba5305457294bc4d921674535ead6dd8` 在隔离 Ubuntu 22.04 x86_64 构建七个 Release 程序，最高 glibc 符号版本为 `GLIBC_2.34`。合成密钥签名后的运行清单摘要为 `b82591144c327f87058905947ec9e12a3144aecb922422a708763fc948f99673`。用已固定摘要的 appimagetool 和 Type 2 runtime 生成 AppImage，文件 SHA-256 为 `e3c5e4dc60d39ca1966cd34180e05873a99b0f672b33357c2e6672b9fe381bdb`。
