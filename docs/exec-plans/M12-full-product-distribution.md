@@ -538,7 +538,11 @@ Ubuntu 22.04 用该 AppImage 和既有 `41b7a82b` alpha.1 资产复验原生磁�
 
 Win11 24H2 两种安装范围均通过 Unicode 安装目录、WebView2、稳定 CLI 和卸载保全。当前用户冷启动为 2779 毫秒，回执为 `35b94e6d892d05a922f89b993f739bdbe4fb1fb3752f033a94e74b0a9d0ecf5f`。全用户首轮达到 5 秒且未就绪，回执为 `825c71d561b1496180fe55841b26bb7eeb57ea94852d4e7cbf61fc528c303534`。在新来宾按原条件复跑为 2050 毫秒，回执为 `df0045aae2cc323aeefb8fa6a7fbbce34662f18fa84d3b64f9218a182616bf40`。
 
-同一 Win11 Inno 与 `16e5184a` 的 alpha.1 目标包在专用 768 MiB NTFS 虚拟盘补验当前用户整包更新。盘上保留 8 MiB，独立写入确认 Win32 `ERROR_DISK_FULL`（112）。更新在持久提交前失败，原安装、登记、资料与下载包摘要一致，旧 Core 可打开原工程。释放空间后用同一声明和目标包重试成功，新 Core 可读回原工程。产品当前返回找不到文件（Win32 2），空间不足诊断仍待修正。早期试验的默认虚拟盘 ACL 和非标准下载目录被校验拒绝。通过回执 SHA-256 为 `6278e6bd50b3fb6f0cf03ba6bc9af45e6c27cb462ecdecc13f00aaf18c0221e5`。
+同一 Win11 Inno 与 `16e5184a` 的 alpha.1 目标包在专用 768 MiB NTFS 虚拟盘补验当前用户整包更新。盘上保留 8 MiB，独立写入确认 Win32 `ERROR_DISK_FULL`（112）。更新在持久提交前失败，原安装、登记、资料与下载包摘要一致，旧 Core 可打开原工程。释放空间后用同一声明和目标包重试成功，新 Core 可读回原工程。当时的 Bootstrap 返回找不到文件（Win32 2）。早期试验的默认虚拟盘 ACL 和非标准下载目录被校验拒绝。通过回执 SHA-256 为 `6278e6bd50b3fb6f0cf03ba6bc9af45e6c27cb462ecdecc13f00aaf18c0221e5`。
+
+签名提交 `aed59608` 修正 Windows 暂存诊断。Inno 返回约定的退出码后，若暂存目录未发布且安装卷可用空间小于已验签安装包的大小，Bootstrap 报告空间不足并显示两个测得值。定向 Clippy 和两包 90 项 Rust 测试通过。隔离签名夹具仅重建 Bootstrap，其余运行组件沿用 `49b25485`。Bootstrap 和 Inno 摘要分别为 `537e1ff0a75fd1049b258bc9843219ed45a1b1d877ee2bd44f3454d665b91633`、`06e96306df0922fd22695a1a6cd85d4bea0eefea2f63de55ea0f7432d019cdd4`。
+
+同一 Win11 NTFS 场景复验通过。Bootstrap 报告安装卷可用 8,388,608 字节，签名目标包为 33,826,183 字节。提交前保全原安装、登记和资料，释放空间后用同一签名包和声明重试，新 Core 经 IPC 打开原工程。回执 SHA-256 为 `d692c95ac2a6782d29f9e56bdcf4837cf260e3e11820f7e843520fd651edbf09`。本轮覆盖 Win11 当前用户的磁盘满诊断与复原。
 
 候选逐笔验签后普通快进至主仓 `main`。本地整仓通过 1,108 项 Rust、765 项 Chromium 和 7 项 Node SDK 测试。Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted 在同一 SHA 通过整仓、外部 SDK、Release、Tauri 与 Chromium，四项 CodeQL 通过。终态回执 SHA-256 依次为 `24c36509717941687641c722d41b9dc90f29cf6cf7575e61feedda64bf6a5a13` 和 `4a49888e01edfc5558847db5a063108f68ab74a234b137fad017f79f7b3782b2`。Windows 10 和 macOS 原生客户端验收继续延期，公开发行仍按 A-017 放行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45952341316) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45952341173)
 
