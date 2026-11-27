@@ -1376,6 +1376,15 @@ description = "断网 Ubuntu 22.04 的一次性覆盖根实际缺少 WebKitGTK�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
 
 [[test]]
+id = "distribution.deb.configure-trigger-interruption"
+stage = "M12"
+kind = "fault-injection"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 更新签名工程 DEB 时，确认 dpkg 实际进入系统图标触发器，再终止本轮配置进程组。核对图标包半配置及用户状态保全。恢复配置后原生缓存重新生成，新版 Core 冷启动并读回工程，purge 保全资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
+
+[[test]]
 id = "distribution.gui.signed-update-consent"
 stage = "M12"
 kind = "integration-ui"

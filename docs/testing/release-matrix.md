@@ -74,7 +74,7 @@ Windows 11 的完整 Inno 实包 `72a85893` 已通过双范围的 12 项卸载�
   入口不得假定 AppImage 永久位于某个固定路径。
 - RPM、Flatpak 与 Snap 不属于 4.0.0 blocker。
 
-Ubuntu 22.04 的签名工程 DEB 已验证缺失依赖时拒绝首装及依赖恢复，并覆盖更新下载中断、解包存储故障和解包后配置恢复。正式 DEB 按冻结资产摘要复验。[缺失依赖](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-缺失依赖复验) · [下载中断](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-下载中断复验) · [解包与配置](../exec-plans/M12-full-product-distribution.md#2026-11-27-主仓候选-bffef439-的-linux-整包升级) · [存储故障](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-解包存储故障复验)
+Ubuntu 22.04 的签名工程 DEB 已验证缺失依赖时拒绝首装及依赖恢复，并覆盖更新下载中断、解包存储故障和实际配置触发器中断。正式 DEB 按冻结资产摘要复验。[缺失依赖](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-缺失依赖复验) · [下载中断](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-下载中断复验) · [存储故障](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-解包存储故障复验) · [配置触发器中断](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-配置触发器中断复验)
 
 独立下载 DEB 的隔离演练覆盖签名清单、包摘要、撤回、相同字节恢复、离线 APT 安装及 Core 冷启动。[DEB 独立下载发行演练](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-独立下载发行演练)
 

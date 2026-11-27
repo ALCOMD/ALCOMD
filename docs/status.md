@@ -24,6 +24,8 @@ Ubuntu 22.04 用签名候选 `25afa078` 复验了原生 AppImage 挂载、DEB �
 
 Ubuntu 22.04 的产品 DEB 已通过原生首装、解包中断恢复、逐账号升级和同数据版本下的 APT 回退。两套签名测试包验证了 CLI、真实 GUI、外部 SDK、坏签名与不安全登记拒绝、双账号设置保全及 purge 后数据库摘要一致。[Ubuntu 产品 DEB 升级与回退](exec-plans/M12-full-product-distribution.md#ubuntu-2204-deb-跨版本登记与回退)
 
+Ubuntu 22.04 的 DEB 另通过实际配置阶段的中断恢复。中断正在运行的系统图标触发器后，原生命令重新生成缓存，Core 冷启动并重开原工程，用户资料保全。[DEB 配置触发器中断复验](exec-plans/M12-full-product-distribution.md#2026-11-27-deb-配置触发器中断复验)
+
 Ubuntu 22.04 的隔离签名 DEB 补验了解包时真实磁盘满和安装卷只读。两次均保留旧版程序、登记和资料，旧 Core 可重开原工程。排除故障后，APT 用同一包升级，新 Core 读回原工程和设置，purge 保全资料。[DEB 解包存储故障复验](exec-plans/M12-full-product-distribution.md#2026-11-27-deb-解包存储故障复验)
 
 同一对 DEB 另通过 Ubuntu 22.04 的 APT 下载中断验收。回环测试源发送 1 MiB 后断开，旧版安装和资料保全。恢复完整响应后，APT 沿用原签名索引升级，新 Core 读回原工程和设置。[DEB 下载中断复验](exec-plans/M12-full-product-distribution.md#2026-11-27-deb-下载中断复验)
