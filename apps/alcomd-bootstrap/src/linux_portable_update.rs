@@ -11,9 +11,9 @@ use alcomd_platform::{
     BindError, CORE_EXECUTABLE_NAME, DaemonInstance, DataConfig, IpcConfig,
     LINUX_BOOTSTRAP_EXECUTABLE_NAME, PORTABLE_ORIGIN_FILE, PortableImage, PortableOrigin,
     check_linux_core_registration, check_linux_portable_update_registration,
-    linux_portable_runtime, linux_portable_runtime_for_version, open_owned_installation_record,
-    open_plain_file, publish_linux_portable_update_registration, publish_path_no_replace,
-    sync_directory,
+    linux_filesystem_is_full, linux_portable_runtime, linux_portable_runtime_for_version,
+    open_owned_installation_record, open_plain_file, publish_linux_portable_update_registration,
+    publish_path_no_replace, sync_directory,
 };
 use alcomd_updater::{
     Channel,
@@ -91,10 +91,9 @@ fn apply_update(
     let image = PortableImage::open_for_update(previous_origin.image_path())?;
     require_digest(&image, previous_origin.image_sha256())?;
     {
-        let (_extracted, runtime) = extract_image(root, &image, VERSION)?;
+        let (_stage, _, extracted) = extract_image(root, &image, VERSION)?;
         ensure!(
-            verify_installed_release(&runtime, Target::Linux, &VERSION.parse()?)?.manifest_sha256
-                == verified.manifest_sha256,
+            extracted.manifest_sha256 == verified.manifest_sha256,
             "the original AppImage does not contain this installed release"
         );
     }
@@ -511,8 +510,8 @@ fn prepare_runtime(
     candidate: &PortableImage,
     update: &VerifiedUpdate,
 ) -> anyhow::Result<RuntimeStage> {
-    let (stage, extracted) = extract_image(root, candidate, &update.version().to_string())?;
-    let verified = verify_installed_release(&extracted, Target::Linux, update.version())?;
+    let (stage, extracted, verified) =
+        extract_image(root, candidate, &update.version().to_string())?;
     ensure!(
         verified.manifest_sha256 == update.payload_manifest_sha256(),
         "AppImage payload differs from its signed update declaration"
@@ -533,7 +532,7 @@ fn extract_image(
     root: &Path,
     image: &PortableImage,
     version: &str,
-) -> anyhow::Result<(RuntimeStage, PathBuf)> {
+) -> anyhow::Result<(RuntimeStage, PathBuf, VerifiedRuntime)> {
     let mut header = [0; 20];
     image.file().read_exact_at(&mut header, 0)?;
     ensure!(
@@ -543,10 +542,25 @@ fn extract_image(
         "file is not a Linux x86-64 AppImage"
     );
     let stage = RuntimeStage::new(root)?;
-    super::super::run_command(image.path(), &stage.0, &[OsStr::new("--appimage-extract")])
-        .context("could not extract the signed AppImage")?;
+    let parsed_version = version.parse()?;
     let extracted = runtime_in_image(&stage.0.join("squashfs-root"), version);
-    Ok((stage, extracted))
+    let verified =
+        super::super::run_command(image.path(), &stage.0, &[OsStr::new("--appimage-extract")])
+            .context("could not extract the signed AppImage")
+            .and_then(|_| {
+                verify_installed_release(&extracted, Target::Linux, &parsed_version)
+                    .context("could not verify the extracted AppImage runtime")
+            })
+            .map_err(|error| {
+                // The Type 2 extractor can exit successfully after an incomplete write.
+                if linux_filesystem_is_full(&stage.0).unwrap_or(false) {
+                    std::io::Error::from(std::io::ErrorKind::StorageFull).into()
+                } else {
+                    error
+                }
+            })
+            .context("could not prepare the AppImage runtime")?;
+    Ok((stage, extracted, verified))
 }
 
 fn verify_selected_runtime(runtime: &Path, update: &VerifiedUpdate) -> anyhow::Result<()> {

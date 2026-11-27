@@ -5,6 +5,13 @@ use std::path::{Component, Path, PathBuf};
 
 const MAX_PATH_BYTES: usize = 4096;
 
+/// Checks whether an unprivileged caller has any blocks and file entries available.
+#[cfg(target_os = "linux")]
+pub fn linux_filesystem_is_full(path: &Path) -> io::Result<bool> {
+    let available = rustix::fs::statvfs(path)?;
+    Ok(available.f_bavail == 0 || (available.f_files != 0 && available.f_favail == 0))
+}
+
 /// Resolves platform defaults without creating directories or inspecting project data.
 pub fn default_storage_directories() -> io::Result<(PathBuf, PathBuf)> {
     let home = home_directory()?;

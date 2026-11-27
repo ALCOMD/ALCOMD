@@ -1336,7 +1336,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 22.04 用 bffef439 与 41b7a82b 签名 AppImage 在私有 tmpfs 复验替换前暂存和替换后恢复的真实 ENOSPC。核对旧版重开、原资料与镜像、同包重试及原下载缺失后的同事务恢复。替换后恢复仍报告签名解码错误，故障归类待修正。"
+description = "Ubuntu 22.04 用 bffef439 与 41b7a82b 签名 AppImage 在私有 tmpfs 复验替换前暂存和替换后恢复的真实 ENOSPC。核对旧版重开、原资料与镜像、同包重试及原下载缺失后的同事务恢复。仅替换 Bootstrap 的合成签名夹具复验替换后报告磁盘满且能恢复原事务。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_update.rs"]
 
 [[test]]

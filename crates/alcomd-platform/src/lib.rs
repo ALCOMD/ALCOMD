@@ -74,6 +74,8 @@ pub use linux_portable_cli::{
 };
 #[cfg(target_os = "linux")]
 pub use linux_portable_origin::{PORTABLE_ORIGIN_FILE, PortableImage, PortableOrigin};
+#[cfg(target_os = "linux")]
+pub use storage_directories::linux_filesystem_is_full;
 pub use storage_directories::{
     default_storage_directories, normalize_storage_directory, open_plain_file,
     prepare_storage_directory, publish_path_no_replace, resolve_plain_project_directory,
