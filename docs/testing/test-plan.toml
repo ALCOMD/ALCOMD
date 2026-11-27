@@ -1627,6 +1627,15 @@ description = "7b7522b5 的同源独立归档在 Ubuntu 24.04 先验证分离签
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/appimage_bridge.rs", "xtask/src/distribution/appimage_bridge.rs"]
 
 [[test]]
+id = "distribution.appimage.bridge-archive-executable-mode"
+stage = "M12"
+kind = "native-installer"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "修订后的 Linux xtask 用 7b7522b5 的同源签名输入复验独立桥接归档。镜像缺执行位或可被其他用户写入时拒绝组装且目标缺失。安全可执行模式成功组装，归档成员保留其模式。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/appimage_bridge.rs", "crates/alcomd-platform/src/linux_portable_origin.rs"]
+
+[[test]]
 id = "updater.linux.v3-native-appimage-bridge"
 stage = "M12"
 kind = "system"
