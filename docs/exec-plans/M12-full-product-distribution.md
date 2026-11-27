@@ -693,6 +693,16 @@ Win11 Sandbox 夹具通过已装运行时跳过、缺失时拒绝提升环境下
 
 干净候选 `7b7522b5` 已通过本地整仓检查、1,108 项 Rust 测试、7 项 Node SDK 测试和 765 项 Chromium。六笔提交逐笔验签后普通快进至主仓 `main`。同一 SHA 的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均通过整仓、外部 SDK、发行组件构建、Tauri 构建和各 765 项 Chromium。四项 CodeQL 均通过。Hosted 终态回执 SHA-256 为 `a3e567dde49065cd90658c0744433cdbcb46e78452ee1a17b2017677ef82acfd`，三平台 Chromium 日志摘要回执为 `4aea60f3f0f59edfd7e97a62a26588d57c76d011fc13e0f19240f99926e5495c`。双向安装范围转换的原生交接仍待验收。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46040897008) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46040896312)
 
+### 2026-11-28 7b7522b5 同源工程实包
+
+在断网 Ubuntu 22.04 x86_64 从签名提交 `7b7522b599a607fb1fc285f81948c8f216347cb6` 构建 AppImage 和 DEB，运行组件最高要求 `GLIBC_2.34`。两种包解开后的运行清单与签名原件一致，SHA-256 为 `505ef4a7bedc03fe9eef66c21f35982248dcd0715f29a1b39162fd4c6f8b6a92`。AppImage 为 46,574,072 字节，摘要 `fdf944d2f0ad37567b92cb658709a2828a1a99d029727464771a0831bfe0d9ee`。DEB 为 38,681,714 字节，摘要 `9691cc1faf62339574f76c829d8d9ca2575e4f18c897df170c78467912e661ea`。拒绝覆盖现有资产、错误打包器摘要、打包器失败和缺少目标成品的门禁均通过。
+
+同摘要 AppImage 实际经 FUSE 启动，DEB 经 `dpkg` 安装后打开真实 WebKit 窗口，两者均由 CLI 经 IPC 核对 Core 版本和就绪状态。GTK 100% 与 200% 下窗口由 `1400 × 800` 变为 `2800 × 1600`，项目搜索、列表视图和创建项目的 Tab 顺序相同。测试结束时清理 FUSE 挂载与合成资料，并确认 `dpkg --purge` 移除测试软件包及所拥有的入口。AppImage 与 DEB 原生回执 SHA-256 分别为 `2f0351edaf3ec35f4bbbe81c4c5236efcad55b17743d07fcdb10fa5b76856ea3` 和 `2547139f8d639c931a3a41a942a05bd1b4e3b358e18d682d77b12f53e964633e`。
+
+同摘要 DEB 在仅回环 HTTPS 的隔离环境通过九项独立下载演练，覆盖分离签名、篡改拒绝、撤回与同字节恢复。撤回期间使用先前验签的 DEB 离线 APT 安装，普通账号可冷启动 Core 并读回合成工程，purge 保全资料。回执 SHA-256 为 `70b2d10cc91b3ffead56b3d4f599f1ff623aaaf8117a4789bba656526de075f9`。签名和信任材料随本次演练清理。
+
+同摘要 AppImage 使用从 `7b7522b5` 构建的 Updater 演练程序和仅回环 HTTPS，九项检查通过。涵盖 beta 发布及 stable 隔离、停推保留已接收字节、拒绝旧序号和等长篡改，以及同摘要恢复后新旧客户端下载。回执 SHA-256 为 `9bc7fb3440a3ec0bbcd746004f56b06db8b27f54253227869f1903ddc9fae9a8`。临时 TLS 证书及暂存随试验清理。
+
 ### 2026-11-25 Windows 产品 Inno 双范围
 
 Inno 只向对应范围的 PATH 添加稳定 `bin` 目录。它保留原值类型和用户已有条目，在卸载登记中记录本次添加的确切值。卸载时仅清理可唯一识别的自有条目，并保留安装后其他 PATH 改动。已有的等价条目不被接管。安装器变更结束时通知 Windows 刷新环境。
