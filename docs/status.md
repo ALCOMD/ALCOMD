@@ -6,7 +6,7 @@
 
 **M12 阶段 0 已批准，正在实施产品安装和更新。** 永久 Windows AppId、安装和登记布局、v4 更新声明及卸载归属已冻结。`cargo xtask dist` 已接通运行组件构建、清单验签以及 Inno、AppImage、DEB 实包组装。首装、整产品更新和客户端生命周期分项验收。macOS 原生验收按所有者决定延期，公开发版仍按 A-017 的三平台四格式条件审批。[M12 实施计划与审批矩阵](exec-plans/M12-full-product-distribution.md) · [阶段 0 冻结合同](exec-plans/M12-stage-0-release-contract.md)
 
-主仓候选 `49b25485` 的本地整仓、三平台 Hosted CI 和四项 CodeQL 均通过。同一签名源码重建并验收 Inno、AppImage 和 DEB。AppImage 实包通过磁盘满诊断和恢复。签名修复 `9eba5b98` 用替换 Bootstrap 的隔离签名夹具通过 Win11 当前用户磁盘满诊断、资料保全和同包重试，并通过本地整仓与 Chromium 后快进至主仓 `main`。[同源实包与门禁](exec-plans/M12-full-product-distribution.md#2026-11-27-49b25485-同源实包与门禁)
+主仓候选 `9eba5b98` 的本地整仓、Chromium、三平台 Hosted CI 和四项 CodeQL 均通过。替换 Bootstrap 的隔离签名夹具通过 Win11 当前用户磁盘满诊断、资料保全和同包重试。此前的 `49b25485` 已用同一签名源码重建并验收 Inno、AppImage 和 DEB，AppImage 实包通过磁盘满诊断和恢复。[实包与门禁](exec-plans/M12-full-product-distribution.md#2026-11-27-49b25485-同源实包与门禁)
 
 签名工程候选 `a70c181e` 已通过同源 Inno、AppImage 和 DEB 组装及安装态桌面复验。Windows 11 的两种安装范围均验证 Unicode 目录安装、CLI 冷启动、WebView2 和卸载保全。Ubuntu 22.04 验证 AppImage FUSE、DEB 安装、两档缩放与 AppImage 的 Orca 朗读。含同一打包代码的主仓候选 `696953b1` 通过本地整仓、Chromium、三平台 Hosted CI 与四项 CodeQL。[同源原生资产组装](exec-plans/M12-full-product-distribution.md#2026-11-27-同源原生资产组装)
 

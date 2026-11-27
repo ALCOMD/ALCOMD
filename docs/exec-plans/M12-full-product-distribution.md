@@ -548,6 +548,8 @@ Win11 24H2 两种安装范围均通过 Unicode 安装目录、WebView2、稳定 
 
 同一候选的本机整仓门禁和前端构建通过，含 1,108 项 Rust、7 项 Node SDK 和 765 项 Chromium 测试。四笔提交逐笔验签后普通快进至主仓 `main`。整仓标准输出和 Chromium 回执的 SHA-256 分别为 `bd614ce95b1603724c1a763160af9c1ba7dea95344d754b7d5c7e4a752f15154`、`dc1444448e0c607ca8a46bc53f4e3254dcf322844d50eddafd571a85941677d0`。
 
+Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均在 `9eba5b98` 完成整仓检查、外部 SDK 消费者验收、Release 与 Tauri 构建和 Chromium 回归。四项 CodeQL 作业也在同一 SHA 通过。Hosted CI 和 CodeQL 终态回执的 SHA-256 分别为 `7445937bf041b3f1f0de1919f8f316226b5679579d265eed1ee484d197839365`、`5444ed791ebce091ca6e2442817541aec0998dc9224fe8fd8a9eaaaac2f78824`。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897471) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897091)
+
 候选逐笔验签后普通快进至主仓 `main`。本地整仓通过 1,108 项 Rust、765 项 Chromium 和 7 项 Node SDK 测试。Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted 在同一 SHA 通过整仓、外部 SDK、Release、Tauri 与 Chromium，四项 CodeQL 通过。终态回执 SHA-256 依次为 `24c36509717941687641c722d41b9dc90f29cf6cf7575e61feedda64bf6a5a13` 和 `4a49888e01edfc5558847db5a063108f68ab74a234b137fad017f79f7b3782b2`。Windows 10 和 macOS 原生客户端验收继续延期，公开发行仍按 A-017 放行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45952341316) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45952341173)
 
 ### 2026-11-27 Windows 全用户自定义目录整包升级
