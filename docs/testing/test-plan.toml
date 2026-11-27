@@ -1358,6 +1358,15 @@ description = "在断网 Ubuntu 22.04 上，用 748933d8 和 bd30aba3 隔离签�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
+id = "distribution.deb.download-interruption"
+stage = "M12"
+kind = "fault-injection"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "在隔离 Ubuntu 22.04 上从签名回环测试源经 APT 更新 748933d8 至 bd30aba3。传输中断时 dpkg 保留旧版已安装状态，旧 Core 可读原工程。恢复后用同一签名索引和同摘要 DEB 升级，新 Core 可读回原工程和设置，purge 保全资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
+
+[[test]]
 id = "distribution.gui.signed-update-consent"
 stage = "M12"
 kind = "integration-ui"
