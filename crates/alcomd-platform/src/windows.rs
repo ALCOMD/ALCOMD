@@ -32,6 +32,7 @@ pub use machine_update_io::{
     read_windows_installation_registry_string, receive_windows_machine_update,
     start_elevated_windows_program, windows_process_is_elevated,
 };
+pub(crate) use security::available_storage;
 
 pub use file_identity::{WindowsFileIdentity, file_identity, file_link_count};
 pub(crate) use file_identity::{file_identity_from_file, is_volume_root};
