@@ -610,7 +610,11 @@ Win11 复验使用 `49a3d526` 构建的 Release Bootstrap，其他组件沿用�
 
 另在全新的断网 Win11 中，复用同一对已验证实包，经 Bootstrap 的桌面重启入口执行磁盘满和重试。专用安装卷剩余 8 MiB 时报告 Win32 `112`，写入本账号的桌面失败标记，重开旧版真实 WebView2 窗口并经旧版 Core 读回原工程。释放空间后用原签名包重试，标记清除，实际新版窗口重开，新版 Core 读回工程，设置与工程文件摘要一致。两项回执 SHA-256 为 `e13559774da9245c5764becdc0f1fc042809b764d4874eae33f9db2e15492ead`。
 
-签名候选 `49a3d52626679c50bde8ce055f0c0c1be5cd0873` 在独立干净检出通过整仓聚合门禁，Rust 1,108 项、Chromium 765 项和外部 Node／Rust SDK 均通过。逐笔核对 11 笔提交的签名后从 `9eba5b98` 普通快进，远端读取确认候选一致。聚合门禁和远端核验回执的 SHA-256 分别为 `d6a53f5c6ba919fab39ba97c9e83b6087a75305684c85eb5323f9a6f7e8f977a` 和 `76dcea8dd63b3f89d66054f513ad43384baec9203f5e0353c521dc26043850b5`。同 SHA 的四项 CodeQL 已通过，终态回执 SHA-256 为 `d94840db395d4d128b3f0d5f2cc3ed05edc40e6609579a32c4afd78743e93a69`。三平台 Hosted CI 等待终态。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326613) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326331)
+同一对全用户工程包补验了提交意图落盘以后的空间耗尽。先用原生文件占用保留旧的稳定 CLI，确认提交意图和签名新版已落盘且安装完成回执尚未生成。解除占用，删除原下载的声明和安装器，再将独立 NTFS 卷的可用空间降至 262,144 字节。复制 12,521,984 字节的新 CLI 的独立探针返回 Win32 `112`。恢复入口返回通用维护失败，活动版本和账号登记仍指向旧版，数据库、设置、工程、提交意图和保留资产保持一致。稳定 CLI 与两版 Core 均继续被维护意图阻止启动。
+
+释放空间后用原版 Bootstrap 的恢复入口继续同一事务。系统使用事务内保留的签名声明和安装器生成完成回执，切换稳定 CLI 和活动版本，清除提交意图。账号首次启动新版 Core 后更新登记并读回原工程。三项回执的 SHA-256 为 `6aea8a76765ea03977da9b2c8e738f7a98583106d5d939410c9fc189aeb08d10`。
+
+签名候选 `49a3d52626679c50bde8ce055f0c0c1be5cd0873` 在独立干净检出通过整仓聚合门禁，Rust 1,108 项、Chromium 765 项和外部 Node／Rust SDK 均通过。逐笔核对 11 笔提交的签名后从 `9eba5b98` 普通快进，远端读取确认候选一致。聚合门禁和远端核验回执的 SHA-256 分别为 `d6a53f5c6ba919fab39ba97c9e83b6087a75305684c85eb5323f9a6f7e8f977a` 和 `76dcea8dd63b3f89d66054f513ad43384baec9203f5e0353c521dc26043850b5`。同 SHA 的四项 CodeQL 已通过，终态回执 SHA-256 为 `d94840db395d4d128b3f0d5f2cc3ed05edc40e6609579a32c4afd78743e93a69`。Ubuntu Hosted 已通过，Windows 与 macOS Hosted 等待终态。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326613) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326331)
 
 ### 2026-11-27 Windows 全用户自定义目录整包升级
 
