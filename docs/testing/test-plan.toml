@@ -1729,7 +1729,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "blocked"
-description = "7b7522b5 的 Inno PATH 修复通过 Win11 四组同范围实包验收。核对 Unicode 安装目录、两种注册表类型、升级保全、卸载自有项和保全既有等效条目。双向安装范围转换的 PATH 交接待原生验收。"
+description = "7b7522b5 的 Inno PATH 修复通过 Win11 四组同范围实包验收。用该候选的生产 dist 组装的工程包另通过两种安装范围的既有等效 Unicode 条目复验。双向安装范围转换的 PATH 交接待原生验收。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss"]
 
 [[test]]
