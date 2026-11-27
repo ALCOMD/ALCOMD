@@ -14,8 +14,9 @@ use alcomd_platform::{
     publish_path_no_replace, receive_windows_machine_update, resolve_plain_storage_directory,
     start_core_process, start_elevated_windows_program, sync_directory,
     validate_installation_record_parent, validate_windows_machine_installation_record_parent,
-    windows_current_user_installation_root, windows_installation_bootstrap,
-    windows_installation_runtime, windows_machine_installation_root, windows_process_is_elevated,
+    windows_available_storage, windows_current_user_installation_root,
+    windows_installation_bootstrap, windows_installation_runtime,
+    windows_machine_installation_root, windows_process_is_elevated,
 };
 use alcomd_updater::{
     Channel,
@@ -534,6 +535,20 @@ impl Installation {
                 1,
             )
             .context("could not extract the Windows product update")?;
+            if !exists(&staged)? {
+                // Inno's staging-only path uses the same exit status whether it publishes
+                // the payload or stops before publication. Activation also needs to retain
+                // the complete signed installer on this volume.
+                let installer_bytes = update.asset().bytes();
+                if let Ok(available) = windows_available_storage(&self.root)
+                    && available < installer_bytes
+                {
+                    anyhow::bail!(
+                        "could not stage the Windows product update: insufficient free space on the installation volume ({available} bytes available, signed installer is {installer_bytes} bytes)"
+                    );
+                }
+                anyhow::bail!("the installer did not publish the Windows product update stage");
+            }
         }
         self.verify_staged(&staged, update)?;
         sync_directory(staged.parent().context("Windows update staging parent")?)?;

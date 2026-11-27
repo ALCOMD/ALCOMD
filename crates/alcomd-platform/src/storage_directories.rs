@@ -12,6 +12,26 @@ pub fn linux_filesystem_is_full(path: &Path) -> io::Result<bool> {
     Ok(available.f_bavail == 0 || (available.f_files != 0 && available.f_favail == 0))
 }
 
+/// Reports the bytes available to the calling Windows account on this directory's volume.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+pub fn windows_available_storage(path: &Path) -> io::Result<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr::null_mut;
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+
+    validate_path_text(path)?;
+    let directory: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let mut available = 0;
+    let success =
+        // SAFETY: The NUL-terminated UTF-16 directory and output live through the call.
+        unsafe { GetDiskFreeSpaceExW(directory.as_ptr(), &mut available, null_mut(), null_mut()) };
+    if success == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(available)
+}
+
 /// Resolves platform defaults without creating directories or inspecting project data.
 pub fn default_storage_directories() -> io::Result<(PathBuf, PathBuf)> {
     let home = home_directory()?;
