@@ -8,6 +8,8 @@
 
 主仓候选 `9eba5b98` 的本地整仓、Chromium、三平台 Hosted CI 和四项 CodeQL 均通过。替换 Bootstrap 的隔离签名夹具通过 Win11 当前用户磁盘满诊断、资料保全和同包重试。此前的 `49b25485` 已用同一签名源码重建并验收 Inno、AppImage 和 DEB，AppImage 实包通过磁盘满诊断和恢复。[实包与门禁](exec-plans/M12-full-product-distribution.md#2026-11-27-49b25485-同源实包与门禁)
 
+已从同一 `9eba5b98` 签名源码组装 Ubuntu 22.04 的 AppImage 与 DEB，解包后均重新验签。原生 FUSE、DEB 安装与卸载、两档 WebKit 缩放及键盘焦点均通过。[9eba5b98 Linux 同源实包](exec-plans/M12-full-product-distribution.md#2026-11-27-9eba5b98-linux-同源实包复验)
+
 签名工程候选 `a70c181e` 已通过同源 Inno、AppImage 和 DEB 组装及安装态桌面复验。Windows 11 的两种安装范围均验证 Unicode 目录安装、CLI 冷启动、WebView2 和卸载保全。Ubuntu 22.04 验证 AppImage FUSE、DEB 安装、两档缩放与 AppImage 的 Orca 朗读。含同一打包代码的主仓候选 `696953b1` 通过本地整仓、Chromium、三平台 Hosted CI 与四项 CodeQL。[同源原生资产组装](exec-plans/M12-full-product-distribution.md#2026-11-27-同源原生资产组装)
 
 Windows 11 Sandbox 的当前用户和全用户夹具已验证 Core 安装登记、外部 CLI 冷启动、账号隔离和卸载保留状态。Ubuntu 22.04 x86_64 隔离环境已原生编译七个发行组件，产物最高要求 `GLIBC_2.34`。[Windows 登记及 Ubuntu 构建记录](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-core-安装登记)

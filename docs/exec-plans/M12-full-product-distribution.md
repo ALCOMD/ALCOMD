@@ -582,6 +582,12 @@ Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均在 `9eba5b98` �
 
 候选逐笔验签后普通快进至主仓 `main`。本地整仓通过 1,108 项 Rust、765 项 Chromium 和 7 项 Node SDK 测试。Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted 在同一 SHA 通过整仓、外部 SDK、Release、Tauri 与 Chromium，四项 CodeQL 通过。终态回执 SHA-256 依次为 `24c36509717941687641c722d41b9dc90f29cf6cf7575e61feedda64bf6a5a13` 和 `4a49888e01edfc5558847db5a063108f68ab74a234b137fad017f79f7b3782b2`。Windows 10 和 macOS 原生客户端验收继续延期，公开发行仍按 A-017 放行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45952341316) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45952341173)
 
+### 2026-11-27 9eba5b98 Linux 同源实包复验
+
+隔离 Ubuntu 22.04 在干净签名检出 `9eba5b982c6a6b7622fad40b001d541f3ce3e333` 构建完整 Release 和 Tauri 组件。用固定摘要的工具组装 AppImage 和 DEB，两个包解出相同的签名载荷清单 `36a3467bd72b6dbcb643ee8da5269ff87ad9373fe2d630afc5ab4295425ecb1f` 并重新验签。最高 ELF 符号要求为 `GLIBC_2.34`。AppImage 和 DEB 的 SHA-256 分别为 `de7134d4db21e41765142a5369df41e384bf63492c1397ae625048f7602c259a` 和 `3b04f0ce711f92be33820f007214a7eb0c0c22ec622c24db60d3f850be742b70`，组装回执同时通过资产摘要、错误工具摘要、拒绝覆盖和打包器失败时的原子发布检查。
+
+断网普通账号用这两份实包复验真实 WebKit。AppImage 在两个缩放档均经原生 FUSE 挂载，DEB 经实际 `dpkg` 安装，并登记 Core 到各自的隔离配置。100% 和 200% 下窗口分别为 `1400 × 800` 和 `2800 × 1600`，项目搜索、列表视图与新建项目的焦点顺序一致。随后清理了临时运行时和 FUSE 挂载，DEB 的 purge 移除程序和系统入口，包数据库无待处理项。AppImage 和 DEB 原生回执的 SHA-256 分别为 `a5d3f0b531f317d1937f05dc98ad9e0102497ea5330e6e2cb6309f00b9784f9f` 和 `23c510787a847ab5d032b99160f23d52c7b67a15680825eb809cfa71e04f2838`。
+
 ### 2026-11-27 Windows 全用户自定义目录整包升级
 
 在断网 Windows 11 24H2（`26100.9974`）来宾的既有管理员会话中，用上述 `2a1f93b9` 安装包和修正 Inno 后的 `16e5184a` 目标载荷执行全用户整包升级。安装根的父目录与末级目录均含空格和 Unicode。正常升级通过九项。机器部署不抢先初始化账号资料，机器升级保留旧的逐账号登记，原账号重开后才登记新版 Core。原安装根、机器 PATH 与开始菜单仍指向该实例，真实 WebView2 和稳定 CLI 可读回原工程。CLI 冷启动耗时 1552 毫秒，卸载后数据库、逐账号登记和目录内的无关文件保全。正常回执 SHA-256 为 `96e3ffc15dd320a44b37b85dfb325eacbdda88b6b0ef167b3b714cdf7d595fe0`。
