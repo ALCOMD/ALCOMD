@@ -1318,7 +1318,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 22.04 签名混合夹具通过 10 项原生检查，包括同卷交换、实际 SIGKILL、篡改拒绝、原下载缺失后的恢复、原包与用户资料保全，以及真实桌面和新版项目读取。干净 Release 的独立 Rust SDK 一次冷启动为 817 毫秒。"
+description = "Ubuntu 22.04 签名混合夹具通过 10 项原生检查。完整实包 bffef439 与 41b7a82b 复验同卷交换、实际 SIGKILL、篡改拒绝、原下载缺失后的恢复、原包与资料保全、真实 FUSE/WebKit 和新版项目重开。bffef439 的独立 Rust SDK 单次冷启动为 974 毫秒。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_update.rs", "crates/alcomd-platform/src/linux_installation_registration.rs"]
 
 [[test]]
@@ -1363,7 +1363,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Jammy 原生 FUSE 与 IPC 通过八项可选 CLI 检查。干净签名源码 e0fc95dc 和版本派生 17088848 的完整工程包已用真实 WebKit 关于页复验启用、移动、修复、取消更新、确认重启和移除。"
+description = "Jammy 原生 FUSE 与 IPC 通过八项可选 CLI 检查。e0fc95dc/17088848 与 bffef439/41b7a82b 两对完整工程包已用真实 WebKit 关于页验证启用、移动、修复、分步检查和下载、取消更新、确认重启和移除。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_cli.rs", "crates/alcomd-platform/src/linux_portable_cli.rs"]
 
 [[test]]
@@ -1372,7 +1372,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Jammy 两个完整签名 DEB 通过离线 APT、dpkg 解包中断恢复、双账号分别激活、同数据版本回退、重装、移除与 purge。外部 Rust SDK 单次冷启动为 870 毫秒和 1076 毫秒，资料和工程摘要保全。"
+description = "Jammy 两对完整 DEB 工程包通过离线 APT、dpkg 解包后的配置恢复、双账号分别激活、同数据版本回退、重装、移除与 purge。bffef439 与版本派生 41b7a82b 的外部 Rust SDK 单次冷启动为 971 和 973 毫秒，资料和工程摘要保全。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/package.rs", "crates/alcomd-platform/src/linux_installation_registration.rs"]
 
 [[test]]

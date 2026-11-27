@@ -96,6 +96,8 @@ M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows H
 
 同摘要 Linux 实包已复验 Orca 实际朗读与两种格式的 100%／200% GTK 窗口缩放。DEB 的系统仓库、扩展链接均通过 GIO 冷启动、单窗口转发及取消保全。[原生桌面复验](exec-plans/M12-full-product-distribution.md#2026-11-27-主仓候选-bffef439-的-linux-原生复验)
 
+`bffef439` 与仅递增版本的签名子提交 `41b7a82b` 在 Ubuntu 22.04 通过 AppImage 实际应用内升级、交换后强制终止与恢复、DEB 双账号升级、APT 回退及卸载保全。三次单独记录的 SDK 冷启动均在一秒内。[Linux 同源整包升级](exec-plans/M12-full-product-distribution.md#2026-11-27-主仓候选-bffef439-的-linux-整包升级)
+
 隔离发行演练使用生产 Updater，分别以完整 Inno 和 `2a1f93b9` 的同源 AppImage 通过各九项回环 HTTPS 检查，覆盖下载、频道隔离、停推、恢复和篡改拒绝。最终发行资产继续按同一脚本复验。[隔离发行演练](exec-plans/M12-full-product-distribution.md#2026-11-26-隔离发行停推与恢复演练)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
