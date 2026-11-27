@@ -1349,6 +1349,15 @@ description = "Win11 当前用户在专用 NTFS 虚拟盘用 49b25485 同源 Inn
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
 
 [[test]]
+id = "distribution.deb.unpack-storage-failures"
+stage = "M12"
+kind = "fault-injection"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "在断网 Ubuntu 22.04 上，用 748933d8 和 bd30aba3 隔离签名 DEB 实测 dpkg 解包收到 ENOSPC 和 EROFS。旧版、登记和资料不变，旧 Core 可读原工程。修复存储条件后用同一 DEB 经 APT 升级，新 Core 可读回原工程和设置，purge 保全资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
+
+[[test]]
 id = "distribution.gui.signed-update-consent"
 stage = "M12"
 kind = "integration-ui"
