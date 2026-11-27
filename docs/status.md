@@ -62,7 +62,7 @@ Win11 当前用户的签名整包升级发现 Inno 与 Bootstrap 的自定义根
 
 Win11 全用户签名完整包在已有管理员会话通过 9 项自定义目录正常升级，文件占用和进程终止恢复各通过 12 项。在同一安装根恢复并由原账号重开，机器入口与资料保全。真实标准账号的交互 UAC 另验。[Windows 全用户自定义目录升级](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户自定义目录整包升级)
 
-`bffef439` 的同一完整包通过双向范围转换的拒绝与源范围保全复验。缺少确认或发起身份已提升时保留原范围、系统入口和账号资料。身份不符的尝试留下未激活的目标预留目录。正向转换仍需原非提升账号发起。[范围转换拒绝复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-安装范围转换拒绝复验)
+`bffef439` 的同一完整包通过双向范围转换的拒绝与源范围保全复验。缺少确认或发起身份已提升时保留原范围、系统入口和账号资料。独立 Win11 Sandbox 的默认 UAC 状态实测为 `EnableLUA=0`。正向转换和标准账号的交互 UAC 仍待在启用 UAC 的完整客户端验收。[范围转换与 UAC 环境核对](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-安装范围转换拒绝复验)
 
 Win11 隔离夹具已通过协议登记和移除的中断恢复，以及七种第三方抢先改写的时序。完整 Inno 候选 `2a1f93b9` 用 Sandbox 登录账号在当前用户和全用户两种范围验证了真实 Shell 冷启动、单窗口转发和卸载清理。标准账号及双向范围转换继续验收。[Windows 协议事务复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-协议事务并发复验)
 

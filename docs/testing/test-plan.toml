@@ -1667,7 +1667,8 @@ stage = "M12"
 kind = "migration"
 platforms = ["windows-x86_64"]
 status = "blocked"
-description = "覆盖当前用户与所有用户双向受控转换、提升取消、文件占用、失败回滚、多用户数据隔离，并断言两个范围不能共存。"
+description = "Win11 Sandbox 已验证双向转换的拒绝和资料保全，并实测默认 UAC 为关闭。待在启用 UAC 的完整客户端补齐成功转换、提升取消、文件占用、失败回滚、多用户数据隔离与单安装范围。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
 id = "installer.windows.same-scope-repair-fixture"

@@ -640,6 +640,8 @@ Win11 复验使用 `49a3d526` 构建的 Release Bootstrap，其他组件沿用�
 
 已确认但发起身份不符的尝试均留下未激活的目标预留目录。目标范围的活动选择器、稳定 CLI、卸载登记与系统入口均未发布。当前用户转全用户时 Inno 提示从拥有安装的账号发起，全用户转当前用户时 Inno 返回通用载荷准备错误，直接核对已安装 Bootstrap 可取得原非提升账号错误。两方向回执 SHA-256 依次为 `50b9712b950273c65b5eb8223f58628b37c506cb16fa1b01b49b299c7e90c9de`、`429ade2b45b594de5f553fa76c5327a22bf72f1bd2be1053d684a52059ead910`。双向正向切换、交互 UAC 以及最终发行包继续按原矩阵验收。
 
+另启动一个断网 Win11 Sandbox，使用 Windows 自带的 `reg query` 只读核对默认 UAC 状态。独立来宾的 `EnableLUA` 为 `0`，回执 SHA-256 为 `0d67ffad351195e066e44c9f9e029dea22da16c166c8f96c7f3f0c29bead8597`。标准账号的交互 UAC 及依赖该交接的双向正向转换，待在启用 UAC 的完整客户端环境验收。[Windows UAC 设置](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/user-account-control/settings-and-configuration)
+
 ### 2026-11-27 Windows 协议事务并发复验
 
 Win11 断网夹具先复现了已完成的第三方写入被稍后提交的安装器覆盖。安装器改为在注册表事务中暂存变更后重新核对公开键树的归属、值与形状。若第三方在最终核对后成功改写已参与事务的键，Windows 终止事务。范围转换在最后发布和退役清理时仍须确认归属，遇到第三方登记返回可重试结果。[Windows 注册表事务](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regopenkeytransactedw)
