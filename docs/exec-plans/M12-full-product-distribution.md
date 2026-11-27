@@ -544,6 +544,10 @@ Win11 24H2 两种安装范围均通过 Unicode 安装目录、WebView2、稳定 
 
 同一 Win11 NTFS 场景复验通过。Bootstrap 报告安装卷可用 8,388,608 字节，签名目标包为 33,826,183 字节。提交前保全原安装、登记和资料，释放空间后用同一签名包和声明重试，新 Core 经 IPC 打开原工程。回执 SHA-256 为 `d692c95ac2a6782d29f9e56bdcf4837cf260e3e11820f7e843520fd651edbf09`。本轮覆盖 Win11 当前用户的磁盘满诊断与复原。
 
+整仓规则检查要求将 Win32 调用置于现有 Windows 原生模块。签名候选 `9eba5b98` 完成调整，用同样的隔离签名组装方法重新编译 Bootstrap 并复验。暂存失败再次报告 8,388,608 字节可用，旧安装及资料保全，同包重试和新 Core 重开原工程均通过。Bootstrap、Inno 与复验回执的 SHA-256 依次为 `3830d4ec6d721330cad8a9bdd9aa7708154c57696ae7817cea73255472a38bfd`、`cc91e1934f61cadf77264af60fe37422e300881884ddc6d40049c7a2feaf9ec6`、`781e50d882ca606b52e6377de97f0fc72c6045abeb45f300a9f4c6de4a0b88e1`。
+
+同一候选的本机整仓门禁和前端构建通过，含 1,108 项 Rust、7 项 Node SDK 和 765 项 Chromium 测试。四笔提交逐笔验签后普通快进至主仓 `main`。整仓标准输出和 Chromium 回执的 SHA-256 分别为 `bd614ce95b1603724c1a763160af9c1ba7dea95344d754b7d5c7e4a752f15154`、`dc1444448e0c607ca8a46bc53f4e3254dcf322844d50eddafd571a85941677d0`。
+
 候选逐笔验签后普通快进至主仓 `main`。本地整仓通过 1,108 项 Rust、765 项 Chromium 和 7 项 Node SDK 测试。Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted 在同一 SHA 通过整仓、外部 SDK、Release、Tauri 与 Chromium，四项 CodeQL 通过。终态回执 SHA-256 依次为 `24c36509717941687641c722d41b9dc90f29cf6cf7575e61feedda64bf6a5a13` 和 `4a49888e01edfc5558847db5a063108f68ab74a234b137fad017f79f7b3782b2`。Windows 10 和 macOS 原生客户端验收继续延期，公开发行仍按 A-017 放行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45952341316) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45952341173)
 
 ### 2026-11-27 Windows 全用户自定义目录整包升级

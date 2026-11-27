@@ -1345,7 +1345,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "Win11 当前用户在专用 NTFS 虚拟盘用 49b25485 同源 Inno 与 16e5184a 目标包验收整包更新。随后用 aed59608 Bootstrap 和 49b25485 其余运行组件组成的隔离签名夹具复验容量诊断。真实磁盘满时报告可用字节，保全旧程序、原登记、数据库、设置、工程和下载包。释放空间后用同一签名包升级，经原生 IPC 重开工程。"
+description = "Win11 当前用户在专用 NTFS 虚拟盘用 49b25485 同源 Inno 与 16e5184a 目标包验收整包更新。随后用 9eba5b98 Bootstrap 和 49b25485 其余运行组件组成的隔离签名夹具复验容量诊断。真实磁盘满时报告可用字节，保全旧程序、原登记、数据库、设置、工程和下载包。释放空间后用同一签名包升级，经原生 IPC 重开工程。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
 
 [[test]]
