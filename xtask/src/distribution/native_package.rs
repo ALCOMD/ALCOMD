@@ -115,6 +115,7 @@ pub(super) fn assemble(
             let staged = scratch.path().join("appimage-runtime");
             build::copy_component(&std::path::absolute(&loader.path)?, &staged)?;
             verify_pin(&staged, &loader.sha256).context("AppImage outer runtime")?;
+            // Keep appimagetool's path arguments ASCII even when the staging parent is Unicode.
             command
                 .env("ARCH", "x86_64")
                 .args([
@@ -122,9 +123,9 @@ pub(super) fn assemble(
                     "--no-appstream",
                     "--runtime-file",
                 ])
-                .arg(staged)
+                .arg("../appimage-runtime")
                 .arg("AppDir")
-                .arg(&asset);
+                .arg(Path::new("../output").join(&name));
         }
         Format::Deb => {
             command
