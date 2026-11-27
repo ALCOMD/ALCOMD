@@ -8,7 +8,7 @@
 
 主仓候选 `9eba5b98` 的本地整仓、Chromium、三平台 Hosted CI 和四项 CodeQL 均通过。已从同一签名源码重建 Inno、AppImage 和 DEB。Inno 通过 Win11 两种安装范围、WebView2、卸载保全，以及当前用户磁盘满诊断和同包重试。[Windows 同源实包](exec-plans/M12-full-product-distribution.md#2026-11-27-9eba5b98-windows-同源实包复验) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897471) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897091)
 
-同一 `9eba5b98` Inno 另通过 Win11 全用户更新的两处磁盘满验收。保留签名包前和暂存新版时均保全旧版及资料，释放空间后用同包升级，原账号下次启动时登记新版 Core 并重开原工程。全用户入口目前只返回传输或维护失败。[全用户磁盘满复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户整包更新磁盘满复验)
+同一 `9eba5b98` Inno 另通过 Win11 全用户更新的两处磁盘满验收。保留签名包前和暂存新版时均保全旧版及资料，释放空间后用同包升级，原账号下次启动时登记新版 Core 并重开原工程。`49a3d526` 的 Bootstrap 经同样的隔离 Inno 复验，两处均能报告磁盘空间不足。已有目标目录时仍拒绝更新并保全原件。[全用户磁盘满复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户整包更新磁盘满复验)
 
 已从同一 `9eba5b98` 签名源码组装 Ubuntu 22.04 的 AppImage 与 DEB，解包后均重新验签。原生 FUSE、DEB 安装与卸载、两档 WebKit 缩放及键盘焦点均通过。[9eba5b98 Linux 同源实包](exec-plans/M12-full-product-distribution.md#2026-11-27-9eba5b98-linux-同源实包复验)
 
