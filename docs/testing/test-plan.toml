@@ -1439,6 +1439,15 @@ description = "同一签名源码 bffef439 的完整 Inno 和 AppImage 在断网
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "scripts/rehearse-product-publication.mjs", "apps/alcomd-updater/examples/product_publication_rehearsal.rs"]
 
 [[test]]
+id = "distribution.deb.standalone-publication"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 回环 HTTPS 以 49b25485 的完整 DEB 和临时签名清单通过九项独立下载发行检查。覆盖清单、包摘要和等长篡改拒绝，撤回及原件恢复。撤回前已验签的包通过断网 APT 安装、Core 冷启动和工程重开，purge 保全资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
+
+[[test]]
 id = "installer.linux.package-format-ownership"
 stage = "M12"
 kind = "system"
