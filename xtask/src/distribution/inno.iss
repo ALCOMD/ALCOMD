@@ -710,11 +710,13 @@ end;
 function PathEntryIsPresent(Path, Entry: String): Boolean;
 var
   Delimiter: Integer;
-  Candidate: String;
+  Candidate, Separator: String;
 begin
+  // A String separator keeps Pos, Copy and Delete in Unicode character units.
+  Separator := ';';
   Path := Path + ';';
   while Path <> '' do begin
-    Delimiter := Pos(';', Path);
+    Delimiter := Pos(Separator, Path);
     Candidate := Trim(Copy(Path, 1, Delimiter - 1));
     Delete(Path, 1, Delimiter);
     if (Length(Candidate) >= 2) and (Candidate[1] = '"') and
