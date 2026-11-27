@@ -614,7 +614,9 @@ Win11 复验使用 `49a3d526` 构建的 Release Bootstrap，其他组件沿用�
 
 释放空间后用原版 Bootstrap 的恢复入口继续同一事务。系统使用事务内保留的签名声明和安装器生成完成回执，切换稳定 CLI 和活动版本，清除提交意图。账号首次启动新版 Core 后更新登记并读回原工程。三项回执的 SHA-256 为 `6aea8a76765ea03977da9b2c8e738f7a98583106d5d939410c9fc189aeb08d10`。
 
-签名候选 `49a3d52626679c50bde8ce055f0c0c1be5cd0873` 在独立干净检出通过整仓聚合门禁，Rust 1,108 项、Chromium 765 项和外部 Node／Rust SDK 均通过。逐笔核对 11 笔提交的签名后从 `9eba5b98` 普通快进，远端读取确认候选一致。聚合门禁和远端核验回执的 SHA-256 分别为 `d6a53f5c6ba919fab39ba97c9e83b6087a75305684c85eb5323f9a6f7e8f977a` 和 `76dcea8dd63b3f89d66054f513ad43384baec9203f5e0353c521dc26043850b5`。同 SHA 的四项 CodeQL 已通过，终态回执 SHA-256 为 `d94840db395d4d128b3f0d5f2cc3ed05edc40e6609579a32c4afd78743e93a69`。Ubuntu Hosted 已通过，Windows 与 macOS Hosted 等待终态。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326613) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326331)
+签名候选 `49a3d52626679c50bde8ce055f0c0c1be5cd0873` 在独立干净检出通过整仓聚合门禁，Rust 1,108 项、Chromium 765 项和外部 Node／Rust SDK 均通过。逐笔核对 11 笔提交的签名后从 `9eba5b98` 普通快进，远端读取确认候选一致。聚合门禁和远端核验回执的 SHA-256 分别为 `d6a53f5c6ba919fab39ba97c9e83b6087a75305684c85eb5323f9a6f7e8f977a` 和 `76dcea8dd63b3f89d66054f513ad43384baec9203f5e0353c521dc26043850b5`。
+
+2026-11-28 核对同一 SHA 的三平台 Hosted CI 与四项 CodeQL 均已通过。Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 的整仓、外部 SDK、发行组件、Tauri 构建及 Chromium 步骤均成功。三平台 Chromium 日志各有 765 项通过。Hosted 与 CodeQL 汇总回执 SHA-256 为 `90f97c3ad51674a9f8ebd2943524b5fc787b53c3ffcaa84b2a829ef27e51801c`，浏览器计数回执为 `1b8f02fec1464d8d967bcfbdeb00c795ba25c8721d8a134b400e356c99c53afd`。macOS 原生验收与 A-017 继续按发布矩阵执行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326613) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326331)
 
 ### 2026-11-27 Windows 全用户自定义目录整包升级
 
