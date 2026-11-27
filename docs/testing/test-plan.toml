@@ -1166,7 +1166,7 @@ stage = "M12"
 kind = "distribution"
 platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
-description = "用同一签名源码提交调用 cargo xtask dist --package，在原生工具上组装并复验 Inno、AppImage 和 DEB 工程包。覆盖 Unicode 路径、成品与载荷摘要、拒绝覆盖、错误打包工具、Windows 两种安装范围、Linux 两档缩放与 AppImage Orca 朗读。主仓候选 9eba5b98 的 AppImage 与 DEB 另用同一签名源码完整重建，并复验原生 FUSE、安装卸载、WebKit 缩放和键盘焦点。"
+description = "用同一签名源码提交调用 cargo xtask dist --package，在原生工具上组装并复验 Inno、AppImage 和 DEB 工程包。覆盖 Unicode 路径、成品与载荷摘要、拒绝覆盖、错误打包工具、Windows 两种安装范围、Linux 两档缩放与 AppImage Orca 朗读。主仓候选 9eba5b98 从同一签名源码重建三种实包，复验 Win11 两种安装范围、WebView2 和卸载保全，以及 Linux 原生 FUSE、安装卸载、WebKit 缩放和键盘焦点。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/native_package.rs"]
 
 [[test]]
@@ -1345,7 +1345,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "Win11 当前用户在专用 NTFS 虚拟盘用 49b25485 同源 Inno 与 16e5184a 目标包验收整包更新。随后用 9eba5b98 Bootstrap 和 49b25485 其余运行组件组成的隔离签名夹具复验容量诊断。真实磁盘满时报告可用字节，保全旧程序、原登记、数据库、设置、工程和下载包。释放空间后用同一签名包升级，经原生 IPC 重开工程。"
+description = "Win11 当前用户在专用 NTFS 虚拟盘，用 49b25485 同源 Inno、9eba5b98 诊断夹具及 9eba5b98 完整同源 Inno 与 16e5184a 目标包逐轮验收整包更新。修复后的完整同源实包报告可用字节，保全旧程序、原登记、数据库、设置、工程和下载包。释放空间后用同一签名包升级，经原生 IPC 重开工程。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
 
 [[test]]

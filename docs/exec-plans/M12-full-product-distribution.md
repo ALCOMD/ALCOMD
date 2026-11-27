@@ -588,6 +588,14 @@ Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均在 `9eba5b98` �
 
 断网普通账号用这两份实包复验真实 WebKit。AppImage 在两个缩放档均经原生 FUSE 挂载，DEB 经实际 `dpkg` 安装，并登记 Core 到各自的隔离配置。100% 和 200% 下窗口分别为 `1400 × 800` 和 `2800 × 1600`，项目搜索、列表视图与新建项目的焦点顺序一致。随后清理了临时运行时和 FUSE 挂载，DEB 的 purge 移除程序和系统入口，包数据库无待处理项。AppImage 和 DEB 原生回执的 SHA-256 分别为 `a5d3f0b531f317d1937f05dc98ad9e0102497ea5330e6e2cb6309f00b9784f9f` 和 `23c510787a847ab5d032b99160f23d52c7b67a15680825eb809cfa71e04f2838`。
 
+### 2026-11-27 9eba5b98 Windows 同源实包复验
+
+从与上述两份 Linux 工程包相同的签名源码 `9eba5b982c6a6b7622fad40b001d541f3ce3e333` 重建 Windows 全部 Release 组件与 Tauri GUI。用已固定摘要的 Inno 6.5.4 和 Microsoft WebView2 Bootstrapper 组装完整 Inno。已验签载荷清单 SHA-256 为 `245d34c92003b964efc708adbf694d3f556decd134499abf01c38e8e5f0d4a07`，成品为 `f975c2c47bcd9dedc0bdd8ccc3c6c40d6a9d5d487c43558332baf209d5d20e52`，大小为 33,829,599 字节。该 SHA 对应上文已经通过的本机整仓、Chromium、三平台 Hosted CI 和四项 CodeQL。
+
+两个断网 Win11 24H2 Sandbox 用同一个 EXE 验证当前用户和全用户安装。两种范围均通过 Unicode 目录安装、稳定 CLI 与 Core 冷启动、真实 WebView2 窗口和卸载资料保全。全用户安装阶段保留账号的未初始化状态。两次冷启动分别为 1,539 和 1,566 毫秒，回执分别为 `660170a100a8a2bdeeabe4173dcf33b83925d391fadd9701e1e3814096251c24` 和 `84c8f9ef2d88aacebe0b569aee7c49f8f6338497e0ded1f586d10545a909543c`。
+
+另在当前用户范围用专用 NTFS 卷复验整包更新，从同一 Inno 升级至此前验签的 `16e5184a` alpha.1 包。安装卷仅余 8 MiB 时，Bootstrap 报告空间不足，旧程序、登记和资料保全，旧 Core 仍能打开原工程。释放空间后用同一声明和签名包重试，新 Core 经 IPC 打开原工程。回执 SHA-256 为 `9fd92991151318b940bcfa737e9b36c8705461e33d4bae3a55a183e1e9851aae`。本轮回收 5.32 GiB Windows 编译缓存并清理三份重复测试输入。正式资产及延期的 Win10、macOS 原生验收继续按 A-017 记录。
+
 ### 2026-11-27 Windows 全用户自定义目录整包升级
 
 在断网 Windows 11 24H2（`26100.9974`）来宾的既有管理员会话中，用上述 `2a1f93b9` 安装包和修正 Inno 后的 `16e5184a` 目标载荷执行全用户整包升级。安装根的父目录与末级目录均含空格和 Unicode。正常升级通过九项。机器部署不抢先初始化账号资料，机器升级保留旧的逐账号登记，原账号重开后才登记新版 Core。原安装根、机器 PATH 与开始菜单仍指向该实例，真实 WebView2 和稳定 CLI 可读回原工程。CLI 冷启动耗时 1552 毫秒，卸载后数据库、逐账号登记和目录内的无关文件保全。正常回执 SHA-256 为 `96e3ffc15dd320a44b37b85dfb325eacbdda88b6b0ef167b3b714cdf7d595fe0`。
