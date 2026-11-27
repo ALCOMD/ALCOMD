@@ -598,7 +598,7 @@ stage = "M12"
 kind = "manual-accessibility"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "planned"
-description = "Ubuntu 22.04 的签名 AppImage 310065bf 及 2a1f93b9 均用原生 Orca 42 验证 Tab 焦点、三个实际 WebKit 控件的语音和虚拟声卡音频。Win11 的 2a1f93b9 已验证 Tab 焦点与讲述人焦点框，应用和系统对照控件的语音回顾均无记录。Windows 实际朗读、macOS VoiceOver 以及最终发行包复验仍待通过。"
+description = "Ubuntu 22.04 的签名 AppImage 310065bf、2a1f93b9 和 bffef439 均用原生 Orca 42 验证 Tab 焦点、三个实际 WebKit 控件的语音和虚拟声卡音频。Win11 的 2a1f93b9 已验证 Tab 焦点与讲述人焦点框，应用和系统对照控件的语音回顾均无记录。Windows 实际朗读、macOS VoiceOver 以及最终发行包复验仍待通过。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
@@ -625,7 +625,7 @@ stage = "M12"
 kind = "manual-accessibility"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "隔离 Ubuntu 22.04 在真实 X11 GTK 窗口复验签名 AppImage 和 DEB 2a1f93b9 启动时 100% 与 200% 缩放。核对双倍 WebKit 窗口尺寸、三个项目控件的 Tab 顺序及 FUSE 或 dpkg 清理。最终发行矩阵继续复验。"
+description = "隔离 Ubuntu 22.04 在真实 X11 GTK 窗口复验 2a1f93b9 和 bffef439 的签名 AppImage 与 DEB 启动时 100% 与 200% 缩放。核对双倍 WebKit 窗口尺寸、三个项目控件的 Tab 顺序及 FUSE 或 dpkg 清理。最终发行矩阵继续复验。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
@@ -1499,6 +1499,15 @@ platforms = ["linux-x86_64"]
 status = "implemented"
 description = "Ubuntu 22.04 用 310065bf、2a1f93b9 和 bffef439 的完整 AppImage 与 DEB，在隔离标准账号核验原生 GUI、Core、CLI、MCP 认证和撤销以及签名第一方扩展，AppImage 实测 FUSE。两个格式分别核验配对的隔离健康证明。bffef439 与 Windows 工程包使用同一源码。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
+
+[[test]]
+id = "installer.linux.deb-desktop-links"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "在断网 Ubuntu 22.04 安装 bffef439 的完整 DEB，用 GIO 从 dpkg 所有的桌面入口打开仓库和扩展链接。各验冷启动和同一窗口转发，核对真实 WebKit 表单地址、取消后 Core 列表不变及卸载入口清理。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/package.rs", "apps/alcomd-gui/src-tauri/src/desktop_links.rs"]
 
 [[test]]
 id = "installer.linux.deb-frozen-native-handoff"
