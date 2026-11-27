@@ -13,7 +13,8 @@ use ed25519_dalek::SigningKey;
 
 use super::{FIXTURE_KEY, ProductConfig, build::copy_component, publish_file, webview2};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub(super) enum Format {
     Inno,
     Appimage,
@@ -34,7 +35,7 @@ pub(super) fn export(
     candidate: &Candidate,
     format: Format,
     variant: Variant<'_>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<[u8; 32]> {
     let for_fixture = matches!(variant, Variant::Fixture);
     let webview = match (variant, format) {
         (Variant::Release(Some(inputs)), Format::Inno) => Some(inputs),
@@ -164,7 +165,7 @@ pub(super) fn export(
     sync_directory(&parent)?;
     let purpose = if for_fixture { "fixture" } else { "release" };
     println!("Prepared {format:?} packing inputs for {purpose} runtime {manifest_digest}");
-    Ok(())
+    Ok(verified.manifest_sha256)
 }
 
 fn export_windows_bin(

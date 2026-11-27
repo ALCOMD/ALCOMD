@@ -76,7 +76,7 @@ Windows 11 的完整 Inno 实包 `72a85893` 已通过双范围的 12 项卸载�
 
 ## 统一发行流水线
 
-未来以 `cargo xtask dist --target <target>` 为唯一全产品发行入口，依次完成：
+全产品发行通过 `cargo xtask dist --target <target>` 分阶段完成。
 
 1. 构建目标平台 Rust 组件与 GUI 前端。
 2. 使用 Tauri 编译 `alcomd-gui`，但不把其 bundle 当作最终产品。
@@ -89,6 +89,16 @@ Windows 11 的完整 Inno 实包 `72a85893` 已通过双范围的 12 项卸载�
 8. 执行安装、升级、卸载、范围转换、更新恢复和残留测试。
 
 `npm run gui:build` 仍可用于 GUI 构建验证，但不是完整产品发行命令。
+
+Windows Inno、Linux AppImage 和 Linux DEB 的原生输入由 `--package-layout` 导出。使用 `--package` 可以在对应系统上直接组装完整资产。该步骤读取经签名的运行目录，核对当前干净检出的 SHA 和 Git 签名，并在新目录中原子发布资产及工程回执 `asset.json`。
+
+```text
+cargo xtask dist --target x86_64-unknown-linux-gnu --package --format deb \
+  --source-sha <signed-commit> --staging <signed-runtime> --output <new-directory> \
+  --packager /usr/bin/dpkg-deb --packager-sha256 <tool-sha256>
+```
+
+Inno 使用 `--format inno`，提供 ISCC 和既有的 `--webview2-bootstrapper`、`--webview2-bootstrapper-sha256`。AppImage 使用 `--format appimage`，提供 appimagetool 及 `--appimage-runtime`、`--appimage-runtime-sha256`。输出目录的父目录须已存在，源码树内的暂存应位于 Git 忽略目录。工程回执记录格式、目标、源码与版本、实际资产字节和摘要、签名运行清单摘要及打包工具摘要。正式发布清单的签署和公开继续按审批矩阵执行。macOS DMG 仍按原计划延期。
 
 ## 迁移入口与更新源
 

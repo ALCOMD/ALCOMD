@@ -17,6 +17,7 @@ mod appimage_bridge;
 mod bridge;
 mod build;
 mod inno;
+mod native_package;
 mod package;
 mod webview2;
 mod windows_bridge;
@@ -27,7 +28,8 @@ const FIXTURE_KEY: [u8; 32] = [37; 32];
 #[command(
     bin_name = "cargo xtask dist",
     about = "Prepare and verify an offline v4 runtime candidate",
-    group(ArgGroup::new("action").args(["build", "prepare", "check", "package_layout", "prepare_bridge", "package_windows_bridge", "package_appimage_bridge"]).required(true)),
+    group(ArgGroup::new("action").args(["build", "prepare", "check", "package_layout", "package", "prepare_bridge", "package_windows_bridge", "package_appimage_bridge"]).required(true)),
+    group(ArgGroup::new("package_action").args(["package_layout", "package"])),
     group(ArgGroup::new("bridge_action").args(["prepare_bridge", "package_windows_bridge", "package_appimage_bridge"])),
     group(ArgGroup::new("bridge_package").args(["package_windows_bridge", "package_appimage_bridge"]))
 )]
@@ -46,6 +48,21 @@ struct Arguments {
     /// Export signed product packaging inputs or development fixtures.
     #[arg(long, requires_all = ["staging", "format", "output"])]
     package_layout: bool,
+    /// Assemble a complete native product asset and an offline build receipt.
+    #[arg(long, requires_all = ["staging", "format", "output", "packager", "packager_sha256"], conflicts_with = "fixture")]
+    package: bool,
+    /// The native ISCC, appimagetool or dpkg-deb executable.
+    #[arg(long, requires = "package")]
+    packager: Option<PathBuf>,
+    /// SHA-256 of the exact native packaging executable.
+    #[arg(long, requires = "package")]
+    packager_sha256: Option<String>,
+    /// The pinned AppImage outer runtime used during offline assembly.
+    #[arg(long, requires_all = ["package", "appimage_runtime_sha256"])]
+    appimage_runtime: Option<PathBuf>,
+    /// SHA-256 of the exact AppImage outer runtime.
+    #[arg(long, requires = "appimage_runtime")]
+    appimage_runtime_sha256: Option<String>,
     /// Prepare a v3 migration payload from the verified, complete release runtime.
     #[arg(long, requires_all = ["staging", "bridge_output", "bridge_channel"], conflicts_with = "fixture")]
     prepare_bridge: bool,
@@ -85,9 +102,10 @@ struct Arguments {
     /// All-users health.json and health.sig directory.
     #[arg(long, requires = "package_windows_bridge")]
     bridge_all_users_health: Option<PathBuf>,
-    #[arg(long, value_enum, requires = "package_layout")]
+    #[arg(long, value_enum, requires = "package_action")]
     format: Option<package::Format>,
-    #[arg(long, requires = "package_layout")]
+    /// New directory for the layout or for the assembled asset and receipt.
+    #[arg(long, requires = "package_action")]
     output: Option<PathBuf>,
     /// Use development-only trust for a staged or disposable fixture.
     #[arg(long, conflicts_with = "source_sha")]
@@ -102,22 +120,22 @@ struct Arguments {
     #[arg(long, requires = "build")]
     discord_package: Option<PathBuf>,
     /// Pinned SHA-256 of the first-party extension archive.
-    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout", "bridge_action"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_action", "bridge_action"])]
     discord_sha256: Option<String>,
     /// The x64 vcruntime140.dll from a licensed Visual Studio redistributable directory.
     #[arg(long, requires_all = ["build", "windows_crt_sha256"])]
     windows_crt: Option<PathBuf>,
     /// Pinned SHA-256 of the exact app-local Windows VC runtime DLL.
-    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout", "bridge_action"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_action", "bridge_action"])]
     windows_crt_sha256: Option<String>,
     /// The x64 vcruntime140_1.dll from the same Visual Studio redistributable directory.
     #[arg(long, requires_all = ["build", "windows_crt_companion_sha256"])]
     windows_crt_companion: Option<PathBuf>,
     /// Pinned SHA-256 of the exact app-local Windows VC runtime companion DLL.
-    #[arg(long, conflicts_with_all = ["fixture", "check", "package_layout", "bridge_action"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_action", "bridge_action"])]
     windows_crt_companion_sha256: Option<String>,
     /// Microsoft's online Evergreen Bootstrapper for a Windows release Inno layout.
-    #[arg(long, requires_all = ["package_layout", "webview2_bootstrapper_sha256"], conflicts_with = "fixture")]
+    #[arg(long, requires_all = ["package_action", "webview2_bootstrapper_sha256"], conflicts_with = "fixture")]
     webview2_bootstrapper: Option<PathBuf>,
     /// Pinned SHA-256 of the exact WebView2 Bootstrapper.
     #[arg(long, requires = "webview2_bootstrapper")]
@@ -216,7 +234,7 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
             &candidate,
             args.bridge_channel.context("bridge channel is required")?,
         )?;
-    } else if args.package_layout {
+    } else if args.package_layout || args.package {
         let output = std::path::absolute(args.output.context("package output is required")?)?;
         let webview2 = args
             .webview2_bootstrapper
@@ -233,15 +251,28 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
         } else {
             package::Variant::Release(webview2.as_ref())
         };
-        package::export(
-            root,
-            &path,
-            &output,
-            &product,
-            &candidate,
-            args.format.context("package format is required")?,
-            variant,
-        )?;
+        let format = args.format.context("package format is required")?;
+        if args.package {
+            let inputs = native_package::Inputs {
+                runtime: path,
+                output,
+                format,
+                packager: native_package::PinnedFile {
+                    path: args.packager.context("native packager is required")?,
+                    sha256: args
+                        .packager_sha256
+                        .context("native packager digest is required")?,
+                },
+                appimage_runtime: args
+                    .appimage_runtime
+                    .zip(args.appimage_runtime_sha256)
+                    .map(|(path, sha256)| native_package::PinnedFile { path, sha256 }),
+                webview2: webview2.as_ref(),
+            };
+            native_package::assemble(root, &product, &candidate, &inputs)?;
+        } else {
+            package::export(root, &path, &output, &product, &candidate, format, variant)?;
+        }
     } else if args.build {
         let extension = std::path::absolute(
             args.discord_package
@@ -408,6 +439,36 @@ fn synthetic_executable(target: Target) -> [u8; 90] {
 mod tests {
     use super::*;
     use alcomd_updater::distribution::{WINDOWS_CRT_COMPANION_FILE, WINDOWS_CRT_FILE};
+
+    #[test]
+    fn native_package_requires_a_packager_pin_and_preserves_layout_export() {
+        let common = [
+            "dist",
+            "--target",
+            "x86_64-unknown-linux-gnu",
+            "--source-sha",
+            "test-sha",
+            "--staging",
+            "runtime",
+            "--format",
+            "deb",
+            "--output",
+            "new-package",
+        ];
+        let layout = Arguments::try_parse_from(common.into_iter().chain(["--package-layout"]))
+            .expect("existing layout invocation");
+        assert!(layout.package_layout);
+        let assemble = ["--package", "--packager", "native-tool"];
+        assert!(Arguments::try_parse_from(common.into_iter().chain(assemble)).is_err());
+        let args = Arguments::try_parse_from(
+            common
+                .into_iter()
+                .chain(assemble)
+                .chain(["--packager-sha256", "tool-sha"]),
+        )
+        .expect("native package invocation");
+        assert!(args.package && !args.package_layout);
+    }
 
     #[test]
     fn windows_bridge_packaging_requires_both_reviewed_health_inputs() -> anyhow::Result<()> {
