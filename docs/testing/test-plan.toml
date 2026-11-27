@@ -1331,6 +1331,15 @@ description = "Ubuntu 22.04 签名混合夹具通过 10 项原生检查。完整
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_update.rs", "crates/alcomd-platform/src/linux_installation_registration.rs"]
 
 [[test]]
+id = "distribution.appimage.update-disk-exhaustion"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 用 bffef439 与 41b7a82b 签名 AppImage 在私有 tmpfs 复验替换前暂存和替换后恢复的真实 ENOSPC。核对旧版重开、原资料与镜像、同包重试及原下载缺失后的同事务恢复。替换后恢复仍报告签名解码错误，故障归类待修正。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_update.rs"]
+
+[[test]]
 id = "distribution.gui.signed-update-consent"
 stage = "M12"
 kind = "integration-ui"

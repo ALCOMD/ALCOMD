@@ -100,6 +100,8 @@ M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows H
 
 `bffef439` 与仅递增版本的签名子提交 `41b7a82b` 在 Ubuntu 22.04 通过 AppImage 实际应用内升级、交换后强制终止与恢复、DEB 双账号升级、APT 回退及卸载保全。三次单独记录的 SDK 冷启动均在一秒内。[Linux 同源整包升级](exec-plans/M12-full-product-distribution.md#2026-11-27-主仓候选-bffef439-的-linux-整包升级)
 
+同一对 AppImage 实包通过替换前暂存和替换后恢复两处真实磁盘满检查。分别确认旧版可重开并同包重试，以及释放空间后从保留镜像继续原事务。替换后磁盘满的错误归类仍需修正。[AppImage 磁盘满复验](exec-plans/M12-full-product-distribution.md#2026-11-27-appimage-整包更新磁盘满复验)
+
 同一 `bffef439` 的完整 Inno 和 AppImage 各通过九项回环 HTTPS 发行演练，覆盖验签下载、频道隔离、停推、恢复和等长篡改拒绝。正式资产继续按同一脚本复验。[同源隔离发行演练](exec-plans/M12-full-product-distribution.md#2026-11-27-主仓候选-bffef439-的隔离发行演练)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
