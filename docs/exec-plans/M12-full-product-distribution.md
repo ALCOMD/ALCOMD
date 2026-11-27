@@ -711,6 +711,8 @@ Win11 Sandbox 夹具通过已装运行时跳过、缺失时拒绝提升环境下
 
 同源 DEB 用已验签的 `41b7a82b` alpha.1 工程包通过真实 APT 首装、dpkg 解包后恢复配置、首次按账号切换、同数据版本的 APT 回退、重装、remove 和 purge。两个普通账号分别通过 CLI 和实际 WebKit 启用新版，外部 SDK 从重新登记的运行时冷启动。坏签名与失效登记拒绝。最终两个账号的登记、设置、数据和工程摘要一致，系统入口和测试账号已清理。回执 SHA-256 为 `80b058848ae8f49c15813c0b40019f1cd5ffdeca63341520ac5be02f44f505a9`。
 
+同摘要 AppImage 与 DEB 在 Ubuntu 22.04 的仅回环环境通过七项同机归属验证。在两个独立测试资料目录中分别先登记便携及系统安装。AppImage 用真实 FUSE/WebKit 启动，其 CLI 集成启用和移除均保留未知的同名用户入口。已登记便携版时，DEB 的独立 Core 登记请求拒绝覆盖，系统 CLI 仍可连接已登记的便携 Core。已登记 DEB 时，直接打开 AppImage 拒绝接管，也不创建便携运行目录。`dpkg --purge` 之后，两份资料与登记的摘要和便携入口均保持一致。便携 CLI 可再次冷启动并读回工程。回执 SHA-256 为 `bf3a2a6d4252f5f82fd232761d4255cbd101354d8313aac02d50c6b542880551`。
+
 从同一干净签名提交在 Windows 重建含 Tauri GUI 在内的七个 Release 程序，再用隔离密钥签署运行载荷。使用固定摘要的 Inno 6.5.4 和 Microsoft WebView2 Bootstrapper 组装出 33,823,244 字节的工程 EXE，成品 SHA-256 为 `918ee1cb3cb23c9dd8bb3b860abe792eb99f48fb8670a8e1d07e8a872bffc89b`，载荷清单为 `e0dbfb92633fd655928174761dc01a307ca15c648352c21b33a009dbc3f89457`。验签、错误打包器摘要拒绝与已有输出保全均通过。
 
 两个断网 Win11 Sandbox 用同一 EXE 通过当前用户和全用户安装态复验，核对 Unicode 目录、已安装载荷、稳定 CLI 与 Core 冷启动、实际 WebView2 子进程及卸载资料保全。两次冷启动分别为 1,862 和 2,910 毫秒。全用户安装也确认安装阶段未初始化账号资料。两份原生回执 SHA-256 分别为 `19499b7e09ad39045570bb151b1a13ebc0128b6835c3b795975966bedeff213f` 和 `f8257e42a6ac428f415637b7b140dbdb35ad0642b25e8d168dfaf13afee318c8`。

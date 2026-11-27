@@ -1448,6 +1448,15 @@ description = "Jammy 原生 FUSE 与 IPC 通过八项可选 CLI 检查。e0fc95d
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_cli.rs", "crates/alcomd-platform/src/linux_portable_cli.rs"]
 
 [[test]]
+id = "installer.linux.format-ownership-native"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 用同源 7b7522b5 的 AppImage FUSE/WebKit 与实际 DEB 做七项同机检查。双向拒绝登记覆盖，保留未知同名入口，系统 CLI 可连接已登记便携 Core，DEB purge 保留两份资料并允许便携 CLI 冷启动重开工程。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "crates/alcomd-platform/src/linux_installation_registration.rs", "apps/alcomd-bootstrap/src/linux_portable_cli.rs"]
+
+[[test]]
 id = "installer.deb.exact-release-lifecycle"
 stage = "M12"
 kind = "system"

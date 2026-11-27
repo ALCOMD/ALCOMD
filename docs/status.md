@@ -18,7 +18,7 @@ Windows Inno 的签名修复 `7b7522b5` 已通过 Win11 四组同范围实包复
 
 已从主仓签名候选 `7b7522b5` 重建 Windows Inno、Ubuntu 22.04 AppImage 和 DEB 三种同源工程包。Inno 通过 Win11 两种安装范围、真实 WebView2、卸载保全与同范围 Unicode PATH 升级。Linux 两种包通过解包验签、实际 Core 与 WebKit、GTK 两档缩放及清理，并各通过九项隔离发行演练。[7b7522b5 同源工程实包](exec-plans/M12-full-product-distribution.md#2026-11-28-7b7522b5-同源工程实包)
 
-`7b7522b5` 的 AppImage 与 DEB 均完成逐 ELF 的 `GLIBC_2.34` 核对。AppImage 通过直接移除后的冷启动拒绝、显式重绑、账号资料保全和换位后磁盘满恢复。DEB 通过双账号升级、重装、同数据版本回退、remove 与 purge。两种格式的工程验收已记录，正式候选继续按 A-017 放行。[Linux 生命周期补验](exec-plans/M12-full-product-distribution.md#2026-11-28-7b7522b5-同源工程实包)
+`7b7522b5` 的 AppImage 与 DEB 均完成逐 ELF 的 `GLIBC_2.34` 核对。AppImage 通过直接移除后的冷启动拒绝、显式重绑、账号资料保全和换位后磁盘满恢复。DEB 通过双账号升级、重装、同数据版本回退、remove 与 purge。两种格式在同机时均保留对方已登记的 Core，且 DEB purge 后便携 CLI 仍可冷启动并读回工程。正式候选继续按 A-017 放行。[Linux 生命周期补验](exec-plans/M12-full-product-distribution.md#2026-11-28-7b7522b5-同源工程实包)
 
 `7b7522b5` 同源 Inno 的全用户更新通过保留签名包前、暂存新版时、桌面重启和提交意图写入后的有界 NTFS 磁盘满复验。复验了旧版重开、签名原件保全、释放空间后恢复同一事务，以及新版 WebView2 和 Core 读回原工程。同源 Updater 用实际工程包通过九项离线验签、反重放和重试检查。标准账号交互 UAC 仍待验收。[Windows 故障复验](exec-plans/M12-full-product-distribution.md#2026-11-28-7b7522b5-同源工程实包)
 
