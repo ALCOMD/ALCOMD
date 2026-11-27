@@ -479,11 +479,21 @@ fn main() -> anyhow::Result<()> {
             requester_pid,
             channel,
         } => {
-            return alcomd_bootstrap::apply_machine_update_worker(
-                &transfer,
-                requester_pid,
-                channel,
-            );
+            let outcome =
+                alcomd_bootstrap::apply_machine_update_worker(&transfer, requester_pid, channel);
+            if let Err(error) = &outcome
+                && error.chain().any(|cause| {
+                    cause
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|io| io.kind() == std::io::ErrorKind::StorageFull)
+                })
+            {
+                eprintln!("Error: {error:#}");
+                std::process::exit(
+                    alcomd_platform::WindowsElevatedProcess::MACHINE_UPDATE_DISK_FULL_EXIT_CODE,
+                );
+            }
+            return outcome;
         }
         #[cfg(windows)]
         Command::ResumeMachineUpdateWorker => {

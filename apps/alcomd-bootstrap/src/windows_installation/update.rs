@@ -346,12 +346,18 @@ fn request_machine_update(
         ],
     )
     .context("could not elevate Windows all-users update maintenance")?;
-    output
-        .send(&worker, &bytes, input, update.asset().bytes())
-        .context("could not transfer the signed Windows update to machine maintenance")?;
-    worker
-        .wait()
-        .context("the all-users update has not completed")
+    let transfer = output.send(&worker, &bytes, input, update.asset().bytes());
+    let transferred = transfer.is_ok();
+    worker.wait_for_machine_update(transfer).map_err(|error| {
+        let message = if error.kind() == io::ErrorKind::StorageFull {
+            "there is insufficient free space for the all-users Windows update"
+        } else if transferred {
+            "the all-users update has not completed"
+        } else {
+            "could not transfer the signed Windows update to machine maintenance"
+        };
+        anyhow::Error::new(error).context(message)
+    })
 }
 
 /// Receives only bounded signed data from the initiating process in the local session.
@@ -543,9 +549,9 @@ impl Installation {
                 if let Ok(available) = windows_available_storage(&self.root)
                     && available < installer_bytes
                 {
-                    anyhow::bail!(
+                    return Err(io::Error::from(io::ErrorKind::StorageFull)).with_context(|| format!(
                         "could not stage the Windows product update: insufficient free space on the installation volume ({available} bytes available, signed installer is {installer_bytes} bytes)"
-                    );
+                    ));
                 }
                 anyhow::bail!("the installer did not publish the Windows product update stage");
             }
