@@ -1349,6 +1349,15 @@ description = "Win11 当前用户在专用 NTFS 虚拟盘，用 49b25485 同源 
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
 
 [[test]]
+id = "distribution.windows.machine-update-disk-exhaustion"
+stage = "M12"
+kind = "fault-injection"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "断网 Win11 24H2 Sandbox 的既有管理员会话用 9eba5b98 与 16e5184a 的完整 Inno，在独立 NTFS 卷验证全用户保留签名包和解包暂存两个阶段的真实空间不足。旧版、登记和资料保全，两次均可重开工程。释放空间后同包升级成功，账号下次冷启动时登记新版 Core。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
+
+[[test]]
 id = "distribution.deb.unpack-storage-failures"
 stage = "M12"
 kind = "fault-injection"

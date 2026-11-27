@@ -8,6 +8,8 @@
 
 主仓候选 `9eba5b98` 的本地整仓、Chromium、三平台 Hosted CI 和四项 CodeQL 均通过。已从同一签名源码重建 Inno、AppImage 和 DEB。Inno 通过 Win11 两种安装范围、WebView2、卸载保全，以及当前用户磁盘满诊断和同包重试。[Windows 同源实包](exec-plans/M12-full-product-distribution.md#2026-11-27-9eba5b98-windows-同源实包复验) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897471) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897091)
 
+同一 `9eba5b98` Inno 另通过 Win11 全用户更新的两处磁盘满验收。保留签名包前和暂存新版时均保全旧版及资料，释放空间后用同包升级，原账号下次启动时登记新版 Core 并重开原工程。全用户入口目前只返回传输或维护失败。[全用户磁盘满复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户整包更新磁盘满复验)
+
 已从同一 `9eba5b98` 签名源码组装 Ubuntu 22.04 的 AppImage 与 DEB，解包后均重新验签。原生 FUSE、DEB 安装与卸载、两档 WebKit 缩放及键盘焦点均通过。[9eba5b98 Linux 同源实包](exec-plans/M12-full-product-distribution.md#2026-11-27-9eba5b98-linux-同源实包复验)
 
 签名工程候选 `a70c181e` 已通过同源 Inno、AppImage 和 DEB 组装及安装态桌面复验。Windows 11 的两种安装范围均验证 Unicode 目录安装、CLI 冷启动、WebView2 和卸载保全。Ubuntu 22.04 验证 AppImage FUSE、DEB 安装、两档缩放与 AppImage 的 Orca 朗读。含同一打包代码的主仓候选 `696953b1` 通过本地整仓、Chromium、三平台 Hosted CI 与四项 CodeQL。[同源原生资产组装](exec-plans/M12-full-product-distribution.md#2026-11-27-同源原生资产组装)
