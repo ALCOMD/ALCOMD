@@ -469,6 +469,14 @@ Windows 协议登记使用受保护定位记录里的安装根拼写，避免自
 
 该 SHA 在干净检出通过本机整仓聚合检查，Rust 测试共 1107 项，Chromium 765 项。从 `2a1f93b9` 起逐笔验签 12 笔提交后普通快进到主仓 `main`。该 SHA 上的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均通过整仓、外部 SDK、Release 和 Tauri 构建，每个平台的 Chromium 均通过 765 项。四项 CodeQL 全部通过。Hosted 终态回执 SHA-256 为 `7465ae2125a1dd8d8ef15ee3cf9279ec50ba749b47e109ced4d32f7f83f2f94f`。macOS 原生客户端仍延期，正式发行继续按 A-017 验收。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45898023638) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45898023276)
 
+### 2026-11-27 主仓候选 bffef439 的 Linux 原生复验
+
+在隔离 Ubuntu 22.04 复用既有编译缓存，从干净的签名提交 `bffef43911fe7a0cc990036df8ff453ab9898ed5` 落包。AppImage 与 DEB 的 SHA-256 分别为 `4fe1a8c82e2d24b0ada4fe3db015aa90c6d09277744ef73a5d1d8725b75b2b75` 和 `f67ae2c7ae742454c879497ab6595f8d70ebb4acd498897c1b0f00eda5a6ab44`，共同运行清单为 `8ac42afd3034dd053066acd085c5bd75a68d6dff2047800e9c8b617617879705`。`dist --check`、配对桥接验签和两包各 8 个 ELF 的符号扫描通过。最高要求均为 `GLIBC_2.34`。
+
+断网标准账号分别通过原生 Core、稳定 CLI 工程读写、WebKit、MCP 认证与撤销、第一方扩展验签。AppImage 实际经 FUSE 运行，DEB 实际由 APT 安装和清理。DEB、AppImage 原生回执分别为 `d03f465024d2c2b492e398caa5c7ff8b0eac1a9689bec1055490aa0dc54e1c4a` 和 `eee3202f6fe786d2c7d2c4991092be16009204c0a7570dd2f23ec9a9d978653b`。独立核验组件、清单和两份回执后生成隔离健康证明。
+
+用以上相同摘要的 v4 AppImage 和 DEB，在隔离 Ubuntu 24.04 从实际冻结 v3.4.0 界面复验交接。两个格式均通过回滚后重开 v3，以及确认提交后启动 v4 GUI 并连接同版本 Core。合成签名的独立 AppImage 桥接归档为 `74755ac1e689b3524cdc0e71528403e06ce3b95df61653445b765d2600f86db3`。DEB、AppImage 迁移回执分别为 `8fbd47b6ea0498deeccd57ac0a94501f057ce6a2ceb245ecffb93468b5e05327` 和 `c120f76f6dd6b7890f104f8c32a863f469032a7015a1dc6fee9bb794093cd0db`。原冻结程序保留，两套测试资料和临时挂载按夹具归属清理。正式资产仍须按发行矩阵复验。
+
 ### 2026-11-27 Windows 全用户自定义目录整包升级
 
 在断网 Windows 11 24H2（`26100.9974`）来宾的既有管理员会话中，用上述 `2a1f93b9` 安装包和修正 Inno 后的 `16e5184a` 目标载荷执行全用户整包升级。安装根的父目录与末级目录均含空格和 Unicode。正常升级通过九项。机器部署不抢先初始化账号资料，机器升级保留旧的逐账号登记，原账号重开后才登记新版 Core。原安装根、机器 PATH 与开始菜单仍指向该实例，真实 WebView2 和稳定 CLI 可读回原工程。CLI 冷启动耗时 1552 毫秒，卸载后数据库、逐账号登记和目录内的无关文件保全。正常回执 SHA-256 为 `96e3ffc15dd320a44b37b85dfb325eacbdda88b6b0ef167b3b714cdf7d595fe0`。
@@ -496,6 +504,12 @@ Windows Inno 发行打包接收固定摘要的 Microsoft Evergreen Bootstrapper�
 Win11 Sandbox 夹具通过已装运行时跳过、缺失时拒绝提升环境下的当前用户部署、坏摘要拒绝和清除失败后重试。用既有签名运行载荷和实际 Microsoft 输入编译的工程 Inno EXE，在线版 `30,860,133` 字节，离线版 `325,059,060` 字节。在线版在冻结 v3 更新器 256 MiB 约束内，离线版超出该上限。完整候选的 v3 自动桥接使用在线包尺寸约束，独立离线交付另列资产。Win10 缺失运行时的在线、离线和取消恢复仍需实际客户端取证。
 
 隔离 Windows 10 22H2（构建 19045）的标准账号已验证系统 UAC 取消。探针经 Windows Shell 请求提升，安全桌面取消后返回 Win32 错误 `1223`，回执 SHA-256 为 `df242b888f6aa187897a946eb2110db7af3f8d9787e3936432f045bc3fddfc4b`。该回执覆盖系统提示和取消行为。完整安装器的取消恢复、正向交接与 WebView2 安装仍需客户端复验。
+
+### 2026-11-27 Windows 10 22H2 隔离环境
+
+用固定摘要的 Windows 10 Enterprise Evaluation 22H2 x64 镜像准备断网来宾。第一轮在初始化完成前关停，重启时 Windows Setup 报错。第二轮写入系统镜像后从同一虚拟盘继续以 TCG 启动，观察到首次设置的区域选择页面。页面截图 SHA-256 为 `79ac82a7e5018295369d0bb61cd922608337d72fef305badb7d4dd2ab010f62f`。关停后 QCOW2 结构检查无错误。按所有者许可暂缓人工账号设置及此来宾的完整实包验收，A-017 放行条件继续有效。
+
+离线测试包由 `bffef439` 与同 SHA 的已验签运行清单重打包，使用固定摘要的 Microsoft WebView2 Standalone x64。离线包 SHA-256 为 `4cf26113aac667103d3dbd1652f0a515563d8387f02e77b7dca845c17d80bd17`，大小为 328,020,630 字节，用于手动离线交付验收。同源在线包 SHA-256 为 `3f39873e3dd05a197853d4426f5f1ccd59e171f24a1adbaeed46af474466950a`。两个版本的包和回执盘已就绪。Win10 上的断网拒绝、离线运行时安装及真实 WebView2 渲染均待运行。
 
 ### 2026-11-25 Ubuntu 产品 AppImage 首启
 

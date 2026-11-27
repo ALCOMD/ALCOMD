@@ -48,6 +48,8 @@ Win11 隔离夹具已通过协议登记和移除的中断恢复，以及七种�
 
 Windows Inno 已接入 WebView2 作用域检测、在线 Bootstrapper 和可选离线 Standalone。隔离 Win11 验证了已有运行时、坏摘要和提升范围保护。两种工程包已编译，离线包超过冻结 v3 更新器的 256 MiB 上限。Win10 22H2 的标准账号已通过系统 UAC 取消探针，完整部署与正向提权交接另验。[WebView2 前置部署](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-webview2-前置部署)
 
+新的断网 Win10 22H2 来宾已到首次设置的区域页面，关停后虚拟盘结构检查通过。`bffef439` 的在线与离线包已备齐。按所有者许可暂缓人工账号设置及该来宾的完整实包验收，发版条件继续有效。[Win10 环境与候选](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-10-22h2-隔离环境)
+
 Windows 和 AppImage 的「关于」页已接入产品更新。三项 Chromium 用例覆盖用户确认前保留当前进程、取消下载和恢复确认。Windows 签名夹具另通过 8 项真实 WebView2 检查，覆盖仅检查声明、下载保留原版、取消确认、自动安装重启及新版 Core 读回原工程。Windows 正式包签名前须核对两只 Microsoft x64 CRT 的固定摘要。[应用内产品更新](exec-plans/M12-full-product-distribution.md#2026-11-26-应用内产品更新)
 
 Windows 签名源码 `12057897` 的完整 Inno 与临时迁移载荷通过合成签名和摘要配对。Win11 Sandbox 的两种安装范围共通过 8 项原生检查，覆盖惰性暂存、重试、未知目录保全及缺少有效迁移日志时拒绝启用。完整冻结版更新交接继续验收。[Windows 桥接程序双范围暂存](exec-plans/M12-full-product-distribution.md#2026-11-26-windows-桥接程序双范围暂存)
@@ -89,6 +91,8 @@ M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows H
 安装器与迁移工程候选 `2a1f93b9` 已逐笔验签并快进至主仓 `main`。本机整仓测试通过 1,106 项，三平台 Hosted 各通过 765 项 Chromium，四项 CodeQL 均通过。Windows Inno、Linux AppImage 与 DEB 的完整工程包均已用同一源码构建并进行原生复验。[实施计划](exec-plans/M12-full-product-distribution.md#2026-11-27-同源工程候选门禁) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45872055470) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45872054421)
 
 自定义目录暂存修复 `bffef439` 已逐笔验签并快进至主仓 `main`。本机聚合门禁、三平台 Hosted、各 765 项 Chromium 和四项 CodeQL 均通过。该 SHA 的完整 Inno 工程包另通过隔离 Win11 当前用户自定义目录安装、开始菜单打开 WebView2 和卸载保全。[实包与门禁记录](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-当前用户自定义目录整包升级) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45898023638) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45898023276)
+
+同一 `bffef439` 的 AppImage 和 DEB 已在 Ubuntu 22.04 验证原生健康及全部发行 ELF。两包最高要求均为 `GLIBC_2.34`。Ubuntu 24.04 用同摘要实包通过真实冻结 v3.4.0 的两个格式交接、回滚重开和原生提交。[Linux 同源实包复验](exec-plans/M12-full-product-distribution.md#2026-11-27-主仓候选-bffef439-的-linux-原生复验)
 
 隔离发行演练使用生产 Updater，分别以完整 Inno 和 `2a1f93b9` 的同源 AppImage 通过各九项回环 HTTPS 检查，覆盖下载、频道隔离、停推、恢复和篡改拒绝。最终发行资产继续按同一脚本复验。[隔离发行演练](exec-plans/M12-full-product-distribution.md#2026-11-26-隔离发行停推与恢复演练)
 
