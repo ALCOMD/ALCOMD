@@ -158,7 +158,11 @@ Windows 用实际编译的七个运行程序生成 Inno 测试 EXE。仅向隔�
 
 隔离 Windows 11 24H2 通过当前用户 Unicode 路径安装、已安装 WebView2 渲染、稳定 CLI 冷启动和卸载保全。冷启动耗时 2711 毫秒，回执 SHA-256 为 `eabd25f2d747a9f263595f994d547064578f60f8c16e7b3404501dce8cc6f125`。Ubuntu 22.04 在隔离 WSL2 环境验证 AppImage 原生 FUSE 和实际 DEB 安装。两个包在 1400 × 800 和 2800 × 1600 下均验证项目搜索、列表视图和创建项目的键盘焦点。AppImage、DEB 回执分别为 `cc607e34db86453a273b72a51b42caf359f134a2ad80ac145402c6e66dbf7179` 和 `35c24e8d3e9cc88e097cc9245064525141e0464b4f27ef75a0083155d2882784`。
 
-本轮运行载荷使用隔离测试签名。该 SHA 的整仓、三平台 Hosted CI 和 CodeQL 门禁另验。Windows 10 和 macOS 原生验收延期，公开发行继续按 A-017 放行。
+用同一个 Inno 实包补验 Windows 11 全用户安装。已有来宾会话将产品安装到含 Unicode 的 Program Files 子目录，机器部署结束时仍无账号状态库。稳定 CLI 首次连接 Core 耗时 1981 毫秒。真实 WebView2 渲染通过，卸载后状态库摘要一致。回执 SHA-256 为 `27b526a5c97b07b62d6734d93c802876fa194a0f6f71bac1ede77ebcca5543b7`。
+
+同一 AppImage 补验了 Orca 42 的实际合成朗读。首轮读到项目搜索和列表视图，未取得创建项目的朗读回执，键盘阶段日志 SHA-256 为 `8860483526495264f025832be3110dc946027ed8ba61703c2599fae2886e892b`。用相同条件与同摘要资产复跑，三个控件均有朗读输出，隔离音频装置录得 179,744 个合成样本。通过日志 SHA-256 为 `06a15e30ac5d379b8667d0e62cb88f0c16d1df6e76c9c699135b44ce73b6e094`。
+
+本轮运行载荷使用隔离测试签名。相同打包代码与第一轮验收记录一同纳入主仓候选 `696953b1`。该候选通过本地整仓门禁，Rust 1,108 项、Chromium 765 项和 Node SDK 7 项。十笔新增提交逐笔验签后普通快进，四项 CodeQL 分析通过。三平台 Hosted CI 已触发。Windows 10 和 macOS 原生验收延期，公开发行继续按 A-017 放行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45935368535) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45935368135)
 
 ### 2026-11-25 Windows Core 安装登记
 
