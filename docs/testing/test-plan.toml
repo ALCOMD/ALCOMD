@@ -1327,7 +1327,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 22.04 以签名源码 b324627e 和合成签名产品 AppImage 验证原生 FUSE、真实 Tauri 首启、独立 SDK 冷启动、移位和链接替换阻断、从新位置重新绑定及未知资料保全。"
+description = "Ubuntu 22.04 以签名源码 b324627e 和合成签名产品 AppImage 验证原生 FUSE、真实 Tauri 首启、独立 SDK 冷启动、移位和链接替换阻断、从新位置重新绑定及未知资料保全。7b7522b5 同源 AppImage 另在 Ubuntu 24.04 通过实际 FUSE、可见 WebKit 窗口、Core 登记与 CLI 冷启动。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable.rs", "crates/alcomd-platform/src/linux_portable_origin.rs"]
 
 [[test]]
