@@ -428,6 +428,7 @@ async fn project_registry_is_revisioned_evented_and_idempotent() {
         .await
         .expect("register project");
     assert_eq!(first.value.revision.get(), 1);
+    assert_eq!(first.value.content_revision, first.value.revision);
     assert_eq!(first.value.last_modified_at_ms, Some(10));
     let replay = store
         .register_project(owner.clone(), project(1), key("project-register"), 20)
@@ -484,6 +485,7 @@ async fn project_registry_is_revisioned_evented_and_idempotent() {
         .await
         .expect("changed refresh");
     assert_eq!(refreshed.value.revision.get(), 2);
+    assert_eq!(refreshed.value.content_revision, refreshed.value.revision);
     assert_eq!(refreshed.value.last_modified_at_ms, Some(10));
     let read_back = store
         .get_project(owner.clone(), first.value.project_id)
@@ -571,6 +573,7 @@ async fn project_favorite_is_revisioned_idempotent_and_preserved_by_refresh() {
         .expect("favorite project");
     assert!(favorite.value.favorite);
     assert_eq!(favorite.value.revision.get(), 2);
+    assert_eq!(favorite.value.content_revision, registered.content_revision);
     assert_eq!(favorite.value.last_modified_at_ms, Some(10));
     let after = store
         .list_projects(owner.clone(), None, 1)
@@ -648,6 +651,10 @@ async fn project_favorite_is_revisioned_idempotent_and_preserved_by_refresh() {
         .await
         .expect("refresh project");
     assert!(refreshed.value.favorite);
+    assert_eq!(
+        refreshed.value.content_revision,
+        registered.content_revision
+    );
     assert_eq!(refreshed.value.last_modified_at_ms, Some(10));
     let events = store
         .list_events(owner.clone(), 0, 100)

@@ -41,6 +41,9 @@
                 "vpmManifest", "upmManifest", "directDependencies", "lockedDependencies",
                 "issues", "revision"
             ],
+            "if": {"properties": {"projectId": {"type": "string"}}},
+            "then": {"required": ["contentRevision"]},
+            "else": {"not": {"required": ["contentRevision"]}},
             "properties": {
                 "projectId": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
                 "registeredAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
@@ -62,7 +65,11 @@
                 "directDependencies": {"type": "array", "items": {"$ref": "#/$defs/dependency"}, "maxItems": 4096},
                 "lockedDependencies": {"type": "array", "items": {"$ref": "#/$defs/dependency"}, "maxItems": 4096},
                 "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}, "maxItems": 1024},
-                "revision": {"oneOf": [{"$ref": "#/$defs/revision"}, {"type": "null"}]}
+                "revision": {"oneOf": [{"$ref": "#/$defs/revision"}, {"type": "null"}]},
+                "contentRevision": {
+                    "$ref": "#/$defs/revision",
+                    "description": "Registered project revision for package candidates, plans and apply. Changes only when Core accepts a change to package-relevant project state."
+                }
             }
         },
         "repositorySource": {

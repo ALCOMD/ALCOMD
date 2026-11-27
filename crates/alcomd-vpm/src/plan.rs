@@ -336,7 +336,7 @@ fn inspect_package_inputs(
     };
     Ok(ProjectPackageSnapshot {
         project_id: project.project_id,
-        project_revision: project.revision,
+        project_revision: project.content_revision,
         root,
         path_identity_key: identity,
         fingerprint: hasher.finalize().into(),

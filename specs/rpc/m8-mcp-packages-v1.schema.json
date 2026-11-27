@@ -635,7 +635,8 @@
                     "$ref": "#/$defs/id"
                 },
                 "expectedRevision": {
-                    "$ref": "#/$defs/revision"
+                    "$ref": "#/$defs/revision",
+                    "description": "The registered project's content revision."
                 }
             },
             "required": [

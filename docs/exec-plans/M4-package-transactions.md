@@ -218,12 +218,25 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 
 ## Plan / Apply 合同
 
+### 2026-11-27 项目内容修订
+
+所有者批准包候选、包计划和包任务提交使用项目内容修订。State1 增加必填 `projects.content_revision`，初始值为 1。
+项目观察实际变化、成功的包事务和 Unity 迁移用本次登记修订推进内容修订。收藏继续推进登记修订及其事件。
+注册项目快照公开 `contentRevision`。包 Plan 和候选请求的 `expectedRevision` 取此值。包 Plan 的 `projectRevision`
+冻结该值，Apply 使用它提交确认。现有包字段的校验语义和 State1 表形状均发生破坏性变化，首发合同原位修订为 v1。
+
+后台下载和事务专用暂存可先进行。Core 在项目锁内重读当前登记，复验内容修订、身份、文件和来源后才修改实际包目录或清单。
+同一项目锁覆盖文件提交、恢复收敛和 SQLite 提交。最终从最新登记修订分配提交后的登记与内容修订，同时保留已提交的收藏。
+
+回归覆盖收藏后的候选续页与原计划应用、依赖证据变化导致的过期、下载期间的收藏和项目内容变更、文件与数据库提交中断后的恢复。
+GUI、CLI、原生 SDK、MCP 和扩展提供者沿用同一 Core 校验。
+
 ### Plan
 
 - M4 方法固定为 `packages.planInstall`、`packages.planRemove`、`packages.planUpgrade`、
   `packages.planDowngrade` 与 `packages.planResolve`。
 - Plan 是确定性计算结果，不写 Unity 项目。为支持 Apply/重启/授权复验，以不可变 durable record
-  保存，返回 `planId`、项目 revision、source fingerprints 与 ChangeSet；状态只有 unapplied/applied，
+  保存，返回 `planId`、项目内容修订、source fingerprints 与 ChangeSet；状态只有 unapplied/applied，
   不含 expiry、TTL 或自动清理。
 - ChangeSet 至少包含：安装/替换/移除 package、版本/source/hash、direct dependency mutation、
   locked package mutation、manifest field mutation、冲突/unsupported metadata 和预期最终摘要。
@@ -246,7 +259,7 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 - Apply 方法 `packages.applyPlan` 必须携带 `planId`、project `expectedRevision` 和永久
   `idempotencyKey`，成功接受后返回同一个 durable `OperationId`。
 - Apply 在任何项目写入前重新验证 Principal/permission、Plan owner/scope、Plan 未使用、
-  project identity/revision、repository/source revision、manifest fingerprint、URL 与 digest。
+  项目身份和内容修订、repository/source revision、manifest fingerprint、URL 与 digest。
 - 任一前提变化返回 `plan_stale` 或更具体的稳定 reason，不得在 Apply 内重新 resolve、替换 source、
   升降版本或产生新 ChangeSet。客户端必须显式重新 Plan。
 - 同一 Plan 只能绑定一个 successful Apply Operation；相同幂等 scope/fingerprint 重放原
@@ -393,8 +406,8 @@ M2 `operation_journal` 只证明 DB-only `state.check` 可恢复，不能直接�
   `packages.manage`。
 - `packages.read/manage` 已存在于权限名称基线，但 M4 必须精确定义其 project/source scope；不能
   把 `builtin:local-owner` 当作未来外部客户端 credential 方案。
-- Apply 的 expectedRevision 同时约束 project registry aggregate 与外部 project snapshot；外部文件
-  被 Unity/用户修改但 DB revision 未变时，也必须由 digest/fingerprint 检出并返回 stale/conflict。
+- Apply 的 `expectedRevision` 约束计划绑定的项目内容修订。外部文件被 Unity 或用户修改而内容修订尚未推进时，
+  由现有 digest/fingerprint 检出并返回 stale/conflict。
 - 永久 idempotency scope 继续是 `(PrincipalId, method, idempotencyKey)`；fingerprint 包含 planId、
   project/source revisions 与 action，不包含 credential/完整 path。
 

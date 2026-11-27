@@ -19,12 +19,9 @@ fn directory_state_keeps_unobserved_snapshots_and_accepts_only_the_approved_stat
     let unobserved: ProjectSnapshot =
         serde_json::from_value(snapshot.clone()).expect("retained snapshot");
     assert_eq!(unobserved.directory_state, None);
-    assert!(
-        serde_json::to_value(unobserved)
-            .expect("serialize")
-            .get("directoryState")
-            .is_none()
-    );
+    let anonymous = serde_json::to_value(unobserved).expect("serialize");
+    assert!(anonymous.get("directoryState").is_none());
+    assert!(anonymous.get("contentRevision").is_none());
     for (wire, state) in [
         ("available", ProjectDirectoryState::Available),
         ("missing", ProjectDirectoryState::Missing),

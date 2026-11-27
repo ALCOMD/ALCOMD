@@ -6,6 +6,8 @@
 
 Core 在新建环境中以单个 SQLite 事务执行 [初始 DDL](../../crates/alcomd-store/src/schema.sql) 并写入 `user_version=1`。结构包含当前项目、Unity 安装、仓库、包、模板、扩展与 MCP 状态，以及任务、幂等、事件和文件系统事务证据。普通 ZIP 任务使用任务与恢复日志，归档文件由 Core 按请求位置读写。
 
+`projects.revision` 记录最新的登记修订，`projects.content_revision` 记录最近一次项目内容变更所对应的登记修订。两者从 1 开始。刷新发现项目观察有变化、包事务提交或 Unity 迁移提交时，两者在同一事务推进到新的登记修订。收藏写入只推进登记修订。`package_plans.project_revision` 保存计划绑定的内容修订，成功应用从当前登记修订分配新修订，并保留已提交的收藏。
+
 Unity 迁移计划在 `project_unity_migration_plans.target_sdk_version` 可空 TEXT 列保存已选定的 SDK；不需要更换 SDK 的计划存 NULL。Core 重启后，读取计划与 Apply 复验都使用该列保存的版本。
 
 重开时先检查主文件标识、版本和结构。Core 对照初始 DDL 核实表、索引和触发器，比较时忽略 SQL 空白、注释和未加引号的名称及关键字大小写，保留约束、运算符和字符串值。SQLite 在上述检查通过后进入正常读写和 WAL 恢复。存在未知数据库、无主文件的伴随文件或不受信任目录时拒绝。当前数据库与 Config1 同时预检。空环境初始化时只接受已知且经过验证的安装登记或当前设置。

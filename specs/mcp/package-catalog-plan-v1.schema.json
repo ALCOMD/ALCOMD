@@ -285,7 +285,8 @@
                     "$ref": "#/$defs/id"
                 },
                 "expected_revision": {
-                    "$ref": "#/$defs/revision"
+                    "$ref": "#/$defs/revision",
+                    "description": "Use content_revision from alcomd_get_project."
                 },
                 "query": {
                     "type": "string",
@@ -320,7 +321,8 @@
                     "$ref": "#/$defs/id"
                 },
                 "expected_revision": {
-                    "$ref": "#/$defs/revision"
+                    "$ref": "#/$defs/revision",
+                    "description": "Use content_revision from alcomd_get_project."
                 },
                 "package_id": {
                     "$ref": "#/$defs/packageId"
@@ -354,7 +356,8 @@
                     "$ref": "#/$defs/id"
                 },
                 "expected_revision": {
-                    "$ref": "#/$defs/revision"
+                    "$ref": "#/$defs/revision",
+                    "description": "Use content_revision from alcomd_get_project."
                 },
                 "package_id": {
                     "$ref": "#/$defs/packageId"
@@ -415,7 +418,8 @@
                     "$ref": "#/$defs/id"
                 },
                 "expected_revision": {
-                    "$ref": "#/$defs/revision"
+                    "$ref": "#/$defs/revision",
+                    "description": "Use content_revision from alcomd_get_project."
                 },
                 "package_id": {
                     "$ref": "#/$defs/packageId"
@@ -1049,7 +1053,8 @@
                     "$ref": "#/$defs/id"
                 },
                 "project_revision": {
-                    "$ref": "#/$defs/revision"
+                    "$ref": "#/$defs/revision",
+                    "description": "The project content revision bound to this plan."
                 },
                 "action": {
                     "enum": [
@@ -1507,7 +1512,8 @@
                     "$ref": "#/$defs/id"
                 },
                 "expected_revision": {
-                    "$ref": "#/$defs/revision"
+                    "$ref": "#/$defs/revision",
+                    "description": "Use content_revision from alcomd_get_project."
                 },
                 "package_id": {
                     "$ref": "#/$defs/packageId"

@@ -212,6 +212,8 @@ pub struct ProjectRecord {
     pub project_id: ProjectId,
     pub observation: ProjectObservation,
     pub revision: Revision,
+    /// Aggregate revision at the most recent committed project content change.
+    pub content_revision: Revision,
     pub registered_at_ms: u64,
     /// Core-maintained user activity time, independent of observation and semantic revision.
     /// Historical records without reliable activity evidence remain unknown.
@@ -1757,10 +1759,15 @@ impl RepositoryPreview {
 impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
     #[must_use]
     pub fn new(store: S, reader: R) -> Self {
+        Self::with_locks(store, reader, Arc::new(ResourceLockCoordinator::default()))
+    }
+
+    #[must_use]
+    pub fn with_locks(store: S, reader: R, locks: Arc<ResourceLockCoordinator>) -> Self {
         Self {
             store,
             reader,
-            locks: Arc::new(ResourceLockCoordinator::default()),
+            locks,
             repository_import: Arc::new(Mutex::new(())),
             repository_previews: Arc::new(Mutex::new(VecDeque::new())),
         }

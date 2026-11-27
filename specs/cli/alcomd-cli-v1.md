@@ -82,7 +82,7 @@ NDJSON。普通日志不得污染任何 machine stdout。
 
 正式发布前 CLI 合同编号固定为 1。变更命令、参数、退出码或输出格式时，同步改写命令目录、调用方和测试。CLI 只接受当前命令树和参数定义。
 
-`project apply-copy`、`project apply-delete-directory` 和 `project apply-unity-migration` 接受原预演返回的 planId 和 `--idempotency-key`。软件包、复制与删除缺省使用原计划的项目修订，显式传入的 `--expected-revision` 由 Core 复验。交互式按 ID Apply 使用 `plans.get` 读回当前主体的原始计划并展示；非交互调用使用 `--yes` 确认已审阅相应预演，Core 在执行时复验计划。
+`project apply-copy`、`project apply-delete-directory` 和 `project apply-unity-migration` 接受原预演返回的 planId 和 `--idempotency-key`。包候选与包计划的 `--expected-revision` 取 `project get` 返回的 `project.contentRevision`。包 Apply 缺省取原计划的 `projectRevision`。复制与删除缺省取原计划绑定的登记修订。显式传入的 `--expected-revision` 由 Core 复验。交互式按 ID Apply 使用 `plans.get` 读回当前主体的原始计划并展示。非交互调用使用 `--yes` 确认已审阅相应预演。
 
 项目复制、目录删除和 Unity 迁移使用 `--plan-idempotency-key` 创建计划。直接确认执行时另传 `--idempotency-key`，预演可省略执行键。回执未知时携原参数与原键重试。
 # Core desktop actions

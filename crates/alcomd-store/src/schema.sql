@@ -22,6 +22,8 @@ CREATE TABLE projects (
         CHECK (json_valid(snapshot_json) AND length(snapshot_json) <= 4194304),
     revision INTEGER NOT NULL
         CHECK (revision BETWEEN 1 AND 9223372036854775807),
+    content_revision INTEGER NOT NULL
+        CHECK (content_revision BETWEEN 1 AND revision),
     registered_at_ms INTEGER NOT NULL
         CHECK (registered_at_ms BETWEEN 0 AND 9223372036854775807),
     updated_at_ms INTEGER NOT NULL

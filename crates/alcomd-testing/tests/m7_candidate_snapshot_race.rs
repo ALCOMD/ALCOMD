@@ -127,7 +127,7 @@ impl TrackingStore {
         assert_eq!(project, self.project.project_id);
         CandidateStoreAuthority {
             project: self.project.observation.clone(),
-            project_revision: self.project.revision,
+            project_revision: self.project.content_revision,
             fingerprint_records: vec![self.inventory_revision.load(Ordering::SeqCst).to_string()],
             catalog_complete: true,
         }
@@ -248,6 +248,7 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
                 issues: vec![],
             },
             revision: Revision::INITIAL,
+            content_revision: Revision::INITIAL,
             registered_at_ms: 1,
             last_modified_at_ms: None,
             favorite: false,
@@ -477,6 +478,7 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
                 issues: vec![],
             },
             revision: Revision::INITIAL,
+            content_revision: Revision::INITIAL,
             registered_at_ms: 1,
             last_modified_at_ms: None,
             favorite: false,
@@ -593,6 +595,7 @@ async fn wider_legacy_project_observations_fail_query_dto_bounds_without_changin
                 issues: vec![],
             },
             revision: Revision::INITIAL,
+            content_revision: Revision::INITIAL,
             registered_at_ms: 1,
             last_modified_at_ms: None,
             favorite: false,
@@ -694,6 +697,7 @@ async fn cancelled_candidate_read_creates_no_files_or_business_writes() {
                 issues: vec![],
             },
             revision: Revision::INITIAL,
+            content_revision: Revision::INITIAL,
             registered_at_ms: 1,
             last_modified_at_ms: None,
             favorite: false,

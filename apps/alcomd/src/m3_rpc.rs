@@ -567,7 +567,7 @@ fn project_registry_cursor(
 }
 
 fn project_observation(value: app::ProjectObservation) -> rpc::ProjectSnapshot {
-    let mut snapshot = project_snapshot(None, None, None, value, None, None);
+    let mut snapshot = project_snapshot(None, None, None, value, None, None, None);
     snapshot.directory_state = Some(rpc::ProjectDirectoryState::Available);
     snapshot
 }
@@ -593,6 +593,7 @@ pub(super) fn project_record(value: app::ProjectRecord) -> rpc::ProjectSnapshot 
         value.last_modified_at_ms,
         value.observation,
         Some(value.revision.get()),
+        Some(value.content_revision.get()),
         Some(value.favorite),
     )
 }
@@ -603,6 +604,7 @@ fn project_snapshot(
     last_modified_at_ms: Option<u64>,
     value: app::ProjectObservation,
     revision: Option<u64>,
+    content_revision: Option<u64>,
     favorite: Option<bool>,
 ) -> rpc::ProjectSnapshot {
     rpc::ProjectSnapshot {
@@ -629,6 +631,7 @@ fn project_snapshot(
             .collect(),
         issues: value.issues.into_iter().map(issue).collect(),
         revision,
+        content_revision,
         favorite,
     }
 }

@@ -609,6 +609,23 @@ test("a removal preparation failure shows its reason and can be dismissed before
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
 });
 
+test("a favorite change leaves the package workspace on the content revision", async ({ page }) => {
+    await openHarness(page, "ready&packageFavorite");
+    const packages = page.getByRole("table", { name: "Packages", exact: true });
+    await packages.getByRole("button", { name: "Install", exact: true }).click();
+    const review = page.locator("md-dialog[open]").filter({ hasText: "Apply package changes?" });
+    await review.getByRole("button", { name: "Apply changes", exact: true }).click();
+    await expect(review).toHaveCount(0);
+    const requests = await page.evaluate(() => ({ candidates: window.candidateRequests, packages: window.packageRequests, unity: window.unityRequests }));
+    expect(requests.candidates.length).toBeGreaterThan(0);
+    expect(requests.candidates.every(({ expectedRevision }) => expectedRevision === 2)).toBe(true);
+    expect(requests.packages).toMatchObject([
+        { method: "install", params: { expectedRevision: 2 } },
+        { method: "apply", params: { expectedRevision: 2 } },
+    ]);
+    expect(requests.unity).toContainEqual(expect.objectContaining({ method: "unity.launchOptions", params: expect.objectContaining({ expectedProjectRevision: 3 }) }));
+});
+
 test("an Apply failure stays in its existing review and closing it leaves no page feedback", async ({ page }) => {
     await openHarness(page, "stale");
     const packages = page.getByRole("table", { name: "Packages", exact: true });

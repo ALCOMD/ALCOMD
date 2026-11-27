@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
-use alcomd_protocol::ProjectCandidateRequest;
+use alcomd_protocol::{OperationState, ProjectCandidateRequest, ProjectSetFavoriteParams};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -662,9 +662,9 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
         "target",
         "an unrelated rejected version must not erase local evidence"
     );
-    client
+    let removal = client
         .package_plan_bulk(alcomd_protocol::PackagePlanBulkParams {
-            project_id,
+            project_id: project_id.clone(),
             expected_revision: 2,
             intents: vec![alcomd_protocol::PackageBulkIntent::Remove {
                 package_id: "com.example.candidate".to_owned(),
@@ -672,6 +672,72 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
         })
         .await
         .expect("an unrelated rejected version does not block bulk planning");
+    let mut paged = request(
+        &project_id,
+        removal.project_revision,
+        json!({"kind":"versions","packageId":"com.example.candidate"}),
+        1,
+    );
+    let first_page = client
+        .package_query_project_candidates(paged.clone())
+        .await
+        .expect("first page before favorite");
+    assert!(first_page.next_cursor.is_some());
+    paged.cursor = first_page.next_cursor;
+    let before_favorite = fingerprints(&project, None);
+    let favorited = client
+        .project_set_favorite(ProjectSetFavoriteParams {
+            project_id: project_id.clone(),
+            favorite: true,
+            expected_revision: 2,
+            idempotency_key: "candidate-favorite".to_owned(),
+        })
+        .await
+        .expect("favorite between plan and apply")
+        .project;
+    assert_eq!(favorited.revision, Some(3));
+    assert_eq!(favorited.content_revision, Some(removal.project_revision));
+    assert_eq!(fingerprints(&project, None), before_favorite);
+    let continued = client
+        .package_query_project_candidates(paged)
+        .await
+        .expect("favorite leaves candidate continuation valid");
+    assert_eq!(continued.snapshot, first_page.snapshot);
+    let operation = client
+        .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
+            plan_id: removal.plan_id,
+            expected_revision: removal.project_revision,
+            idempotency_key: "candidate-apply-after-favorite".into(),
+        })
+        .await
+        .expect("favorite leaves saved plan valid");
+    let completed = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let state = client
+                .operation_get(operation.operation_id.clone())
+                .await
+                .expect("get package operation");
+            if matches!(
+                state.state,
+                OperationState::Succeeded | OperationState::Failed | OperationState::Cancelled
+            ) {
+                break state;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("package operation completes");
+    assert_eq!(completed.state, OperationState::Succeeded, "{completed:?}");
+    let settled = client
+        .project_get(project_id)
+        .await
+        .expect("read result")
+        .project;
+    assert_eq!(settled.favorite, Some(true));
+    assert_eq!(settled.revision, Some(4));
+    assert_eq!(settled.content_revision, Some(4));
+    assert!(!project.join("Packages/com.example.candidate").exists());
     shutdown.store(true, Ordering::Release);
     drop(client);
     daemon.await.expect("daemon task").expect("daemon shutdown");

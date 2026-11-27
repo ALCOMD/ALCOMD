@@ -77,6 +77,8 @@ OAuth续页必须原样回传；缺失、篡改、换token或授权快照变化�
 
 `alcomd_plan_package_changes` 复用相同项目与修订输入，支持安装、升级、降级、卸载、重新解析、选定包或全部重装，以及最多 256 项的批量意图。可在安装或升级中指定版本范围及预发布策略。精确安装、升级或降级可明确选择 Unity 兼容性例外，Core 在 Plan 中列出风险并沿用原确认规则。
 
+包计划和带项目上下文的包目录查询使用项目详情的 `content_revision`。包候选查询同样绑定内容修订。Apply 使用原包计划返回的 `project_revision`。`alcomd_set_project_favorite` 使用项目详情的登记 `revision`。
+
 MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档校验。获得所需业务权限的 MCP 客户端可使用已登记的公开或认证仓库、带查询参数的来源、本地仓库和用户包。Core 在原有范围内处理仓库凭据与下载头，MCP 响应只给安全的来源标识和普通文档链接。MCP 目录在协商 `mcp.packages.catalog-plan.v1` 后按实时权限展示这些工具。
 
 ## 仓库管理

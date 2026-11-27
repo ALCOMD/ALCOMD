@@ -2,7 +2,12 @@
 export type CandidateSource = { kind: "repository"; repository_id: string } | { kind: "user_package"; user_package_id: string };
 export type CandidateReason = "no_visible_candidate" | "source_unavailable" | "all_yanked" | "prerelease_excluded" | "stable_unavailable" | "unity_incompatible" | "project_unity_unknown" | "catalog_incomplete" | "metadata_invalid" | "classification_unknown" | "installed_evidence_unknown" | "legacy_metadata" | "source_ambiguous";
 export interface CandidateCursor { snapshotFingerprint: string; queryFingerprint: string; offset: number }
-export interface CandidateSnapshot { fingerprint: string; projectRevision: number; configRevision: number }
+export interface CandidateSnapshot {
+    fingerprint: string;
+    /** The project content revision bound to this snapshot. */
+    projectRevision: number;
+    configRevision: number;
+}
 export interface CandidateFilter {
     search?: string;
     status?: "installed" | "available" | "missing";
@@ -10,6 +15,7 @@ export interface CandidateFilter {
 }
 export interface ProjectCandidateRequest {
     projectId: string;
+    /** Use the registered project's contentRevision. */
     expectedRevision: number;
     view: { kind: "summary"; packageIds?: string[]; sources?: Array<{ packageId: string; source: CandidateSource }>; filter?: CandidateFilter; bulkPackageIds?: string[] } | { kind: "versions"; packageId: string; source?: CandidateSource };
     limit?: number;

@@ -1925,12 +1925,15 @@ fn project_snapshot_has_optional_modified_time_without_observation_time() {
         "directDependencies": [],
         "lockedDependencies": [],
         "issues": [],
-        "revision": 2
+        "revision": 2,
+        "contentRevision": 1
     });
     let unknown: alcomd_protocol::ProjectSnapshot = serde_json::from_value(original.clone())
         .expect("read a snapshot without modified evidence");
     assert_eq!(unknown.last_modified_at_ms, None);
     let unknown_json = serde_json::to_value(&unknown).expect("serialize unknown modified time");
+    assert_eq!(unknown_json["revision"], 2);
+    assert_eq!(unknown_json["contentRevision"], 1);
     assert!(unknown_json.get("lastModifiedAtMs").is_none());
     assert!(unknown_json.get("observedAtMs").is_none());
     let mut updated = original;

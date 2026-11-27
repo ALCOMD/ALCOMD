@@ -313,7 +313,7 @@ mod tests {
     #[test]
     fn revocation_blocks_replay_and_preserves_the_accepted_removal_and_existing_owner() {
         use alcomd_application::{
-            PackageApplyCompletion, PackageChangeSet, PackagePlanDraft, PlanAction, Revision,
+            PackageApplyCompletion, PackageChangeSet, PackagePlanDraft, PlanAction,
         };
         let mut db = crate::sqlite::current_schema_fixture();
         let owner = PrincipalId::local_owner();
@@ -367,7 +367,7 @@ mod tests {
         let draft = || PackagePlanDraft {
             project_id: project.project_id,
             action: PlanAction::Remove,
-            project_revision: project.revision,
+            project_revision: project.content_revision,
             project_snapshot_fingerprint: [1; 32],
             change_set_fingerprint: [2; 32],
             source_set: vec![],
@@ -398,15 +398,28 @@ mod tests {
                 db,
                 &client.principal_id,
                 plan.plan_id,
-                project.revision,
+                project.content_revision,
                 &key,
                 now,
                 None,
                 Some(&authentication),
             )
         };
-        let accepted = apply(&mut db, 4).expect("authorized acceptance");
-        let replay = apply(&mut db, 5).expect("same-key replay");
+        let favorited = crate::m3::set_project_favorite(
+            &mut db,
+            &owner,
+            project.project_id,
+            true,
+            project.revision,
+            &IdempotencyKey::parse("favorite").expect("key"),
+            4,
+        )
+        .expect("favorite after creating plan")
+        .value;
+        assert_eq!(favorited.content_revision, plan.project_revision);
+        assert_ne!(favorited.revision, plan.project_revision);
+        let accepted = apply(&mut db, 5).expect("favorite does not invalidate the plan");
+        let replay = apply(&mut db, 6).expect("same-key replay");
         assert_eq!(accepted.operation_id, replay.operation_id);
         assert!(replay.replayed);
         let mut nonremoval = draft();
@@ -415,7 +428,7 @@ mod tests {
             &mut db,
             &client.principal_id,
             nonremoval,
-            5,
+            7,
             Some(&authentication),
         )
         .expect("authenticated caller can also create an install plan");
@@ -427,11 +440,11 @@ mod tests {
                 id: client.client_id,
                 expected: client.revision,
             },
-            6,
+            8,
         )
         .expect("revoke before task runs");
         assert!(
-            matches!(apply(&mut db, 7), Err(error) if error.code() == alcomd_application::M4ErrorCode::PermissionDenied)
+            matches!(apply(&mut db, 9), Err(error) if error.code() == alcomd_application::M4ErrorCode::PermissionDenied)
         );
         assert_eq!(
             crate::m4::operation_project(&db, accepted.operation_id)
@@ -439,7 +452,7 @@ mod tests {
                 .project_id,
             project.project_id
         );
-        crate::m4::begin_package_apply(&mut db, accepted.operation_id, 8)
+        crate::m4::begin_package_apply(&mut db, accepted.operation_id, 10)
             .expect("run accepted task");
         crate::m4::complete_package_apply(
             &mut db,
@@ -448,15 +461,17 @@ mod tests {
                 project_observation: observation,
                 result_json: "{}".into(),
             },
-            9,
+            11,
         )
         .expect("accepted target commits without owner rewrite");
         let saved = crate::m3::get_project(&db, &owner, project.project_id)
             .expect("original owner still reads");
         assert_eq!(
             saved.revision,
-            Revision::new(project.revision.get() + 1).expect("revision")
+            favorited.revision.checked_next().expect("revision")
         );
+        assert_eq!(saved.content_revision, saved.revision);
+        assert!(saved.favorite);
         let resource_owner: String = db
             .query_row(
                 "SELECT owner_principal_id FROM projects WHERE project_id=?1",

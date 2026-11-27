@@ -68,7 +68,7 @@ async fn unity_migration_plan_reads_only_its_immutable_snapshots() {
     }
     connection
         .execute(
-            "UPDATE projects SET root_path=?1,unity_version=?2,snapshot_json=?3,revision=revision+1
+            "UPDATE projects SET root_path=?1,unity_version=?2,snapshot_json=?3,revision=revision+1,content_revision=revision+1
              WHERE project_id=?4",
             params![
                 changed_project.root_path,
@@ -157,6 +157,10 @@ async fn unity_migration_succeeds_only_after_cleanup_and_commits_one_project_eve
         .expect("read committed migration activity time");
     assert_eq!(committed_project.last_modified_at_ms, Some(31));
     assert_eq!(committed_project.revision.get(), 2);
+    assert_eq!(
+        committed_project.content_revision,
+        committed_project.revision
+    );
 
     let premature = store
         .finish_unity_migration_success(accepted.operation_id, 32)

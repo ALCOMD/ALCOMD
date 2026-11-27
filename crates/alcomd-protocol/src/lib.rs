@@ -1256,6 +1256,13 @@ pub struct ProjectSnapshot {
     pub locked_dependencies: Vec<DependencyIdentity>,
     pub issues: Vec<ReadIssue>,
     pub revision: Option<u64>,
+    /// Registered project revision used for package candidates, plans and apply.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub content_revision: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub favorite: Option<bool>,
 }
@@ -1824,6 +1831,7 @@ pub struct PackagePlan {
     pub action: PackagePlanAction,
     pub state: PackagePlanState,
     pub project_id: String,
+    /// Project content revision frozen by this plan.
     pub project_revision: u64,
     pub change_set_fingerprint: String,
     pub change_set: PackageChangeSet,
@@ -1992,6 +2000,7 @@ pub struct PackagePlanBulkParams {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageApplyPlanParams {
     pub plan_id: String,
+    /// The reviewed plan's project content revision.
     pub expected_revision: u64,
     pub idempotency_key: String,
 }

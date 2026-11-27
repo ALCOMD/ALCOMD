@@ -122,6 +122,8 @@ export interface ProjectSnapshot {
     issues: ReadIssue[];
     lastModifiedAtMs?: number;
     revision?: number;
+    /** Use for project package candidates, plans and apply. */
+    contentRevision?: number;
 }
 
 export interface ProjectResult { project: ProjectSnapshot }
@@ -286,6 +288,7 @@ export interface PackagePlan {
     action: "install" | "remove" | "upgrade" | "downgrade" | "resolve" | "reinstall" | "bulk";
     state: "unapplied" | "applied";
     projectId: string;
+    /** The project content revision frozen by this plan. */
     projectRevision: number;
     changeSetFingerprint: string;
     changeSet: PackageChangeSet;
@@ -294,6 +297,7 @@ export interface PackagePlan {
 export interface PackagePlanInstallParams {
     allowUnityIncompatible?: boolean;
     projectId: string;
+    /** Use the registered project's contentRevision. */
     expectedRevision: number;
     packageId: string;
     versionRange?: string | null;
@@ -314,7 +318,12 @@ export type PackageBulkIntent =
     | { kind: "remove"; packageId: string }
     | { kind: "reinstall"; packageId: string; source?: PackageSourceSelector | null };
 export interface PackagePlanBulkParams { projectId: string; expectedRevision: number; intents: PackageBulkIntent[] }
-export interface PackageApplyPlanParams { planId: string; expectedRevision: number; idempotencyKey: string }
+export interface PackageApplyPlanParams {
+    planId: string;
+    /** Use projectRevision from the reviewed package plan. */
+    expectedRevision: number;
+    idempotencyKey: string;
+}
 
 export interface UserPackageRecord {
     userPackageId: string;

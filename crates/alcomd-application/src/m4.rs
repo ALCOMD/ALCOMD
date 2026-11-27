@@ -368,6 +368,7 @@ impl PackageChangeSet {
 pub struct PackagePlanDraft {
     pub project_id: ProjectId,
     pub action: PlanAction,
+    /// Revision of the project content used to prepare this plan.
     pub project_revision: Revision,
     pub project_snapshot_fingerprint: [u8; 32],
     pub change_set_fingerprint: [u8; 32],
@@ -382,6 +383,7 @@ pub struct PackagePlanRecord {
     pub project_id: ProjectId,
     pub action: PlanAction,
     pub state: PlanState,
+    /// Revision of the project content used to prepare this plan.
     pub project_revision: Revision,
     pub project_snapshot_fingerprint: [u8; 32],
     pub change_set_fingerprint: [u8; 32],
@@ -441,6 +443,7 @@ pub struct PackagePlanRequest {
     pub allow_unity_incompatible: bool,
     pub action: PlanAction,
     pub project_id: ProjectId,
+    /// The expected project content revision.
     pub expected_revision: Revision,
     pub package_id: Option<String>,
     pub version_range: Option<String>,
@@ -965,13 +968,14 @@ pub trait M4PackageAdapter: Clone + Send + Sync + 'static {
         plan: PackagePlanRecord,
     ) -> impl Future<Output = Result<(), M4Error>> + Send;
 
+    /// Retain the filesystem transaction's locks until the caller commits its result.
     fn execute_plan(
         &self,
         operation_id: OperationId,
         project: ProjectRecord,
         plan: PackagePlanRecord,
         locks: std::sync::Arc<ResourceLockCoordinator>,
-    ) -> impl Future<Output = Result<PackageApplyCompletion, M4Error>> + Send;
+    ) -> impl Future<Output = Result<(PackageApplyCompletion, crate::ResourceLockGuards), M4Error>> + Send;
 }
 
 /// Revalidate current source authority even when a frozen user archive can outlive enrollment.
@@ -1144,7 +1148,7 @@ where
         let project = self
             .package_project(access, request.project_id, authentication.as_ref())
             .await?;
-        if project.revision != request.expected_revision {
+        if project.content_revision != request.expected_revision {
             return Err(M4Error::new(M4ErrorCode::RevisionConflict));
         }
         let catalog = if request.is_removal_only() {
@@ -1356,16 +1360,10 @@ where
             .store
             .begin_package_apply(operation_id, m4_time_ms()?)
             .await?;
-        let project = if plan.owner.as_str().starts_with("mcp:") {
-            self.store
-                .get_package_operation_project(operation_id)
-                .await?
-        } else {
-            self.store
-                .get_project(plan.owner.clone(), plan.project_id)
-                .await
-                .map_err(map_m3_error)?
-        };
+        let project = self
+            .store
+            .get_package_operation_project(operation_id)
+            .await?;
         match self
             .adapter
             .execute_plan(
@@ -1376,7 +1374,7 @@ where
             )
             .await
         {
-            Ok(completion) => {
+            Ok((completion, _commit_guards)) => {
                 self.store
                     .complete_package_apply(operation_id, completion, m4_time_ms()?)
                     .await

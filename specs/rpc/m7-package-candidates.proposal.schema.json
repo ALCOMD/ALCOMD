@@ -237,6 +237,7 @@
                 },
                 "expectedRevision": {
                     "type": "integer",
+                    "description": "The registered project's content revision.",
                     "minimum": 0,
                     "maximum": 18446744073709551615
                 },
@@ -745,6 +746,7 @@
                 },
                 "projectRevision": {
                     "type": "integer",
+                    "description": "The project content revision bound to this candidate snapshot.",
                     "minimum": 0,
                     "maximum": 18446744073709551615
                 },

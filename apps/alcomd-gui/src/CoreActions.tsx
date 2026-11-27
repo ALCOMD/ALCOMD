@@ -304,7 +304,7 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
     const [confirmUnity, setConfirmUnity] = useState(false);
     useEffect(() => onBusyChanged?.(confirmUnity || feedback.busy || plan !== undefined || (feedback.operationId !== undefined && !operationFinished)), [confirmUnity, feedback.busy, feedback.operationId, onBusyChanged, operationFinished, plan]);
     const handledSelectionKey = useRef<number | undefined>(undefined);
-    const revision = project.revision;
+    const revision = project.contentRevision;
     const projectId = project.projectId;
     const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "", selectedSource?: PackageSourceSelector, includePrerelease?: boolean, allowUnityIncompatible = false) => {
         if (revision === undefined || projectId === undefined) return;

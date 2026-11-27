@@ -528,7 +528,7 @@ async fn initialize_daemon_with_adapters(
         official_gui.clone(),
     )
     .with_locks(Arc::clone(&locks));
-    let m3 = M3ReadApplication::new(store.clone(), reader.clone());
+    let m3 = M3ReadApplication::with_locks(store.clone(), reader.clone(), Arc::clone(&locks));
     let repository_auto_refresh =
         alcomd_application::RepositoryAutoRefresh::new(m3.clone(), official_gui.clone());
     let mut oauth_cursor_key = [0u8; 32];

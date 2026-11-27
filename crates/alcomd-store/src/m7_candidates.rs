@@ -1,8 +1,8 @@
 use alcomd_application::{
-    CandidateCatalogEntry, CandidateFilterSource, CandidateLinks, CandidateQueryError as Error,
-    CandidateSourceMetadata, CandidateStoreAuthority, CandidateStoreSnapshot, M3ErrorCode,
-    MAX_CANDIDATE_RECORDS, MAX_CANDIDATE_SOURCES, PackageSourceSelector, PrincipalId,
-    ProjectAuthorityFingerprint, ProjectId, ProjectRecord, UserPackageId,
+    CandidateCatalogEntry, CandidateFilterSource, CandidateLinks, CandidateProjectAuthority,
+    CandidateQueryError as Error, CandidateSourceMetadata, CandidateStoreAuthority,
+    CandidateStoreSnapshot, M3ErrorCode, MAX_CANDIDATE_RECORDS, MAX_CANDIDATE_SOURCES,
+    PackageSourceSelector, PrincipalId, ProjectId, ProjectRecord, UserPackageId,
 };
 use rusqlite::{Connection, params};
 
@@ -299,7 +299,7 @@ fn read_authority(
         })?;
     let mut fingerprint_records = vec![
         "project-candidates-snapshot-v1".to_owned(),
-        serde_json::to_string(&ProjectAuthorityFingerprint::from(&project))
+        serde_json::to_string(&CandidateProjectAuthority::from(&project))
             .map_err(|_| Error::Unavailable)?,
     ];
     let mut statement = transaction.prepare(&crate::m3::ordered_repository_query(
@@ -326,7 +326,7 @@ fn read_authority(
     fingerprint_records.push(incomplete.to_string());
     let authority = CandidateStoreAuthority {
         project: project.observation.clone(),
-        project_revision: project.revision,
+        project_revision: project.content_revision,
         fingerprint_records,
         catalog_complete: !incomplete,
     };
@@ -370,6 +370,7 @@ mod tests {
                 }],
             },
             revision: Revision::INITIAL,
+            content_revision: Revision::INITIAL,
             registered_at_ms: 11,
             last_modified_at_ms: Some(99),
             favorite: true,
@@ -377,34 +378,28 @@ mod tests {
     }
 
     #[test]
-    fn project_authority_projection_preserves_frozen_bytes_and_existing_field_policy() {
-        // Frozen pre-projection bytes, including struct field order and non-ASCII escaping.
-        const FROZEN: &str = r#"{"project_id":"00000000-0000-4000-8000-000000000101","observation":{"root_path":"C:\\Projects\\日本語","path_identity_key":[0,255],"project_type":"avatars","unity_version":"2022.3.22f1","unity_revision":"abcdef","vpm_manifest":"valid","upm_manifest":"missing","direct_dependencies":[{"package_id":"com.example.direct","value":"1.0.0"}],"locked_dependencies":[{"package_id":"com.example.locked","value":"2.0.0"}],"issues":[{"code":"bounded-issue","component":"manifest","item":"com.example.direct","line":2,"column":null}]},"revision":1,"registered_at_ms":11,"favorite":true}"#;
+    fn candidate_authority_binds_content_and_ignores_project_metadata() {
+        const FROZEN: &str = r#"{"project_id":"00000000-0000-4000-8000-000000000101","observation":{"root_path":"C:\\Projects\\日本語","path_identity_key":[0,255],"project_type":"avatars","unity_version":"2022.3.22f1","unity_revision":"abcdef","vpm_manifest":"valid","upm_manifest":"missing","direct_dependencies":[{"package_id":"com.example.direct","value":"1.0.0"}],"locked_dependencies":[{"package_id":"com.example.locked","value":"2.0.0"}],"issues":[{"code":"bounded-issue","component":"manifest","item":"com.example.direct","line":2,"column":null}]},"content_revision":1}"#;
         let project = authority_project();
         let encode = |project: &ProjectRecord| {
-            serde_json::to_string(&ProjectAuthorityFingerprint::from(project))
+            serde_json::to_string(&CandidateProjectAuthority::from(project))
                 .expect("serialize project authority")
         };
         assert_eq!(encode(&project).as_bytes(), FROZEN.as_bytes());
-        let mut previous_representation = project.clone();
-        previous_representation.last_modified_at_ms = None;
-        assert_eq!(
-            serde_json::to_string(&previous_representation).expect("serialize previous authority"),
-            FROZEN
-        );
+        let mut metadata = project.clone();
+        metadata.revision = Revision::new(2).expect("project revision");
+        metadata.favorite = false;
+        metadata.registered_at_ms += 1;
         for activity in [None, Some(0), Some(1_000)] {
-            let mut changed = project.clone();
-            changed.last_modified_at_ms = activity;
-            assert_eq!(encode(&changed), FROZEN);
+            metadata.last_modified_at_ms = activity;
+            assert_eq!(encode(&metadata), FROZEN);
         }
         type Mutation = (&'static str, fn(&mut ProjectRecord));
-        let mutations: [Mutation; 14] = [
+        let mutations: [Mutation; 12] = [
             ("project ID", |p| p.project_id = ProjectId::new()),
-            ("revision", |p| {
-                p.revision = p.revision.checked_next().expect("next revision")
+            ("content revision", |p| {
+                p.content_revision = p.content_revision.checked_next().expect("next revision")
             }),
-            ("registration", |p| p.registered_at_ms += 1),
-            ("favorite", |p| p.favorite = !p.favorite),
             ("root", |p| p.observation.root_path.push('x')),
             ("identity", |p| p.observation.path_identity_key.push(1)),
             ("project type", |p| {
@@ -497,12 +492,10 @@ mod tests {
         )
         .expect("read original candidate authority");
         assert_eq!(before.project.last_modified_at_ms, Some(1));
-        let mut previous_project_authority = before.project.clone();
-        previous_project_authority.last_modified_at_ms = None;
         assert_eq!(
             before.fingerprint_records[1],
-            serde_json::to_string(&previous_project_authority)
-                .expect("serialize established candidate record")
+            serde_json::to_string(&CandidateProjectAuthority::from(&before.project))
+                .expect("serialize candidate project authority")
         );
         f.connection
             .execute(
@@ -523,6 +516,10 @@ mod tests {
         .expect("read candidate authority after project activity");
         assert_eq!(after.project.last_modified_at_ms, Some(20));
         assert_eq!(after.project.revision, before.project.revision);
+        assert_eq!(
+            after.project.content_revision,
+            before.project.content_revision
+        );
         assert_eq!(after.project.observation, before.project.observation);
         assert_eq!(after.fingerprint_records, before.fingerprint_records);
         assert_eq!(changes, f.connection.total_changes());
@@ -652,7 +649,7 @@ mod tests {
                 .packages,
         )
         .expect("authority-only read");
-        assert_eq!(current.project_revision, all.project.revision);
+        assert_eq!(current.project_revision, all.project.content_revision);
         assert_eq!(current.catalog_complete, all.catalog_complete);
         assert_eq!(current.fingerprint_records, all.fingerprint_records);
     }

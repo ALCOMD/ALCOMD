@@ -142,6 +142,8 @@ M8 冻结候选为 `622cb62a`，Windows、Ubuntu 和 CodeQL 已通过。macOS �
 
 ## 按任务查合同
 
+已实施包计划的项目内容修订。收藏继续记录登记修订与事件，包候选与已审阅计划使用内容修订。包任务在项目锁内重读并提交，收藏状态随原记录保留。[合同与验收记录](exec-plans/M4-package-transactions.md#2026-11-27-项目内容修订)
+
 | 任务 | 实施合同 |
 | --- | --- |
 | GUI、仓库、模板、操作日志、共享组件、可访问性、Portable UI | [M7 ExecPlan 任务索引](exec-plans/M7-official-gui-extension-ui.md) |

@@ -34,7 +34,7 @@
             "required": ["projectId", "expectedRevision", "selection"],
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
-                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "expectedRevision": {"$ref": "#/$defs/revision", "description": "The registered project's content revision."},
                 "selection": {"$ref": "#/$defs/reinstallSelection"},
                 "sources": {"type": "array", "maxItems": 256, "items": {"$ref": "#/$defs/reinstallSource"}}
             }
@@ -53,7 +53,7 @@
             "required": ["projectId", "expectedRevision", "intents"],
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
-                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "expectedRevision": {"$ref": "#/$defs/revision", "description": "The registered project's content revision."},
                 "intents": {"type": "array", "minItems": 1, "maxItems": 256, "items": {"$ref": "#/$defs/bulkIntent"}}
             }
         },

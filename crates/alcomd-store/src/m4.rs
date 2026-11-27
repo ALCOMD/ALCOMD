@@ -348,16 +348,16 @@ pub(super) fn create_package_plan_inner(
             return Err(denied());
         }
         require_delegated_access(&transaction, owner, authentication, false)?;
-        delegated_project_revision(&transaction, draft.project_id)?;
+        delegated_project_content_revision(&transaction, draft.project_id)?;
         validate_delegated_pins(&transaction, &draft.source_set)?;
     } else if owner.as_str().starts_with("mcp:")
         && (tool_guard.is_none() || draft.action != PlanAction::Remove)
     {
         return Err(denied());
     }
-    let project_revision = transaction
+    let content_revision = transaction
         .query_row(
-            "SELECT p.revision FROM projects p WHERE p.project_id=?1 AND (p.owner_principal_id=?2 OR EXISTS (
+            "SELECT p.content_revision FROM projects p WHERE p.project_id=?1 AND (p.owner_principal_id=?2 OR EXISTS (
                 SELECT 1 FROM mcp_clients c
                 WHERE c.principal_id=?2 AND c.revoked_at_ms IS NULL
             ))",
@@ -367,7 +367,7 @@ pub(super) fn create_package_plan_inner(
         .optional()
         .map_err(store_error)?
         .ok_or_else(|| M4Error::new(M4ErrorCode::ProjectNotRegistered))?;
-    if project_revision != sqlite_revision(draft.project_revision) {
+    if content_revision != sqlite_revision(draft.project_revision) {
         return Err(M4Error::new(M4ErrorCode::RevisionConflict));
     }
     let plan_id = PlanId::new();
@@ -491,7 +491,7 @@ pub(super) fn accept_package_plan_inner(
     {
         return Err(M4Error::new(M4ErrorCode::PermissionDenied));
     }
-    let delegated_revision = if let Some(authentication) = authentication {
+    let delegated_content_revision = if let Some(authentication) = authentication {
         let plan = load_plan(&transaction, owner, plan_id)?;
         if tool_guard.is_some() {
             return Err(denied());
@@ -500,7 +500,10 @@ pub(super) fn accept_package_plan_inner(
         if plan.state == PlanState::Unapplied {
             validate_delegated_pins(&transaction, &plan.source_set)?;
         }
-        Some(delegated_project_revision(&transaction, plan.project_id)?)
+        Some(delegated_project_content_revision(
+            &transaction,
+            plan.project_id,
+        )?)
     } else if owner.as_str().starts_with("mcp:") {
         if tool_guard.is_none() {
             return Err(denied());
@@ -555,12 +558,12 @@ pub(super) fn accept_package_plan_inner(
             "plan_already_applied",
         ));
     }
-    let current_revision = if let Some(revision) = delegated_revision {
+    let current_content_revision = if let Some(revision) = delegated_content_revision {
         revision
     } else {
         transaction
             .query_row(
-                "SELECT revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
+                "SELECT content_revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
                 params![plan.project_id.to_string(), owner.as_str()],
                 |row| row.get::<_, i64>(0),
             )
@@ -568,7 +571,7 @@ pub(super) fn accept_package_plan_inner(
             .map_err(store_error)?
             .ok_or_else(|| M4Error::new(M4ErrorCode::ProjectNotRegistered))?
     };
-    if current_revision != sqlite_revision(expected_revision)
+    if current_content_revision != sqlite_revision(expected_revision)
         || expected_revision != plan.project_revision
     {
         return Err(M4Error::with_subreason(
@@ -687,12 +690,12 @@ fn require_delegated_access(
     Ok(())
 }
 
-fn delegated_project_revision(
+fn delegated_project_content_revision(
     db: &Connection,
     project: alcomd_application::ProjectId,
 ) -> Result<i64, M4Error> {
     db.query_row(
-        "SELECT revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
+        "SELECT content_revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
         params![project.to_string(), PrincipalId::LOCAL_OWNER],
         |row| row.get(0),
     )
@@ -759,7 +762,7 @@ fn require_mcp_removal_write(
         return Err(M4Error::new(M4ErrorCode::PermissionDenied));
     }
     db.query_row(
-        "SELECT p.revision FROM projects p JOIN mcp_clients c ON c.principal_id=?1
+        "SELECT p.content_revision FROM projects p JOIN mcp_clients c ON c.principal_id=?1
          WHERE p.project_id=?2 AND c.revoked_at_ms IS NULL",
         params![actor.as_str(), plan.project_id.to_string()],
         |r| r.get(0),
@@ -995,14 +998,14 @@ pub(super) fn complete_package_apply(
     } else {
         context.owner.clone()
     };
-    let project_revision = transaction
+    let (project_revision, content_revision) = transaction
         .query_row(
-            "SELECT revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
+            "SELECT revision, content_revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
             params![plan.project_id.to_string(), resource_owner.as_str()],
-            |row| row.get::<_, i64>(0),
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
         )
         .map_err(store_error)?;
-    if project_revision != sqlite_revision(plan.project_revision) {
+    if content_revision != sqlite_revision(plan.project_revision) {
         return Err(M4Error::with_subreason(
             M4ErrorCode::PlanStale,
             "project_revision_changed",
@@ -1017,7 +1020,7 @@ pub(super) fn complete_package_apply(
         .execute(
             "UPDATE projects SET root_path=?1, path_identity_key=?2, project_type=?3,
                     unity_version=?4, unity_revision=?5, snapshot_json=?6, revision=?7,
-                    updated_at_ms=?8,
+                    content_revision=?7, updated_at_ms=?8,
                     last_modified_at_ms=MAX(COALESCE(last_modified_at_ms,0),?8)
              WHERE project_id=?9 AND owner_principal_id=?10",
             params![

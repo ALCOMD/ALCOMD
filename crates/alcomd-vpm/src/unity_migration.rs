@@ -2094,8 +2094,9 @@ mod tests {
         const FROZEN_HASH: &str =
             "c3fd587292c757f21ab0faf1f4c012522b5bc717864eb9412d4c9a9cc254c8bb";
         let fixture: Value = serde_json::from_str(FROZEN).expect("frozen authority JSON");
-        let mut project: ProjectRecord =
-            serde_json::from_value(fixture["project"].clone()).expect("frozen project");
+        let mut project_fixture = fixture["project"].clone();
+        project_fixture["content_revision"] = Value::from(1);
+        let mut project: ProjectRecord = serde_json::from_value(project_fixture).expect("project");
         let target: UnityInstallationRecord =
             serde_json::from_value(fixture["target"].clone()).expect("frozen target");
         let writer: UnityWriterState =
@@ -2147,6 +2148,7 @@ mod tests {
             project_id: ProjectId::new(),
             observation: inspect().await.expect("inspect actual project"),
             revision: Revision::INITIAL,
+            content_revision: Revision::INITIAL,
             registered_at_ms: 1,
             last_modified_at_ms: Some(10),
             favorite: false,

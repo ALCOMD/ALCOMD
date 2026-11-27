@@ -1176,9 +1176,9 @@ function PackageVersionPicker({ client, project, snapshot, source, disabled, can
     const load = (): Promise<void> => {
         const current = generation.current;
         if (pending.current?.generation === current) return pending.current.read;
-        if (traversal.current.complete || !snapshot || project.revision === undefined || project.projectId === undefined) return Promise.resolve();
+        if (traversal.current.complete || !snapshot || project.contentRevision === undefined || project.projectId === undefined) return Promise.resolve();
         const projectId = project.projectId;
-        const projectRevision = project.revision;
+        const projectRevision = project.contentRevision;
         setBusy(true);
         setError(undefined);
         const read = (async () => {
@@ -1530,9 +1530,9 @@ export function primePackageWorkspaceRead(client: GuiRpcClient, events: CoreEven
 async function loadPackageWorkspace(client: GuiRpcClient, projectId: string, canQuery: boolean, sourceSelections: Record<string, string>, deferUntil?: number, signal?: AbortSignal): Promise<PackageWorkspaceValue> {
     const project = (await client.projectGet(projectId)).project;
     checkPreload(signal);
-    if (project.revision === undefined) throw { code: "project_not_registered" };
+    if (project.revision === undefined || project.contentRevision === undefined) throw { code: "project_not_registered" };
     const sources = Object.entries(sourceSelections).filter(([, key]) => key.length > 0).map(([packageId, key]) => ({ packageId, source: key.startsWith("repository:") ? { kind: "repository" as const, repository_id: key.slice(11) } : { kind: "user_package" as const, user_package_id: key.slice(13) } }));
-    const candidateRequest: ProjectCandidateRequest = { projectId, expectedRevision: project.revision, view: { kind: "summary", sources } };
+    const candidateRequest: ProjectCandidateRequest = { projectId, expectedRevision: project.contentRevision, view: { kind: "summary", sources } };
     const [settings, launchOptions] = await Promise.all([
         client.settingsGet(),
         client.unityLaunchOptions(projectId, project.revision, true)

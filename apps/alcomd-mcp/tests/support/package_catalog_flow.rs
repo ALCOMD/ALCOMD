@@ -32,7 +32,9 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
         .expect("register project")
         .project;
     let project_id = project_record.project_id.expect("project ID");
-    let revision = project_record.revision.expect("registered revision");
+    let revision = project_record
+        .content_revision
+        .expect("registered content revision");
     let installed = fixture.join("Packages/com.example.catalog");
     let a = owner
         .mcp_client_create(McpClientsCreateParams {
@@ -145,7 +147,14 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
             .expect("foreign cursor"),
         "revision_conflict",
     );
-    let details = data(call(&sa, &mut trace, "get_package", json!({"package_id":"com.example.catalog", "project_id":project_id, "expected_revision":revision})).await.expect("versions"));
+    let details_request = json!({
+        "package_id":"com.example.catalog", "project_id":project_id, "expected_revision":revision
+    });
+    let details = data(
+        call(&sa, &mut trace, "get_package", details_request.clone())
+            .await
+            .expect("versions"),
+    );
     assert_eq!(details["items"].as_array().expect("versions").len(), 1);
     assert_eq!(
         details["items"][0]["dependencies"]["com.example.dependency"],
@@ -190,7 +199,41 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
             .len(),
         2
     );
-    let apply = json!({"plan_id":plan["plan"]["plan_id"],"expected_revision":revision,"idempotency_key":"catalog-install","confirm":true});
+    let favorited = owner
+        .project_set_favorite(alcomd_protocol::ProjectSetFavoriteParams {
+            project_id: project_id.clone(),
+            favorite: true,
+            expected_revision: project_record.revision.expect("registry revision"),
+            idempotency_key: "favorite-after-plan".into(),
+        })
+        .await
+        .expect("favorite while package plan awaits confirmation")
+        .project;
+    assert!(favorited.revision > project_record.revision);
+    assert_eq!(favorited.content_revision, Some(revision));
+    assert_eq!(
+        data(
+            call(&sa, &mut trace, "get_package", details_request)
+                .await
+                .expect("same package view after favorite")
+        ),
+        details
+    );
+    error(
+        call(
+            &sa,
+            &mut trace,
+            "plan_package_install",
+            json!({
+                "project_id":project_id, "package_id":"com.example.catalog", "source":selector,
+                "expected_revision":favorited.revision
+            }),
+        )
+        .await
+        .expect("registry revision cannot authorize package planning"),
+        "revision_conflict",
+    );
+    let apply = json!({"plan_id":plan["plan"]["plan_id"],"expected_revision":plan["plan"]["project_revision"],"idempotency_key":"catalog-install","confirm":true});
     error(
         call(&sb, &mut trace, "apply_package_changes", apply.clone())
             .await
@@ -216,13 +259,13 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
     );
     assert_eq!(replay["operation_id"], operation);
     assert_eq!(replay["replayed"], true);
-    let revision = owner
+    let updated = owner
         .project_get(project_id.clone())
         .await
         .expect("updated project")
-        .project
-        .revision
-        .expect("updated revision");
+        .project;
+    assert_eq!(updated.favorite, Some(true));
+    let revision = updated.content_revision.expect("updated content revision");
     std::fs::remove_file(installed.join("fixture.txt"))
         .expect("simulate disposable missing package file");
     let plan = data(call(&sa, &mut trace, "plan_package_reinstall", json!({
@@ -293,8 +336,8 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
             .await
             .expect("project")
             .project
-            .revision
-            .expect("revision");
+            .content_revision
+            .expect("content revision");
         let (source, selected) = if action == "upgrade" {
             (
                 alcomd_protocol::PackageSourceSelector::Repository {
@@ -381,8 +424,8 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
         .await
         .expect("project")
         .project
-        .revision
-        .expect("revision");
+        .content_revision
+        .expect("content revision");
     let bulk = data(call(&sa,&mut trace,"plan_package_changes",json!({
         "project_id":project_id,"expected_revision":revision,"intent":{"kind":"bulk","intents":[
             {"kind":"remove","package_id":"com.example.fixture"},
@@ -405,8 +448,8 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
         .await
         .expect("project")
         .project
-        .revision
-        .expect("revision");
+        .content_revision
+        .expect("content revision");
     let native = owner
         .package_plan_resolve(alcomd_protocol::PackagePlanResolveParams {
             project_id: project_id.clone(),

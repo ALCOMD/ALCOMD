@@ -389,7 +389,7 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine, R: CandidateProjectReader>
                     config.settings.packages.clone(),
                 )
                 .await?;
-            if snapshot.project.revision.get() != request.expected_revision {
+            if snapshot.project.content_revision.get() != request.expected_revision {
                 return Err(
                     if request.cursor.is_some() || request.expected_snapshot.is_some() {
                         CandidateQueryError::EvidenceStale
@@ -405,7 +405,7 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine, R: CandidateProjectReader>
                         &request,
                         owner,
                         project_id,
-                        snapshot.project.revision,
+                        snapshot.project.content_revision,
                         &snapshot.project.observation,
                     )
                     .await?
@@ -417,7 +417,7 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine, R: CandidateProjectReader>
                 &request,
                 owner,
                 &config,
-                snapshot.project.revision,
+                snapshot.project.content_revision,
                 records,
             )?;
             let input = CandidateEvidenceInput {

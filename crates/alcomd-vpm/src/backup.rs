@@ -1845,6 +1845,7 @@ mod tests {
                 issues: Vec::new(),
             },
             revision: Revision::INITIAL,
+            content_revision: Revision::INITIAL,
             registered_at_ms: 1,
             last_modified_at_ms: None,
             favorite: false,

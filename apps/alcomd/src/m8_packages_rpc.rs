@@ -157,7 +157,7 @@ async fn query(
         )
         .await?;
     if let (Some(expected), Some(project)) = (&input.project, &catalog.project)
-        && project.revision.get() != expected.expected_revision
+        && project.content_revision.get() != expected.expected_revision
     {
         return Err(QueryError::RevisionConflict);
     }

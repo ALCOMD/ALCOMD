@@ -177,7 +177,7 @@ fn fixture(path: &Path) -> Connection {
         (PROJECT_ID, vec![1_u8], "X:/fixture/custom"),
         (INHERITING_PROJECT_ID, vec![2_u8], "X:/fixture/inherited"),
     ] {
-        connection.execute("INSERT INTO projects (project_id,owner_principal_id,root_path,path_identity_key,project_type,unity_version,snapshot_json,revision,registered_at_ms,updated_at_ms,last_modified_at_ms) VALUES (?1,'builtin:local-owner',?2,?3,'unknown','2022.3.22f1','{}',9,101,303,404)", params![id,path,identity]).expect("existing project");
+        connection.execute("INSERT INTO projects (project_id,owner_principal_id,root_path,path_identity_key,project_type,unity_version,snapshot_json,revision,content_revision,registered_at_ms,updated_at_ms,last_modified_at_ms) VALUES (?1,'builtin:local-owner',?2,?3,'unknown','2022.3.22f1','{}',9,9,101,303,404)", params![id,path,identity]).expect("existing project");
     }
     connection
         .execute(

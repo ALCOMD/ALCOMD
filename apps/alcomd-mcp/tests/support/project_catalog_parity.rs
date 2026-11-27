@@ -140,6 +140,11 @@ async fn project_catalog_parity() {
     let favorite = success!("set_project_favorite", set_favorite.clone());
     assert_eq!(favorite["project"]["favorite"], true);
     assert_eq!(
+        favorite["project"]["content_revision"],
+        json!(registered.content_revision)
+    );
+    assert!(favorite["project"]["revision"].as_u64() > registered.revision);
+    assert_eq!(
         success!("set_project_favorite", set_favorite)["replayed"],
         true
     );
@@ -149,6 +154,10 @@ async fn project_catalog_parity() {
     );
     assert_eq!(page["projects"][0]["project_id"], id);
     assert_eq!(page["projects"][0]["favorite"], true);
+    assert_eq!(
+        page["projects"][0]["content_revision"],
+        favorite["project"]["content_revision"]
+    );
     assert!(page["view_sequence"].is_u64());
     let refreshed = success!(
         "refresh_project",
@@ -221,7 +230,7 @@ async fn project_catalog_parity() {
     );
     let candidates = success!(
         "query_project_candidates",
-        json!({"project_id":id,"expected_revision":revision,"view":{"kind":"versions","package_id":"com.example.parity","source":{"kind":"user_package","user_package_id":source_id}}})
+        json!({"project_id":id,"expected_revision":refreshed["project"]["content_revision"],"view":{"kind":"versions","package_id":"com.example.parity","source":{"kind":"user_package","user_package_id":source_id}}})
     );
     assert_eq!(candidates["items"][0]["version"], "1.0.0", "{candidates}");
     let package = success!(

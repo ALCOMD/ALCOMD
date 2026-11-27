@@ -738,7 +738,7 @@ async fn public_package_phase_is_atomic_and_duplicate_phase_is_not_a_new_change(
     let operation = OperationId::new();
     let plan = PlanId::new();
     let project = ProjectId::new();
-    connection.execute("INSERT INTO projects(project_id,owner_principal_id,root_path,path_identity_key,project_type,unity_version,snapshot_json,revision,registered_at_ms,updated_at_ms) VALUES(?1,'builtin:local-owner',?2,x'01','unknown','2022.3.22f1','{}',1,1,1)", params![project.to_string(), directory.0.to_string_lossy()]).expect("project fixture");
+    connection.execute("INSERT INTO projects(project_id,owner_principal_id,root_path,path_identity_key,project_type,unity_version,snapshot_json,revision,content_revision,registered_at_ms,updated_at_ms) VALUES(?1,'builtin:local-owner',?2,x'01','unknown','2022.3.22f1','{}',1,1,1,1)", params![project.to_string(), directory.0.to_string_lossy()]).expect("project fixture");
     connection.execute("INSERT INTO operations(operation_id,kind,state,revision,owner_principal_id,request_json,created_at_ms,updated_at_ms) VALUES(?1,'packages.apply','running',1,'builtin:local-owner','{}',1,1)", [operation.to_string()]).expect("task fixture");
     connection.execute("INSERT INTO package_plans(plan_id,owner_principal_id,project_id,action,state,project_revision,project_snapshot_fingerprint,change_set_fingerprint,change_set_json,source_set_json,apply_operation_id,created_at_ms) VALUES(?1,'builtin:local-owner',?2,'install','applied',1,zeroblob(32),zeroblob(32),'{\"formatVersion\":1,\"mutations\":[],\"dependencyEdges\":[]}','[]',?3,1)", params![plan.to_string(), project.to_string(), operation.to_string()]).expect("bound plan fixture");
     let entry = |step, phase| FilesystemJournalEntry {
