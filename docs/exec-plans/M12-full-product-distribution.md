@@ -685,6 +685,8 @@ Win11 Sandbox 夹具通过已装运行时跳过、缺失时拒绝提升环境下
 
 从干净签名源码 `7b7522b5` 构建 `xtask`，通过生产 `dist --package --format inno` 组装工程包。夹具复用 `9eba5b98` 的已验签运行组件，候选清单使用隔离密钥重签，发行组件源码仍以 `9eba5b98` 为准。工程 EXE 和候选清单的 SHA-256 分别为 `3dddcaf3df7c441c901b6d07c936633e5aba5b8273dbac064d2a13971428530c` 和 `838fbae8dbe58157f4a951d8bf9adaa8a03e0629b4d929198a57abf980129545`。用该 EXE 首装，再用已验证的 `96d50d79` 工程包升级。在两个断网 Win11 来宾中均保留了既有的等效 Unicode 条目，以及用户与机器 PATH 的注册表原值和类型。升级后的稳定 CLI 读回原工程，卸载保留既有条目。当前用户和全用户回执 SHA-256 分别为 `a54f59ac2c4a0164bc13396ec68e73f17efd8f32d05515e7255343c0063dafcb` 和 `efd60844f60650456c645a14e67af96d8e4c8866a48c6078cd5a75848fb2f14a`。
 
+干净候选 `7b7522b5` 已通过本地整仓检查、1,108 项 Rust 测试、7 项 Node SDK 测试和 765 项 Chromium。六笔提交逐笔验签后普通快进至主仓 `main`。同一 SHA 的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均通过整仓、外部 SDK、发行组件构建、Tauri 构建和各 765 项 Chromium。四项 CodeQL 均通过。Hosted 终态回执 SHA-256 为 `a3e567dde49065cd90658c0744433cdbcb46e78452ee1a17b2017677ef82acfd`，三平台 Chromium 日志摘要回执为 `4aea60f3f0f59edfd7e97a62a26588d57c76d011fc13e0f19240f99926e5495c`。双向安装范围转换的原生交接仍待验收。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46040897008) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46040896312)
+
 ### 2026-11-25 Windows 产品 Inno 双范围
 
 Inno 只向对应范围的 PATH 添加稳定 `bin` 目录。它保留原值类型和用户已有条目，在卸载登记中记录本次添加的确切值。卸载时仅清理可唯一识别的自有条目，并保留安装后其他 PATH 改动。已有的等价条目不被接管。安装器变更结束时通知 Windows 刷新环境。

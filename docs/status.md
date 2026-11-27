@@ -12,7 +12,7 @@
 
 全用户磁盘满诊断修复 `49a3d526` 已逐笔验签并快进至主仓 `main`。本机整仓、三平台 Hosted CI 和四项 CodeQL 均通过。本机及各 Hosted 平台各通过 765 项 Chromium。Win11 在桌面启动和提交意图落盘后的故障复验均通过，原下载删除后仍可用保留的签名包恢复并在新版重开同一工程。[原生复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户整包更新磁盘满复验) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326613) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326331)
 
-Windows Inno 的签名修复 `7b7522b5` 已通过 Win11 四组同范围实包复验，覆盖 Unicode PATH、升级保留注册表原值与类型，以及卸载按归属处理。用该候选的生产打包入口组装工程包后，两种安装范围的既有等效条目用例再次通过。本地整仓门禁正在运行。[Windows 同范围 PATH 复验](exec-plans/M12-full-product-distribution.md#2026-11-28-windows-同范围-path-升级与卸载)
+Windows Inno 的签名修复 `7b7522b5` 已通过 Win11 四组同范围实包复验，覆盖 Unicode PATH、升级保留注册表原值与类型，以及卸载按归属处理。用该候选的生产打包入口组装工程包后，两种安装范围的既有等效条目用例再次通过。六笔提交逐笔验签后快进至主仓 `main`。本地整仓、三平台 Hosted CI 和四项 CodeQL 均通过，本机和三个 Hosted 平台各通过 765 项 Chromium。双向安装范围转换的原生交接仍待验收。[Windows 同范围 PATH 复验](exec-plans/M12-full-product-distribution.md#2026-11-28-windows-同范围-path-升级与卸载) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46040897008) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46040896312)
 
 已从同一 `9eba5b98` 签名源码组装 Ubuntu 22.04 的 AppImage 与 DEB，解包后均重新验签。原生 FUSE、DEB 安装与卸载、两档 WebKit 缩放及键盘焦点均通过。[9eba5b98 Linux 同源实包](exec-plans/M12-full-product-distribution.md#2026-11-27-9eba5b98-linux-同源实包复验)
 

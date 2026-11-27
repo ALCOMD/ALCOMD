@@ -1733,6 +1733,15 @@ description = "7b7522b5 的 Inno PATH 修复通过 Win11 四组同范围实包�
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss"]
 
 [[test]]
+id = "distribution.windows-path-candidate-gates"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "implemented"
+description = "签名候选 7b7522b5 通过本地整仓和三平台 Hosted CI。三个 Hosted 平台均通过外部 SDK 消费者、发行组件和 Tauri 构建，本机和各平台均通过 765 项 Chromium。同 SHA 四项 CodeQL 通过。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", ".github/workflows/ci.yml"]
+
+[[test]]
 id = "installer.macos.dmg"
 stage = "M12"
 kind = "system"
