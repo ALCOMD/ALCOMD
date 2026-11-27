@@ -598,7 +598,7 @@ stage = "M12"
 kind = "manual-accessibility"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "planned"
-description = "Ubuntu 22.04 的签名 AppImage 310065bf、2a1f93b9 和 bffef439 均用原生 Orca 42 验证 Tab 焦点、三个实际 WebKit 控件的语音和虚拟声卡音频。Win11 的 2a1f93b9 已验证 Tab 焦点与讲述人焦点框，应用和系统对照控件的语音回顾均无记录。Windows 实际朗读、macOS VoiceOver 以及最终发行包复验仍待通过。"
+description = "Ubuntu 22.04 的签名 AppImage 用原生 Orca 验证 Tab 焦点、三个 WebKit 控件的语音和虚拟声卡音频。Win11 验证 Tab 和讲述人焦点框。9eba5b98 原生来宾回环确认合成对照音与 Zira 合成语音，讲述人读取产品和标准 Windows 控件时还未录到有效音频。Windows 实际朗读、macOS VoiceOver 和最终发行包仍待验收。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]

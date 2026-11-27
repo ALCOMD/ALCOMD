@@ -439,6 +439,12 @@ Ubuntu 24.04 回环隔离环境用真实冻结 v3.4.0 分别复验两种完整�
 
 同一工程安装包的 WebView2 在来宾初始为 96 DPI。直接打开显示设置和从系统设置导航两次尝试均未取得可用的缩放控件，125% 原生缩放未执行。第二次回执 SHA-256 为 `d07409b0b9c05940430aa6719612d906fa3f18d65a8c268888aa34f8d80b840c`。
 
+### 2026-11-28 Windows 讲述人播放回环复验
+
+三个独立断网 Win11 24H2 来宾分别安装完整同源 `9eba5b98` Inno，安装器 SHA-256 为 `f975c2c47bcd9dedc0bdd8ccc3c6c40d6a9d5d487c43558332baf209d5d20e52`。试验用 WASAPI 回环采集来宾默认播放端点，使用合成资料并关闭麦克风输入。静音对照无有效样本，三轮独立合成音均录到 11,320 个非零样本。第三轮用系统语音合成器和 Zira 朗读对照短语，录到 6,480 个非零样本，确认该采集链路可录到系统合成语音。[Windows 播放回环](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording)
+
+三轮均跟随实际 WebView2 的焦点走到项目搜索、列表视图、新建项目。用讲述人的读取当前项命令测量这三个控件和一个独立 Windows Forms 按钮，默认播放端点均未录到有效样本，最新短语未返回文本。第三轮在讲述人自己的设置明确选择了 Zira，结果一致。该项保留为原生验收缺口，记录了 Windows 标准控件的对照结果。三份回执 SHA-256 依次为 `aea2877732ee9fea2efea1ab7f0dabb67075b6d5e172976cd17d964066eab02b`、`8891db39f65a1f7988e8020c260b13c3e422c8179372f04c956a88a9074ae38f`、`2d1083c992798ce9290effbca98463fd018d12ee4f2a210604b24a3188ba0367`。[讲述人读取当前项](https://support.microsoft.com/en-us/accessibility/windows/narrator/chapter-4-reading-text)
+
 ### 2026-11-27 Windows 原生明暗主题复验
 
 在新的断网 Windows 11 24H2 来宾安装同一 `2a1f93b9` Inno 工程包并核对运行时清单。保持同一个 WebView2 窗口运行，在关闭高对比度时切换来宾账号的 Windows 应用主题并通知桌面。产品项目页在浅色、深色、恢复浅色时的底色分别为 `#FFFFFF`、`#080F16`、`#FFFFFF`。深色下项目搜索、列表视图和新建项目仍存在于原生可访问性树并可聚焦。来宾主题恢复原值。回执 SHA-256 为 `4fb04fa34c856ca3e1a0815e6d59da104ec5d2bfc3c30ca9eae01dae7e590400`，深色截图 SHA-256 为 `46336e5b6414073a3c3767d4b0b90e257d5b3297071db435670822c8d340f2cf`。Windows 10 和最终发行包的系统主题仍按发行矩阵复验。[Windows 应用主题设置](https://learn.microsoft.com/en-us/windows/apps/develop/settings/settings-common#personalization---colors)
