@@ -1772,16 +1772,18 @@ id = "installer.linux.appimage"
 stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
-status = "blocked"
-description = "在 Ubuntu 22.04 构建并验证 AppImage 完整组件、最高 GLIBC_2.35 符号、应用层签名/摘要、便携更新与用户主动 ~/.local/bin/alcomd-cli 集成。"
+status = "implemented"
+description = "Ubuntu 22.04 用同源 7b7522b5 AppImage 验签并逐一扫描 8 个 ELF，最高 GLIBC_2.34，符合 GLIBC_2.35 上限。已验证 FUSE、WebKit、显式 CLI 集成、直接删除后的冷启动拒绝、原资料保全和重新绑定，以及签名整包换位中断和真实磁盘满后的恢复。正式资产继续按 A-017 验收。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
 
 [[test]]
 id = "installer.linux.deb"
 stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
-status = "blocked"
-description = "在 Ubuntu 22.04 构建并验证 DEB 完整组件、最高 GLIBC_2.35 符号、依赖、/usr/bin/alcomd-cli、受管理目录与 package-manager 升级/卸载所有权。"
+status = "implemented"
+description = "Ubuntu 22.04 用同源 7b7522b5 DEB 验签并逐一扫描 8 个 ELF，最高 GLIBC_2.34，符合 GLIBC_2.35 上限。验证 dpkg 和 APT 首装、包管理器拥有稳定 CLI、双账号升级、配置恢复、重装、同数据版本回退、移除与 purge 资料保全。依赖缺失及修复见独立原生验收，正式资产继续按 A-017 验收。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
 
 [[test]]
 id = "updater.full-product-atomic"

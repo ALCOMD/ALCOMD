@@ -703,6 +703,14 @@ Win11 Sandbox 夹具通过已装运行时跳过、缺失时拒绝提升环境下
 
 同摘要 AppImage 使用从 `7b7522b5` 构建的 Updater 演练程序和仅回环 HTTPS，九项检查通过。涵盖 beta 发布及 stable 隔离、停推保留已接收字节、拒绝旧序号和等长篡改，以及同摘要恢复后新旧客户端下载。回执 SHA-256 为 `9bc7fb3440a3ec0bbcd746004f56b06db8b27f54253227869f1903ddc9fae9a8`。临时 TLS 证书及暂存随试验清理。
 
+用这两份同摘要实包逐个扫描包内 ELF，另检查 AppImage 外层加载器与 DEB 的 `/usr/bin/alcomd-cli`。每种格式各有 8 个 x86_64 ELF，最高需求均为 `GLIBC_2.34`。逐文件回执 SHA-256 为 `9acef5f30c79439d3cf448c25d0f0790c901f6e39e03f8e1360a0e20812d6a56`。
+
+断网 Ubuntu 22.04 的新标准账号用同摘要 AppImage 通过八项直接移除检查。真正的 FUSE/WebKit 首启完成 Core 登记，随后显式启用 CLI、冷启动并登记合成工程。关闭 Core 后删除本体，稳定命令提示从现有位置重开 AppImage，运行目录中的 CLI 返回 `daemon_unavailable`。两次拒绝均未启动 Core，登记、数据库、配置和工程内容摘要一致。从新位置显式打开同摘要镜像后，原命令入口未改变，CLI 冷启动读回原工程。显式移除 CLI 集成仅清理其归属入口。回执 SHA-256 为 `f14b8a75bbce4fb132114fbb421a74204546627132938eed2e673df31274bbc2`。
+
+同源 AppImage 用已验签的 `41b7a82b` alpha.1 工程包复验换位后的中断和恢复。实际终止更新进程，删除原下载，随后使独立资料卷剩余空间降至 0；提取时观察到 `ENOSPC`，Bootstrap 报告储存空间不足。更新意图、账号登记、旧镜像和项目资料保全。释放空间后用保留资产恢复同一事务，进入新版 FUSE/WebKit 并读回原工程。过程日志与系统调用证据 SHA-256 分别为 `86327a2da3b25dde688e53a34532cd9674750fec7b514175755d48981e16d614` 和 `3750f03335a4f0931057bb9ba6a9bdaef9f48c94e57ada5ccf24fa4ba4cdb382`。
+
+同源 DEB 用已验签的 `41b7a82b` alpha.1 工程包通过真实 APT 首装、dpkg 解包后恢复配置、首次按账号切换、同数据版本的 APT 回退、重装、remove 和 purge。两个普通账号分别通过 CLI 和实际 WebKit 启用新版，外部 SDK 从重新登记的运行时冷启动。坏签名与失效登记拒绝。最终两个账号的登记、设置、数据和工程摘要一致，系统入口和测试账号已清理。回执 SHA-256 为 `80b058848ae8f49c15813c0b40019f1cd5ffdeca63341520ac5be02f44f505a9`。
+
 从同一干净签名提交在 Windows 重建含 Tauri GUI 在内的七个 Release 程序，再用隔离密钥签署运行载荷。使用固定摘要的 Inno 6.5.4 和 Microsoft WebView2 Bootstrapper 组装出 33,823,244 字节的工程 EXE，成品 SHA-256 为 `918ee1cb3cb23c9dd8bb3b860abe792eb99f48fb8670a8e1d07e8a872bffc89b`，载荷清单为 `e0dbfb92633fd655928174761dc01a307ca15c648352c21b33a009dbc3f89457`。验签、错误打包器摘要拒绝与已有输出保全均通过。
 
 两个断网 Win11 Sandbox 用同一 EXE 通过当前用户和全用户安装态复验，核对 Unicode 目录、已安装载荷、稳定 CLI 与 Core 冷启动、实际 WebView2 子进程及卸载资料保全。两次冷启动分别为 1,862 和 2,910 毫秒。全用户安装也确认安装阶段未初始化账号资料。两份原生回执 SHA-256 分别为 `19499b7e09ad39045570bb151b1a13ebc0128b6835c3b795975966bedeff213f` 和 `f8257e42a6ac428f415637b7b140dbdb35ad0642b25e8d168dfaf13afee318c8`。
