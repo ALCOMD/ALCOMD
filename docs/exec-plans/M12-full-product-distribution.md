@@ -719,6 +719,12 @@ Win11 Sandbox 夹具通过已装运行时跳过、缺失时拒绝提升环境下
 
 在断网 Ubuntu 24.04 x86_64 以同摘要 AppImage 补验较新发行版。新账号通过 FUSE 2.9.9 启动，打开 `1400 × 800` 的原生 X11 窗口，观察到 WebKitGTK 2.52.6 渲染进程和正确的 Core 安装登记。关闭 GUI 与 Core 后，CLI 经 IPC 冷启动并读到 `4.0.0-alpha.0`。试验后移除挂载和临时账号。回执 SHA-256 为 `73245f36dc1551491ecfbe7dc6a84eb3b932cb779d6ce03d671916cc5d5d7201`。
 
+从同一签名源码生成配对迁移载荷，并用合成密钥验签。迁移清单 SHA-256 为 `e3c9f446561f8aff299a99fc1c3b1df693772daefda1a24adaaa8d51f358e157`。用实际 DEB 和 AppImage 检查 Core RPC、CLI、WebKit、认证 MCP 及撤销和签名第一方扩展。原生健康回执 SHA-256 分别为 `5393c5cd003d2e742d22e02b98225515a7a9061de8d07c6d2d854bd5dd3ea3e5` 和 `5b8d73e754a6932c0643931ead90e44f529e977046c4849eeacf653f8097077f`。两份测试证明签署后独立验签，并核对各自的包、载荷和回执摘要。
+
+Ubuntu 24.04 的实际冻结 v3.4.0 DEB 经离线 APT 与同源 v4 DEB 交接。两个临时账号的资料由真实冻结 GUI 生成，均验证待确认时阻断 v4 普通首启。一个账号回滚并重开冻结版，另一个拒绝坏健康签名后用正确证明提交，随后打开原生 WebKit，Core 读回迁移的测试偏好。试验卸载 v4 测试包并移除临时资料，保全冻结程序与恢复包。回执 SHA-256 为 `fddce2e19f0b004b3756632e4fa107bfa876c06b09f90b5efdc302c59f7956c9`。
+
+同一 Ubuntu 24.04 另用冻结 v3.4.0 AppImage 验证独立归档交接。首轮镜像漏设执行权限，解包后运行端拒绝。按现行模式重新组装并为新摘要签署隔离归档，启动器在两个资料目录分别验证回滚重开冻结 GUI 和显式提交后打开新版 FUSE、WebKit 及 Core。冻结 AppImage 与原资料快照一致，测试挂载和资料已清理。通过的归档 SHA-256 为 `b2f4c061a17ea92e20d87209a0eb6ffe8af7f16896d522ed80c683363a272527`，回执 SHA-256 为 `f0cfe001dca7f02c28961f8690409efb98056f3a59617cdf5bd4a96618a012b8`。
+
 从同一干净签名提交在 Windows 重建含 Tauri GUI 在内的七个 Release 程序，再用隔离密钥签署运行载荷。使用固定摘要的 Inno 6.5.4 和 Microsoft WebView2 Bootstrapper 组装出 33,823,244 字节的工程 EXE，成品 SHA-256 为 `918ee1cb3cb23c9dd8bb3b860abe792eb99f48fb8670a8e1d07e8a872bffc89b`，载荷清单为 `e0dbfb92633fd655928174761dc01a307ca15c648352c21b33a009dbc3f89457`。验签、错误打包器摘要拒绝与已有输出保全均通过。
 
 两个断网 Win11 Sandbox 用同一 EXE 通过当前用户和全用户安装态复验，核对 Unicode 目录、已安装载荷、稳定 CLI 与 Core 冷启动、实际 WebView2 子进程及卸载资料保全。两次冷启动分别为 1,862 和 2,910 毫秒。全用户安装也确认安装阶段未初始化账号资料。两份原生回执 SHA-256 分别为 `19499b7e09ad39045570bb151b1a13ebc0128b6835c3b795975966bedeff213f` 和 `f8257e42a6ac428f415637b7b140dbdb35ad0642b25e8d168dfaf13afee318c8`。

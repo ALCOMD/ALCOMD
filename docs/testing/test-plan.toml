@@ -1596,7 +1596,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 22.04 用 310065bf、2a1f93b9 和 bffef439 的完整 AppImage 与 DEB，在隔离标准账号核验原生 GUI、Core、CLI、MCP 认证和撤销以及签名第一方扩展，AppImage 实测 FUSE。两个格式分别核验配对的隔离健康证明。bffef439 与 Windows 工程包使用同一源码。"
+description = "Ubuntu 22.04 用 7b7522b5 的完整 AppImage 与 DEB，在隔离标准账号核验原生 GUI、Core、CLI、MCP 认证和撤销以及签名第一方扩展，AppImage 实测 FUSE。两个格式分别核验绑定各自资产、原生回执和配对迁移载荷的隔离健康证明。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
 
 [[test]]
@@ -1614,7 +1614,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 24.04 的真实冻结 v3.4.0 DEB 与 310065bf、2a1f93b9、bffef439 各自的 v4 DEB 经离线 APT 交接。两个标准账号分别实测预提交启动阻断、撤回重开 v3，以及坏证明拒绝、签名提交、新版 GUI 与 Core 读回和 v3 保全。"
+description = "Ubuntu 24.04 的真实冻结 v3.4.0 DEB 与 7b7522b5 的同源 v4 DEB 经离线 APT 交接。两个标准账号分别实测预提交启动阻断、撤回重开 v3，以及坏证明拒绝、签名提交、新版 GUI 与 Core 读回迁移测试偏好和 v3 保全。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
 
 [[test]]
@@ -1623,7 +1623,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "310065bf、2a1f93b9 和 bffef439 的同源独立归档在 Ubuntu 24.04 先验证分离签名再解包。标准账号在独立资料目录中分别运行真实冻结 v3.4.0 AppImage 的 FUSE/WebKit 桌面，验证回滚重开、显式提交、同源 v4 FUSE/WebKit/IPC、旧数据保全和隔离挂载清理。"
+description = "7b7522b5 的同源独立归档在 Ubuntu 24.04 先验证分离签名再解包。标准账号在独立资料目录中分别运行真实冻结 v3.4.0 AppImage 的 FUSE/WebKit 桌面，验证回滚重开、显式提交、同源 v4 FUSE/WebKit/IPC、旧数据保全和隔离挂载清理。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/appimage_bridge.rs", "xtask/src/distribution/appimage_bridge.rs"]
 
 [[test]]

@@ -20,6 +20,8 @@ Windows Inno 的签名修复 `7b7522b5` 已通过 Win11 四组同范围实包复
 
 `7b7522b5` 的 AppImage 与 DEB 均完成逐 ELF 的 `GLIBC_2.34` 核对。AppImage 通过直接移除后的冷启动拒绝、显式重绑、账号资料保全和换位后磁盘满恢复。DEB 通过双账号升级、重装、同数据版本回退、remove 与 purge，以及解包磁盘满、只读卷、下载截断和配置触发器中断恢复。两种格式在同机时均保留对方已登记的 Core，且 DEB purge 后便携 CLI 仍可冷启动并读回工程。同摘要 AppImage 另在 Ubuntu 24.04 通过 FUSE、WebKit 和 CLI 冷启动冒烟。正式候选继续按 A-017 放行。[Linux 生命周期补验](exec-plans/M12-full-product-distribution.md#2026-11-28-7b7522b5-同源工程实包)
 
+`7b7522b5` 的 DEB 与 AppImage 通过合成签名健康证明和实际 v3.4.0 冻结版交接。Ubuntu 24.04 分别复验了回滚重开旧版、提交启动新版、资料保全和测试清理。AppImage 通过分离签名归档交接，DEB 通过离线 APT 交接。[Linux 冻结版交接复验](exec-plans/M12-full-product-distribution.md#2026-11-28-7b7522b5-同源工程实包)
+
 `7b7522b5` 同源 Inno 的全用户更新通过保留签名包前、暂存新版时、桌面重启和提交意图写入后的有界 NTFS 磁盘满复验。复验了旧版重开、签名原件保全、释放空间后恢复同一事务，以及新版 WebView2 和 Core 读回原工程。同源 Updater 用实际工程包通过九项离线验签、反重放和重试检查。两个范围各通过 15 项同版本修复检查，覆盖缺件恢复、保全原卸载记录、故障解除后重试及精确卸载。标准账号交互 UAC 仍待验收。[Windows 故障与修复复验](exec-plans/M12-full-product-distribution.md#2026-11-28-7b7522b5-同源工程实包)
 
 签名工程候选 `a70c181e` 已通过同源 Inno、AppImage 和 DEB 组装及安装态桌面复验。Windows 11 的两种安装范围均验证 Unicode 目录安装、CLI 冷启动、WebView2 和卸载保全。Ubuntu 22.04 验证 AppImage FUSE、DEB 安装、两档缩放与 AppImage 的 Orca 朗读。含同一打包代码的主仓候选 `696953b1` 通过本地整仓、Chromium、三平台 Hosted CI 与四项 CodeQL。[同源原生资产组装](exec-plans/M12-full-product-distribution.md#2026-11-27-同源原生资产组装)
