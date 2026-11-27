@@ -1372,7 +1372,7 @@ stage = "M12"
 kind = "fault-injection"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "在断网 Ubuntu 22.04 上，用 748933d8 和 bd30aba3 隔离签名 DEB 实测 dpkg 解包收到 ENOSPC 和 EROFS。旧版、登记和资料不变，旧 Core 可读原工程。修复存储条件后用同一 DEB 经 APT 升级，新 Core 可读回原工程和设置，purge 保全资料。"
+description = "在断网 Ubuntu 22.04 上，用 7b7522b5 同源 DEB 和已验签的 41b7a82b alpha.1 复验 dpkg 解包收到 ENOSPC 和 EROFS。两次均保全旧版、登记和资料，旧 Core 可读原工程。修复存储条件后以同一 DEB 经 APT 升级，新 Core 读回工程和设置，purge 保全资料。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
@@ -1381,7 +1381,7 @@ stage = "M12"
 kind = "fault-injection"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "在隔离 Ubuntu 22.04 上从签名回环测试源经 APT 更新 748933d8 至 bd30aba3。传输中断时 dpkg 保留旧版已安装状态，旧 Core 可读原工程。恢复后用同一签名索引和同摘要 DEB 升级，新 Core 可读回原工程和设置，purge 保全资料。"
+description = "在隔离 Ubuntu 22.04 上从签名回环测试源经 APT 更新 7b7522b5 至 41b7a82b alpha.1。传输在 1 MiB 处中断时 dpkg 保留旧版已安装状态，旧 Core 可读原工程。恢复后用同一签名索引和同摘要 DEB 升级，新 Core 读回工程和设置，purge 保全资料。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
@@ -1399,7 +1399,7 @@ stage = "M12"
 kind = "fault-injection"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 22.04 更新签名工程 DEB 时，确认 dpkg 实际进入系统图标触发器，再终止本轮配置进程组。核对图标包半配置及用户状态保全。恢复配置后原生缓存重新生成，新版 Core 冷启动并读回工程，purge 保全资料。"
+description = "Ubuntu 22.04 从 7b7522b5 同源 DEB 升级至 41b7a82b alpha.1 时，在 dpkg 实际进入系统图标触发器后终止配置进程组。图标包半配置，用户状态保全。恢复配置后原生缓存重新生成，新版 Core 冷启动读回工程，purge 保全资料。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
 
 [[test]]
