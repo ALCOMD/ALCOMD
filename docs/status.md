@@ -10,6 +10,8 @@
 
 同一 `9eba5b98` Inno 另通过 Win11 全用户更新的两处磁盘满验收。保留签名包前和暂存新版时均保全旧版及资料，释放空间后用同包升级，原账号下次启动时登记新版 Core 并重开原工程。`49a3d526` 的 Bootstrap 经同样的隔离 Inno 复验，两处均能报告磁盘空间不足。已有目标目录时仍拒绝更新并保全原件。[全用户磁盘满复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户整包更新磁盘满复验)
 
+全用户磁盘满诊断修复 `49a3d526` 已通过本机整仓、765 项 Chromium 和外部 SDK 检查，逐笔验签后已普通快进至主仓 `main`。桌面启动入口另通过 Win11 原生复验，失败时重开旧版 WebView2，释放空间后同包重试重开新版并读回原工程。同一 SHA 的四项 CodeQL 已通过，三平台 Hosted CI 仍在运行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326613) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326331)
+
 已从同一 `9eba5b98` 签名源码组装 Ubuntu 22.04 的 AppImage 与 DEB，解包后均重新验签。原生 FUSE、DEB 安装与卸载、两档 WebKit 缩放及键盘焦点均通过。[9eba5b98 Linux 同源实包](exec-plans/M12-full-product-distribution.md#2026-11-27-9eba5b98-linux-同源实包复验)
 
 签名工程候选 `a70c181e` 已通过同源 Inno、AppImage 和 DEB 组装及安装态桌面复验。Windows 11 的两种安装范围均验证 Unicode 目录安装、CLI 冷启动、WebView2 和卸载保全。Ubuntu 22.04 验证 AppImage FUSE、DEB 安装、两档缩放与 AppImage 的 Orca 朗读。含同一打包代码的主仓候选 `696953b1` 通过本地整仓、Chromium、三平台 Hosted CI 与四项 CodeQL。[同源原生资产组装](exec-plans/M12-full-product-distribution.md#2026-11-27-同源原生资产组装)

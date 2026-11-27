@@ -1399,7 +1399,7 @@ stage = "M12"
 kind = "integration-ui"
 platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
-description = "通过「关于」页的三项 Chromium 用例覆盖检查与下载步骤、取消、安装重启及恢复的独立确认。"
+description = "通过「关于」页的三项 Chromium 用例覆盖检查与下载步骤、取消、安装重启及恢复的独立确认。置换 49a3d526 Bootstrap 的 Win11 全用户工程夹具另经桌面重启入口验证磁盘满时重开旧版 WebView2 并记录失败，释放空间后同包重试清除标记，实际新版窗口和原工程可重开。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-gui/tests/browser/product-updates.spec.ts"]
 
 [[test]]

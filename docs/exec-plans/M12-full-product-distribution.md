@@ -608,6 +608,10 @@ Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均在 `9eba5b98` �
 
 Win11 复验使用 `49a3d526` 构建的 Release Bootstrap，其他组件沿用已验签 `9eba5b98` 载荷。Bootstrap SHA-256 为 `190d6461e54d625684ea508506522d5c2fccf7340618e254ff989b94e7a37f6a`，隔离测试签名的 Inno 为 `ac98a4a2a25b2e8f9c4b221fd8764517f3e3c80c0440389021c6187fec5de9eb`。对同一 `16e5184a` 目标实测两处空间不足，调用方均报告 Win32 `112`，旧版与资料保全。已有目标目录时仍返回原来的传输失败，目录内容保全。释放空间后同包重试完成，账号重开后登记新版 Core 并读回工程。四项复验回执为 `a02eb6acdd844568a49be2c2792c8bdf6af0c289aef66e7aba8d27141179ea5f`。
 
+另在全新的断网 Win11 中，复用同一对已验证实包，经 Bootstrap 的桌面重启入口执行磁盘满和重试。专用安装卷剩余 8 MiB 时报告 Win32 `112`，写入本账号的桌面失败标记，重开旧版真实 WebView2 窗口并经旧版 Core 读回原工程。释放空间后用原签名包重试，标记清除，实际新版窗口重开，新版 Core 读回工程，设置与工程文件摘要一致。两项回执 SHA-256 为 `e13559774da9245c5764becdc0f1fc042809b764d4874eae33f9db2e15492ead`。
+
+签名候选 `49a3d52626679c50bde8ce055f0c0c1be5cd0873` 在独立干净检出通过整仓聚合门禁，Rust 1,108 项、Chromium 765 项和外部 Node／Rust SDK 均通过。逐笔核对 11 笔提交的签名后从 `9eba5b98` 普通快进，远端读取确认候选一致。聚合门禁和远端核验回执的 SHA-256 分别为 `d6a53f5c6ba919fab39ba97c9e83b6087a75305684c85eb5323f9a6f7e8f977a` 和 `76dcea8dd63b3f89d66054f513ad43384baec9203f5e0353c521dc26043850b5`。同 SHA 的四项 CodeQL 已通过，终态回执 SHA-256 为 `d94840db395d4d128b3f0d5f2cc3ed05edc40e6609579a32c4afd78743e93a69`。三平台 Hosted CI 等待终态。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326613) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326331)
+
 ### 2026-11-27 Windows 全用户自定义目录整包升级
 
 在断网 Windows 11 24H2（`26100.9974`）来宾的既有管理员会话中，用上述 `2a1f93b9` 安装包和修正 Inno 后的 `16e5184a` 目标载荷执行全用户整包升级。安装根的父目录与末级目录均含空格和 Unicode。正常升级通过九项。机器部署不抢先初始化账号资料，机器升级保留旧的逐账号登记，原账号重开后才登记新版 Core。原安装根、机器 PATH 与开始菜单仍指向该实例，真实 WebView2 和稳定 CLI 可读回原工程。CLI 冷启动耗时 1552 毫秒，卸载后数据库、逐账号登记和目录内的无关文件保全。正常回执 SHA-256 为 `96e3ffc15dd320a44b37b85dfb325eacbdda88b6b0ef167b3b714cdf7d595fe0`。
