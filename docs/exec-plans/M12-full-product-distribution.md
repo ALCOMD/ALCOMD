@@ -162,7 +162,7 @@ Windows 用实际编译的七个运行程序生成 Inno 测试 EXE。仅向隔�
 
 同一 AppImage 补验了 Orca 42 的实际合成朗读。首轮读到项目搜索和列表视图，未取得创建项目的朗读回执，键盘阶段日志 SHA-256 为 `8860483526495264f025832be3110dc946027ed8ba61703c2599fae2886e892b`。用相同条件与同摘要资产复跑，三个控件均有朗读输出，隔离音频装置录得 179,744 个合成样本。通过日志 SHA-256 为 `06a15e30ac5d379b8667d0e62cb88f0c16d1df6e76c9c699135b44ce73b6e094`。
 
-本轮运行载荷使用隔离测试签名。相同打包代码与第一轮验收记录一同纳入主仓候选 `696953b1`。该候选通过本地整仓门禁，Rust 1,108 项、Chromium 765 项和 Node SDK 7 项。十笔新增提交逐笔验签后普通快进，四项 CodeQL 分析通过。三平台 Hosted CI 已触发。Windows 10 和 macOS 原生验收延期，公开发行继续按 A-017 放行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45935368535) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45935368135)
+本轮运行载荷使用隔离测试签名。相同打包代码与第一轮验收记录一同纳入主仓候选 `696953b1`。该候选通过本地整仓门禁，Rust 1,108 项、Chromium 765 项和 Node SDK 7 项。十笔新增提交逐笔验签后普通快进。Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均在该 SHA 上通过整仓、外部 SDK、发行组件构建、Tauri 构建和 Chromium。四项 CodeQL 通过。Hosted CI 与 CodeQL 终态回执的 SHA-256 分别为 `d891514a6acba932b8b85438ac0c8b957dc65cace4c579e81471f0ca33af6675` 和 `46e3ab50181ecae4482975519eb0e44df2d38a2b6d536c461be4290e13cd902d`。Windows 10 和 macOS 原生验收延期，公开发行继续按 A-017 放行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45935368535) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45935368135)
 
 ### 2026-11-25 Windows Core 安装登记
 
