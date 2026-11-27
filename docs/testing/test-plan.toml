@@ -1264,7 +1264,7 @@ stage = "M12"
 kind = "contract"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "implemented"
-description = "用合成发布密钥核验 v4 声明原始字节、URI、UTC 有效期、频道和平台、反重放序号及本地资产摘要。Windows 通过 6 项 Updater 测试和 7 项实际离线命令场景。"
+description = "用合成发布密钥核验 v4 声明原始字节、URI、UTC 有效期、频道和平台、反重放序号及本地资产摘要。Windows 通过 6 项 Updater 测试和 7 项实际离线命令场景。同源 7b7522b5 Updater 与 Inno 实包再通过九项离线复验，涵盖落盘后同请求重试、反重放、版本和频道错误、声明签名和等长资产篡改拒绝。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-updater/src/product_update.rs"]
 
 [[test]]
@@ -1363,7 +1363,7 @@ stage = "M12"
 kind = "fault-injection"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "断网 Win11 24H2 Sandbox 用完整 Inno 验证全用户保留签名包与解包暂存时空间不足。置换 49a3d526 Bootstrap 的隔离签名夹具验证两处诊断、已有目标保全和同包重试。提交意图落盘后另实测磁盘满，确认原事务、两版启动限制和资料保全。删除原下载后，释放空间即可从保留签名包恢复并读回工程。"
+description = "断网 Win11 24H2 Sandbox 用同源 7b7522b5 Inno 验证全用户更新的保留签名包、解包暂存、桌面重启以及提交意图落盘后的磁盘满。核对诊断、已存在目标、两版启动限制和资料保全，删除原下载后依然可用保留签名包恢复并读回工程。标准账号的交互 UAC 另验。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
 
 [[test]]
@@ -1408,7 +1408,7 @@ stage = "M12"
 kind = "integration-ui"
 platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
-description = "通过「关于」页的三项 Chromium 用例覆盖检查与下载步骤、取消、安装重启及恢复的独立确认。置换 49a3d526 Bootstrap 的 Win11 全用户工程夹具另经桌面重启入口验证磁盘满时重开旧版 WebView2 并记录失败，释放空间后同包重试清除标记，实际新版窗口和原工程可重开。"
+description = "通过「关于」页的三项 Chromium 用例覆盖检查与下载步骤、取消、安装重启及恢复的独立确认。7b7522b5 同源 Inno 实测全用户桌面重启遇到磁盘满时重开旧版 WebView2 并记录失败。释放空间后用相同包重试清除标记，实际新版窗口和原工程可重开。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-gui/tests/browser/product-updates.spec.ts"]
 
 [[test]]
