@@ -525,6 +525,12 @@ DEB 通过离线 APT 首装、停在 `dpkg --unpack` 后的配置恢复、双账
 
 恢复完整响应后，APT 沿用同一份签名索引和同一摘要的软件包完成升级。新 Core 打开原工程并读回设置，purge 保全资料。核对隔离来宾的包状态无异常，测试源、密钥、暂存和测试进程均已清理。回执与 HTTP 请求记录的 SHA-256 分别为 `4babfd940bea4a93795b304ba6324bf63d759c9f2a842b5949d3af0607013319` 和 `e6040fcdbaf44e56a703f5e10d6d8eafd7d36412aacbeab929eba0b137ce8de5`。
 
+### 2026-11-27 DEB 缺失依赖复验
+
+在断网 Ubuntu 22.04 x86_64 的一次性覆盖根，使用 `49b25485` 签名工程 DEB，包 SHA-256 为 `232bc08f634724a188a8dbf33f8a040a64460fbab1ade114a1b510758b3d0bbf`。临时系统通过 APT 移除直接依赖 `libwebkit2gtk-4.1-0` 和依赖它的开发包，核对运行库文件确实缺失。使用空 APT 软件源和原 DEB 首装时，APT 明确报告该依赖不可安装。失败前后的 `dpkg` 状态摘要一致，无产品程序、CLI 或桌面入口。
+
+恢复时向断网 APT 同时提供原 DEB 和 Ubuntu 官方 amd64 依赖包 `2.50.4-0ubuntu0.22.04.1`。依赖包 SHA-256 为 `f1836c87c10ae3d0d352d996c63e0bb40a80537533075f688ff4eeb9d50f3952`。安装成功后核对实际 GUI 可执行文件的 WebKitGTK 动态库解析，普通账号冷启动 Core 并重新读取合成工程。Purge 保全工程和数据库。外层 Jammy 的包状态及依赖文件摘要一致，临时覆盖根和下载的依赖副本均已清理。回执与拒绝日志的 SHA-256 分别为 `687e2e8522b00192ce13966aa3b08bd476900c6664e5e5afb68c65e12fab49bb` 和 `d103960462160e8265d340986a475ae8ab22f095d386d6b4829170dfca6c434d`。[Ubuntu 官方包及摘要](https://packages.ubuntu.com/jammy/amd64/libwebkit2gtk-4.1-0/download)
+
 ### 2026-11-27 AppImage 整包更新磁盘满复验
 
 在 Ubuntu 22.04 的断网隔离实例用普通测试账号复用 `bffef439` 的 alpha.0 和 `41b7a82b` 的 alpha.1 签名实包。旧 AppImage SHA-256 为 `4fe1a8c82e2d24b0ada4fe3db015aa90c6d09277744ef73a5d1d8725b75b2b75`，目标沿用上节摘要。用独立 tmpfs 限制空间，合成更新声明和下载包均预先校验。

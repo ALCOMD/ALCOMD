@@ -28,6 +28,8 @@ Ubuntu 22.04 的隔离签名 DEB 补验了解包时真实磁盘满和安装卷�
 
 同一对 DEB 另通过 Ubuntu 22.04 的 APT 下载中断验收。回环测试源发送 1 MiB 后断开，旧版安装和资料保全。恢复完整响应后，APT 沿用原签名索引升级，新 Core 读回原工程和设置。[DEB 下载中断复验](exec-plans/M12-full-product-distribution.md#2026-11-27-deb-下载中断复验)
 
+Ubuntu 22.04 的 `49b25485` 工程 DEB 通过缺失必需依赖的首装验收。WebKitGTK 实际缺失时，APT 在修改包状态前拒绝安装。提供 Ubuntu 官方依赖后，同摘要 DEB 安装、动态库解析和 Core 冷启动均通过。[DEB 缺失依赖复验](exec-plans/M12-full-product-distribution.md#2026-11-27-deb-缺失依赖复验)
+
 Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密钥，验证原生 FUSE、真实桌面首启、独立 SDK 冷启动、移位拒绝与主动重新绑定。可选 CLI 集成继续按发行矩阵验收。[Ubuntu 产品 AppImage 首启](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
 
 Ubuntu 22.04 的 AppImage 整包更新与中断恢复已通过 10 项原生工程检查。验收覆盖同路径原子替换、实际进程终止、篡改拒绝、删除原下载后的恢复，以及新版 AppImage 经原生 FUSE 打开并读回原工程。后续干净 Release 的外部 Rust SDK 冷启动单次通过，用时 817 毫秒。[AppImage 整包更新](exec-plans/M12-full-product-distribution.md#2026-11-26-ubuntu-产品-appimage-整包更新) · [完整 Linux 发行候选](exec-plans/M12-full-product-distribution.md#2026-11-26-ubuntu-完整-appimage-与-deb-原生验收)

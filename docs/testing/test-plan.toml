@@ -1367,6 +1367,15 @@ description = "在隔离 Ubuntu 22.04 上从签名回环测试源经 APT 更新 
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
+id = "distribution.deb.missing-dependency"
+stage = "M12"
+kind = "fault-injection"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "断网 Ubuntu 22.04 的一次性覆盖根实际缺少 WebKitGTK。APT 拒绝安装 49b25485 签名工程 DEB，dpkg 状态和产品路径均未变化。提供 Ubuntu 官方依赖后，同摘要 DEB 安装成功，GUI 可执行文件解析动态库，Core 冷启动并重开工程，purge 保全资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
+
+[[test]]
 id = "distribution.gui.signed-update-consent"
 stage = "M12"
 kind = "integration-ui"
