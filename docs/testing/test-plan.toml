@@ -1685,7 +1685,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "Windows 11 24H2 两种安装范围各通过 15 项原生工程检查。完整签名运行载荷和修订后的 Inno 恢复缺失文件，保留原卸载记录，自有 Shell 入口随后正常移除。已覆盖篡改、活跃租约、待完成维护和重试。整包同 SHA 和 Win10 复验另列。"
+description = "Windows 11 24H2 两种安装范围使用 7b7522b5 的完整同源 Inno 各通过 15 项原生工程检查。恢复缺失组件，保留原卸载记录及 PATH、快捷方式和协议归属，随后精确卸载并保全资料。已覆盖篡改、活跃租约、待完成维护和重试。Win10 与交互 UAC 另验。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss"]
 
 [[test]]
