@@ -598,7 +598,7 @@ stage = "M12"
 kind = "manual-accessibility"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "planned"
-description = "Ubuntu 22.04 的签名 AppImage 用原生 Orca 验证 Tab 焦点、三个 WebKit 控件的语音和虚拟声卡音频。Win11 验证 Tab 和讲述人焦点框。9eba5b98 原生来宾回环确认合成对照音与 Zira 合成语音，讲述人读取产品和标准 Windows 控件时还未录到有效音频。Windows 实际朗读、macOS VoiceOver 和最终发行包仍待验收。"
+description = "Ubuntu 22.04 的签名 AppImage 用原生 Orca 验证 Tab 焦点、三个 WebKit 控件的语音和虚拟声卡音频。Win11 验证 Tab 和讲述人焦点框。9eba5b98 原生来宾录到了合成对照音与 Zira 语音，讲述人显式选中远程音频后读取产品和标准 Windows 控件仍未录到朗读。Windows 实际朗读、macOS VoiceOver 和最终发行包仍待验收。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
@@ -617,6 +617,15 @@ kind = "manual-accessibility"
 platforms = ["windows-x86_64"]
 status = "implemented"
 description = "隔离 Windows 11 24H2 用 2a1f93b9 的真实 Inno 工程包验证系统明暗主题。保持同一 WebView2 窗口运行，验证浅色到深色再到浅色的重绘，以及深色下三个项目控件可聚焦。Win10 和最终发行包仍按矩阵复验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
+
+[[test]]
+id = "gui.m12-windows-native-scale"
+stage = "M12"
+kind = "manual-accessibility"
+platforms = ["windows-x86_64"]
+status = "blocked"
+description = "隔离 Win11 中同源 9eba5b98 Inno 工程包的实际 WebView2 窗口为 96 DPI。Sandbox 报告远程会话，直接显示设置与系统导航均未提供缩放入口。待在完整桌面验证窗口切换到 120 DPI、键盘焦点及恢复原比例。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]

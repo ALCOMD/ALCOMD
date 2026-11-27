@@ -92,7 +92,7 @@ Ubuntu 22.04 已用 `310065bf` 的签名 AppImage 通过原生 Orca 读屏冒烟
 
 同源 AppImage 与 DEB 在 Ubuntu 22.04 通过 GTK 100% 和 200% 启动缩放。真实 WebKit 窗口像素尺寸翻倍，三个项目控件的 Tab 顺序一致。[Ubuntu 原生 GTK 缩放复验](exec-plans/M12-full-product-distribution.md#2026-11-27-ubuntu-原生-gtk-缩放复验)
 
-`2a1f93b9` 的 Windows Inno 在隔离 Win11 已通过系统高对比切换和三个项目控件的 Tab 焦点复验。`9eba5b98` 复验确认来宾能回环录到对照音和 Windows 语音合成。讲述人读取三个项目控件及系统对照按钮时，默认播放端点均无有效音频，语音回顾也无记录。实际朗读和 125% 原生缩放仍待验收。[Windows 播放回环复验](exec-plans/M12-full-product-distribution.md#2026-11-28-windows-讲述人播放回环复验)
+`2a1f93b9` 的 Windows Inno 在隔离 Win11 已通过系统高对比切换和三个项目控件的 Tab 焦点复验。`9eba5b98` 复验确认来宾能录到对照音及 Windows 合成语音。讲述人显式选中远程音频后，读取项目控件和标准按钮仍未取得朗读回执。独立缩放探针确认该远程会话的 WebView2 是 96 DPI，系统设置未提供缩放入口。讲述人实际朗读和 125% 缩放仍待完整桌面验收。[Windows 播放回环与系统缩放复验](exec-plans/M12-full-product-distribution.md#2026-11-28-windows-讲述人播放回环复验)
 
 同一 Windows Inno 工程包也已通过 Win11 的系统浅色、深色和恢复浅色复验，同一个 WebView2 窗口持续运行，深色下三个项目控件仍可聚焦。[Windows 原生明暗主题复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-原生明暗主题复验)
 

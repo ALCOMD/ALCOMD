@@ -445,6 +445,10 @@ Ubuntu 24.04 回环隔离环境用真实冻结 v3.4.0 分别复验两种完整�
 
 三轮均跟随实际 WebView2 的焦点走到项目搜索、列表视图、新建项目。用讲述人的读取当前项命令测量这三个控件和一个独立 Windows Forms 按钮，默认播放端点均未录到有效样本，最新短语未返回文本。第三轮在讲述人自己的设置明确选择了 Zira，结果一致。该项保留为原生验收缺口，记录了 Windows 标准控件的对照结果。三份回执 SHA-256 依次为 `aea2877732ee9fea2efea1ab7f0dabb67075b6d5e172976cd17d964066eab02b`、`8891db39f65a1f7988e8020c260b13c3e422c8179372f04c956a88a9074ae38f`、`2d1083c992798ce9290effbca98463fd018d12ee4f2a210604b24a3188ba0367`。[讲述人读取当前项](https://support.microsoft.com/en-us/accessibility/windows/narrator/chapter-4-reading-text)
 
+第四轮仍用同摘要工程包，从 Windows 的键盘快捷方式启动讲述人。在系统设置中从「默认音频设备」选为「远程音频」，并核对设置回显。测试捕获了 14,260 个对照音样本和 12,775 个 Zira 合成语音样本。讲述人启动、调高朗读音量、读取三个项目控件和 Windows Forms 对照按钮均未录到非零样本。回执 SHA-256 为 `ffee3687a56bba207d08acc37c6f9a6112cbb003fe4cb476d2f0d7283e0863b0`。实际朗读待在完整桌面环境复验。[讲述人输出设备设置](https://support.microsoft.com/en-au/accessibility/windows/narrator/chapter-7-customizing-narrator)
+
+独立的缩放探针验证同一个签名安装包并打开原生 WebView2 项目页。来宾报告远程会话，产品窗口为 96 DPI。直接打开「显示」设置没有出现缩放控件，从「系统」导航也未找到显示页入口。原生 125% 未执行。回执 SHA-256 为 `49261e117eeadc81f30fa68a602b61d09185aa9aab3aa0505d6442773d542755`。[Windows Sandbox 的远程桌面会话](https://learn.microsoft.com/en-us/windows/security/application-security/application-isolation/windows-sandbox/windows-sandbox-cli)
+
 ### 2026-11-27 Windows 原生明暗主题复验
 
 在新的断网 Windows 11 24H2 来宾安装同一 `2a1f93b9` Inno 工程包并核对运行时清单。保持同一个 WebView2 窗口运行，在关闭高对比度时切换来宾账号的 Windows 应用主题并通知桌面。产品项目页在浅色、深色、恢复浅色时的底色分别为 `#FFFFFF`、`#080F16`、`#FFFFFF`。深色下项目搜索、列表视图和新建项目仍存在于原生可访问性树并可聚焦。来宾主题恢复原值。回执 SHA-256 为 `4fb04fa34c856ca3e1a0815e6d59da104ec5d2bfc3c30ca9eae01dae7e590400`，深色截图 SHA-256 为 `46336e5b6414073a3c3767d4b0b90e257d5b3297071db435670822c8d340f2cf`。Windows 10 和最终发行包的系统主题仍按发行矩阵复验。[Windows 应用主题设置](https://learn.microsoft.com/en-us/windows/apps/develop/settings/settings-common#personalization---colors)
