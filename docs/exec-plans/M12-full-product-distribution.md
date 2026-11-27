@@ -524,6 +524,24 @@ DEB 通过离线 APT 首装、停在 `dpkg --unpack` 后的配置恢复、双账
 
 Ubuntu 22.04 定向 Release Clippy 和 63 项 Rust 库测试通过。合成签名夹具在 alpha.0 实包中只替换此次构建的 Bootstrap，alpha.1 资产保持既有摘要。夹具 AppImage 的 SHA-256 为 `de3b9c003ad976ea6b678f745703bce4d9373538792737e29f4641f7725e3cc0`，Bootstrap 为 `3ee4cee3a6669059b837937d518afc68c4a3a1da87f6f0c2ca3eb5c2ab011366`。替换后空间耗尽时，恢复报告 `no storage space`，并保全原意图、镜像和资料。释放空间后用保留资产完成原事务，经 FUSE、WebKit 和 Core IPC 证实 alpha.1 可重开原工程。日志 SHA-256 为 `47a0eba16c0736d0c8c5a14628f48ea2e4042b5ee7839a57fddeeb624f574b65`。本次结果属于定向修复验收，正式整包候选另走发布门禁。
 
+### 2026-11-27 49b25485 同源实包与门禁
+
+在两个平台的干净检出从签名源码 `49b25485a315502ea96767eb12c2afa1401724a3` 构建和组装三种工程实包。运行清单使用隔离签名，Windows 摘要为 `36d67906b4f3686722b8bd92b16b972552f7ac810b68cdf79e5ebf70df330e5f`，Linux 两种格式共用 `65eb2298d05dc905e101a9646a145b077190ffc65f744c190e04f7a449778a2b`。Linux 两包解包后再次验签，三个实包的 SHA-256 如下。
+
+| 格式 | SHA-256 |
+| --- | --- |
+| Inno EXE | `fb9890353f26a8d6c2507e8688ee5a013811aac53edb4a6343ca19e8612f9aef` |
+| AppImage | `f00536323b403e4b7643ff8bcc1d10389c8f0b3a1ab144296f902e08588d5327` |
+| DEB | `232bc08f634724a188a8dbf33f8a040a64460fbab1ade114a1b510758b3d0bbf` |
+
+Ubuntu 22.04 用该 AppImage 和既有 `41b7a82b` alpha.1 资产复验原生磁盘满。替换后再次提取时系统写入返回 `ENOSPC`，签名候选报告空间不足。在原下载不存在的情况下，释放空间后从保留镜像完成原事务，FUSE、WebKit 和 Core IPC 均通过。日志 SHA-256 为 `4a0eccb09dbaff4fdc1b919d1bb0723f316e09a0c5e5238cca634d2dc5af3aa2`。DEB 通过实际安装和 purge，GTK 100% 与 200% 下三个项目控件均能依次 Tab 聚焦。回执为 `e667f9e5601e8d3c9c135ae2d80e140c5a0e2111ab2294569681dadf2fa649a1`。
+
+Win11 24H2 两种安装范围均通过 Unicode 安装目录、WebView2、稳定 CLI 和卸载保全。当前用户冷启动为 2779 毫秒，回执为 `35b94e6d892d05a922f89b993f739bdbe4fb1fb3752f033a94e74b0a9d0ecf5f`。全用户首轮达到 5 秒且未就绪，回执为 `825c71d561b1496180fe55841b26bb7eeb57ea94852d4e7cbf61fc528c303534`。在新来宾按原条件复跑为 2050 毫秒，回执为 `df0045aae2cc323aeefb8fa6a7fbbce34662f18fa84d3b64f9218a182616bf40`。
+
+同一 Win11 Inno 与 `16e5184a` 的 alpha.1 目标包在专用 768 MiB NTFS 虚拟盘补验当前用户整包更新。盘上保留 8 MiB，独立写入确认 Win32 `ERROR_DISK_FULL`（112）。更新在持久提交前失败，原安装、登记、资料与下载包摘要一致，旧 Core 可打开原工程。释放空间后用同一声明和目标包重试成功，新 Core 可读回原工程。产品当前返回找不到文件（Win32 2），空间不足诊断仍待修正。早期试验的默认虚拟盘 ACL 和非标准下载目录被校验拒绝。通过回执 SHA-256 为 `6278e6bd50b3fb6f0cf03ba6bc9af45e6c27cb462ecdecc13f00aaf18c0221e5`。
+
+候选逐笔验签后普通快进至主仓 `main`。本地整仓通过 1,108 项 Rust、765 项 Chromium 和 7 项 Node SDK 测试。Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted 在同一 SHA 通过整仓、外部 SDK、Release、Tauri 与 Chromium，四项 CodeQL 通过。终态回执 SHA-256 依次为 `24c36509717941687641c722d41b9dc90f29cf6cf7575e61feedda64bf6a5a13` 和 `4a49888e01edfc5558847db5a063108f68ab74a234b137fad017f79f7b3782b2`。Windows 10 和 macOS 原生客户端验收继续延期，公开发行仍按 A-017 放行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45952341316) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45952341173)
+
 ### 2026-11-27 Windows 全用户自定义目录整包升级
 
 在断网 Windows 11 24H2（`26100.9974`）来宾的既有管理员会话中，用上述 `2a1f93b9` 安装包和修正 Inno 后的 `16e5184a` 目标载荷执行全用户整包升级。安装根的父目录与末级目录均含空格和 Unicode。正常升级通过九项。机器部署不抢先初始化账号资料，机器升级保留旧的逐账号登记，原账号重开后才登记新版 Core。原安装根、机器 PATH 与开始菜单仍指向该实例，真实 WebView2 和稳定 CLI 可读回原工程。CLI 冷启动耗时 1552 毫秒，卸载后数据库、逐账号登记和目录内的无关文件保全。正常回执 SHA-256 为 `96e3ffc15dd320a44b37b85dfb325eacbdda88b6b0ef167b3b714cdf7d595fe0`。

@@ -1340,6 +1340,15 @@ description = "Ubuntu 22.04 用 bffef439 与 41b7a82b 签名 AppImage 在私有 
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_update.rs"]
 
 [[test]]
+id = "distribution.windows.update-disk-exhaustion"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "Win11 当前用户在专用 NTFS 虚拟盘以同 SHA 组装的 49b25485 Inno 与 16e5184a 目标包验收整包更新。真实磁盘满时保全旧程序、原登记、数据库、设置、工程和下载包，释放空间后同包升级并通过原生 IPC 重开工程。当前错误归为 Win32 找不到文件。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
+
+[[test]]
 id = "distribution.gui.signed-update-consent"
 stage = "M12"
 kind = "integration-ui"
