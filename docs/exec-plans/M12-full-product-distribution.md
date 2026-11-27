@@ -668,6 +668,21 @@ Win11 Sandbox 夹具通过已装运行时跳过、缺失时拒绝提升环境下
 
 在同一实例安装此前从签名源码 `748933d8` 构建的 DEB。AppImage 拒绝使用 DEB 登记的资料目录，DEB Bootstrap 也拒绝接管 AppImage 的资料目录。两份登记和数据库摘要在拒绝场景和 `dpkg purge` 后保持一致。验证使用隔离的两套 XDG 资料目录。应用包移除后清理试验样本，保留已配置的隔离实例供后续 AppImage 更新验收。
 
+### 2026-11-28 Windows 同范围 PATH 升级与卸载
+
+在断网 Win11 24H2 Sandbox 用完整 `9eba5b98` 与 `16e5184a` 工程包复验当前用户及全用户范围。正常安装、升级和卸载两组均通过。预先在 PATH 放入带引号、尾部反斜杠且大小写不同的 Unicode 安装目录时，两个范围都误添了一个等效条目。当前用户和全用户失败回执 SHA-256 分别为 `3d70a46b8789dcd240d1d4b8152308c7ada136348f2bf4e4b1233f913609ec53`、`9d24f7469005b0987b695a6a89aa1b1154b260a69e9d380398eee6cc5f9b6c52`。
+
+同版本 Inno 的独立探针执行原生产函数。长度 42 的 Unicode 路径后，分号的字节偏移结果为 51，显式 String 分隔符得到的字符位置为预期的 43。回执摘要为 `56b574aa4a10e1493b02b831759554fe7dda2c9c6206493f44a1432ccf9e1304`。签名修复 `7b7522b5` 使用 String 分隔符，将查找结果用于同一字符单位的切分。[Inno Pascal 脚本函数](https://jrsoftware.org/inno-setup/documentation/topic_scriptfunctions.htm)
+
+在 `bffef439` 和 `16e5184a` 的已验签运行载荷上，用修正的 PATH 函数重新组装隔离 Inno 两版。包 SHA-256 分别为 `d3693820c586efdfd5c1a1fe64f0ef20b584625843fa24469a4dd439e8aba896`、`96d50d79a75597797e570213a4364c5b69f24b524a1eb2b16033241bfedd5813`。两种范围均通过自有条目及既有等效条目，共四组。升级前后均核对两个范围 PATH 的原始值、顺序及 `REG_SZ` 或 `REG_EXPAND_SZ` 类型。含 Unicode 的第三方条目、相似前缀条目、数据及工程均保全。卸载精确去掉自有条目，既有等效条目保全。含引号的既有条目在 Win11 命令提示符可解析并从新版 CLI 读回原工程，Windows PowerShell 5.1 对该条目查找失败。安装器写入的常规条目经 Windows PowerShell 查找成功。双向安装范围转换按原发行矩阵验收。[Windows 命令 PATH](https://learn.microsoft.com/windows-server/administration/windows-commands/path)
+
+| Win11 用例 | 回执 SHA-256 |
+| --- | --- |
+| 当前用户自有条目 | `492be900da6623bdc81c8e139e7741f44be0fae4f506e4c66cd45e5bf249c7cc` |
+| 全用户自有条目 | `2e3bb857e475ba70326e168f2c26b738ffd807717d8a7427effe757bda1a7411` |
+| 当前用户既有等效条目 | `13e78edca52e1985f33c3ed3ce05e16a0678840d0052203be35b1c0def196a97` |
+| 全用户既有等效条目 | `d882a2d76aa0f68afb7d6bda56a9a9b993932fe92eadefd595a9c550dd096a1a` |
+
 ### 2026-11-25 Windows 产品 Inno 双范围
 
 Inno 只向对应范围的 PATH 添加稳定 `bin` 目录。它保留原值类型和用户已有条目，在卸载登记中记录本次添加的确切值。卸载时仅清理可唯一识别的自有条目，并保留安装后其他 PATH 改动。已有的等价条目不被接管。安装器变更结束时通知 Windows 刷新环境。

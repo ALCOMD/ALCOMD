@@ -12,6 +12,8 @@
 
 全用户磁盘满诊断修复 `49a3d526` 已逐笔验签并快进至主仓 `main`。本机整仓、三平台 Hosted CI 和四项 CodeQL 均通过。本机及各 Hosted 平台各通过 765 项 Chromium。Win11 在桌面启动和提交意图落盘后的故障复验均通过，原下载删除后仍可用保留的签名包恢复并在新版重开同一工程。[原生复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户整包更新磁盘满复验) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326613) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326331)
 
+Windows Inno 在自定义 Unicode 根识别已有 PATH 条目时存在分隔符定位错误。签名修复 `7b7522b5` 已通过 Win11 四组实包复验，覆盖两种安装范围、升级保留注册表原值与类型、只移除自有条目和保留原有等效条目。本地整仓门禁正在运行。[Windows 同范围 PATH 复验](exec-plans/M12-full-product-distribution.md#2026-11-28-windows-同范围-path-升级与卸载)
+
 已从同一 `9eba5b98` 签名源码组装 Ubuntu 22.04 的 AppImage 与 DEB，解包后均重新验签。原生 FUSE、DEB 安装与卸载、两档 WebKit 缩放及键盘焦点均通过。[9eba5b98 Linux 同源实包](exec-plans/M12-full-product-distribution.md#2026-11-27-9eba5b98-linux-同源实包复验)
 
 签名工程候选 `a70c181e` 已通过同源 Inno、AppImage 和 DEB 组装及安装态桌面复验。Windows 11 的两种安装范围均验证 Unicode 目录安装、CLI 冷启动、WebView2 和卸载保全。Ubuntu 22.04 验证 AppImage FUSE、DEB 安装、两档缩放与 AppImage 的 Orca 朗读。含同一打包代码的主仓候选 `696953b1` 通过本地整仓、Chromium、三平台 Hosted CI 与四项 CodeQL。[同源原生资产组装](exec-plans/M12-full-product-distribution.md#2026-11-27-同源原生资产组装)
