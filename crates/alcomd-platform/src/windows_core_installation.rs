@@ -16,20 +16,51 @@ use windows_sys::Win32::Storage::FileSystem::{
 use super::file_link_count;
 use super::security::{current_user_sid_string, is_fixed_drive, validate_installation_dacl};
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) enum InstallationTrust {
+    User,
+    Machine,
+}
+
+impl InstallationTrust {
+    pub(crate) fn open_record(self, path: &Path) -> io::Result<File> {
+        open_checked_file(path, FILE_READ_DATA, self)
+    }
+
+    pub(crate) fn open_record_for_removal(self, path: &Path) -> io::Result<File> {
+        open_checked_file(path, FILE_READ_DATA | DELETE, self)
+    }
+
+    pub(crate) fn check_executable(self, path: &Path) -> io::Result<()> {
+        open_checked_file(path, 0, self).map(drop)
+    }
+
+    pub(crate) fn open_manifest(self, path: &Path) -> io::Result<File> {
+        open_checked_file(path, GENERIC_READ, self)
+    }
+
+    fn user_sid(self) -> io::Result<Option<String>> {
+        match self {
+            Self::User => current_user_sid_string().map(Some),
+            Self::Machine => Ok(None),
+        }
+    }
+
+    pub(crate) fn validate_parent(self, path: &Path) -> io::Result<()> {
+        validate_parent(path, self.user_sid()?.as_deref())
+    }
+}
+
 pub(crate) fn open_registration(path: &Path) -> io::Result<File> {
-    open_checked_file(path, FILE_READ_DATA)
+    InstallationTrust::User.open_record(path)
 }
 
 pub(crate) fn open_registration_for_removal(path: &Path) -> io::Result<File> {
-    open_checked_file(path, FILE_READ_DATA | DELETE)
+    InstallationTrust::User.open_record_for_removal(path)
 }
 
 pub(crate) fn validate_core_executable(path: &Path) -> io::Result<()> {
-    open_checked_file(path, 0).map(drop)
-}
-
-pub(crate) fn open_installation_manifest(path: &Path) -> io::Result<File> {
-    open_checked_file(path, GENERIC_READ)
+    InstallationTrust::User.check_executable(path)
 }
 
 const REPLACE_ACCESS: u32 =
@@ -38,15 +69,18 @@ const MODIFY_ACCESS: u32 =
     REPLACE_ACCESS | FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA;
 
 pub(crate) fn validate_registration_parent(path: &Path) -> io::Result<()> {
+    InstallationTrust::User.validate_parent(path)
+}
+
+fn validate_parent(path: &Path, user_sid: Option<&str>) -> io::Result<()> {
     let root = local_drive_root(path)?;
     let mut directory = root;
     let directories = path.parent().ok_or_else(untrusted)?;
-    let current_sid = current_user_sid_string()?;
 
     // Other users may create new folders in some volume roots. No ancestor
     // may allow them to replace the existing path being followed.
     let ancestors = directories.components().skip(2);
-    check_directory(&directory, &current_sid, REPLACE_ACCESS, true)?;
+    check_directory(&directory, user_sid, REPLACE_ACCESS, true)?;
     for component in ancestors {
         let Component::Normal(name) = component else {
             return Err(untrusted());
@@ -57,15 +91,15 @@ pub(crate) fn validate_registration_parent(path: &Path) -> io::Result<()> {
         } else {
             REPLACE_ACCESS
         };
-        check_directory(&directory, &current_sid, mask, false)?;
+        check_directory(&directory, user_sid, mask, false)?;
     }
 
     Ok(())
 }
 
-fn open_checked_file(path: &Path, access: u32) -> io::Result<File> {
-    validate_registration_parent(path)?;
-    let current_sid = current_user_sid_string()?;
+fn open_checked_file(path: &Path, access: u32, trust: InstallationTrust) -> io::Result<File> {
+    let user_sid = trust.user_sid()?;
+    validate_parent(path, user_sid.as_deref())?;
     let file = OpenOptions::new()
         .access_mode(READ_CONTROL | FILE_READ_ATTRIBUTES | access)
         .share_mode(FILE_SHARE_READ)
@@ -78,11 +112,20 @@ fn open_checked_file(path: &Path, access: u32) -> io::Result<File> {
     {
         return Err(untrusted());
     }
-    validate_installation_dacl(file.as_raw_handle().cast(), &current_sid, MODIFY_ACCESS)?;
+    validate_installation_dacl(
+        file.as_raw_handle().cast(),
+        user_sid.as_deref(),
+        MODIFY_ACCESS,
+    )?;
     Ok(file)
 }
 
-fn check_directory(path: &Path, current_sid: &str, mask: u32, drive_root: bool) -> io::Result<()> {
+fn check_directory(
+    path: &Path,
+    user_sid: Option<&str>,
+    mask: u32,
+    drive_root: bool,
+) -> io::Result<()> {
     let directory = OpenOptions::new()
         .access_mode(READ_CONTROL | FILE_READ_ATTRIBUTES)
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
@@ -102,7 +145,7 @@ fn check_directory(path: &Path, current_sid: &str, mask: u32, drive_root: bool) 
     } else {
         mask
     };
-    validate_installation_dacl(directory.as_raw_handle().cast(), current_sid, mask)
+    validate_installation_dacl(directory.as_raw_handle().cast(), user_sid, mask)
 }
 
 fn local_drive_root(path: &Path) -> io::Result<PathBuf> {

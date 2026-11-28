@@ -2,25 +2,41 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::Path;
 
+use alcomd_platform::WINDOWS_PRODUCT_SIDECARS;
 use alcomd_updater::distribution::{
     Candidate, MANIFEST_NAME, SIGNATURE_NAME, Target, VerifiedRuntime, WINDOWS_CRT_FILE,
-    WINDOWS_UPDATE_STAGE_PREFIX, format_digest,
+    WINDOWS_FRESH_STAGE_PREFIX, WINDOWS_UPDATE_STAGE_PREFIX, format_digest,
 };
 use anyhow::{Context, ensure};
 
-use super::{ProductConfig, publish_file};
+use super::{
+    ProductConfig, publish_file,
+    webview2::{BOOTSTRAPPER_NAME, STANDALONE_NAME, StagedDigests},
+};
 
 pub(super) fn export(
     layout: &Path,
     product: &ProductConfig,
     candidate: &Candidate,
     verified: &VerifiedRuntime,
+    webview2: &StagedDigests,
 ) -> anyhow::Result<()> {
     ensure!(
         candidate.target == Target::Windows,
         "Inno requires a Windows runtime"
     );
     let version = candidate.version.to_string();
+    let scheme = &product.identity.uri_scheme;
+    ensure!(
+        scheme
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_lowercase())
+            && scheme.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"+.-".contains(&byte)
+            }),
+        "invalid Inno URI scheme"
+    );
     for value in [
         &product.product.family_name,
         &product.identity.install_directory,
@@ -57,6 +73,16 @@ pub(super) fn export(
     );
 
     let mut files = String::new();
+    writeln!(
+        files,
+        "Source: \"webview2\\{BOOTSTRAPPER_NAME}\"; Flags: dontcopy noencryption"
+    )?;
+    if webview2.standalone.is_some() {
+        writeln!(
+            files,
+            "Source: \"webview2\\{STANDALONE_NAME}\"; Flags: dontcopy noencryption"
+        )?;
+    }
     let mut update_files = String::new();
     let mut uninstall_files = String::new();
     let mut runtime_directories = BTreeSet::new();
@@ -83,7 +109,12 @@ pub(super) fn export(
         format!("{}.exe", product.binaries.cli),
         WINDOWS_CRT_FILE.into(),
     ] {
-        add_file(&mut files, &format!("bin\\{entry}"))?;
+        let installed = format!("bin\\{entry}");
+        add_file(&mut files, &installed)?;
+        writeln!(
+            uninstall_files,
+            "Type: files; Name: \"{{app}}\\{installed}\"; Check: IsBridgeInstallation"
+        )?;
     }
     for directory in runtime_directories.iter().rev() {
         writeln!(
@@ -91,20 +122,63 @@ pub(super) fn export(
             "Type: dirifempty; Name: \"{{app}}\\{directory}\"; Check: IsUpdateInstallation"
         )?;
     }
+    for directory in ["bin", "runtime"] {
+        writeln!(
+            uninstall_files,
+            "Type: dirifempty; Name: \"{{app}}\\{directory}\"; Check: IsBridgeInstallation"
+        )?;
+    }
 
     let bootstrap = format!("{}.exe", product.binaries.bootstrap);
     let cli = format!("{}.exe", product.binaries.cli);
+    let gui = format!("{}.exe", product.binaries.gui);
     let bootstrap_digest = verified
         .file_sha256(&bootstrap)
         .context("Bootstrap missing from verified Inno runtime")?;
+    let gui_digest = verified
+        .file_sha256(&gui)
+        .context("GUI missing from verified Inno runtime")?;
     let crt_digest = verified
         .file_sha256(WINDOWS_CRT_FILE)
         .context("CRT missing from verified Inno runtime")?;
+    let mut root_worker_checks = String::new();
+    let mut root_worker_copies = String::new();
+    for file in WINDOWS_PRODUCT_SIDECARS {
+        if let Some(digest) = verified.file_sha256(file) {
+            write!(
+                root_worker_checks,
+                " and\n    PlainFileMatches(Directory + '\\{file}', '{}')",
+                format_digest(digest)
+            )?;
+            writeln!(
+                root_worker_copies,
+                "  if not FileCopy(Runtime + '\\{file}', InstallRootWorker + '\\{file}', True) then Exit;"
+            )?;
+        }
+    }
+    let webview2_code = include_str!("inno-webview2.iss")
+        .replace("@WEBVIEW2_BOOTSTRAPPER_NAME@", BOOTSTRAPPER_NAME)
+        .replace("@WEBVIEW2_BOOTSTRAPPER_DIGEST@", &webview2.bootstrapper)
+        .replace("@WEBVIEW2_STANDALONE_NAME@", STANDALONE_NAME)
+        .replace(
+            "@WEBVIEW2_STANDALONE_DIGEST@",
+            webview2.standalone.as_deref().unwrap_or(""),
+        );
     let script = include_str!("inno.iss")
+        .replace("@SCOPE_CODE@", include_str!("inno-scope.iss").trim_end())
+        .replace(
+            "@PROTOCOL_CODE@",
+            include_str!("inno-protocol.iss").trim_end(),
+        )
+        .replace("@WEBVIEW2_CODE@", webview2_code.trim_end())
+        .replace("@ROOT_WORKER_CHECKS@", &root_worker_checks)
+        .replace("@ROOT_WORKER_COPIES@", root_worker_copies.trim_end())
         .replace("@APP_ID@", app_id)
         .replace("@APP_NAME@", &product.product.display_name)
         .replace("@APP_AUMID@", &product.identity.windows_aumid)
         .replace("@APP_PUBLISHER@", &product.product.publisher_name)
+        .replace("@URI_SCHEME@", scheme)
+        .replace("@GUI_DIGEST@", &format_digest(gui_digest))
         .replace("@APP_VERSION@", &version)
         .replace("@FAMILY_NAME@", &product.product.family_name)
         .replace("@INSTALL_DIRECTORY@", &product.identity.install_directory)
@@ -116,6 +190,11 @@ pub(super) fn export(
         .replace("@CRT_DIGEST@", &format_digest(crt_digest))
         .replace("@SOURCE_SHA@", &candidate.source_commit)
         .replace("@MANIFEST_NAME@", MANIFEST_NAME)
+        .replace("@FRESH_STAGE_PREFIX@", WINDOWS_FRESH_STAGE_PREFIX)
+        .replace(
+            "@MACHINE_BRIDGE_ACCOUNT@",
+            alcomd_platform::WINDOWS_BRIDGE_ACCOUNT_RECORD,
+        )
         .replace("@UPDATE_STAGE_PREFIX@", WINDOWS_UPDATE_STAGE_PREFIX)
         .replace("@RUNTIME_FILE_COUNT@", &runtime_file_count.to_string())
         .replace(
@@ -147,7 +226,7 @@ fn add_file(list: &mut String, relative: &str) -> std::fmt::Result {
         .expect("package file has a directory");
     writeln!(
         list,
-        "Source: \"{relative}\"; DestDir: \"{{app}}\\{parent}\"; Flags: ignoreversion; Check: IsFreshInstallation"
+        "Source: \"{relative}\"; DestDir: \"{{app}}\\{parent}\"; Flags: ignoreversion onlyifdoesntexist; Check: IsFreshInstallation"
     )
 }
 

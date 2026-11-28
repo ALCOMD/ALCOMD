@@ -22,8 +22,8 @@ use url::Url;
 
 use super::replay::{ReplayJournal, verify_download_replay};
 use super::{
-    MAX_UPDATE_RESPONSE_BYTES, MAX_URL_BYTES, UpdateAsset, UpdateRequest, UpdateStream,
-    VerifiedUpdate, check_replay, validate_update_asset_url, verify_update,
+    AcceptedUpdate, MAX_UPDATE_RESPONSE_BYTES, MAX_URL_BYTES, UpdateAsset, UpdateRequest,
+    UpdateStream, VerifiedUpdate, check_replay, validate_update_asset_url, verify_update,
 };
 use crate::{
     Channel,
@@ -42,6 +42,34 @@ pub struct StagedUpdate {
     pub verified: VerifiedUpdate,
 }
 
+/// Authenticated feed response retained for the user's exact download choice.
+pub struct AvailableUpdate {
+    body: Vec<u8>,
+    verified: VerifiedUpdate,
+}
+
+impl AvailableUpdate {
+    pub fn verified(&self) -> &VerifiedUpdate {
+        &self.verified
+    }
+}
+
+pub(super) async fn check_update(
+    origin: &Url,
+    request: &UpdateRequest<'_>,
+    replay_directory: &Path,
+) -> anyhow::Result<Option<AvailableUpdate>> {
+    let started = Instant::now();
+    fetch_verified_offer(
+        &update_client()?,
+        origin,
+        request,
+        replay_directory,
+        started,
+    )
+    .await
+}
+
 /// Downloads a self-update from a trusted HTTPS origin into an existing private directory.
 ///
 /// A 204 response leaves staging and the replay receipt untouched. The asset and signed
@@ -52,16 +80,52 @@ pub async fn download_update(
     download_directory: &Path,
     replay_directory: &Path,
 ) -> anyhow::Result<Option<StagedUpdate>> {
-    ensure!(
-        request.previous.is_none(),
-        "product update download requires its persisted replay state"
-    );
     let started = Instant::now();
-    let host = origin
-        .host_str()
-        .context("missing product update origin host")?;
-    let endpoint = feed_endpoint(origin, request.stream)?;
-    let client = Client::builder()
+    let client = update_client()?;
+    let Some(offer) =
+        fetch_verified_offer(&client, origin, request, replay_directory, started).await?
+    else {
+        return Ok(None);
+    };
+    stage_offer(
+        &client,
+        request,
+        download_directory,
+        replay_directory,
+        offer,
+        started,
+    )
+    .await
+    .map(Some)
+}
+
+pub(super) async fn download_selected_update(
+    request: &UpdateRequest<'_>,
+    download_directory: &Path,
+    replay_directory: &Path,
+    offer: AvailableUpdate,
+) -> anyhow::Result<StagedUpdate> {
+    let started = Instant::now();
+    let acceptance = offer.verified.acceptance();
+    let verified = verify_update(&offer.body, request)?;
+    ensure!(
+        verified.acceptance() == acceptance,
+        "selected product update changed"
+    );
+    check_staged_replay(replay_directory, acceptance).await?;
+    stage_offer(
+        &update_client()?,
+        request,
+        download_directory,
+        replay_directory,
+        offer,
+        started,
+    )
+    .await
+}
+
+fn update_client() -> anyhow::Result<Client> {
+    Client::builder()
         .https_only(true)
         .redirect(Policy::none())
         .referer(false)
@@ -72,8 +136,25 @@ pub async fn download_update(
         .connect_timeout(Duration::from_secs(10))
         .read_timeout(Duration::from_secs(30))
         .build()
-        .map_err(|_| anyhow!("cannot initialize product update transport"))?;
-    let body = tokio::time::timeout(FEED_DEADLINE, fetch_feed(&client, endpoint, &[host]))
+        .map_err(|_| anyhow!("cannot initialize product update transport"))
+}
+
+async fn fetch_verified_offer(
+    client: &Client,
+    origin: &Url,
+    request: &UpdateRequest<'_>,
+    replay_directory: &Path,
+    started: Instant,
+) -> anyhow::Result<Option<AvailableUpdate>> {
+    ensure!(
+        request.previous.is_none(),
+        "product update requires its persisted replay state"
+    );
+    let host = origin
+        .host_str()
+        .context("missing product update origin host")?;
+    let endpoint = feed_endpoint(origin, request.stream)?;
+    let body = tokio::time::timeout(FEED_DEADLINE, fetch_feed(client, endpoint, &[host]))
         .await
         .context("product update feed timed out")??;
     let Some(body) = body else {
@@ -86,14 +167,26 @@ pub async fn download_update(
             ..*request
         },
     )?;
-    let replay_directory = replay_directory.to_path_buf();
-    let replay_check_directory = replay_directory.clone();
-    let acceptance = verified.acceptance();
-    tokio::task::spawn_blocking(move || {
-        verify_download_replay(&replay_check_directory, acceptance)
-    })
-    .await
-    .context("product update replay check stopped")??;
+    check_staged_replay(replay_directory, verified.acceptance()).await?;
+    Ok(Some(AvailableUpdate { body, verified }))
+}
+
+async fn check_staged_replay(directory: &Path, acceptance: AcceptedUpdate) -> anyhow::Result<()> {
+    let directory = directory.to_path_buf();
+    tokio::task::spawn_blocking(move || verify_download_replay(&directory, acceptance))
+        .await
+        .context("product update replay check stopped")?
+}
+
+async fn stage_offer(
+    client: &Client,
+    request: &UpdateRequest<'_>,
+    download_directory: &Path,
+    replay_directory: &Path,
+    offer: AvailableUpdate,
+    started: Instant,
+) -> anyhow::Result<StagedUpdate> {
+    let AvailableUpdate { body, verified } = offer;
     let stage = Stage::open(download_directory, verified.asset().name())?;
     let pending = if stage.has_destination()? {
         None
@@ -102,7 +195,7 @@ pub async fn download_update(
             tokio::time::timeout(
                 ASSET_DEADLINE,
                 stream_asset(
-                    &client,
+                    client,
                     verified.asset(),
                     request.allowed_asset_hosts,
                     &stage,
@@ -121,7 +214,8 @@ pub async fn download_update(
         .map(|host| (*host).to_owned())
         .collect();
     let initial_time = request.now;
-    let staged = tokio::task::spawn_blocking(move || {
+    let replay_directory = replay_directory.to_path_buf();
+    tokio::task::spawn_blocking(move || {
         let hosts: Vec<_> = hosts.iter().map(String::as_str).collect();
         let request = UpdateRequest {
             stream,
@@ -133,8 +227,7 @@ pub async fn download_update(
         publish_verified_update(stage, pending, &replay_directory, &body, &request)
     })
     .await
-    .context("product update staging task stopped")??;
-    Ok(Some(staged))
+    .context("product update staging task stopped")?
 }
 
 fn publish_verified_update(

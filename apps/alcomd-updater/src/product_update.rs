@@ -1,5 +1,7 @@
 //! Authenticates the v4 product-update response before interpreting its manifest.
 
+use std::path::Path;
+
 use anyhow::{Context, anyhow, ensure};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, TimeDelta, Utc};
@@ -12,9 +14,14 @@ use url::Url;
 use crate::distribution::Target;
 use crate::{Channel, PRODUCT, ProductIdentity, decode_hex, release_trust};
 
+mod desktop;
 mod download;
 mod replay;
-pub use download::{StagedUpdate, download_update};
+pub use desktop::{
+    desktop_update_failed, desktop_update_storage_location, prepare_desktop_update_storage,
+    record_desktop_update_failure,
+};
+pub use download::{AvailableUpdate, StagedUpdate, download_update};
 pub use replay::verify_and_record_update;
 
 pub const UPDATE_SIGNATURE_DOMAIN: &[u8] = b"ALCOMD product update manifest v1\0";
@@ -207,6 +214,97 @@ pub fn product_update_origin() -> anyhow::Result<Url> {
     Url::parse(&product.product.homepage_url).context("invalid embedded product update origin")
 }
 
+/// Authenticates an offline Linux bridge offer using the product update trust and origin.
+pub fn verify_v3_appimage_offer(path: &Path, channel: Channel) -> anyhow::Result<VerifiedUpdate> {
+    let origin = product_update_origin()?;
+    let host = origin
+        .host_str()
+        .context("missing product update origin host")?;
+    let envelope = crate::read_limited(path, MAX_UPDATE_RESPONSE_BYTES as u64)?;
+    verify_update(
+        &envelope,
+        &UpdateRequest {
+            stream: UpdateStream {
+                channel,
+                target: Target::Linux,
+                format: UpdateFormat::Appimage,
+            },
+            installed_version: &Version::new(3, 4, 0),
+            allowed_asset_hosts: &[host],
+            now: Utc::now(),
+            previous: None,
+        },
+    )
+}
+
+/// Discovers and stages updates for the current desktop build and its channel.
+pub struct InstalledProductUpdater {
+    origin: Url,
+    installed_version: Version,
+    stream: UpdateStream,
+}
+
+impl InstalledProductUpdater {
+    pub fn new(format: UpdateFormat, installed_version: &str) -> anyhow::Result<Self> {
+        let installed_version: Version = installed_version.parse()?;
+        let channel = if installed_version.pre.is_empty() {
+            Channel::Stable
+        } else {
+            Channel::Beta
+        };
+        Ok(Self {
+            origin: product_update_origin()?,
+            installed_version,
+            stream: UpdateStream {
+                channel,
+                target: format.target(),
+                format,
+            },
+        })
+    }
+
+    pub fn channel(&self) -> Channel {
+        self.stream.channel
+    }
+
+    pub async fn check(&self, replay_directory: &Path) -> anyhow::Result<Option<AvailableUpdate>> {
+        let hosts = [self.host()?];
+        download::check_update(&self.origin, &self.request(&hosts), replay_directory).await
+    }
+
+    pub async fn download(
+        &self,
+        offer: AvailableUpdate,
+        download_directory: &Path,
+        replay_directory: &Path,
+    ) -> anyhow::Result<StagedUpdate> {
+        let hosts = [self.host()?];
+        download::download_selected_update(
+            &self.request(&hosts),
+            download_directory,
+            replay_directory,
+            offer,
+        )
+        .await
+    }
+
+    fn host(&self) -> anyhow::Result<&str> {
+        self.origin
+            .host_str()
+            .context("missing product update origin host")
+    }
+
+    fn request<'a>(&'a self, hosts: &'a [&'a str]) -> UpdateRequest<'a> {
+        UpdateRequest {
+            stream: self.stream,
+            installed_version: &self.installed_version,
+            allowed_asset_hosts: hosts,
+            now: Utc::now(),
+            previous: None,
+        }
+    }
+}
+
 /// Accepts the exact envelope bytes a Windows installation transaction will retain.
 #[cfg(windows)]
 pub fn accept_windows_product_update(
@@ -216,27 +314,87 @@ pub fn accept_windows_product_update(
     channel: Channel,
     installed_version: &Version,
 ) -> anyhow::Result<(VerifiedUpdate, i64)> {
+    with_windows_update_request(channel, installed_version, |request| {
+        verify_and_record_update(replay_directory, bytes, request, asset)
+    })
+}
+
+/// Records a verified all-users update in a machine-owned Windows replay journal.
+#[cfg(windows)]
+pub fn accept_windows_machine_product_update(
+    bytes: &[u8],
+    asset: &std::path::Path,
+    replay_directory: &std::path::Path,
+    channel: Channel,
+    installed_version: &Version,
+) -> anyhow::Result<VerifiedUpdate> {
+    with_windows_update_request(channel, installed_version, |request| {
+        replay::verify_and_record_machine_update(replay_directory, bytes, request, asset)
+    })
+    .map(|(update, _)| update)
+}
+
+/// Verifies the signed declaration before an administrator receives its bounded asset.
+#[cfg(windows)]
+pub fn verify_fresh_windows_product_update(
+    bytes: &[u8],
+    channel: Channel,
+    installed_version: &Version,
+) -> anyhow::Result<(VerifiedUpdate, i64)> {
+    with_windows_update_request(channel, installed_version, |request| {
+        verify_update(bytes, request)
+    })
+}
+
+#[cfg(windows)]
+fn with_windows_update_request(
+    channel: Channel,
+    installed_version: &Version,
+    verify: impl FnOnce(&UpdateRequest<'_>) -> anyhow::Result<VerifiedUpdate>,
+) -> anyhow::Result<(VerifiedUpdate, i64)> {
+    with_update_request(UpdateFormat::Inno, channel, installed_version, verify)
+}
+
+/// Durably accepts a signed AppImage update before the portable replacement.
+#[cfg(target_os = "linux")]
+pub fn accept_portable_product_update(
+    bytes: &[u8],
+    asset: &std::path::Path,
+    replay_directory: &std::path::Path,
+    channel: Channel,
+    installed_version: &Version,
+) -> anyhow::Result<(VerifiedUpdate, i64)> {
+    with_update_request(
+        UpdateFormat::Appimage,
+        channel,
+        installed_version,
+        |request| verify_and_record_update(replay_directory, bytes, request, asset),
+    )
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn with_update_request(
+    format: UpdateFormat,
+    channel: Channel,
+    installed_version: &Version,
+    verify: impl FnOnce(&UpdateRequest<'_>) -> anyhow::Result<VerifiedUpdate>,
+) -> anyhow::Result<(VerifiedUpdate, i64)> {
     let origin = product_update_origin()?;
     let host = origin
         .host_str()
         .context("missing product update origin host")?;
     let now = Utc::now();
-    let update = verify_and_record_update(
-        replay_directory,
-        bytes,
-        &UpdateRequest {
-            stream: UpdateStream {
-                channel,
-                target: Target::Windows,
-                format: UpdateFormat::Inno,
-            },
-            installed_version,
-            allowed_asset_hosts: &[host],
-            now,
-            previous: None,
+    let update = verify(&UpdateRequest {
+        stream: UpdateStream {
+            channel,
+            target: format.target(),
+            format,
         },
-        asset,
-    )?;
+        installed_version,
+        allowed_asset_hosts: &[host],
+        now,
+        previous: None,
+    })?;
     Ok((update, now.timestamp_micros()))
 }
 
@@ -248,9 +406,42 @@ pub fn reverify_interrupted_windows_update(
     accepted_at: i64,
     installed_version: &Version,
 ) -> anyhow::Result<VerifiedUpdate> {
+    reverify_interrupted_update(
+        UpdateFormat::Inno,
+        bytes,
+        acceptance,
+        accepted_at,
+        installed_version,
+    )
+}
+
+/// Rechecks the exact signed update retained in the portable transaction.
+#[cfg(target_os = "linux")]
+pub fn reverify_interrupted_portable_update(
+    bytes: &[u8],
+    acceptance: AcceptedUpdate,
+    accepted_at: i64,
+    installed_version: &Version,
+) -> anyhow::Result<VerifiedUpdate> {
+    reverify_interrupted_update(
+        UpdateFormat::Appimage,
+        bytes,
+        acceptance,
+        accepted_at,
+        installed_version,
+    )
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn reverify_interrupted_update(
+    format: UpdateFormat,
+    bytes: &[u8],
+    acceptance: AcceptedUpdate,
+    accepted_at: i64,
+    installed_version: &Version,
+) -> anyhow::Result<VerifiedUpdate> {
     ensure!(
-        acceptance.stream.target == Target::Windows
-            && acceptance.stream.format == UpdateFormat::Inno,
+        acceptance.stream.target == format.target() && acceptance.stream.format == format,
         "interrupted update has the wrong target or format"
     );
     let origin = product_update_origin()?;
@@ -258,7 +449,7 @@ pub fn reverify_interrupted_windows_update(
         .host_str()
         .context("missing product update origin host")?;
     let now = DateTime::from_timestamp_micros(accepted_at)
-        .context("invalid Windows update acceptance time")?;
+        .context("invalid product update acceptance time")?;
     let update = verify_update(
         bytes,
         &UpdateRequest {

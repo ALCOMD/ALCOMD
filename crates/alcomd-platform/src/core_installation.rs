@@ -10,6 +10,13 @@ const MAX_RUNTIME_PATH_BYTES: usize = 4096;
 
 /// Filename of the signed manifest for a complete installed product runtime.
 pub const PRODUCT_PAYLOAD_MANIFEST_NAME: &str = "product-payload.json";
+/// Required app-local runtime DLL on Windows.
+pub const WINDOWS_CRT_FILE: &str = "vcruntime140.dll";
+/// Machine-owned record that leaves account initialization to the bridge.
+pub const WINDOWS_BRIDGE_ACCOUNT_RECORD: &str = "account-migration-v1";
+/// App-local DLL names permitted by the Windows product layout.
+pub const WINDOWS_PRODUCT_SIDECARS: &[&str] =
+    &[WINDOWS_CRT_FILE, "vcruntime140_1.dll", "WebView2Loader.dll"];
 
 /// Basename of the Core executable from the product manifest.
 #[cfg(unix)]
@@ -81,10 +88,27 @@ mod registration;
 #[cfg(windows)]
 pub use registration::{
     WINDOWS_ACTIVE_RUNTIME_RECORD, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME, WINDOWS_CLI_EXECUTABLE_NAME,
-    WINDOWS_UPDATE_INTENT_RECORD, WindowsInstallationUpdate, check_windows_core_registration,
-    hold_windows_installation, publish_windows_core_registration, remove_windows_core_registration,
+    WINDOWS_GUI_EXECUTABLE_NAME, WINDOWS_INSTALLATION_ROOT_RECORD, WINDOWS_SCOPE_TRANSITION_RECORD,
+    WINDOWS_UPDATE_INTENT_RECORD, WindowsInstallationUpdate, WindowsScopeRegistrationTransfer,
+    WindowsScopeTransitionSource, check_windows_core_registration,
+    create_windows_machine_installation_directory, create_windows_machine_installation_record,
+    hold_windows_installation, open_windows_machine_installation_record,
+    publish_windows_core_registration, release_windows_installation_root,
+    remove_windows_core_registration, reserve_windows_installation_root,
+    validate_windows_installation_root, validate_windows_machine_installation_record_parent,
     windows_current_user_installation_root, windows_installation_bootstrap,
-    windows_installation_runtime,
+    windows_installation_runtime, windows_machine_installation_root,
+    windows_machine_runtime_bootstrap, windows_retired_machine_installation_bootstrap,
+};
+#[cfg(windows)]
+pub use registration::{
+    WINDOWS_BRIDGE_EMPTY_PROFILE_PROOF, approve_windows_empty_bridge_profile,
+    check_windows_bridge_profile_for_startup, windows_empty_bridge_activation_proof,
+};
+#[cfg(windows)]
+pub use registration::{
+    WINDOWS_SCOPE_DESTINATION_COMMIT_RECORD, WINDOWS_SCOPE_DESTINATION_RECORD,
+    WindowsScopeTransitionDestination,
 };
 
 #[cfg(target_os = "linux")]
@@ -93,9 +117,11 @@ mod linux_registration;
 #[cfg(target_os = "linux")]
 pub use linux_registration::{
     LINUX_BOOTSTRAP_EXECUTABLE_NAME, LINUX_GUI_EXECUTABLE_NAME, check_linux_core_registration,
-    linux_installation_bootstrap, linux_installation_runtime, linux_portable_runtime,
-    linux_portable_runtime_is_known, linux_retired_deb_installation_bootstrap,
-    publish_linux_core_registration,
+    check_linux_portable_update_registration, linux_installation_bootstrap,
+    linux_installation_runtime, linux_portable_runtime, linux_portable_runtime_for_version,
+    linux_portable_runtime_is_known, linux_portable_update_bootstrap,
+    linux_retired_deb_installation_bootstrap, publish_linux_core_registration,
+    publish_linux_portable_update_registration, require_unprivileged_linux_installation,
 };
 
 fn parse_runtime_directory(data: &[u8]) -> io::Result<PathBuf> {

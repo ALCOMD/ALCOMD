@@ -5,6 +5,8 @@ use std::io::{self, Read};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 
+use rustix::fs::{AtFlags, RenameFlags, fstat, fsync, renameat_with, statat};
+use rustix::process::geteuid;
 use serde::{Deserialize, Serialize};
 
 use crate::core_installation::open_protected_file;
@@ -44,6 +46,75 @@ impl PortableImage {
     pub fn size(&self) -> u64 {
         self.identity.size
     }
+
+    /// Opens a replaceable AppImage owned by this account, in an account-owned directory.
+    pub fn open_for_update(path: &Path) -> io::Result<Self> {
+        let image = Self::open(path)?;
+        if image.identity.uid != geteuid().as_raw() {
+            return Err(untrusted_update());
+        }
+        update_parent(path)?;
+        Ok(image)
+    }
+
+    /// Checks a protected, account-owned destination for a newly staged AppImage.
+    pub fn check_destination(path: &Path) -> io::Result<()> {
+        validate_absolute_path(path)?;
+        update_parent(path).map(drop)
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Rechecks the two anchored names, exchanges them atomically and syncs both directories.
+    pub fn exchange_for_update(&self, other: &Self) -> io::Result<()> {
+        let left_directory = update_parent(&self.path)?;
+        let right_directory = update_parent(&other.path)?;
+        let left_name = self.path.file_name().ok_or_else(invalid_origin)?;
+        let right_name = other.path.file_name().ok_or_else(invalid_origin)?;
+        let left_stat = statat(&left_directory, left_name, AtFlags::SYMLINK_NOFOLLOW)
+            .map_err(io::Error::from)?;
+        let right_stat = statat(&right_directory, right_name, AtFlags::SYMLINK_NOFOLLOW)
+            .map_err(io::Error::from)?;
+        if self.identity == other.identity
+            || self.identity.device != other.identity.device
+            || PortableImageIdentity::from_stat(&left_stat) != self.identity
+            || PortableImageIdentity::from_stat(&right_stat) != other.identity
+        {
+            return Err(changed_image());
+        }
+        renameat_with(
+            &left_directory,
+            left_name,
+            &right_directory,
+            right_name,
+            RenameFlags::EXCHANGE,
+        )
+        .map_err(io::Error::from)?;
+        fsync(&right_directory).map_err(io::Error::from)?;
+        fsync(&left_directory).map_err(io::Error::from)
+    }
+}
+
+fn update_parent(path: &Path) -> io::Result<rustix::fd::OwnedFd> {
+    let parent = path.parent().ok_or_else(invalid_origin)?;
+    let directory = crate::unix::open_protected_directory_chain(parent)?;
+    let stat = fstat(&directory).map_err(io::Error::from)?;
+    if stat.st_uid != geteuid().as_raw()
+        || stat.st_mode & 0o022 != 0
+        || stat.st_mode & 0o300 != 0o300
+    {
+        return Err(untrusted_update());
+    }
+    Ok(directory)
+}
+
+fn untrusted_update() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "AppImage is not owned by this account",
+    )
 }
 
 /// The origin of a verified portable runtime installed for the current user.
@@ -79,6 +150,22 @@ impl PortableImageIdentity {
             ctime_seconds: metadata.ctime(),
             ctime_nanoseconds: metadata.ctime_nsec(),
         })
+    }
+
+    fn from_stat(stat: &rustix::fs::Stat) -> Self {
+        Self {
+            uid: stat.st_uid,
+            device: stat.st_dev,
+            inode: stat.st_ino,
+            size: stat.st_size.cast_unsigned(),
+            ctime_seconds: stat.st_ctime,
+            ctime_nanoseconds: stat.st_ctime_nsec.cast_signed(),
+        }
+    }
+
+    fn same_object(self, other: Self) -> bool {
+        (self.uid, self.device, self.inode, self.size)
+            == (other.uid, other.device, other.inode, other.size)
     }
 }
 
@@ -139,6 +226,19 @@ impl PortableOrigin {
 
     pub fn payload_manifest_sha256(&self) -> &str {
         &self.payload_manifest_sha256
+    }
+
+    pub fn image_path(&self) -> &Path {
+        &self.app_image_path
+    }
+
+    pub fn image_sha256(&self) -> &str {
+        &self.app_image_sha256
+    }
+
+    /// Tests the recorded inode after an atomic exchange has legitimately changed its ctime.
+    pub fn identifies_image(&self, image: &PortableImage) -> bool {
+        self.file_identity.same_object(image.identity)
     }
 
     fn parse(bytes: &[u8]) -> io::Result<Self> {
@@ -274,6 +374,38 @@ mod tests {
             io::ErrorKind::InvalidData
         );
         assert!(PortableOrigin::bind(&image, &image_digest, &manifest_digest).is_err());
+    }
+
+    #[test]
+    fn atomic_exchange_preserves_both_images_and_refuses_replaced_stage() -> io::Result<()> {
+        let directory = TestDirectory::new();
+        let active = directory.0.join("便携 测试.AppImage");
+        let stage = directory.0.join("stage");
+        fs::DirBuilder::new().mode(0o700).create(&stage)?;
+        let staged = stage.join("image.AppImage");
+        write_image(&active);
+        write_image(&staged);
+        fs::write(&staged, b"next portable fixture")?;
+        let old = PortableImage::open_for_update(&active)?;
+        let original = PortableOrigin::bind(&old, &"a".repeat(64), &"b".repeat(64))?;
+        let stale = PortableImage::open_for_update(&staged)?;
+        let untouched = stage.join("unknown.AppImage");
+        fs::rename(&staged, &untouched)?;
+        write_image(&staged);
+        assert!(old.exchange_for_update(&stale).is_err());
+        assert_eq!(fs::read(&active)?, b"portable image fixture");
+        assert_eq!(fs::read(&untouched)?, b"next portable fixture");
+        fs::remove_file(&staged)?;
+        fs::rename(untouched, &staged)?;
+        let next = PortableImage::open_for_update(&staged)?;
+        let candidate = PortableOrigin::bind(&next, &"c".repeat(64), &"d".repeat(64))?;
+        old.exchange_for_update(&next)?;
+        assert!(original.revalidate().is_err());
+        assert!(original.identifies_image(&PortableImage::open_for_update(&staged)?));
+        assert!(candidate.identifies_image(&PortableImage::open_for_update(&active)?));
+        assert_eq!(fs::read(&active)?, b"next portable fixture");
+        assert_eq!(fs::read(&staged)?, b"portable image fixture");
+        Ok(())
     }
 
     #[test]

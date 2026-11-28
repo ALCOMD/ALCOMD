@@ -353,6 +353,8 @@ async fn initialize_daemon_with_adapters(
     #[cfg(feature = "test-kill-gates")] vpm_reader: Option<alcomd_vpm::VpmReader>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
+    #[cfg(windows)]
+    alcomd_platform::check_windows_bridge_profile_for_startup(&std::env::current_exe()?, &data)?;
     let candidate = alcomd_platform::state_database_location(&data)?;
     preflight_data_layout(&candidate)?;
     let database = alcomd_platform::state_database_path(&data)?;

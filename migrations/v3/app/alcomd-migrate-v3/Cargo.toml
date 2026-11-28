@@ -7,6 +7,15 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
+default-run = "alcomd-migrate-v3"
+
+[features]
+windows-bridge = []
+
+[[bin]]
+name = "alcomd-v3-windows-bridge"
+path = "src/bin/windows_bridge.rs"
+required-features = ["windows-bridge"]
 
 [dependencies]
 anyhow.workspace = true

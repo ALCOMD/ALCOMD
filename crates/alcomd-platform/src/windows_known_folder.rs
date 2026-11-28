@@ -106,6 +106,10 @@ pub(crate) fn program_data_directory() -> io::Result<PathBuf> {
     known_folder_path(&windows_sys::Win32::UI::Shell::FOLDERID_ProgramData, 0)
 }
 
+pub(crate) fn program_files_64_directory() -> io::Result<PathBuf> {
+    known_folder_path(&windows_sys::Win32::UI::Shell::FOLDERID_ProgramFilesX64, 0)
+}
+
 pub(super) fn user_profile_directory() -> io::Result<PathBuf> {
     // Resolve the user profile directly, independently of redirected Documents.
     // Existence and write access are checked at the Core operation boundary.
@@ -116,7 +120,7 @@ fn known_folder_path(folder: &GUID, flags: u32) -> io::Result<PathBuf> {
     let _com = ComInitializationGuard::initialize()?;
     let mut path: PWSTR = null_mut();
     // SAFETY: `path` is initialized to null and passed as a valid output slot.
-    // The Known Folder GUID and flags come only from the two fixed callers; null token
+    // The Known Folder GUID and flags come only from the fixed wrappers; null token
     // selects the current user. Any non-null output is immediately owned by the
     // RAII guard below, including on an HRESULT failure.
     let result = unsafe { SHGetKnownFolderPath(folder, flags, null_mut(), &mut path) };

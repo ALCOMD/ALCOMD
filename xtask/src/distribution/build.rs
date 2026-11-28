@@ -4,12 +4,19 @@ use std::path::Path;
 use std::process::Command;
 
 use alcomd_updater::distribution::{
-    Candidate, Target, WINDOWS_CRT_FILE, format_digest, prepare_release,
+    Candidate, Target, WINDOWS_CRT_COMPANION_FILE, WINDOWS_CRT_FILE, WindowsCrtDigests,
+    format_digest, prepare_release,
 };
 use anyhow::{Context, ensure};
 use clap::ValueEnum;
 
 use super::{ProductConfig, publish_manifest, read_toml, runtime_binaries};
+
+pub(super) struct WindowsCrtInputs<'a> {
+    pub primary: &'a Path,
+    pub companion: &'a Path,
+    pub digests: WindowsCrtDigests<'a>,
+}
 
 pub(super) fn runtime(
     root: &Path,
@@ -18,35 +25,14 @@ pub(super) fn runtime(
     candidate: &Candidate,
     extension: &Path,
     extension_digest: &str,
-    windows_crt: Option<(&Path, &str)>,
+    windows_crt: Option<WindowsCrtInputs<'_>>,
 ) -> anyhow::Result<()> {
-    let target = candidate
-        .target
-        .to_possible_value()
-        .context("unsupported target")?;
-    let triple = target.get_name();
-    ensure!(
-        triple.starts_with(std::env::consts::ARCH)
-            && match candidate.target {
-                Target::Windows => cfg!(target_os = "windows"),
-                Target::Linux => cfg!(target_os = "linux"),
-                Target::MacOs => cfg!(target_os = "macos"),
-            },
-        "build the product runtime on the matching operating system and architecture"
-    );
+    let triple = native_target(candidate.target)?;
     ensure!(
         (candidate.target == Target::Windows) == windows_crt.is_some(),
-        "the Windows build requires an app-local VC runtime file and its SHA-256"
+        "the Windows build requires both app-local VC runtime files and their SHA-256 pins"
     );
-    check_source_commit(root, &candidate.source_commit)?;
-    let signature = Command::new("git")
-        .args(["verify-commit", &candidate.source_commit])
-        .current_dir(root)
-        .output()?;
-    ensure!(
-        signature.status.success(),
-        "source commit signature could not be verified with the configured Git trust"
-    );
+    require_signed_source(root, &candidate.source_commit)?;
     let parent = staging
         .parent()
         .context("staging requires a parent directory")?;
@@ -70,38 +56,43 @@ pub(super) fn runtime(
     let packaged = extensions.join("discord.alcomdextension");
     copy_component(extension, &packaged)?;
     verify_discord_package(root, &packaged, extension_digest)?;
-    if let Some((source, digest)) = windows_crt {
-        let path = staged.join(WINDOWS_CRT_FILE);
-        copy_component(source, &path)?;
-        let (file, _) = alcomd_platform::open_plain_file(&path)?;
-        let size = file.metadata()?.len();
-        ensure!(
-            format_digest(&alcomd_updater::hash_exact(file, size)?) == digest,
-            "app-local VC runtime does not match the pinned SHA-256"
-        );
+    if let Some(crt) = &windows_crt {
+        crt.digests.validate()?;
+        for (name, source, digest) in [
+            (WINDOWS_CRT_FILE, crt.primary, crt.digests.primary),
+            (
+                WINDOWS_CRT_COMPANION_FILE,
+                crt.companion,
+                crt.digests.companion,
+            ),
+        ] {
+            let path = staged.join(name);
+            copy_component(source, &path)?;
+            let (file, _) = alcomd_platform::open_plain_file(&path)?;
+            let size = file.metadata()?.len();
+            ensure!(
+                format_digest(&alcomd_updater::hash_exact(file, size)?) == digest,
+                "app-local {name} does not match the pinned SHA-256"
+            );
+        }
     }
 
     let build_cache = root.join("target");
     alcomd_platform::prepare_storage_directory(&build_cache)?;
     let (build_root, _) = alcomd_platform::resolve_plain_storage_directory(&build_cache)?;
     let binaries = runtime_binaries(product);
-    compile(root, &build_root, triple, &binaries, &product.binaries.gui)?;
-    let executables = build_root.join(triple).join("release");
+    compile(root, &build_root, &triple, &binaries, &product.binaries.gui)?;
+    let executables = build_root.join(&triple).join("release");
     for binary in binaries {
         let name = format!("{binary}{}", candidate.target.executable_suffix());
         copy_component(&executables.join(&name), &staged.join(&name))?;
     }
-    let platform_gate = match candidate.target {
-        Target::Windows => None,
-        Target::Linux => Some("scripts/check-glibc.sh"),
-        Target::MacOs => Some("scripts/check-macos-target.sh"),
-    };
-    if let Some(script) = platform_gate {
-        let mut gate = Command::new("bash");
-        gate.arg(script)
-            .args(binaries.map(|binary| staged.join(binary)));
-        run(gate, root, &build_root, "runtime platform baseline check")?;
-    }
+    check_platform_baseline(
+        root,
+        &build_root,
+        candidate.target,
+        binaries.map(|binary| staged.join(binary)),
+    )?;
     copy_component(&root.join("LICENSE"), &staged.join("LICENSE"))?;
     copy_component(
         &root.join("THIRD_PARTY_NOTICES.md"),
@@ -112,7 +103,7 @@ pub(super) fn runtime(
         staged,
         candidate,
         extension_digest,
-        windows_crt.map(|(_, digest)| digest),
+        windows_crt.map(|crt| crt.digests),
     )?;
     publish_manifest(staged, &bytes)?;
     check_source_commit(root, &candidate.source_commit)?;
@@ -129,7 +120,35 @@ pub(super) fn runtime(
     Ok(())
 }
 
-fn check_source_commit(root: &Path, expected: &str) -> anyhow::Result<()> {
+pub(super) fn native_target(target: Target) -> anyhow::Result<String> {
+    let value = target.to_possible_value().context("unsupported target")?;
+    let triple = value.get_name();
+    ensure!(
+        triple.starts_with(std::env::consts::ARCH)
+            && match target {
+                Target::Windows => cfg!(target_os = "windows"),
+                Target::Linux => cfg!(target_os = "linux"),
+                Target::MacOs => cfg!(target_os = "macos"),
+            },
+        "build the product runtime on the matching operating system and architecture"
+    );
+    Ok(triple.to_owned())
+}
+
+pub(super) fn require_signed_source(root: &Path, expected: &str) -> anyhow::Result<()> {
+    check_source_commit(root, expected)?;
+    let signature = Command::new("git")
+        .args(["verify-commit", expected])
+        .current_dir(root)
+        .output()?;
+    ensure!(
+        signature.status.success(),
+        "source commit signature could not be verified with the configured Git trust"
+    );
+    Ok(())
+}
+
+pub(super) fn check_source_commit(root: &Path, expected: &str) -> anyhow::Result<()> {
     let head = Command::new("git")
         .args(["rev-parse", "--verify", "HEAD"])
         .current_dir(root)
@@ -201,7 +220,23 @@ fn compile(
     run(gui, root, build_root, "Tauri runtime build")
 }
 
-fn run(
+pub(super) fn check_platform_baseline(
+    root: &Path,
+    build_root: &Path,
+    target: Target,
+    files: impl IntoIterator<Item = std::path::PathBuf>,
+) -> anyhow::Result<()> {
+    let script = match target {
+        Target::Windows => return Ok(()),
+        Target::Linux => "scripts/check-glibc.sh",
+        Target::MacOs => "scripts/check-macos-target.sh",
+    };
+    let mut gate = Command::new("bash");
+    gate.arg(script).args(files);
+    run(gate, root, build_root, "runtime platform baseline check")
+}
+
+pub(super) fn run(
     mut command: Command,
     root: &Path,
     build_root: &Path,

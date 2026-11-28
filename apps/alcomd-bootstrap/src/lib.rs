@@ -1,16 +1,31 @@
 //! Coordinates migration against a verified product and a fresh per-user data directory.
 
+#[cfg(all(target_os = "linux", feature = "appimage-bridge"))]
+pub mod appimage_bridge;
 mod journal;
+#[cfg(target_os = "linux")]
+mod linux_bridge;
+#[cfg(target_os = "linux")]
+pub use linux_bridge::{bridge_linux_v3, start_linux_bridge_desktop};
 #[cfg(target_os = "linux")]
 mod linux_portable;
 #[cfg(target_os = "linux")]
-pub use linux_portable::start_portable;
+pub use linux_portable::{
+    PortableCliAction, PortableCliStatus, apply_portable_update, portable_cli,
+    resume_portable_update, start_portable, start_portable_cli_if_selected,
+};
 #[cfg(windows)]
 mod windows_installation;
 #[cfg(windows)]
 pub use windows_installation::{
-    apply_installed_update, register_installed_core, resume_installed_update,
-    stage_installed_update, start_installed_core, unregister_installed_core,
+    ScopeDestinationAction, ScopeSourceAction, WindowsInstallScope, WindowsScopePlanArguments,
+    apply_installed_update, apply_machine_update_worker, complete_windows_scope_account,
+    coordinate_windows_scope_destination, coordinate_windows_scope_source, register_installed_core,
+    remove_retired_windows_scope, request_windows_machine_scope_source, resume_installed_update,
+    resume_machine_update_worker, stage_installed_update, start_installed_core,
+    unregister_installed_core, verify_installed_machine_uninstall,
+    verify_retired_windows_scope_uninstall, verify_windows_bridge_commit,
+    windows_scope_plan_fingerprint, with_windows_desktop_restart,
 };
 
 /// Verifies and starts the installed Core in the calling Linux account.
@@ -19,6 +34,7 @@ pub fn start_installed_core() -> anyhow::Result<()> {
     use std::os::unix::process::CommandExt;
 
     let data = alcomd_platform::DataConfig::default();
+    linux_bridge::check_startup(&data)?;
     let runtime = alcomd_platform::linux_installation_runtime(&std::env::current_exe()?, &data)?;
     let version = env!("CARGO_PKG_VERSION").parse()?;
     if runtime == alcomd_platform::linux_portable_runtime(&data)? {
@@ -194,6 +210,15 @@ pub enum MigrationOutcome {
 /// Resume a verified migration or stage a fresh one. Program deployment and old-instance
 /// cleanup are owned by the platform installer and require their own authorization.
 pub fn migrate_v3(request: &MigrationRequest) -> anyhow::Result<MigrationOutcome> {
+    migrate_checked_v3(request, None)
+}
+
+type DeploymentCheck<'a> = dyn Fn(&VerifiedPayload, &Plan) -> anyhow::Result<()> + 'a;
+
+fn migrate_checked_v3(
+    request: &MigrationRequest,
+    check_deployment: Option<&DeploymentCheck<'_>>,
+) -> anyhow::Result<MigrationOutcome> {
     ensure!(
         request.install_scope.supported(),
         "migration scope does not match the current platform"
@@ -204,6 +229,9 @@ pub fn migrate_v3(request: &MigrationRequest) -> anyhow::Result<MigrationOutcome
         .context("signed migration reader missing")?;
     let daemon = payload.binary("daemon").context("signed Core missing")?;
     let mut plan = plan(request, &payload)?;
+    if let Some(check) = check_deployment {
+        check(&payload, &plan)?;
+    }
     let journal = Journal::open(&plan.workspace)?;
     let mut phase = latest_phase(&journal)?;
     if let Some(previous) = journal.read::<Plan>(PLAN_RECORD)? {
@@ -248,7 +276,7 @@ pub fn migrate_v3(request: &MigrationRequest) -> anyhow::Result<MigrationOutcome
         }
         _ => {}
     }
-    let outcome = steps.run(&mut phase, request.health_report.as_ref());
+    let outcome = steps.run(&mut phase, request.health_report.as_ref(), check_deployment);
     if outcome.is_err()
         && !matches!(
             phase,
@@ -399,6 +427,7 @@ impl Steps {
         &mut self,
         phase: &mut Option<Phase>,
         report: Option<&HealthReport>,
+        check_deployment: Option<&DeploymentCheck<'_>>,
     ) -> anyhow::Result<MigrationOutcome> {
         loop {
             self.journal.check()?;
@@ -421,6 +450,9 @@ impl Steps {
                     Phase::Healthy(evidence.clone())
                 }
                 Some(Phase::Healthy(evidence)) => {
+                    if let Some(check) = check_deployment {
+                        check(&self.check_payload()?, &self.plan)?;
+                    }
                     ensure_absent(&self.plan.destination)?;
                     ensure!(
                         state_evidence(&self.staged_data())? == *evidence,
@@ -879,10 +911,25 @@ struct HealthProof {
 
 impl HealthProof {
     fn matches(&self, expected: &HealthChallenge) -> bool {
-        self.schema == expected.schema
-            && self.product_version == expected.product_version
-            && self.install_scope == expected.install_scope
-            && self.payload_manifest_sha256 == expected.payload_manifest_sha256
+        self.matches_release(
+            expected.schema,
+            &expected.product_version,
+            expected.install_scope,
+            expected.payload_manifest_sha256,
+        )
+    }
+
+    fn matches_release(
+        &self,
+        schema: u32,
+        version: &str,
+        scope: InstallScope,
+        payload: [u8; 32],
+    ) -> bool {
+        self.schema == schema
+            && self.product_version == version
+            && self.install_scope == scope
+            && self.payload_manifest_sha256 == payload
             && self.test_evidence_sha256 != [0; 32]
             && self.core_rpc
             && self.cli
@@ -893,18 +940,21 @@ impl HealthProof {
 }
 
 fn check_platform_health(challenge: &HealthChallenge, report: &HealthReport) -> anyhow::Result<()> {
-    let (report_path, _) = isolated_child(&report.report)?;
-    let (signature_path, _) = isolated_child(&report.signature)?;
-    let report_bytes = read_limited(&report_path, OUTPUT_LIMIT)?;
-    let signature_bytes = read_limited(&signature_path, 130)?;
-    alcomd_updater::verify_health_report(&report_bytes, &signature_bytes)?;
-    let proof: HealthProof =
-        serde_json::from_slice(&report_bytes).context("invalid platform health report")?;
+    let proof = read_platform_health(report)?;
     ensure!(
         proof.matches(challenge),
         "platform health or reconciliation evidence is incomplete"
     );
     Ok(())
+}
+
+fn read_platform_health(report: &HealthReport) -> anyhow::Result<HealthProof> {
+    let (report_path, _) = isolated_child(&report.report)?;
+    let (signature_path, _) = isolated_child(&report.signature)?;
+    let report_bytes = read_limited(&report_path, OUTPUT_LIMIT)?;
+    let signature_bytes = read_limited(&signature_path, 130)?;
+    alcomd_updater::verify_health_report(&report_bytes, &signature_bytes)?;
+    serde_json::from_slice(&report_bytes).context("invalid platform health report")
 }
 
 fn state_evidence(path: &Path) -> anyhow::Result<StateEvidence> {

@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -6,13 +7,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use semver::Version;
 
 use super::{
-    CORE_EXECUTABLE_NAME, PRODUCT_PAYLOAD_MANIFEST_NAME, core_installation_registration,
-    invalid_registration, open_registration, parse_runtime_directory, read_runtime_directory,
-    validate_core_executable,
+    CORE_EXECUTABLE_NAME, PRODUCT_PAYLOAD_MANIFEST_NAME, WINDOWS_CRT_FILE,
+    WINDOWS_PRODUCT_SIDECARS, core_installation_registration, invalid_registration,
+    open_registration, parse_runtime_directory, read_runtime_directory, validate_core_executable,
 };
-use crate::windows::core_installation::{
-    open_installation_manifest, open_registration_for_removal, validate_registration_parent,
-};
+use crate::windows::core_installation::{InstallationTrust, open_registration_for_removal};
 use crate::windows::{
     WindowsFileIdentity, delete_open_file, file_identity_from_file, lock_file_byte,
     replace_owned_file,
@@ -22,11 +21,26 @@ use crate::{
     resolve_plain_storage_directory, sync_directory,
 };
 
+#[path = "windows_scope_destination.rs"]
+mod scope_destination;
+pub use scope_destination::{
+    WINDOWS_SCOPE_DESTINATION_COMMIT_RECORD, WINDOWS_SCOPE_DESTINATION_RECORD,
+    WindowsScopeTransitionDestination,
+};
+
+#[path = "windows_bridge_profile.rs"]
+mod bridge_profile;
+pub use bridge_profile::{
+    WINDOWS_BRIDGE_EMPTY_PROFILE_PROOF, approve_windows_empty_bridge_profile,
+    check_windows_bridge_profile_for_startup, windows_empty_bridge_activation_proof,
+};
+
 // The Inno uninstaller takes this byte exclusively. It is beyond the bounded
 // signed manifest, so verification can still read the complete file.
 const MANIFEST_LEASE_OFFSET: u64 = 1 << 32;
 const MAX_VERSION_BYTES: usize = 80;
 const MAX_INTENT_BYTES: usize = 8192;
+const MAX_INSTALLATION_ROOT_RECORD_BYTES: usize = super::MAX_RUNTIME_PATH_BYTES + 50;
 
 /// Basename of the signed Windows Bootstrap executable.
 pub const WINDOWS_BOOTSTRAP_EXECUTABLE_NAME: &str = concat!(env!("ALCOMD_BOOTSTRAP_NAME"), ".exe");
@@ -34,18 +48,238 @@ pub const WINDOWS_BOOTSTRAP_EXECUTABLE_NAME: &str = concat!(env!("ALCOMD_BOOTSTR
 /// Basename of the Windows stable CLI entry point.
 pub const WINDOWS_CLI_EXECUTABLE_NAME: &str = concat!(env!("ALCOMD_CLI_NAME"), ".exe");
 
+/// Basename of the signed Windows desktop executable.
+pub const WINDOWS_GUI_EXECUTABLE_NAME: &str = concat!(env!("ALCOMD_GUI_NAME"), ".exe");
+
 /// Protected Windows installation-root record containing the active version and an LF.
 pub const WINDOWS_ACTIVE_RUNTIME_RECORD: &str = "active-runtime-v1";
 
 /// A durable update intent prevents either installed version from starting until recovery.
 pub const WINDOWS_UPDATE_INTENT_RECORD: &str = "update-intent-v1";
 
-/// Resolves the current user's standard Windows product root for maintenance.
+/// A durable scope conversion fence keeps the source runtime inactive across restarts.
+pub const WINDOWS_SCOPE_TRANSITION_RECORD: &str = "scope-transition-v1";
+
+/// Each installation scope keeps its root independently of the Inno uninstall entry.
+pub const WINDOWS_INSTALLATION_ROOT_RECORD: &str =
+    concat!(".", env!("ALCOMD_INSTALL_DIRECTORY"), "-install-root-v1");
+
+/// Resolves the current user's protected Windows product root for maintenance.
 pub fn windows_current_user_installation_root() -> io::Result<PathBuf> {
-    let path = crate::local_app_data_directory()?
-        .join("Programs")
-        .join(env!("ALCOMD_INSTALL_DIRECTORY"));
-    resolve_plain_storage_directory(&path).map(|(path, _)| path)
+    owned_installation_root(InstallationTrust::User)
+}
+
+/// Resolves the protected all-users product root independently of the uninstall entry.
+pub fn windows_machine_installation_root() -> io::Result<PathBuf> {
+    owned_installation_root(InstallationTrust::Machine)
+}
+
+fn installation_root_record(trust: InstallationTrust) -> io::Result<PathBuf> {
+    let directory = match trust {
+        InstallationTrust::User => crate::local_app_data_directory()?,
+        InstallationTrust::Machine => crate::windows::program_files_64_directory()?,
+    };
+    Ok(directory.join(WINDOWS_INSTALLATION_ROOT_RECORD))
+}
+
+fn encode_root_identity(identity: &[u8]) -> String {
+    let mut hex = String::with_capacity(identity.len() * 2);
+    for byte in identity {
+        write!(hex, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    hex
+}
+
+fn open_installation_root_record(trust: InstallationTrust) -> io::Result<File> {
+    let path = installation_root_record(trust)?;
+    fs::symlink_metadata(&path)?;
+    trust.open_record(&path)
+}
+
+fn read_installation_root(file: &File, trust: InstallationTrust) -> io::Result<PathBuf> {
+    let mut bytes = Vec::new();
+    file.take((MAX_INSTALLATION_ROOT_RECORD_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_INSTALLATION_ROOT_RECORD_BYTES {
+        return Err(invalid_registration());
+    }
+    let (path, identity) = std::str::from_utf8(&bytes)
+        .ok()
+        .and_then(|record| record.strip_suffix('\n'))
+        .and_then(|record| record.split_once('\n'))
+        .ok_or_else(invalid_registration)?;
+    if path.contains(['"', ';', '%']) {
+        return Err(invalid_registration());
+    }
+    let selected = parse_runtime_directory(format!("{path}\n").as_bytes())?;
+    trust.validate_parent(&selected.join(WINDOWS_ACTIVE_RUNTIME_RECORD))?;
+    let (root, current_identity) = resolve_plain_storage_directory(&selected)?;
+    if identity != encode_root_identity(&current_identity) {
+        return Err(invalid_registration());
+    }
+    Ok(root)
+}
+
+fn owned_installation_root(trust: InstallationTrust) -> io::Result<PathBuf> {
+    let file = open_installation_root_record(trust)?;
+    // A present locator whose target disappeared is invalid, not an absent installation.
+    read_installation_root(&file, trust).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            invalid_registration()
+        } else {
+            error
+        }
+    })
+}
+
+fn scope_trust(machine: bool) -> InstallationTrust {
+    if machine {
+        InstallationTrust::Machine
+    } else {
+        InstallationTrust::User
+    }
+}
+
+/// Checks that the installer is operating on the directory reserved for this scope.
+pub fn validate_windows_installation_root(machine: bool, selected: &Path) -> io::Result<()> {
+    let trust = scope_trust(machine);
+    trust.validate_parent(&selected.join(WINDOWS_ACTIVE_RUNTIME_RECORD))?;
+    let (selected, _) = resolve_plain_storage_directory(selected)?;
+    if owned_installation_root(trust)? != selected {
+        return Err(invalid_registration());
+    }
+    Ok(())
+}
+
+/// Reserves an absent root before Setup writes an installation or publishes a conversion.
+pub fn reserve_windows_installation_root(machine: bool, selected: &Path) -> io::Result<()> {
+    let trust = scope_trust(machine);
+    if machine && !crate::windows_process_is_elevated()? {
+        return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+    }
+    let record = installation_root_record(trust)?;
+    trust.validate_parent(&record)?;
+    match fs::symlink_metadata(&record) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+        Ok(_) => return validate_windows_installation_root(machine, selected),
+    }
+    let line = registration_line(selected)?;
+    // The stable CLI is added as a literal entry in Windows' expandable PATH value.
+    if line.contains(['"', ';', '%']) {
+        return Err(invalid_registration());
+    }
+    let parent = selected.parent().ok_or_else(invalid_registration)?;
+    let mut existing = parent;
+    let mut missing = Vec::new();
+    loop {
+        match fs::symlink_metadata(existing) {
+            Ok(_) => break,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                missing.push(existing);
+                existing = existing.parent().ok_or_else(invalid_registration)?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    trust.validate_parent(&existing.join(WINDOWS_ACTIVE_RUNTIME_RECORD))?;
+    let (parent_directory, _) = resolve_plain_storage_directory(existing)?;
+    let relative = selected
+        .strip_prefix(existing)
+        .map_err(|_| invalid_registration())?;
+    let target = parent_directory.join(relative);
+    let app_data = crate::local_app_data_directory()?;
+    let (app_data_directory, _) = resolve_plain_storage_directory(&app_data)?;
+    let state = crate::state_database_location(&DataConfig::default())?;
+    let data = state
+        .parent()
+        .and_then(|directory| directory.strip_prefix(app_data).ok())
+        .ok_or_else(invalid_registration)?;
+    let data = app_data_directory.join(data);
+    if target.starts_with(&data) || data.starts_with(&target) {
+        return Err(invalid_registration());
+    }
+    let opposing_scope = if machine {
+        InstallationTrust::User
+    } else {
+        InstallationTrust::Machine
+    };
+    match owned_installation_root(opposing_scope) {
+        Ok(other) if target.starts_with(&other) || other.starts_with(&target) => {
+            return Err(invalid_registration());
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    for directory in missing.into_iter().rev().chain(std::iter::once(selected)) {
+        trust.validate_parent(directory)?;
+        if machine {
+            crate::windows::create_machine_directory(directory)?;
+        } else {
+            fs::create_dir(directory)?;
+        }
+        trust.validate_parent(&directory.join(WINDOWS_ACTIVE_RUNTIME_RECORD))?;
+        sync_directory(directory.parent().ok_or_else(invalid_registration)?)?;
+    }
+    let (_, identity) = resolve_plain_storage_directory(selected)?;
+    let bytes = format!("{line}{}\n", encode_root_identity(&identity));
+    publish_owned_record(&record, bytes.as_bytes(), None, trust)
+}
+
+/// Releases the exact scope locator after the recorded installation has been removed.
+pub fn release_windows_installation_root(machine: bool, selected: &Path) -> io::Result<()> {
+    let trust = scope_trust(machine);
+    if machine && !crate::windows_process_is_elevated()? {
+        return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+    }
+    let path = installation_root_record(trust)?;
+    let file = trust.open_record_for_removal(&path)?;
+    let root = read_installation_root(&file, trust)?;
+    if resolve_plain_storage_directory(selected)?.0 != root {
+        return Err(invalid_registration());
+    }
+    for name in [
+        WINDOWS_ACTIVE_RUNTIME_RECORD,
+        WINDOWS_SCOPE_TRANSITION_RECORD,
+        WINDOWS_UPDATE_INTENT_RECORD,
+    ] {
+        require_no_maintenance_record(&root, name)?;
+    }
+    delete_open_file(file)?;
+    sync_directory(path.parent().ok_or_else(invalid_registration)?)
+}
+
+/// Rejects writable or redirected ancestors of a machine maintenance record.
+pub fn validate_windows_machine_installation_record_parent(path: &Path) -> io::Result<()> {
+    InstallationTrust::Machine.validate_parent(path)
+}
+
+/// Opens a machine maintenance record protected from all ordinary account SIDs.
+pub fn open_windows_machine_installation_record(path: &Path) -> io::Result<File> {
+    InstallationTrust::Machine.open_record(path)
+}
+
+/// Exclusively creates a protected machine-owned directory under checked ancestors.
+pub fn create_windows_machine_installation_directory(path: &Path) -> io::Result<()> {
+    InstallationTrust::Machine.validate_parent(path)?;
+    crate::windows::create_machine_directory(path)
+}
+
+/// Exclusively creates a protected machine-owned record under checked ancestors.
+pub fn create_windows_machine_installation_record(path: &Path) -> io::Result<File> {
+    InstallationTrust::Machine.validate_parent(path)?;
+    crate::windows::create_machine_record(path)
+}
+
+fn installation_trust(root: &Path) -> io::Result<InstallationTrust> {
+    let (root, _) = resolve_plain_storage_directory(root)?;
+    match windows_machine_installation_root() {
+        Ok(machine) if root == machine => Ok(InstallationTrust::Machine),
+        Ok(_) => Ok(InstallationTrust::User),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(InstallationTrust::User),
+        Err(error) => Err(error),
+    }
 }
 
 /// Holds a shared lease for a running installed Core. Scratch and sibling builds have no lease.
@@ -59,13 +293,17 @@ pub fn hold_windows_installation(executable: &Path) -> io::Result<Option<File>> 
         return Ok(None);
     }
     let runtime = windows_installation_runtime(&executable)?;
-    let manifest = lease_runtime(&runtime, false)?;
-    require_active_runtime(&runtime)?;
+    let trust = installation_trust(runtime_root(&runtime)?)?;
+    if trust == InstallationTrust::Machine {
+        trust.check_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
+    }
+    let manifest = lease_runtime(&runtime, false, trust)?;
+    require_active_runtime(&runtime, trust)?;
     Ok(Some(manifest))
 }
 
-fn lease_runtime(runtime: &Path, exclusive: bool) -> io::Result<File> {
-    let manifest = open_installation_manifest(&runtime.join(PRODUCT_PAYLOAD_MANIFEST_NAME))?;
+fn lease_runtime(runtime: &Path, exclusive: bool, trust: InstallationTrust) -> io::Result<File> {
+    let manifest = trust.open_manifest(&runtime.join(PRODUCT_PAYLOAD_MANIFEST_NAME))?;
     lock_file_byte(&manifest, MANIFEST_LEASE_OFFSET, exclusive)?;
     Ok(manifest)
 }
@@ -86,39 +324,98 @@ pub fn windows_installation_bootstrap(entry_point: &Path) -> io::Result<Option<P
     let Some(directory) = entry_point.parent() else {
         return Ok(None);
     };
-    let runtime = if has_name(entry_point, concat!(env!("ALCOMD_GUI_NAME"), ".exe"))
-        && is_versioned_runtime(directory)
-    {
-        require_active_runtime(directory)?;
-        directory.to_path_buf()
-    } else if has_name(entry_point, WINDOWS_CLI_EXECUTABLE_NAME)
-        && has_name(directory, "bin")
-        && let Some(root) = directory.parent()
-    {
-        let versions = root.join("runtime");
-        match fs::symlink_metadata(&versions) {
-            Ok(_) => {
-                let version = read_active_version(&open_registration(
-                    &root.join(WINDOWS_ACTIVE_RUNTIME_RECORD),
-                )?)?;
-                versions.join(version.to_string())
+    let runtime =
+        if has_name(entry_point, WINDOWS_GUI_EXECUTABLE_NAME) && is_versioned_runtime(directory) {
+            require_active_runtime(directory, installation_trust(runtime_root(directory)?)?)?;
+            directory.to_path_buf()
+        } else if has_name(entry_point, WINDOWS_CLI_EXECUTABLE_NAME)
+            && has_name(directory, "bin")
+            && let Some(root) = directory.parent()
+        {
+            let versions = root.join("runtime");
+            match fs::symlink_metadata(&versions) {
+                Ok(_) => {
+                    let trust = installation_trust(root)?;
+                    require_no_scope_transition(root)?;
+                    scope_destination::require_committed_scope_destination(root, trust)?;
+                    let version = active_version(root, trust)?;
+                    versions.join(version.to_string())
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+                Err(error) => return Err(error),
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(error),
-        }
-    } else {
-        return Ok(None);
-    };
+        } else {
+            return Ok(None);
+        };
     // Validate the unnormalized paths so a reparse point cannot redirect either role.
-    validate_core_executable(entry_point)?;
-    let runtime = validate_runtime(&runtime)?;
+    let trust = installation_trust(runtime_root(&runtime)?)?;
+    trust.check_executable(entry_point)?;
+    let runtime = validate_runtime(&runtime, trust)?;
+    if trust == InstallationTrust::Machine {
+        return windows_machine_runtime_bootstrap(&runtime).map(Some);
+    }
     let bootstrap = runtime.join(WINDOWS_BOOTSTRAP_EXECUTABLE_NAME);
-    validate_core_executable(&bootstrap)?;
+    trust.check_executable(&bootstrap)?;
     Ok(Some(bootstrap))
 }
 
-fn validate_runtime(runtime: &Path) -> io::Result<PathBuf> {
-    validate_core_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
+/// Finds the active machine Bootstrap from a protected registration for an earlier runtime.
+/// Accounts with no registration still use the official first-launch initialization path.
+pub fn windows_retired_machine_installation_bootstrap(
+    config: &DataConfig,
+) -> io::Result<Option<PathBuf>> {
+    let registration = core_installation_registration(config)?;
+    let file = match open_registration(&registration) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let previous = read_runtime_directory(&file)?;
+    let Ok(root) = runtime_root(&previous) else {
+        return Ok(None);
+    };
+    if installation_trust(root)? != InstallationTrust::Machine {
+        return Ok(None);
+    }
+    let version = active_version(root, InstallationTrust::Machine)?;
+    let selected = root.join("runtime").join(version.to_string());
+    if !superseded_machine_runtime(&previous, &selected)? {
+        return Ok(None);
+    }
+    windows_machine_runtime_bootstrap(&selected).map(Some)
+}
+
+/// Checks the machine Bootstrap and all app-local DLLs before Windows loads the executable.
+pub fn windows_machine_runtime_bootstrap(runtime: &Path) -> io::Result<PathBuf> {
+    let trust = InstallationTrust::Machine;
+    if installation_trust(runtime_root(runtime)?)? != trust {
+        return Err(invalid_registration());
+    }
+    path_version(runtime)?;
+    let bootstrap = runtime.join(WINDOWS_BOOTSTRAP_EXECUTABLE_NAME);
+    trust.check_executable(&bootstrap)?;
+    trust.check_executable(&runtime.join(WINDOWS_CRT_FILE))?;
+    for entry in fs::read_dir(runtime)? {
+        let path = entry?.path();
+        if !path
+            .extension()
+            .is_some_and(|name| name.eq_ignore_ascii_case("dll"))
+        {
+            continue;
+        }
+        if !WINDOWS_PRODUCT_SIDECARS
+            .iter()
+            .any(|name| has_name(&path, name))
+        {
+            return Err(invalid_registration());
+        }
+        trust.check_executable(&path)?;
+    }
+    Ok(bootstrap)
+}
+
+fn validate_runtime(runtime: &Path, trust: InstallationTrust) -> io::Result<PathBuf> {
+    trust.check_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
     resolve_plain_storage_directory(runtime).map(|(runtime, _)| runtime)
 }
 
@@ -130,25 +427,45 @@ fn runtime_root(runtime: &Path) -> io::Result<&Path> {
         .ok_or_else(invalid_registration)
 }
 
-fn require_active_runtime(runtime: &Path) -> io::Result<()> {
+fn require_active_runtime(runtime: &Path, trust: InstallationTrust) -> io::Result<()> {
     let root = runtime_root(runtime)?;
-    match fs::symlink_metadata(root.join(WINDOWS_UPDATE_INTENT_RECORD)) {
-        Ok(_) => return Err(installation_not_ready()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
-    }
-    let version = read_active_version(&open_registration(
-        &root.join(WINDOWS_ACTIVE_RUNTIME_RECORD),
-    )?)?;
+    require_no_update_intent(root)?;
+    require_no_scope_transition(root)?;
+    scope_destination::require_committed_scope_destination(root, trust)?;
+    let version = active_version(root, trust)?;
     if runtime.file_name().and_then(|name| name.to_str()) != Some(version.to_string().as_str()) {
         return Err(installation_not_ready());
     }
     Ok(())
 }
 
+fn active_version(root: &Path, trust: InstallationTrust) -> io::Result<Version> {
+    read_active_version(&trust.open_record(&root.join(WINDOWS_ACTIVE_RUNTIME_RECORD))?)
+}
+
+fn require_no_update_intent(root: &Path) -> io::Result<()> {
+    require_no_maintenance_record(root, WINDOWS_UPDATE_INTENT_RECORD)
+}
+
+fn require_no_scope_transition(root: &Path) -> io::Result<()> {
+    require_no_maintenance_record(root, WINDOWS_SCOPE_TRANSITION_RECORD)
+}
+
+fn require_no_maintenance_record(root: &Path, name: &str) -> io::Result<()> {
+    match fs::symlink_metadata(root.join(name)) {
+        Ok(_) => Err(installation_not_ready()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 pub(super) fn check_registered_runtime_is_active(runtime: &Path) -> io::Result<()> {
-    if runtime_root(runtime).is_ok() {
-        require_active_runtime(runtime)?;
+    if let Ok(root) = runtime_root(runtime) {
+        let trust = installation_trust(root)?;
+        require_active_runtime(runtime, trust)?;
+        if trust == InstallationTrust::Machine {
+            trust.check_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
+        }
     }
     Ok(())
 }
@@ -191,15 +508,325 @@ fn has_name(path: &Path, name: &str) -> bool {
         .is_some_and(|part| part.eq_ignore_ascii_case(name))
 }
 
-/// Holds both version leases and the current user's Core instance lock during activation.
+/// Exclusive access to an installed Windows source while preparing a scope change.
+/// The caller verifies the signed payload and coordinates destination activation.
+pub struct WindowsScopeTransitionSource {
+    root: PathBuf,
+    runtime: PathBuf,
+    trust: InstallationTrust,
+    source_version: Version,
+    _lease: File,
+    _instance: Option<DaemonInstance>,
+}
+
+impl WindowsScopeTransitionSource {
+    /// Acquires an installed source version in the selected fixed scope.
+    pub fn acquire(machine: bool, version: &str) -> io::Result<Self> {
+        let (root, trust) = if machine {
+            if !crate::windows_process_is_elevated()? {
+                return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+            }
+            (
+                windows_machine_installation_root()?,
+                InstallationTrust::Machine,
+            )
+        } else {
+            (
+                windows_current_user_installation_root()?,
+                InstallationTrust::User,
+            )
+        };
+        let version = parse_version(version)?;
+        let executable = root
+            .join("runtime")
+            .join(version.to_string())
+            .join(WINDOWS_BOOTSTRAP_EXECUTABLE_NAME);
+        Self::acquire_at(&executable, root, trust)
+    }
+
+    fn acquire_at(executable: &Path, root: PathBuf, trust: InstallationTrust) -> io::Result<Self> {
+        if !has_name(executable, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME) {
+            return Err(invalid_registration());
+        }
+        trust.check_executable(executable)?;
+        let runtime = windows_installation_runtime(executable)?;
+        let source_version = path_version(&runtime)?;
+        if runtime_root(&runtime)? != root {
+            return Err(invalid_registration());
+        }
+        trust.check_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
+        let lease = lease_runtime(&runtime, true, trust)?;
+        require_no_update_intent(&root)?;
+        match active_version(&root, trust) {
+            Ok(version) if version == source_version => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                trust.open_record(&root.join(WINDOWS_SCOPE_TRANSITION_RECORD))?;
+            }
+            Err(error) => return Err(error),
+            _ => return Err(installation_not_ready()),
+        }
+        let instance = maintenance_instance(trust)?;
+        Ok(Self {
+            root,
+            runtime,
+            trust,
+            source_version,
+            _lease: lease,
+            _instance: instance,
+        })
+    }
+
+    /// The retained installed source, opened before verifying its signed payload.
+    #[must_use]
+    pub fn runtime(&self) -> &Path {
+        &self.runtime
+    }
+
+    /// Persists the exact conversion intent and prevents normal launch or updates.
+    pub fn fence(&self, intent: &[u8]) -> io::Result<()> {
+        validate_maintenance_intent(intent)?;
+        let path = self.root.join(WINDOWS_SCOPE_TRANSITION_RECORD);
+        match self.trust.open_record(&path) {
+            Ok(file) => {
+                require_maintenance_intent(&file, intent)?;
+                sync_directory(&self.root)
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                self.require_source_activation()?;
+                publish_owned_record(&path, intent, None, self.trust)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Reopens the source after the coordinator has rolled back the inactive destination.
+    pub fn restore(&self, expected_intent: &[u8]) -> io::Result<()> {
+        self.require_source_activation()?;
+        remove_maintenance_intent(
+            &self.root,
+            WINDOWS_SCOPE_TRANSITION_RECORD,
+            expected_intent,
+            self.trust,
+        )
+    }
+
+    /// Retires the source activation at the conversion commit point, retaining the intent for recovery.
+    pub fn retire(&self, expected_intent: &[u8]) -> io::Result<()> {
+        validate_maintenance_intent(expected_intent)?;
+        let intent = self
+            .trust
+            .open_record(&self.root.join(WINDOWS_SCOPE_TRANSITION_RECORD))?;
+        require_maintenance_intent(&intent, expected_intent)?;
+        remove_maintenance_intent(
+            &self.root,
+            WINDOWS_ACTIVE_RUNTIME_RECORD,
+            format!("{}\n", self.source_version).as_bytes(),
+            self.trust,
+        )
+    }
+
+    /// Identifies the durable source state for this exact conversion plan.
+    pub fn phase(&self, expected_intent: &[u8]) -> io::Result<&'static str> {
+        validate_maintenance_intent(expected_intent)?;
+        match self
+            .trust
+            .open_record(&self.root.join(WINDOWS_SCOPE_TRANSITION_RECORD))
+        {
+            Ok(file) => require_maintenance_intent(&file, expected_intent)?,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                self.require_source_activation()?;
+                return Ok("active");
+            }
+            Err(error) => return Err(error),
+        }
+        match active_version(&self.root, self.trust) {
+            Ok(version) if version == self.source_version => Ok("fenced"),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok("retired"),
+            Err(error) => Err(error),
+            _ => Err(installation_not_ready()),
+        }
+    }
+
+    fn require_source_activation(&self) -> io::Result<()> {
+        if active_version(&self.root, self.trust)? != self.source_version {
+            return Err(installation_not_ready());
+        }
+        Ok(())
+    }
+}
+
+fn maintenance_instance(trust: InstallationTrust) -> io::Result<Option<DaemonInstance>> {
+    if trust == InstallationTrust::Machine {
+        return Ok(None);
+    }
+    DaemonInstance::acquire(&IpcConfig::default())
+        .map(Some)
+        .map_err(|error| match error {
+            BindError::AlreadyRunning => installation_not_ready(),
+            BindError::Io(error) => error,
+        })
+}
+
+fn validate_maintenance_intent(intent: &[u8]) -> io::Result<()> {
+    if intent.is_empty() || intent.len() > MAX_INTENT_BYTES {
+        return Err(invalid_registration());
+    }
+    Ok(())
+}
+
+fn require_maintenance_intent(file: &File, expected: &[u8]) -> io::Result<()> {
+    let mut bytes = Vec::new();
+    file.take((expected.len() + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes != expected {
+        return Err(invalid_registration());
+    }
+    Ok(())
+}
+
+/// An account-owned registration awaiting a verified transfer from a retired Windows scope.
+pub struct WindowsScopeRegistrationTransfer {
+    registration: PathBuf,
+    registration_identity: WindowsFileIdentity,
+    source_runtime: PathBuf,
+    destination_runtime: PathBuf,
+    source_trust: InstallationTrust,
+    intent: Vec<u8>,
+    _instance: DaemonInstance,
+}
+
+impl WindowsScopeRegistrationTransfer {
+    /// Acquires the calling account's registration, only when a different scope has retired.
+    pub fn acquire(config: &DataConfig, destination_runtime: &Path) -> io::Result<Option<Self>> {
+        let registration = core_installation_registration(config)?;
+        let file = match open_registration(&registration) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let source_runtime = read_runtime_directory(&file)?;
+        if source_runtime == destination_runtime {
+            return Ok(None);
+        }
+        let Ok(source_root) = runtime_root(&source_runtime) else {
+            return Ok(None);
+        };
+        let destination_root = runtime_root(destination_runtime)?;
+        let source_trust = match installation_trust(source_root) {
+            Ok(trust) => trust,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let destination_trust = installation_trust(destination_root)?;
+        if source_trust == destination_trust {
+            return Ok(None);
+        }
+        let intent_path = source_root.join(WINDOWS_SCOPE_TRANSITION_RECORD);
+        let intent = match source_trust.open_record(&intent_path) {
+            Ok(intent) => intent,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if crate::windows_process_is_elevated()? {
+            return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+        }
+        let expected_user_root = windows_current_user_installation_root()?;
+        let user_root = if source_trust == InstallationTrust::User {
+            source_root
+        } else {
+            destination_root
+        };
+        if user_root != expected_user_root
+            || validate_runtime(&source_runtime, source_trust)? != source_runtime
+            || validate_runtime(destination_runtime, destination_trust)? != destination_runtime
+        {
+            return Err(invalid_registration());
+        }
+        let instance =
+            maintenance_instance(InstallationTrust::User)?.ok_or_else(invalid_registration)?;
+        require_no_maintenance_record(source_root, WINDOWS_ACTIVE_RUNTIME_RECORD)?;
+        require_active_runtime(destination_runtime, destination_trust)?;
+        let mut bytes = Vec::new();
+        intent
+            .take((MAX_INTENT_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)?;
+        validate_maintenance_intent(&bytes)?;
+        Ok(Some(Self {
+            registration,
+            registration_identity: file_identity_from_file(&file)?,
+            source_runtime,
+            destination_runtime: destination_runtime.to_path_buf(),
+            source_trust,
+            intent: bytes,
+            _instance: instance,
+        }))
+    }
+
+    /// The still-retained source whose signed runtime must be checked by Bootstrap.
+    #[must_use]
+    pub fn source_runtime(&self) -> &Path {
+        &self.source_runtime
+    }
+
+    /// Whether the trusted source belonged to the all-users installation.
+    #[must_use]
+    pub fn source_is_machine(&self) -> bool {
+        self.source_trust == InstallationTrust::Machine
+    }
+
+    /// The immutable plan that authorized retirement of the source scope.
+    #[must_use]
+    pub fn intent(&self) -> &[u8] {
+        &self.intent
+    }
+
+    /// Atomically transfers this account's registration after Bootstrap verifies both payloads.
+    pub fn publish(self) -> io::Result<()> {
+        let source_root = runtime_root(&self.source_runtime)?;
+        let intent = self
+            .source_trust
+            .open_record(&source_root.join(WINDOWS_SCOPE_TRANSITION_RECORD))?;
+        require_maintenance_intent(&intent, &self.intent)?;
+        require_no_maintenance_record(source_root, WINDOWS_ACTIVE_RUNTIME_RECORD)?;
+        let destination_trust = installation_trust(runtime_root(&self.destination_runtime)?)?;
+        require_active_runtime(&self.destination_runtime, destination_trust)?;
+        let line = registration_line(&self.destination_runtime)?;
+        publish_owned_record(
+            &self.registration,
+            line.as_bytes(),
+            Some(self.registration_identity),
+            InstallationTrust::User,
+        )
+    }
+}
+
+fn remove_maintenance_intent(
+    root: &Path,
+    file_name: &str,
+    expected: &[u8],
+    trust: InstallationTrust,
+) -> io::Result<()> {
+    validate_maintenance_intent(expected)?;
+    let file = match trust.open_record_for_removal(&root.join(file_name)) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return sync_directory(root),
+        Err(error) => return Err(error),
+    };
+    require_maintenance_intent(&file, expected)?;
+    delete_open_file(file)?;
+    sync_directory(root)
+}
+
+/// Holds both version leases during activation and an account instance lock for user installs.
 /// Bootstrap is responsible for verifying the signed payloads and exact update intent.
 pub struct WindowsInstallationUpdate {
+    trust: InstallationTrust,
     root: PathBuf,
     source: PathBuf,
     target: PathBuf,
     target_version: Version,
     _source_lease: File,
-    _instance: DaemonInstance,
+    _instance: Option<DaemonInstance>,
     target_lease: Option<File>,
 }
 
@@ -213,7 +840,26 @@ impl WindowsInstallationUpdate {
         )
     }
 
+    /// Starts or resumes protected Program Files activation without locking an account store.
+    pub fn acquire_machine(executable: &Path, target_version: &str) -> io::Result<Self> {
+        Self::acquire_scoped(
+            executable,
+            target_version,
+            windows_machine_installation_root()?,
+            InstallationTrust::Machine,
+        )
+    }
+
     fn acquire_at(executable: &Path, target_version: &str, root: PathBuf) -> io::Result<Self> {
+        Self::acquire_scoped(executable, target_version, root, InstallationTrust::User)
+    }
+
+    fn acquire_scoped(
+        executable: &Path,
+        target_version: &str,
+        root: PathBuf,
+        trust: InstallationTrust,
+    ) -> io::Result<Self> {
         if !has_name(executable, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME)
             || target_version.eq_ignore_ascii_case(env!("CARGO_PKG_VERSION"))
         {
@@ -224,17 +870,17 @@ impl WindowsInstallationUpdate {
         if !target_version.cmp_precedence(&source_version).is_gt() {
             return Err(invalid_registration());
         }
-        validate_core_executable(executable)?;
+        trust.check_executable(executable)?;
         let source = windows_installation_runtime(executable)?;
         if runtime_root(&source)? != root {
             return Err(invalid_registration());
         }
-        let source_lease = lease_runtime(&source, true)?;
-        let active = read_active_version(&open_registration(
-            &root.join(WINDOWS_ACTIVE_RUNTIME_RECORD),
-        )?)?;
+        trust.check_executable(&source.join(CORE_EXECUTABLE_NAME))?;
+        let source_lease = lease_runtime(&source, true, trust)?;
+        require_no_scope_transition(&root)?;
+        let active = active_version(&root, trust)?;
         if active == target_version {
-            open_registration(&root.join(WINDOWS_UPDATE_INTENT_RECORD))?;
+            trust.open_record(&root.join(WINDOWS_UPDATE_INTENT_RECORD))?;
         } else if active != source_version {
             return Err(installation_not_ready());
         }
@@ -242,12 +888,9 @@ impl WindowsInstallationUpdate {
             .parent()
             .ok_or_else(invalid_registration)?
             .join(target_version.to_string());
-        let instance =
-            DaemonInstance::acquire(&IpcConfig::default()).map_err(|error| match error {
-                BindError::AlreadyRunning => installation_not_ready(),
-                BindError::Io(error) => error,
-            })?;
+        let instance = maintenance_instance(trust)?;
         Ok(Self {
+            trust,
             root,
             source,
             target,
@@ -266,19 +909,26 @@ impl WindowsInstallationUpdate {
 
     /// Acquires the target lease after setup finishes, before final payload verification.
     pub fn lock_target(&mut self) -> io::Result<()> {
-        open_registration(&self.root.join(WINDOWS_UPDATE_INTENT_RECORD))?;
+        self.trust
+            .open_record(&self.root.join(WINDOWS_UPDATE_INTENT_RECORD))?;
         if self.target_lease.is_some() {
             return Ok(());
         }
-        if validate_runtime(&self.target)? != self.target {
+        if validate_runtime(&self.target, self.trust)? != self.target {
             return Err(invalid_registration());
         }
-        self.target_lease = Some(lease_runtime(&self.target, true)?);
+        self.target_lease = Some(lease_runtime(&self.target, true, self.trust)?);
         Ok(())
     }
 
     /// Replaces only this user's source registration. Uninitialized users stay unregistered.
     pub fn publish_core_registration(&self, config: &DataConfig) -> io::Result<()> {
+        if self.trust == InstallationTrust::Machine {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "machine maintenance must leave user registrations to each account",
+            ));
+        }
         self.require_target_lease()?;
         open_registration(&self.root.join(WINDOWS_UPDATE_INTENT_RECORD))?;
         let path = core_installation_registration(config)?;
@@ -297,15 +947,16 @@ impl WindowsInstallationUpdate {
         let identity = file_identity_from_file(&file)?;
         drop(file);
         let line = registration_line(&self.target)?;
-        publish_owned_record(&path, line.as_bytes(), Some(identity))
+        publish_owned_record(&path, line.as_bytes(), Some(identity), self.trust)
     }
 
     /// Publishes the fully verified target as the sole active version under both leases.
     pub fn activate(&self) -> io::Result<()> {
         self.require_target_lease()?;
-        open_registration(&self.root.join(WINDOWS_UPDATE_INTENT_RECORD))?;
+        self.trust
+            .open_record(&self.root.join(WINDOWS_UPDATE_INTENT_RECORD))?;
         let path = self.root.join(WINDOWS_ACTIVE_RUNTIME_RECORD);
-        let file = open_registration(&path)?;
+        let file = self.trust.open_record(&path)?;
         let active = read_active_version(&file)?;
         if active == self.target_version {
             return sync_directory(&self.root);
@@ -319,38 +970,22 @@ impl WindowsInstallationUpdate {
             &path,
             format!("{}\n", self.target_version).as_bytes(),
             Some(identity),
+            self.trust,
         )
     }
 
     /// Ends maintenance by removing the exact update intent after the target is active.
     pub fn finish(&self, expected_intent: &[u8]) -> io::Result<()> {
         self.require_target_lease()?;
-        if expected_intent.is_empty() || expected_intent.len() > MAX_INTENT_BYTES {
-            return Err(invalid_registration());
-        }
-        if read_active_version(&open_registration(
-            &self.root.join(WINDOWS_ACTIVE_RUNTIME_RECORD),
-        )?)? != self.target_version
-        {
+        if active_version(&self.root, self.trust)? != self.target_version {
             return Err(installation_not_ready());
         }
-        let intent = self.root.join(WINDOWS_UPDATE_INTENT_RECORD);
-        let file = match open_registration_for_removal(&intent) {
-            Ok(file) => file,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                return sync_directory(&self.root);
-            }
-            Err(error) => return Err(error),
-        };
-        let mut bytes = Vec::new();
-        (&file)
-            .take((MAX_INTENT_BYTES + 1) as u64)
-            .read_to_end(&mut bytes)?;
-        if bytes != expected_intent {
-            return Err(invalid_registration());
-        }
-        delete_open_file(file)?;
-        sync_directory(&self.root)
+        remove_maintenance_intent(
+            &self.root,
+            WINDOWS_UPDATE_INTENT_RECORD,
+            expected_intent,
+            self.trust,
+        )
     }
 
     fn require_target_lease(&self) -> io::Result<()> {
@@ -361,29 +996,90 @@ impl WindowsInstallationUpdate {
     }
 }
 
-/// Checks whether the selected runtime already owns this user's registration.
-/// A different, stale, or malformed registration blocks an ordinary install.
-pub fn check_windows_core_registration(config: &DataConfig, runtime: &Path) -> io::Result<bool> {
+enum RegistrationState {
+    Missing,
+    Current,
+    SupersededMachine { identity: WindowsFileIdentity },
+}
+
+fn inspect_registration(config: &DataConfig, runtime: &Path) -> io::Result<RegistrationState> {
     let registration = core_installation_registration(config)?;
     match open_registration(&registration) {
         Ok(file) => {
-            require_owner(&file, runtime)?;
-            Ok(true)
+            let stored = read_runtime_directory(&file)?;
+            let registered = validate_runtime(&stored, InstallationTrust::User)?;
+            if registered == runtime {
+                return Ok(RegistrationState::Current);
+            }
+            if stored == registered && superseded_machine_runtime(&registered, runtime)? {
+                return Ok(RegistrationState::SupersededMachine {
+                    identity: file_identity_from_file(&file)?,
+                });
+            }
+            Err(other_registration_owner())
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(RegistrationState::Missing),
         Err(error) => Err(error),
     }
+}
+
+fn superseded_machine_runtime(previous: &Path, selected: &Path) -> io::Result<bool> {
+    let Ok(root) = runtime_root(selected) else {
+        return Ok(false);
+    };
+    if previous.parent() != selected.parent()
+        || installation_trust(root)? != InstallationTrust::Machine
+    {
+        return Ok(false);
+    }
+    let previous_version = path_version(previous)?;
+    let selected_version = path_version(selected)?;
+    if !previous_version.cmp_precedence(&selected_version).is_lt() {
+        return Ok(false);
+    }
+    require_active_runtime(selected, InstallationTrust::Machine)?;
+    validate_runtime(selected, InstallationTrust::Machine)?;
+    if validate_runtime(previous, InstallationTrust::Machine)? != previous {
+        return Ok(false);
+    }
+    InstallationTrust::Machine.open_manifest(&previous.join(PRODUCT_PAYLOAD_MANIFEST_NAME))?;
+    Ok(true)
+}
+
+fn path_version(runtime: &Path) -> io::Result<Version> {
+    parse_version(
+        runtime
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(invalid_registration)?,
+    )
+}
+
+/// Checks whether the selected runtime already owns this user's registration.
+/// A verified newer machine install can initialize and take ownership under this user's Core.
+pub fn check_windows_core_registration(config: &DataConfig, runtime: &Path) -> io::Result<bool> {
+    Ok(matches!(
+        inspect_registration(config, runtime)?,
+        RegistrationState::Current
+    ))
 }
 
 /// Publishes a registration after Core has completed startup checks under its instance lock.
 pub fn publish_windows_core_registration(config: &DataConfig, runtime: &Path) -> io::Result<()> {
     validate_core_executable(&runtime.join(CORE_EXECUTABLE_NAME))?;
     let registration = core_installation_registration(config)?;
-    if check_windows_core_registration(config, runtime)? {
-        return Ok(());
-    }
+    let previous = match inspect_registration(config, runtime)? {
+        RegistrationState::Missing => None,
+        RegistrationState::Current => return Ok(()),
+        RegistrationState::SupersededMachine { identity } => Some(identity),
+    };
     let line = registration_line(runtime)?;
-    publish_owned_record(&registration, line.as_bytes(), None)
+    publish_owned_record(
+        &registration,
+        line.as_bytes(),
+        previous,
+        InstallationTrust::User,
+    )
 }
 
 fn registration_line(runtime: &Path) -> io::Result<String> {
@@ -396,8 +1092,9 @@ fn publish_owned_record(
     registration: &Path,
     content: &[u8],
     previous: Option<WindowsFileIdentity>,
+    trust: InstallationTrust,
 ) -> io::Result<()> {
-    validate_registration_parent(registration)?;
+    trust.validate_parent(registration)?;
     let parent = registration.parent().ok_or_else(invalid_registration)?;
     let (_, parent_identity) = resolve_plain_storage_directory(parent)?;
     static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(0);
@@ -410,17 +1107,21 @@ fn publish_owned_record(
         std::process::id(),
         NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed)
     ));
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create_new(true)
-        .open(&temporary)?;
+    let mut file = if trust == InstallationTrust::Machine {
+        create_windows_machine_installation_record(&temporary)?
+    } else {
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?
+    };
     let identity = file_identity_from_file(&file)?;
     let result = (|| {
         file.write_all(content)?;
         file.sync_all()?;
         drop(file);
-        let checked = open_registration(&temporary)?;
+        let checked = trust.open_record(&temporary)?;
         let mut observed = Vec::new();
         (&checked)
             .take((content.len() + 1) as u64)
@@ -433,7 +1134,7 @@ fn publish_owned_record(
             return Err(invalid_registration());
         }
         if let Some(previous) = previous {
-            let old = open_registration(registration)?;
+            let old = trust.open_record(registration)?;
             if file_identity_from_file(&old)? != previous {
                 return Err(invalid_registration());
             }
@@ -446,7 +1147,7 @@ fn publish_owned_record(
         sync_directory(parent)
     })();
     if result.is_err()
-        && let Ok(file) = open_registration_for_removal(&temporary)
+        && let Ok(file) = trust.open_record_for_removal(&temporary)
         && file_identity_from_file(&file).is_ok_and(|current| current == identity)
     {
         let _ = delete_open_file(file);
@@ -475,9 +1176,7 @@ fn require_owner(file: &File, runtime: &Path) -> io::Result<()> {
 }
 
 fn registered_runtime(file: &File) -> io::Result<PathBuf> {
-    let registered = read_runtime_directory(file)?;
-    validate_core_executable(&registered.join(CORE_EXECUTABLE_NAME))?;
-    fs::canonicalize(registered)
+    validate_runtime(&read_runtime_directory(file)?, InstallationTrust::User)
 }
 
 fn other_registration_owner() -> io::Error {
@@ -490,6 +1189,43 @@ fn other_registration_owner() -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unicode_root_locator_rejects_a_replaced_directory() -> io::Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time is after the Unix epoch")
+            .as_nanos();
+        let parent = crate::local_app_data_directory()?.join(format!("alcomd-custom-{stamp}"));
+        fs::create_dir(&parent)?;
+        let root = parent.join("ALCOMD 测试 安装");
+        fs::create_dir(&root)?;
+        let (resolved, identity) = resolve_plain_storage_directory(&root)?;
+        let locator = parent.join(WINDOWS_INSTALLATION_ROOT_RECORD);
+        let content = format!(
+            "{}{}\n",
+            registration_line(&root)?,
+            encode_root_identity(&identity)
+        );
+        fs::write(&locator, &content)?;
+        let read = || {
+            read_installation_root(
+                &InstallationTrust::User.open_record(&locator)?,
+                InstallationTrust::User,
+            )
+        };
+        assert_eq!(read()?, resolved);
+        fs::write(&locator, format!("{content}extra"))?;
+        assert!(read().is_err());
+        fs::write(&locator, &content)?;
+        fs::rename(&root, parent.join("old"))?;
+        fs::create_dir(&root)?;
+        fs::write(root.join("unknown.txt"), b"preserve")?;
+        assert!(read().is_err());
+        assert_eq!(fs::read(root.join("unknown.txt"))?, b"preserve");
+        fs::remove_dir_all(parent)
+    }
+
     #[test]
     fn installed_core_lease_excludes_maintenance_without_locking_manifest_contents()
     -> io::Result<()> {
@@ -523,7 +1259,7 @@ mod tests {
         )?;
         let first = hold_windows_installation(&executable)?.expect("first shared lease");
         let second = hold_windows_installation(&executable)?.expect("second shared lease");
-        let maintenance = open_installation_manifest(&path)?;
+        let maintenance = InstallationTrust::User.open_manifest(&path)?;
         assert!(lock_file_byte(&maintenance, MANIFEST_LEASE_OFFSET, true).is_err());
         drop(first);
         assert!(lock_file_byte(&maintenance, MANIFEST_LEASE_OFFSET, true).is_err());
@@ -562,12 +1298,15 @@ mod tests {
         fs::create_dir(&data)?;
         let config = DataConfig::isolated(data);
         let cold_config = DataConfig::isolated(root.join("uninitialized"));
+        assert!(windows_retired_machine_installation_bootstrap(&cold_config)?.is_none());
         let registration = core_installation_registration(&config)?;
         let active = root.join(WINDOWS_ACTIVE_RUNTIME_RECORD);
         let intent = root.join(WINDOWS_UPDATE_INTENT_RECORD);
         fs::write(&active, concat!(env!("CARGO_PKG_VERSION"), "\n"))?;
         let bootstrap = source.join(WINDOWS_BOOTSTRAP_EXECUTABLE_NAME);
         fs::write(&bootstrap, [])?;
+        assert!(InstallationTrust::Machine.validate_parent(&active).is_err());
+        assert!(InstallationTrust::Machine.open_record(&active).is_err());
 
         let running = hold_windows_installation(&source.join(CORE_EXECUTABLE_NAME))?
             .expect("source initially active");
@@ -576,7 +1315,51 @@ mod tests {
         assert!(
             WindowsInstallationUpdate::acquire_at(&bootstrap, "../other", root.clone()).is_err()
         );
-        assert!(require_active_runtime(&target).is_err());
+        assert!(require_active_runtime(&target, InstallationTrust::User).is_err());
+
+        let gui = source.join(WINDOWS_GUI_EXECUTABLE_NAME);
+        let cli = root.join("bin").join(WINDOWS_CLI_EXECUTABLE_NAME);
+        fs::create_dir(root.join("bin"))?;
+        fs::write(&gui, [])?;
+        fs::write(&cli, [])?;
+        assert_eq!(
+            windows_installation_bootstrap(&gui)?,
+            Some(bootstrap.clone())
+        );
+        assert_eq!(
+            windows_installation_bootstrap(&cli)?,
+            Some(bootstrap.clone())
+        );
+        let scope_intent = b"scope conversion with a verified destination";
+        let transition = WindowsScopeTransitionSource::acquire_at(
+            &bootstrap,
+            root.clone(),
+            InstallationTrust::User,
+        )?;
+        transition.fence(scope_intent)?;
+        drop(transition);
+        assert!(hold_windows_installation(&source.join(CORE_EXECUTABLE_NAME)).is_err());
+        assert!(windows_installation_bootstrap(&gui).is_err());
+        assert!(windows_installation_bootstrap(&cli).is_err());
+        assert!(WindowsInstallationUpdate::acquire_at(&bootstrap, &next, root.clone()).is_err());
+        let resumed = WindowsScopeTransitionSource::acquire_at(
+            &bootstrap,
+            root.clone(),
+            InstallationTrust::User,
+        )?;
+        resumed.fence(scope_intent)?;
+        assert!(resumed.fence(b"different transaction").is_err());
+        assert!(resumed.restore(b"different transaction").is_err());
+        resumed.restore(scope_intent)?;
+        drop(resumed);
+        assert_eq!(
+            windows_installation_bootstrap(&cli)?,
+            Some(bootstrap.clone())
+        );
+        assert_eq!(
+            fs::read_to_string(&active)?,
+            concat!(env!("CARGO_PKG_VERSION"), "\n")
+        );
 
         let mut update = WindowsInstallationUpdate::acquire_at(&bootstrap, &next, root.clone())?;
         assert_eq!(update.target_runtime(), target);
@@ -584,8 +1367,8 @@ mod tests {
         fs::write(&intent, b"exact sealed update intent")?;
         update.lock_target()?;
         assert!(update.finish(b"exact sealed update intent").is_err());
-        assert!(require_active_runtime(&source).is_err());
-        assert!(require_active_runtime(&target).is_err());
+        assert!(require_active_runtime(&source, InstallationTrust::User).is_err());
+        assert!(require_active_runtime(&target, InstallationTrust::User).is_err());
         update.publish_core_registration(&cold_config)?;
         assert!(!core_installation_registration(&cold_config)?.exists());
 
@@ -597,6 +1380,13 @@ mod tests {
         );
         remove_windows_core_registration(&config, &unrelated)?;
         publish_windows_core_registration(&config, &source)?;
+        assert!(windows_retired_machine_installation_bootstrap(&config)?.is_none());
+        assert!(check_windows_core_registration(&config, &target).is_err());
+        assert!(publish_windows_core_registration(&config, &target).is_err());
+        assert_eq!(
+            fs::read_to_string(&registration)?,
+            registration_line(&source)?
+        );
         update.publish_core_registration(&config)?;
         drop(update);
         assert!(crate::registered_core_executable(&config).is_err());
@@ -626,6 +1416,50 @@ mod tests {
         assert!(WindowsInstallationUpdate::acquire_at(&bootstrap, &next, root.clone()).is_err());
         fs::create_dir(&intent)?;
         assert!(crate::registered_core_executable(&config).is_err());
+
+        let retiring_root = root.join("scope-source");
+        let retiring_runtime = retiring_root.join("runtime").join(current.to_string());
+        fs::create_dir_all(&retiring_runtime)?;
+        let retiring_bootstrap = retiring_runtime.join(WINDOWS_BOOTSTRAP_EXECUTABLE_NAME);
+        let retiring_core = retiring_runtime.join(CORE_EXECUTABLE_NAME);
+        for path in [
+            &retiring_bootstrap,
+            &retiring_core,
+            &retiring_runtime.join(PRODUCT_PAYLOAD_MANIFEST_NAME),
+        ] {
+            fs::write(path, [])?;
+        }
+        let retiring_selector = retiring_root.join(WINDOWS_ACTIVE_RUNTIME_RECORD);
+        fs::write(&retiring_selector, format!("{current}\n"))?;
+        let retirement = WindowsScopeTransitionSource::acquire_at(
+            &retiring_bootstrap,
+            retiring_root.clone(),
+            InstallationTrust::User,
+        )?;
+        assert!(retirement.retire(scope_intent).is_err());
+        assert_eq!(retirement.phase(scope_intent)?, "active");
+        retirement.fence(scope_intent)?;
+        assert_eq!(retirement.phase(scope_intent)?, "fenced");
+        assert!(retirement.phase(b"another intent").is_err());
+        assert!(retirement.retire(b"another intent").is_err());
+        assert!(retiring_selector.is_file());
+        retirement.retire(scope_intent)?;
+        assert_eq!(retirement.phase(scope_intent)?, "retired");
+        assert!(retirement.restore(scope_intent).is_err());
+        assert!(!retiring_selector.exists());
+        drop(retirement);
+        assert!(hold_windows_installation(&retiring_core).is_err());
+        let retirement = WindowsScopeTransitionSource::acquire_at(
+            &retiring_bootstrap,
+            retiring_root.clone(),
+            InstallationTrust::User,
+        )?;
+        retirement.retire(scope_intent)?;
+        drop(retirement);
+        assert_eq!(
+            fs::read(retiring_root.join(WINDOWS_SCOPE_TRANSITION_RECORD))?,
+            scope_intent
+        );
         fs::remove_dir_all(root)
     }
 }

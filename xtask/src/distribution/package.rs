@@ -11,13 +11,20 @@ use anyhow::{Context, ensure};
 use clap::ValueEnum;
 use ed25519_dalek::SigningKey;
 
-use super::{FIXTURE_KEY, ProductConfig, build::copy_component, publish_file};
+use super::{FIXTURE_KEY, ProductConfig, build::copy_component, publish_file, webview2};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub(super) enum Format {
     Inno,
     Appimage,
     Deb,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Variant<'a> {
+    Fixture,
+    Release(Option<&'a webview2::Inputs>),
 }
 
 pub(super) fn export(
@@ -27,8 +34,19 @@ pub(super) fn export(
     product: &ProductConfig,
     candidate: &Candidate,
     format: Format,
-    for_fixture: bool,
-) -> anyhow::Result<()> {
+    variant: Variant<'_>,
+) -> anyhow::Result<[u8; 32]> {
+    let for_fixture = matches!(variant, Variant::Fixture);
+    let webview = match (variant, format) {
+        (Variant::Release(Some(inputs)), Format::Inno) => Some(inputs),
+        (Variant::Release(None), Format::Inno) => {
+            anyhow::bail!("Windows release packaging requires a pinned Evergreen Bootstrapper")
+        }
+        (Variant::Release(Some(_)), _) => {
+            anyhow::bail!("WebView2 inputs are only valid for Windows release packaging")
+        }
+        _ => None,
+    };
     let target = match format {
         Format::Inno => Target::Windows,
         Format::Appimage | Format::Deb => Target::Linux,
@@ -108,7 +126,10 @@ pub(super) fn export(
         match format {
             Format::Inno => {
                 export_windows_bin(layout, &runtime, product, &verified)?;
-                super::inno::export(layout, product, candidate, &verified)?;
+                let staged = webview
+                    .context("missing Windows prerequisites")?
+                    .stage(layout)?;
+                super::inno::export(layout, product, candidate, &verified, &staged)?;
             }
             Format::Appimage => export_product_appimage(root, layout, product, &linux_root)?,
             Format::Deb => export_product_deb(
@@ -144,7 +165,7 @@ pub(super) fn export(
     sync_directory(&parent)?;
     let purpose = if for_fixture { "fixture" } else { "release" };
     println!("Prepared {format:?} packing inputs for {purpose} runtime {manifest_digest}");
-    Ok(())
+    Ok(verified.manifest_sha256)
 }
 
 fn export_windows_bin(
@@ -261,7 +282,7 @@ fn export_product_appimage(
     let app = layout.join("AppDir");
     let bootstrap = &product.binaries.bootstrap;
     let launcher = format!(
-        "#!/bin/sh\nexec \"${{APPDIR:?AppImage mount is unavailable}}/{runtime}/{bootstrap}\" start-portable -- \"$@\"\n"
+        "#!/bin/sh\nworker=\"${{APPDIR:?AppImage mount is unavailable}}/{runtime}/{bootstrap}\"\nif [ \"${{1-}}\" = --bridge-v3 ]; then\n    shift\n    exec \"$worker\" bridge-linux-v3 --install-scope appimage \"$@\"\nfi\nexec \"$worker\" start-portable -- \"$@\"\n"
     );
     publish_file(&app, "AppRun", launcher.as_bytes())?;
     let id = &product.identity.linux_desktop_id;

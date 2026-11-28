@@ -22,6 +22,13 @@ use alcomd_updater::{
 use anyhow::{Context, ensure};
 use uuid::Uuid;
 
+#[path = "linux_portable_update.rs"]
+mod update;
+pub use update::{apply_portable_update, resume_portable_update};
+#[path = "linux_portable_cli.rs"]
+mod cli;
+pub use cli::{PortableCliAction, PortableCliStatus, portable_cli, start_portable_cli_if_selected};
+
 // The frozen release limits a complete desktop asset to 512 MiB.
 const IMAGE_LIMIT: u64 = 512 * 1024 * 1024;
 
@@ -37,6 +44,11 @@ pub fn start_portable(arguments: &[OsString]) -> anyhow::Result<()> {
     let version = env!("CARGO_PKG_VERSION").parse()?;
     let runtime = embedded_runtime(Path::new(&mount))?;
     let verified = verify_installed_release(&runtime, Target::Linux, &version)?;
+    let data = DataConfig::default();
+    super::linux_bridge::check_startup(&data)?;
+    if update::resume_from_image(&data, &image, &verified)? {
+        return update::relaunch_image(image.path(), arguments);
+    }
     let image_digest = format_digest(&hash_exact(image.file().try_clone()?, image.size())?);
     let origin = PortableOrigin::bind(
         &image,
@@ -44,7 +56,6 @@ pub fn start_portable(arguments: &[OsString]) -> anyhow::Result<()> {
         &format_digest(&verified.manifest_sha256),
     )?;
 
-    let data = DataConfig::default();
     let destination = linux_portable_runtime(&data)?;
     check_linux_core_registration(&data, &destination)
         .context("a different installed Core owns this user account")?;
@@ -105,18 +116,22 @@ pub fn start_portable(arguments: &[OsString]) -> anyhow::Result<()> {
     .context("installed portable desktop could not start")
 }
 
-fn embedded_runtime(mount: &Path) -> anyhow::Result<PathBuf> {
+pub(super) fn embedded_runtime(mount: &Path) -> anyhow::Result<PathBuf> {
     let (mount, _) = resolve_plain_storage_directory(mount)?;
-    let runtime = mount
-        .join("usr/lib")
-        .join(CORE_EXECUTABLE_NAME)
-        .join("runtime")
-        .join(env!("CARGO_PKG_VERSION"));
+    let runtime = runtime_in_image(&mount, env!("CARGO_PKG_VERSION"));
     ensure!(
         std::env::current_exe()? == runtime.join(LINUX_BOOTSTRAP_EXECUTABLE_NAME),
         "Bootstrap is outside the mounted product runtime"
     );
     Ok(runtime)
+}
+
+fn runtime_in_image(mount: &Path, version: &str) -> PathBuf {
+    mount
+        .join("usr/lib")
+        .join(CORE_EXECUTABLE_NAME)
+        .join("runtime")
+        .join(version)
 }
 
 struct RuntimeStage(PathBuf);

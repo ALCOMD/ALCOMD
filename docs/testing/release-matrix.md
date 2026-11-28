@@ -74,9 +74,13 @@ Windows 11 的完整 Inno 实包 `72a85893` 已通过双范围的 12 项卸载�
   入口不得假定 AppImage 永久位于某个固定路径。
 - RPM、Flatpak 与 Snap 不属于 4.0.0 blocker。
 
+Ubuntu 22.04 的签名工程 DEB 已验证缺失依赖时拒绝首装及依赖恢复，并覆盖更新下载中断、解包存储故障和实际配置触发器中断。正式 DEB 按冻结资产摘要复验。[缺失依赖](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-缺失依赖复验) · [下载中断](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-下载中断复验) · [存储故障](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-解包存储故障复验) · [配置触发器中断](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-配置触发器中断复验)
+
+独立下载 DEB 的隔离演练覆盖签名清单、包摘要、撤回、相同字节恢复、离线 APT 安装及 Core 冷启动。[DEB 独立下载发行演练](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-独立下载发行演练)
+
 ## 统一发行流水线
 
-未来以 `cargo xtask dist --target <target>` 为唯一全产品发行入口，依次完成：
+全产品发行通过 `cargo xtask dist --target <target>` 分阶段完成。
 
 1. 构建目标平台 Rust 组件与 GUI 前端。
 2. 使用 Tauri 编译 `alcomd-gui`，但不把其 bundle 当作最终产品。
@@ -89,6 +93,16 @@ Windows 11 的完整 Inno 实包 `72a85893` 已通过双范围的 12 项卸载�
 8. 执行安装、升级、卸载、范围转换、更新恢复和残留测试。
 
 `npm run gui:build` 仍可用于 GUI 构建验证，但不是完整产品发行命令。
+
+Windows Inno、Linux AppImage 和 Linux DEB 的原生输入由 `--package-layout` 导出。使用 `--package` 可以在对应系统上直接组装完整资产。该步骤读取经签名的运行目录，核对当前干净检出的 SHA 和 Git 签名，并在新目录中原子发布资产及工程回执 `asset.json`。
+
+```text
+cargo xtask dist --target x86_64-unknown-linux-gnu --package --format deb \
+  --source-sha <signed-commit> --staging <signed-runtime> --output <new-directory> \
+  --packager /usr/bin/dpkg-deb --packager-sha256 <tool-sha256>
+```
+
+Inno 使用 `--format inno`，提供 ISCC 和既有的 `--webview2-bootstrapper`、`--webview2-bootstrapper-sha256`。AppImage 使用 `--format appimage`，提供 appimagetool 及 `--appimage-runtime`、`--appimage-runtime-sha256`。输出目录的父目录须已存在，源码树内的暂存应位于 Git 忽略目录。工程回执记录格式、目标、源码与版本、实际资产字节和摘要、签名运行清单摘要及打包工具摘要。正式发布清单的签署和公开继续按审批矩阵执行。macOS DMG 仍按原计划延期。
 
 ## 迁移入口与更新源
 

@@ -13,6 +13,8 @@ mod credential_vault;
 pub mod desktop;
 mod external_path;
 #[cfg(target_os = "linux")]
+mod linux_portable_cli;
+#[cfg(target_os = "linux")]
 mod linux_portable_origin;
 mod process;
 mod project_delete;
@@ -24,29 +26,58 @@ mod unity_hub_open;
 mod unity_registration;
 
 pub use core_installation::{
-    CORE_EXECUTABLE_NAME, PRODUCT_PAYLOAD_MANIFEST_NAME, core_installation_registration,
+    CORE_EXECUTABLE_NAME, PRODUCT_PAYLOAD_MANIFEST_NAME, WINDOWS_BRIDGE_ACCOUNT_RECORD,
+    WINDOWS_CRT_FILE, WINDOWS_PRODUCT_SIDECARS, core_installation_registration,
     open_owned_installation_record, registered_core_executable,
     validate_installation_record_parent,
 };
 #[cfg(target_os = "linux")]
 pub use core_installation::{
     LINUX_BOOTSTRAP_EXECUTABLE_NAME, LINUX_GUI_EXECUTABLE_NAME, check_linux_core_registration,
-    linux_installation_bootstrap, linux_installation_runtime, linux_portable_runtime,
-    linux_portable_runtime_is_known, linux_retired_deb_installation_bootstrap,
-    publish_linux_core_registration,
+    check_linux_portable_update_registration, linux_installation_bootstrap,
+    linux_installation_runtime, linux_portable_runtime, linux_portable_runtime_for_version,
+    linux_portable_runtime_is_known, linux_portable_update_bootstrap,
+    linux_retired_deb_installation_bootstrap, publish_linux_core_registration,
+    publish_linux_portable_update_registration, require_unprivileged_linux_installation,
 };
 #[cfg(windows)]
 pub use core_installation::{
     WINDOWS_ACTIVE_RUNTIME_RECORD, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME, WINDOWS_CLI_EXECUTABLE_NAME,
-    WINDOWS_UPDATE_INTENT_RECORD, WindowsInstallationUpdate, check_windows_core_registration,
-    hold_windows_installation, publish_windows_core_registration, remove_windows_core_registration,
+    WINDOWS_GUI_EXECUTABLE_NAME, WINDOWS_INSTALLATION_ROOT_RECORD, WINDOWS_SCOPE_TRANSITION_RECORD,
+    WINDOWS_UPDATE_INTENT_RECORD, WindowsInstallationUpdate, WindowsScopeRegistrationTransfer,
+    WindowsScopeTransitionSource, check_windows_core_registration,
+    create_windows_machine_installation_directory, create_windows_machine_installation_record,
+    hold_windows_installation, open_windows_machine_installation_record,
+    publish_windows_core_registration, release_windows_installation_root,
+    remove_windows_core_registration, reserve_windows_installation_root,
+    validate_windows_installation_root, validate_windows_machine_installation_record_parent,
     windows_current_user_installation_root, windows_installation_bootstrap,
-    windows_installation_runtime,
+    windows_installation_runtime, windows_machine_installation_root,
+    windows_machine_runtime_bootstrap, windows_retired_machine_installation_bootstrap,
+};
+#[cfg(windows)]
+pub use core_installation::{
+    WINDOWS_BRIDGE_EMPTY_PROFILE_PROOF, approve_windows_empty_bridge_profile,
+    check_windows_bridge_profile_for_startup, windows_empty_bridge_activation_proof,
+};
+#[cfg(windows)]
+pub use core_installation::{
+    WINDOWS_SCOPE_DESTINATION_COMMIT_RECORD, WINDOWS_SCOPE_DESTINATION_RECORD,
+    WindowsScopeTransitionDestination,
 };
 pub use credential_vault::{delete_credential, read_credential, write_credential};
 pub use external_path::external_filesystem_path;
 #[cfg(target_os = "linux")]
+pub use linux_portable_cli::{
+    LINUX_CLI_EXECUTABLE_NAME, PORTABLE_CLI_LAUNCHER_NAME, PortableCliEntry, PortableCliEntryState,
+    linux_portable_cli_bootstrap, lock_linux_portable_cli,
+};
+#[cfg(target_os = "linux")]
 pub use linux_portable_origin::{PORTABLE_ORIGIN_FILE, PortableImage, PortableOrigin};
+#[cfg(target_os = "linux")]
+pub use storage_directories::linux_filesystem_is_full;
+#[cfg(windows)]
+pub use storage_directories::windows_available_storage;
 pub use storage_directories::{
     default_storage_directories, normalize_storage_directory, open_plain_file,
     prepare_storage_directory, publish_path_no_replace, resolve_plain_project_directory,
@@ -120,8 +151,24 @@ pub use unix_local_ipc::{UnixIpcIdentity, connect_verified_local_socket};
 pub use windows::{
     CoreStartupGuard, DaemonInstance, IpcListener, IpcStream, WindowsFileIdentity, connect,
     connect_verified_local_pipe, endpoint_display, file_identity, file_link_count,
-    local_app_data_directory, start_core_process, state_database_path,
+    local_app_data_directory, start_core_process, state_database_path, windows_current_account_sid,
 };
+#[cfg(windows)]
+pub use windows::{
+    WindowsElevatedProcess, WindowsMachineUpdateInput, WindowsMachineUpdateOutput,
+    confirm_windows_installation, notify_windows_installation, prepare_windows_machine_update,
+    read_windows_installation_registry_string, receive_windows_machine_update,
+    start_elevated_windows_program, windows_process_is_elevated,
+};
+
+/// Verifies the Windows trust chain and the exact organization of an executable's signer.
+#[cfg(windows)]
+pub fn verify_windows_program_publisher(
+    path: &std::path::Path,
+    publisher: &str,
+) -> std::io::Result<()> {
+    windows::verify_program_publisher(path, publisher)
+}
 
 /// Locates the state database without creating or changing the data directory.
 pub fn state_database_location(config: &DataConfig) -> std::io::Result<std::path::PathBuf> {
