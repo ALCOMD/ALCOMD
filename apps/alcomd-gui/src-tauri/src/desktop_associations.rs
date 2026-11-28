@@ -120,7 +120,7 @@ mod platform {
 #[cfg(target_os = "linux")]
 mod platform {
     use gio::prelude::AppInfoExt;
-    use tauri::AppHandle;
+    use tauri::{AppHandle, Manager};
 
     use super::Handler;
 
