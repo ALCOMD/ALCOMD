@@ -8,9 +8,9 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AccessContext, IdempotencyKey, M4Store, OperationId, PackageChangeSet, PackageSourcePin,
-    Permission, PrincipalId, ProjectId, ProjectObservation, ProjectRecord, ResolverCatalog,
-    ResourceKey, ResourceLockCoordinator, TechnicalErrorContext,
+    AccessContext, IdempotencyKey, M4Store, M5UnityStore, OperationId, PackageChangeSet,
+    PackageSourcePin, Permission, PrincipalId, ProjectId, ProjectObservation, ProjectRecord,
+    ResolverCatalog, ResourceKey, ResourceLockCoordinator, TechnicalErrorContext,
 };
 
 pub const BLANK_PROJECT_TEMPLATE_ID: &str = "com.vrclearn.alcomd.templates.blank";
@@ -57,7 +57,6 @@ pub struct ExternalProjectTemplate {
     pub name: String,
     pub base_ids: Vec<String>,
     pub unity_range: alcomd_domain::vpm_range::VpmRange,
-    pub blank_editor: Option<String>,
     pub dependencies: Vec<ProjectTemplateDependency>,
 }
 
@@ -322,7 +321,7 @@ pub const fn project_create_error_name(code: ProjectCreateErrorCode) -> &'static
     }
 }
 
-pub trait ProjectCreateStore: M4Store + Clone + Send + Sync + 'static {
+pub trait ProjectCreateStore: M4Store + M5UnityStore + Clone + Send + Sync + 'static {
     fn project_template_get(
         &self,
         owner: PrincipalId,
@@ -518,6 +517,7 @@ pub trait ProjectCreateAdapter: Clone + Send + Sync + 'static {
         &self,
         _input: ExternalProjectTemplate,
         _base: ProjectTemplateDeclaration,
+        _registered_editors: &[String],
     ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
         Err(ProjectCreateError::new(
             ProjectCreateErrorCode::InvalidInput,
@@ -1198,7 +1198,35 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
                     let base = base.ok_or_else(|| {
                         ProjectCreateError::new(ProjectCreateErrorCode::TemplateStale)
                     })?;
-                    template_io(move || adapter.materialize_external_template(input, base)).await?
+                    let mut registered_editors = Vec::new();
+                    if base.id == BLANK_PROJECT_TEMPLATE_ID {
+                        let mut cursor = None;
+                        loop {
+                            let page = self
+                                .store
+                                .list_installations(owner.clone(), cursor, 1_000)
+                                .await
+                                .map_err(|error| {
+                                    ProjectCreateError::new(
+                                        ProjectCreateErrorCode::StoreUnavailable,
+                                    )
+                                    .with_source(error)
+                                })?;
+                            registered_editors.extend(
+                                page.installations
+                                    .into_iter()
+                                    .map(|installation| installation.observation.unity_version),
+                            );
+                            cursor = page.next_cursor;
+                            if cursor.is_none() {
+                                break;
+                            }
+                        }
+                    }
+                    template_io(move || {
+                        adapter.materialize_external_template(input, base, &registered_editors)
+                    })
+                    .await?
                 } else {
                     template_io(move || {
                         adapter.prepare_template(source, project, work.base_declaration)

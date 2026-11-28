@@ -180,8 +180,10 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
         &self,
         input: ExternalProjectTemplate,
         base: ProjectTemplateDeclaration,
+        registered_editors: &[String],
     ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
-        self.templates.materialize_external_template(input, base)
+        self.templates
+            .materialize_external_template(input, base, registered_editors)
     }
 
     fn prune_template_archives(
@@ -904,7 +906,7 @@ mod tests {
             .find(|template| template.id == parsed.base_ids[0])
             .expect("compatible base");
         let declaration = engine
-            .materialize_external_template(parsed, base)
+            .materialize_external_template(parsed, base, &[])
             .expect("native template");
         assert_eq!(declaration.name, "ALCOM shared fixture");
         assert_eq!(declaration.editor_version.as_deref(), Some("2022.3.22f1"));
@@ -934,6 +936,30 @@ mod tests {
             .expect("read back as a native template");
         assert_eq!(restored, declaration);
         assert_eq!(fs::read(&source).expect("source remains readable"), bytes);
+
+        let mut blank = input.clone();
+        blank["base"] = serde_json::json!("com.anatawa12.vrc-get.blank");
+        blank["id"] = serde_json::json!("example.alcom.blank");
+        fs::write(
+            &source,
+            serde_json::to_vec(&blank).expect("blank exchange JSON"),
+        )
+        .expect("blank exchange input");
+        let blank = engine
+            .read_external_template(source_path)
+            .expect("read blank template")
+            .expect("recognized blank template format");
+        let blank_base = engine
+            .builtin_templates()
+            .expect("builtins")
+            .into_iter()
+            .find(|template| template.id == blank.base_ids[0])
+            .expect("native blank base");
+        let declaration = engine
+            .materialize_external_template(blank, blank_base, &[])
+            .expect("import blank template without registered editors");
+        assert_eq!(declaration.editor_version.as_deref(), Some("2022.3.22f1"));
+
         let mut input = input;
         input["unityPackages"] = serde_json::json!(["/private/attachment.unitypackage"]);
         fs::write(

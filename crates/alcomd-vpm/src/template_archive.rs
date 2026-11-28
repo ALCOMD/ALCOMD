@@ -455,7 +455,6 @@ impl TemplateArchiveStore {
         validate_metadata(&id, input.display_name.trim())?;
         let unity_range = VpmRange::parse(input.unity_version.as_deref().unwrap_or("*"))
             .map_err(|error| invalid().with_source(error))?;
-        let mut blank_editor = None;
         let base_ids = match input.base.as_str() {
             "com.anatawa12.vrc-get.vrchat.avatars" => {
                 compatible_builtin_variants(AVATAR_TEMPLATES, &unity_range)?
@@ -470,10 +469,6 @@ impl TemplateArchiveStore {
                     .collect()
             }
             "com.anatawa12.vrc-get.blank" => {
-                blank_editor = compatible_builtin_variants(AVATAR_TEMPLATES, &unity_range)?
-                    .into_iter()
-                    .next()
-                    .map(|(_, _, editor)| editor);
                 vec![alcomd_application::BLANK_PROJECT_TEMPLATE_ID.to_owned()]
             }
             base => vec![alcom_template_id(base)?],
@@ -486,7 +481,6 @@ impl TemplateArchiveStore {
             name: input.display_name,
             base_ids,
             unity_range,
-            blank_editor,
             dependencies: input
                 .vpm_dependencies
                 .into_iter()
@@ -502,12 +496,36 @@ impl TemplateArchiveStore {
         &self,
         mut input: ExternalProjectTemplate,
         base: ProjectTemplateDeclaration,
+        registered_editors: &[String],
     ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
-        let editor = base
-            .editor_version
-            .clone()
-            .or(input.blank_editor)
-            .ok_or_else(invalid)?;
+        let editor = match base.editor_version.clone() {
+            Some(editor) => editor,
+            None if base.id == alcomd_application::BLANK_PROJECT_TEMPLATE_ID => {
+                let registered = registered_editors
+                    .iter()
+                    .filter_map(|editor| {
+                        canonical_unity_version(editor).ok()?;
+                        let triplet = editor_triplet(editor).ok()?;
+                        input.unity_range.matches(&triplet, false).then(|| {
+                            (
+                                triplet,
+                                crate::unity_version::UnityVersion::parse_editor(editor),
+                                editor,
+                            )
+                        })
+                    })
+                    .max();
+                match registered {
+                    Some((_, _, editor)) => editor.clone(),
+                    None => compatible_builtin_variants(AVATAR_TEMPLATES, &input.unity_range)?
+                        .into_iter()
+                        .next()
+                        .map(|(_, _, editor)| editor)
+                        .ok_or_else(invalid)?,
+                }
+            }
+            None => return Err(invalid()),
+        };
         if !input.unity_range.matches(&editor_triplet(&editor)?, false) {
             return Err(ProjectCreateError::new(
                 ProjectCreateErrorCode::DependencyUnsatisfied,
@@ -519,8 +537,14 @@ impl TemplateArchiveStore {
                 .iter()
                 .find(|item| item.package_id == dependency.package_id)
             {
-                dependency.version_range =
-                    intersect_ranges(&inherited.version_range, &dependency.version_range)?;
+                let inherited = VpmRange::parse(&inherited.version_range)
+                    .map_err(|error| invalid().with_source(error))?;
+                let requested = VpmRange::parse(&dependency.version_range)
+                    .map_err(|error| invalid().with_source(error))?;
+                dependency.version_range = inherited
+                    .intersect(&requested)
+                    .map_err(|error| invalid().with_source(error))?
+                    .canonical();
             }
         }
         self.manual(input.id, input.name, editor, input.dependencies, base)
@@ -1390,33 +1414,6 @@ fn compatible_builtin_variants(
     }
     variants.sort_by(|left, right| right.0.cmp(&left.0));
     Ok(variants)
-}
-
-fn intersect_ranges(inherited: &str, requested: &str) -> Result<String, ProjectCreateError> {
-    let inherited = VpmRange::parse(inherited)
-        .map_err(|error| invalid().with_source(error))?
-        .canonical();
-    let requested = VpmRange::parse(requested)
-        .map_err(|error| invalid().with_source(error))?
-        .canonical();
-    let parts = inherited.split(" || ");
-    let combinations =
-        parts.flat_map(|base| requested.split(" || ").map(move |extra| (base, extra)));
-    let mut result = String::new();
-    for (base, extra) in combinations {
-        if !result.is_empty() {
-            result.push_str(" || ");
-        }
-        result.push_str(base);
-        result.push(' ');
-        result.push_str(extra);
-        if result.len() > alcomd_domain::vpm_range::MAX_RANGE_BYTES {
-            return Err(invalid());
-        }
-    }
-    VpmRange::parse(&result)
-        .map(|range| range.canonical())
-        .map_err(|error| invalid().with_source(error))
 }
 
 fn template_metadata(id: &str, name: &str) -> Result<Vec<u8>, ProjectCreateError> {

@@ -1858,13 +1858,51 @@ async fn alcom_template_import_resolves_bases_and_persists_native_templates() {
         .await
         .expect("built-in templates");
     let access = AccessContext::local_owner();
-    for (id, base, name) in [
+    for (identity, version) in [(1_u8, "2022.3.6f10"), (2, "2022.3.6f2"), (3, "2022.3.22f1")] {
+        f.store
+            .register_installation(
+                access.principal().clone(),
+                UnityInstallationObservation {
+                    executable_path: f
+                        .directory
+                        .join(version)
+                        .join("Unity.exe")
+                        .to_string_lossy()
+                        .into_owned(),
+                    filesystem_identity: vec![identity; 24],
+                    unity_version: version.to_owned(),
+                    architecture: UnityArchitecture::Unknown,
+                    source_kind: UnitySourceKind::Manual,
+                    observed_at_ms: u64::from(identity),
+                },
+                key(version),
+                u64::from(identity),
+            )
+            .await
+            .expect("registered Unity fixture");
+    }
+    for (id, base, name, range, result) in [
         (
             "com.example.base",
             "com.anatawa12.vrc-get.blank",
             "ALCOM base",
+            ">=1.0.0 <2.0.0",
+            OperationState::Succeeded,
         ),
-        ("com.example.derived", "com.example.base", "ALCOM derived"),
+        (
+            "com.example.derived",
+            "com.example.base",
+            "ALCOM derived",
+            ">=1.1.0",
+            OperationState::Succeeded,
+        ),
+        (
+            "com.example.prerelease",
+            "com.example.base",
+            "ALCOM prerelease",
+            "=1.1.0-beta.1",
+            OperationState::Failed,
+        ),
     ] {
         let source_file = f.directory.join(format!("{id}.alcomtemplate"));
         fs::write(
@@ -1875,7 +1913,8 @@ async fn alcom_template_import_resolves_bases_and_persists_native_templates() {
                 "id": id,
                 "displayName": name,
                 "base": base,
-                "unityVersion": "2022.x"
+                "unityVersion": "2022.3.6",
+                "vpmDependencies": { "com.example.imported": range }
             }))
             .expect("ALCOM file"),
         )
@@ -1892,7 +1931,7 @@ async fn alcom_template_import_resolves_bases_and_persists_native_templates() {
             .await
             .expect("start template import");
         let completed = wait_for_operation(&f, accepted.operation_id).await;
-        assert_eq!(completed.state, OperationState::Succeeded, "{completed:?}");
+        assert_eq!(completed.state, result, "{completed:?}");
         fs::remove_file(source_file).expect("remove external input");
         let templates = app
             .list_templates(&access, None, None)
@@ -1901,12 +1940,17 @@ async fn alcom_template_import_resolves_bases_and_persists_native_templates() {
         let saved = templates
             .templates
             .iter()
-            .find(|template| template.declaration.name == name)
-            .expect("imported template");
+            .find(|template| template.declaration.name == name);
+        if result == OperationState::Failed {
+            assert_eq!(completed.error_code.as_deref(), Some("invalid_input"));
+            assert!(saved.is_none());
+            continue;
+        }
+        let saved = saved.expect("imported template");
         assert!(!saved.locked);
         assert_eq!(
             saved.declaration.editor_version.as_deref(),
-            Some("2022.3.22f1")
+            Some("2022.3.6f10")
         );
     }
 }

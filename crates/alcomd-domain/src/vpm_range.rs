@@ -87,6 +87,66 @@ impl VpmRange {
             .collect::<Vec<_>>()
             .join(" || ")
     }
+
+    /// Conjoins the range arms and rejects a stored result that changes prerelease matching.
+    pub fn intersect(&self, other: &Self) -> Result<Self, RangeError> {
+        if self.arms.len() * other.arms.len() > MAX_OR_ARMS {
+            return Err(RangeError::TooLarge);
+        }
+        let mut source = String::new();
+        for left in &self.arms {
+            for right in &other.arms {
+                if !source.is_empty() {
+                    source.push_str(" || ");
+                }
+                source.push_str(&left.source);
+                source.push(' ');
+                source.push_str(&right.source);
+                if source.len() > MAX_RANGE_BYTES {
+                    return Err(RangeError::TooLarge);
+                }
+            }
+        }
+        let combined = Self::parse(&source)?;
+        let opted_in_cores: BTreeSet<_> = combined
+            .arms
+            .iter()
+            .flat_map(|arm| arm.prerelease_cores.iter().copied())
+            .collect();
+        let mut representatives: BTreeSet<_> = opted_in_cores
+            .iter()
+            .map(|&(major, minor, patch)| before_release(Version::new(major, minor, patch)))
+            .collect();
+        for bound in combined
+            .arms
+            .iter()
+            .flat_map(|arm| arm.predicates.iter().map(Predicate::version))
+        {
+            if bound.pre.is_empty()
+                || !opted_in_cores.contains(&(bound.major, bound.minor, bound.patch))
+            {
+                continue;
+            }
+            let mut at_bound = bound.clone();
+            at_bound.build = semver::BuildMetadata::EMPTY;
+            representatives.insert(at_bound.clone());
+            at_bound.pre = semver::Prerelease::new(&format!("{}.0", bound.pre))
+                .map_err(|_| RangeError::Invalid)?;
+            representatives.insert(at_bound);
+        }
+
+        // Conjoining comparators preserves release matches and matches with prereleases enabled.
+        // In ordinary mode a combined arm can opt into a prerelease that one operand excludes.
+        // At each affected core, the first prerelease, each comparator boundary, and its immediate
+        // successor (append `.0`) cover every interval on which the predicates have fixed results.
+        if representatives.iter().any(|version| {
+            combined.matches(version, false)
+                != (self.matches(version, false) && other.matches(version, false))
+        }) {
+            return Err(RangeError::Invalid);
+        }
+        Ok(combined)
+    }
 }
 
 impl Conjunction {
@@ -331,4 +391,56 @@ fn parse_primitive(input: &str) -> Result<Vec<Predicate>, RangeError> {
 
 fn checked_next(value: u64) -> Result<u64, RangeError> {
     value.checked_add(1).ok_or(RangeError::Invalid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stored_intersections_preserve_releases_and_compatible_prerelease_permissions() {
+        for (first, second) in [
+            ("^1.0.0", ">=1.1.0 <1.2.0"),
+            (">=1.1.0-alpha.1 <2.0.0", ">=1.1.0-beta.1 <1.2.0"),
+            (">=1.1.0 <2.0.0", ">=1.1.0-beta.1"),
+            (
+                ">=1.0.0 <2.0.0 || >=1.1.0-beta.1 <1.1.0",
+                ">=1.1.0-beta.1 <1.1.0",
+            ),
+        ] {
+            let left = VpmRange::parse(first).unwrap();
+            let right = VpmRange::parse(second).unwrap();
+            let intersection = left.intersect(&right).unwrap();
+            let stored = VpmRange::parse(&intersection.canonical()).unwrap();
+            for version in [
+                "1.0.0",
+                "1.1.0-0",
+                "1.1.0-alpha.1",
+                "1.1.0-beta.1",
+                "1.1.0-beta.1.0",
+                "1.1.0",
+                "1.2.0",
+                "2.0.0",
+            ] {
+                let version = Version::parse(version).unwrap();
+                for include_prerelease in [false, true] {
+                    assert_eq!(
+                        stored.matches(&version, include_prerelease),
+                        left.matches(&version, include_prerelease)
+                            && right.matches(&version, include_prerelease),
+                        "{first} intersect {second} at {version}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn intersection_rejects_prerelease_admission_from_only_one_operand() {
+        let stable = VpmRange::parse(">=1.0.0 <2.0.0").unwrap();
+        for range in ["=1.1.0-beta.1", ">1.1.0-beta.1 <1.1.0"] {
+            let explicit = VpmRange::parse(range).unwrap();
+            assert_eq!(stable.intersect(&explicit), Err(RangeError::Invalid));
+        }
+    }
 }
