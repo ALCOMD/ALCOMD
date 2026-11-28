@@ -487,18 +487,25 @@ fn project_catalog_parity(runtime: &Option<PathBuf>, root: &std::path::Path, pro
             .clone()
     };
     let initial = run(&["project", "get", project_id]);
-    let initial_revision = initial["project"]["revision"].to_string();
+    let initial_revision = initial["project"]["revision"]
+        .as_u64()
+        .expect("registry revision");
+    let content_revision = initial["project"]["contentRevision"]
+        .as_u64()
+        .expect("project content revision");
     let favorite = run(&[
         "project",
         "set-favorite",
         project_id,
         "true",
         "--expected-revision",
-        &initial_revision,
+        &initial_revision.to_string(),
         "--idempotency-key",
         "catalog-favorite",
     ]);
     assert_eq!(favorite["project"]["favorite"], true);
+    assert_eq!(favorite["project"]["revision"], initial_revision + 1);
+    assert_eq!(favorite["project"]["contentRevision"], content_revision);
     let view = r#"{"search":"CLI Project","sort":"name","descending":false}"#;
     let page = run(&["project", "list", "--view", view, "--limit", "1"]);
     assert_eq!(page["projects"][0]["projectId"], project_id);
@@ -530,13 +537,12 @@ fn project_catalog_parity(runtime: &Option<PathBuf>, root: &std::path::Path, pro
         run(&["package", "user-package", "list"])["userPackages"][0],
         *user
     );
-    let revision = favorite["project"]["revision"].to_string();
     let page = run(&[
         "package",
         "candidates",
         project_id,
         "--expected-revision",
-        &revision,
+        &content_revision.to_string(),
         "--view",
         r#"{"kind":"summary","packageIds":["com.example.parity"]}"#,
     ]);
@@ -550,32 +556,38 @@ fn project_catalog_parity(runtime: &Option<PathBuf>, root: &std::path::Path, pro
         "bulk",
         project_id,
         "--expected-revision",
-        &revision,
+        &content_revision.to_string(),
         "--intent",
         intent,
         "--dry-run",
         "--yes",
     ]);
     let plan_id = plan["planId"].as_str().expect("reviewed plan");
+    assert_eq!(plan["projectRevision"], content_revision);
     assert_eq!(run(&["plan", "get", "package", plan_id])["plan"], plan);
     let applied = run(&[
         "package",
         "apply-plan",
         plan_id,
         "--expected-revision",
-        &revision,
+        &plan["projectRevision"].to_string(),
         "--idempotency-key",
         "catalog-apply",
         "--yes",
     ]);
     assert_eq!(applied["state"], "succeeded", "{applied}");
-    let next_revision = run(&["project", "get", project_id])["project"]["revision"].to_string();
+    let settled = run(&["project", "get", project_id]);
+    assert_eq!(settled["project"]["favorite"], true);
+    let next_content_revision = settled["project"]["contentRevision"]
+        .as_u64()
+        .expect("committed project content revision");
+    assert!(next_content_revision > content_revision);
     let reinstall = run(&[
         "package",
         "reinstall",
         project_id,
         "--expected-revision",
-        &next_revision,
+        &next_content_revision.to_string(),
         "--package-id",
         "com.example.parity",
         "--dry-run",
