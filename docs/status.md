@@ -12,6 +12,8 @@
 
 `807b55b6` 另通过 Win11 四组同范围 Unicode PATH 升级和九项 Updater 离线检查。同源 AppImage 与 DEB 各通过九项 Ubuntu 22.04 回环 HTTPS 发行演练，覆盖验签、撤回与同摘要恢复。[同源验收记录](exec-plans/M12-full-product-distribution.md#2026-11-28-807b55b6-同源工程包与验收)
 
+`807b55b6` 的 DEB 已完成一组隔离迁移与等价新建 v4 的对账。两份独立资料经 Core 读回的十组公开设置及项目、仓库、模板和 Unity 列表一致。全系统零残留验收仍需按批准对象和平台取证。[同源验收记录](exec-plans/M12-full-product-distribution.md#2026-11-28-807b55b6-同源工程包与验收)
+
 主仓候选 `9eba5b98` 的本地整仓、Chromium、三平台 Hosted CI 和四项 CodeQL 均通过。已从同一签名源码重建 Inno、AppImage 和 DEB。Inno 通过 Win11 两种安装范围、WebView2、卸载保全，以及当前用户磁盘满诊断和同包重试。[Windows 同源实包](exec-plans/M12-full-product-distribution.md#2026-11-27-9eba5b98-windows-同源实包复验) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897471) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897091)
 
 同一 `9eba5b98` Inno 另通过 Win11 全用户更新的两处磁盘满验收。保留签名包前和暂存新版时均保全旧版及资料，释放空间后用同包升级，原账号下次启动时登记新版 Core 并重开原工程。`49a3d526` 的 Bootstrap 经同样的隔离 Inno 复验，两处均能报告磁盘空间不足。已有目标目录时仍拒绝更新并保全原件。[全用户磁盘满复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户整包更新磁盘满复验)

@@ -1132,7 +1132,8 @@ stage = "M12"
 kind = "snapshot"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
-description = "比较迁移后状态与全新 v4 加等价用户数据，确认 artifacts 清单中已批准旧资源为空。"
+description = "807b55b6 的隔离 DEB 已对比迁移资料与等价的新建 v4 资料。十组公开设置和项目、仓库、模板、Unity 列表一致，v4 资料中未检出选定旧文件名。全系统仍需按平台核对 artifacts 清单中的已批准对象。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "migrations/v3/artifacts.toml"]
 
 [[test]]
 id = "installer.matrix"
