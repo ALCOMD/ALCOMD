@@ -1363,7 +1363,7 @@ stage = "M12"
 kind = "fault-injection"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "断网 Win11 24H2 Sandbox 用同源 7b7522b5 Inno 验证全用户更新的保留签名包、解包暂存、桌面重启以及提交意图落盘后的磁盘满。核对诊断、已存在目标、两版启动限制和资料保全，删除原下载后依然可用保留签名包恢复并读回工程。标准账号的交互 UAC 另验。"
+description = "断网 Win11 24H2 Sandbox 用同源 807b55b6 Inno 通过九项全用户更新恢复检查。覆盖保留签名包、解包暂存、桌面重启及提交意图落盘后的真实磁盘满，核对诊断、已存在目标、启动限制、资料保全及原下载移除后的同事务恢复。标准账号的交互 UAC 另验。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
 
 [[test]]
@@ -1408,7 +1408,7 @@ stage = "M12"
 kind = "integration-ui"
 platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
-description = "通过「关于」页的三项 Chromium 用例覆盖检查与下载步骤、取消、安装重启及恢复的独立确认。7b7522b5 同源 Inno 实测全用户桌面重启遇到磁盘满时重开旧版 WebView2 并记录失败。释放空间后用相同包重试清除标记，实际新版窗口和原工程可重开。"
+description = "通过「关于」页的三项 Chromium 用例覆盖检查与下载步骤、取消、安装重启及恢复的独立确认。807b55b6 同源 Inno 实测全用户桌面重启遇到磁盘满时重开旧版 WebView2 并记录失败。释放空间后用相同包重试清除标记，实际新版窗口和原工程可重开。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-gui/tests/browser/product-updates.spec.ts"]
 
 [[test]]
@@ -1435,7 +1435,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "implemented"
-description = "签名工程候选 2a1f93b9 通过本机整仓、Chromium 全量复验、三平台 Hosted 整仓、外部 SDK、Release 与 Tauri 构建，各通过 765 项 Chromium。同 SHA 四项 CodeQL 通过。"
+description = "签名工程候选 807b55b6 通过本机整仓和三平台 Hosted CI，各通过 765 项 Chromium。同 SHA 的外部 SDK、发行组件、Tauri 与四项 CodeQL 通过。Windows Inno、Linux AppImage 和 DEB 已复建并进行同源实包复验。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", ".github/workflows/ci.yml"]
 
 [[test]]
@@ -1614,7 +1614,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 24.04 的真实冻结 v3.4.0 DEB 与 7b7522b5 的同源 v4 DEB 经离线 APT 交接。两个标准账号分别实测预提交启动阻断、撤回重开 v3，以及坏证明拒绝、签名提交、新版 GUI 与 Core 读回迁移测试偏好和 v3 保全。"
+description = "Ubuntu 24.04 的真实冻结 v3.4.0 DEB 与 807b55b6 的同源 v4 DEB 经离线 APT 交接。两个标准账号分别实测预提交启动阻断、撤回重开 v3，以及坏证明拒绝、签名提交、新版 GUI 与 Core 读回迁移测试偏好和 v3 保全。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
 
 [[test]]
@@ -1623,7 +1623,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "7b7522b5 的同源独立归档在 Ubuntu 24.04 先验证分离签名再解包。标准账号在独立资料目录中分别运行真实冻结 v3.4.0 AppImage 的 FUSE/WebKit 桌面，验证回滚重开、显式提交、同源 v4 FUSE/WebKit/IPC、旧数据保全和隔离挂载清理。"
+description = "807b55b6 的同源独立归档在 Ubuntu 24.04 先验证分离签名再解包。标准账号在独立资料目录中分别运行真实冻结 v3.4.0 AppImage 的 FUSE/WebKit 桌面，验证回滚重开、显式提交、同源 v4 FUSE/WebKit/IPC、旧数据保全和隔离挂载清理。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/appimage_bridge.rs", "xtask/src/distribution/appimage_bridge.rs"]
 
 [[test]]
@@ -1632,7 +1632,7 @@ stage = "M12"
 kind = "native-installer"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "修订后的 Linux xtask 用 7b7522b5 的同源签名输入复验独立桥接归档。镜像缺执行位或可被其他用户写入时拒绝组装且目标缺失。安全可执行模式成功组装，归档成员保留其模式。"
+description = "807b55b6 的 Linux xtask 用同源签名输入复验独立桥接归档。实际打包入口拒绝 0600 和 0777，目标归档保持缺失。0700 组装成功并在归档成员中保留该模式。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/appimage_bridge.rs", "crates/alcomd-platform/src/linux_portable_origin.rs"]
 
 [[test]]

@@ -743,6 +743,22 @@ Ubuntu 24.04 的实际冻结 v3.4.0 DEB 经离线 APT 与同源 v4 DEB 交接。
 
 同一 Inno EXE 在两个断网 Win11 24H2 Sandbox 分别通过当前用户和全用户各 15 项同版本修复检查。修复按原始摘要恢复 GUI、Discord 扩展和稳定 CLI，保全活动选择器、原卸载器与卸载日志、PATH 和快捷方式归属文件以及 `alcomd://` 登记。运行库内容变化、待处理维护和活跃程序租约分别阻止写入。解除阻塞后重试，CLI 连接实际 Core，随后卸载精确移除自有入口并保全数据库和无关文件。首次 CLI 冷启动分别耗时 2,215 毫秒和 1,886 毫秒，均观测到实际 WebView2 渲染。两份回执 SHA-256 依次为 `fbf2d82c1e5583064e564d32088545e02fa822a9b8ccd00a9658a1fa28646b5f`、`2b8f68903505d188da2b3f3caecd7d9fc37cd9970a22d2b46a6e3ab288892df3`。
 
+### 2026-11-28 807b55b6 同源工程包与验收
+
+从干净签名候选 `807b55b61e829cf65811641e72257c65345130e1` 在 Ubuntu 22.04 重建 AppImage 和 DEB。两包解包后重新验签。AppImage、DEB 和运行清单的 SHA-256 依次为 `bb6af6758dbf908ff6beb333761fbe838d4e2176ddb1a285cc1beedc55bdd2b9`、`cb67d04e80ad8a02fc497df9f25f6829f448725331cd526e28ecf13a621d83db`、`0d3fa3668c320387f785d7088e3ea47f474c00d4fb481e8a0b8e720859a59db1`。实际桥接打包入口拒绝 `0600` 和 `0777`，保留空的输出位置。模式 `0700` 通过且在归档内保留，归档 SHA-256 为 `a8932f991ae124e60d3a904bbbd3db15af12d7e79d6c6d0010c75d4ed65ce052`。
+
+两个工程包在隔离 Ubuntu 24.04 用冻结 v3.4.0 复验显式提交、回滚重开旧 GUI 和新版 Core。AppImage 运行真实 FUSE 和 WebKit，结束后清理测试挂载和资料。DEB 通过离线 APT 交接，拒绝坏健康证明后签名提交并读回迁移的合成偏好，清理测试账号、资料和 v4 包。AppImage 和 DEB 回执 SHA-256 分别为 `c782f1e12d8a8c54b71a5a09fb552fd9b8e0760a4c0b1e6a03514f80fb19bcfd`、`a6db8270c32dc2ff7d207a1b95a260939a87ff314586c9ecc0228db833b09dd7`。
+
+同一干净签名源码在 Windows 重建完整 Release 载荷和 Tauri GUI，并用合成密钥签署运行载荷。Inno 6.5.4 生成的工程包为 33,836,911 字节，SHA-256 为 `b1394805fdc5209b2f32781ae07bdf08ba0c4be534fa6b8da59fdbd47a54bc71`，载荷清单 SHA-256 为 `779d6672f27e6bb78a4f40204a442c4b5f1c57dd7a574e3b20c492490b9cbf1b`。实际打包入口通过验签、错误打包器摘要拒绝以及已有输出保全检查。
+
+两个断网 Win11 24H2 Sandbox 分别通过当前用户 4 项和全用户 5 项检查。两种范围均使用 Unicode 目录安装，稳定 CLI 冷启动 Core 并打开 WebView2，卸载移除 CLI 且保留账号资料。全用户安装也确认安装时不会初始化账号资料。两次 Core 冷启动分别为 1,903 和 1,516 毫秒。
+
+另用三个断网 Win11 Sandbox 的既有管理员会话，以该工程包和 `16e5184a` 的已验签升级夹具通过 9 项更新恢复检查。在各自的 804,188,160 字节 NTFS 测试卷上复验保留签名包、解包暂存、桌面重启和提交意图持久化后的磁盘满。恢复前核对旧资料和签名事务，解除故障后用同包恢复登记及 WebView2。原下载移除后，提交意图和保留的签名包仍可恢复同一事务。五个来宾均已关闭，原生汇总回执的 SHA-256 为 `73470bad090975d7bd7a5419325be1afbff03b6aaec079fdcb153c579ab6023c`。
+
+该候选通过本地整仓验证，包含 1,108 项 Rust、7 项 Node SDK 和 765 项 Chromium。首次整仓测试在签名扩展宿主就绪阶段超时。正常 Windows 用户会话下使用同一 SHA 的整仓构建产物单项复验通过，完整重跑也通过。聚合日志与 Chromium 日志的 SHA-256 分别为 `34c36e917f1a5171a9e313548570f2f3bc64539c7f5f58402e551b59d203fb47`、`b77ab90e91df4b15e0a156daf25ecb4f52643df9e8aab099bc4085612626d9c6`。15 笔提交逐笔验签后普通快进。同 SHA 的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted CI 各通过整仓、外部 SDK、发行组件、Tauri 构建和 765 项 Chromium。四项 CodeQL 已通过，Hosted 汇总回执的 SHA-256 为 `f12478269adaf4ecd9bdfe375b51ffd3bf7818055398a6f11837df70c25fa5d7`。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46085415285) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46085414983)
+
+Win10 隔离来宾首次设置按所有者意见暂缓。标准账号交互式 UAC 与双向安装范围转换的成功路径继续等候适用的 Windows 客户端环境。macOS 原生验收延期，公开发版继续遵循 A-017。
+
 ### 2026-11-25 Windows 产品 Inno 双范围
 
 Inno 只向对应范围的 PATH 添加稳定 `bin` 目录。它保留原值类型和用户已有条目，在卸载登记中记录本次添加的确切值。卸载时仅清理可唯一识别的自有条目，并保留安装后其他 PATH 改动。已有的等价条目不被接管。安装器变更结束时通知 Windows 刷新环境。
