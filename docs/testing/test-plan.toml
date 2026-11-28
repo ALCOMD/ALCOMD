@@ -1264,7 +1264,7 @@ stage = "M12"
 kind = "contract"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "implemented"
-description = "用合成发布密钥核验 v4 声明原始字节、URI、UTC 有效期、频道和平台、反重放序号及本地资产摘要。Windows 通过 6 项 Updater 测试和 7 项实际离线命令场景。同源 7b7522b5 Updater 与 Inno 实包再通过九项离线复验，涵盖落盘后同请求重试、反重放、版本和频道错误、声明签名和等长资产篡改拒绝。"
+description = "用合成发布密钥核验 v4 声明原始字节、URI、UTC 有效期、频道和平台、反重放序号及本地资产摘要。Windows 通过 6 项 Updater 测试和 7 项实际离线命令场景。同源 807b55b6 Updater 与 Inno 实包再通过九项离线复验，涵盖落盘后同请求重试、反重放、版本和频道错误、声明签名和等长资产篡改拒绝。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-updater/src/product_update.rs"]
 
 [[test]]
@@ -1471,7 +1471,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
-description = "同一签名源码 bffef439 的完整 Inno 和 AppImage 在断网 Win11 Sandbox 与隔离 Ubuntu 22.04 各通过九项生产 Updater 回环 HTTPS 检查。7b7522b5 的同源 AppImage 复验了全部九项。覆盖发布、频道隔离、停推保全和隐藏、过时序号拒绝、同摘要恢复及等长篡改拒绝。最终资产按平台格式重复验证。"
+description = "同一签名源码 bffef439 的完整 Inno 和 AppImage 在断网 Win11 Sandbox 与隔离 Ubuntu 22.04 各通过九项生产 Updater 回环 HTTPS 检查。807b55b6 的同源 AppImage 复验了全部九项。覆盖发布、频道隔离、停推保全和隐藏、过时序号拒绝、同摘要恢复及等长篡改拒绝。最终资产按平台格式重复验证。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "scripts/rehearse-product-publication.mjs", "apps/alcomd-updater/examples/product_publication_rehearsal.rs"]
 
 [[test]]
@@ -1480,7 +1480,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 22.04 回环 HTTPS 分别使用 49b25485 和 7b7522b5 的完整 DEB 各通过九项独立下载发行检查。覆盖清单、包摘要和等长篡改拒绝，撤回及原件恢复。撤回前已验签的包通过断网 APT 安装、Core 冷启动和工程重开，purge 保全资料。"
+description = "Ubuntu 22.04 回环 HTTPS 用 807b55b6 的同源完整 DEB 通过九项独立下载发行检查。覆盖清单、包摘要和等长篡改拒绝，撤回及原件恢复。撤回前已验签的包通过断网 APT 安装、Core 冷启动和工程重开，purge 保全资料。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
 
 [[test]]
@@ -1757,7 +1757,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "blocked"
-description = "7b7522b5 的 Inno PATH 修复通过 Win11 四组同范围实包验收。使用该候选完整同源 Inno 工程包首装，复验两种安装范围的既有等效 Unicode 条目及升级卸载保全。双向安装范围转换的 PATH 交接待原生验收。"
+description = "807b55b6 同源 Inno 在 Win11 的当前用户和全用户范围各通过自有、既有等效 Unicode PATH 条目升级复验。核对原始值和注册表类型、CLI 重开工程及卸载归属。双向安装范围转换的 PATH 交接待原生验收。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss"]
 
 [[test]]

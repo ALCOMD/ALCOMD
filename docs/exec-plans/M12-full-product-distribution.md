@@ -755,6 +755,12 @@ Ubuntu 24.04 的实际冻结 v3.4.0 DEB 经离线 APT 与同源 v4 DEB 交接。
 
 另用三个断网 Win11 Sandbox 的既有管理员会话，以该工程包和 `16e5184a` 的已验签升级夹具通过 9 项更新恢复检查。在各自的 804,188,160 字节 NTFS 测试卷上复验保留签名包、解包暂存、桌面重启和提交意图持久化后的磁盘满。恢复前核对旧资料和签名事务，解除故障后用同包恢复登记及 WebView2。原下载移除后，提交意图和保留的签名包仍可恢复同一事务。五个来宾均已关闭，原生汇总回执的 SHA-256 为 `73470bad090975d7bd7a5419325be1afbff03b6aaec079fdcb153c579ab6023c`。
 
+同源 Inno 在断网 Win11 又验证了四组同范围 Unicode PATH 升级。当前用户和全用户各覆盖自有条目及等效已有条目，核对升级前后的原始值、顺序和注册表值类型，使用稳定 CLI 重开工程，并按归属卸载。四份回执的 SHA-256 依次为 `481d0f3cfdbc417193e9c69fdfb59333e7e408ca4059269b299fb6fb2f6949ba`、`f279b86f809cf54117000be5826027323e3b6fd9c448a6b2355e24f21b89edc8`、`b00a10a8cca92cdd1d47826dbe9cb980a86d0ea916ef447ef992b51327fa8627`、`8fbfbc68bfaffd5859668a108719e52c992e164c97f9ca4e6845046be474cb1c`。
+
+同包 Updater 使用实际 Inno 成品通过九项离线验签、重试、反重放、版本、频道和篡改拒绝检查。首轮夹具预检发现期望的清单摘要沿用了上一候选。按重新验签的载荷清单更新夹具后复验通过，回执 SHA-256 为 `aba3ab116bd419f45b915425786f8c9fcb29a87c2712c4f3b3e2cc17b65cc1a3`。
+
+同源 AppImage 和 DEB 在 Ubuntu 22.04 的独立回环网络各通过九项 HTTPS 发行演练。AppImage 验证签名下载、频道隔离、停推后的缓存保全、过时序号和等长篡改拒绝及同摘要恢复。DEB 验证独立清单签名、撤回、原件恢复、撤回前已验签包的 APT 安装及 Core 重开工程，purge 保全资料。两份回执的 SHA-256 为 `a141c639f3a492f6ace98e0fe88ab19fe9d033cdb7496c0ce218d7ed5b1d741a` 和 `355d3c9abe71779d2436ab233fa069adc85b7ba22503fd2748d5adfe5dd52b97`。
+
 该候选通过本地整仓验证，包含 1,108 项 Rust、7 项 Node SDK 和 765 项 Chromium。首次整仓测试在签名扩展宿主就绪阶段超时。正常 Windows 用户会话下使用同一 SHA 的整仓构建产物单项复验通过，完整重跑也通过。聚合日志与 Chromium 日志的 SHA-256 分别为 `34c36e917f1a5171a9e313548570f2f3bc64539c7f5f58402e551b59d203fb47`、`b77ab90e91df4b15e0a156daf25ecb4f52643df9e8aab099bc4085612626d9c6`。15 笔提交逐笔验签后普通快进。同 SHA 的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted CI 各通过整仓、外部 SDK、发行组件、Tauri 构建和 765 项 Chromium。四项 CodeQL 已通过，Hosted 汇总回执的 SHA-256 为 `f12478269adaf4ecd9bdfe375b51ffd3bf7818055398a6f11837df70c25fa5d7`。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46085415285) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46085414983)
 
 Win10 隔离来宾首次设置按所有者意见暂缓。标准账号交互式 UAC 与双向安装范围转换的成功路径继续等候适用的 Windows 客户端环境。macOS 原生验收延期，公开发版继续遵循 A-017。
