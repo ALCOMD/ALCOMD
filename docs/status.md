@@ -12,6 +12,8 @@
 
 `807b55b6` 另通过 Win11 四组同范围 Unicode PATH 升级和九项 Updater 离线检查。同源 AppImage 与 DEB 各通过九项 Ubuntu 22.04 回环 HTTPS 发行演练，覆盖验签、撤回与同摘要恢复。[同源验收记录](exec-plans/M12-full-product-distribution.md#2026-11-28-807b55b6-同源工程包与验收)
 
+同源 AppImage 在 Ubuntu 22.04 的原生 WebKit「关于」页通过检查、下载、取消和确认整包替换重启。换位前后两处磁盘满均通过恢复复验，新版 FUSE 和 Core 读回测试工程。
+
 `807b55b6` 的 DEB 已完成一组隔离迁移与等价新建 v4 的对账。两份独立资料经 Core 读回的十组公开设置及项目、仓库、模板和 Unity 列表一致。全系统零残留验收仍需按批准对象和平台取证。[同源验收记录](exec-plans/M12-full-product-distribution.md#2026-11-28-807b55b6-同源工程包与验收)
 
 主仓候选 `9eba5b98` 的本地整仓、Chromium、三平台 Hosted CI 和四项 CodeQL 均通过。已从同一签名源码重建 Inno、AppImage 和 DEB。Inno 通过 Win11 两种安装范围、WebView2、卸载保全，以及当前用户磁盘满诊断和同包重试。[Windows 同源实包](exec-plans/M12-full-product-distribution.md#2026-11-27-9eba5b98-windows-同源实包复验) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897471) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897091)

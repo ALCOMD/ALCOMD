@@ -763,6 +763,10 @@ Ubuntu 24.04 的实际冻结 v3.4.0 DEB 经离线 APT 与同源 v4 DEB 交接。
 
 同源 AppImage 和 DEB 在 Ubuntu 22.04 的独立回环网络各通过九项 HTTPS 发行演练。AppImage 验证签名下载、频道隔离、停推后的缓存保全、过时序号和等长篡改拒绝及同摘要恢复。DEB 验证独立清单签名、撤回、原件恢复、撤回前已验签包的 APT 安装及 Core 重开工程，purge 保全资料。两份回执的 SHA-256 为 `a141c639f3a492f6ace98e0fe88ab19fe9d033cdb7496c0ce218d7ed5b1d741a` 和 `355d3c9abe71779d2436ab233fa069adc85b7ba22503fd2748d5adfe5dd52b97`。
 
+同源 AppImage 与 `41b7a82b` 的签名 alpha.1 工程夹具通过 Ubuntu 22.04 原生 WebKit「关于」页复验。临时 HTTPS 源只在隔离回环网络中提供声明和资产。分别验证检查声明、下载、取消确认时保留旧版，及确认后替换完整镜像并重启新版 FUSE/WebKit。CLI 集成的显式启用、移动后重绑、修复与移除也通过，Core 重新读回原工程。升级夹具 SHA-256 为 `bd13ddf69293b74dd4578e3b58470d24b19e3d4e8e3e926e9f463e1a0bc9294c`，GUI 日志 SHA-256 为 `8920bf43abec30035bc7af56bbfc6222d18e84132b28c3b3312309fee6b0a3bd`。
+
+同一 AppImage 组合在隔离临时卷复验两处真实 ENOSPC。换位前只余 4,194,304 字节时，旧镜像、登记、资料和桌面均可重开。换位后、登记前耗尽运行目录，保留意图、前一镜像和资料，删除原下载仍可在释放空间后从保留签名事务恢复。两次均通过新版 FUSE、WebKit、Core 和原工程重开。两份结果日志的 SHA-256 依次为 `0a30b04d8a0d2585fa48b095e3435240faca270424337c424788b521c32c4c7f`、`bc93b3414081c6bca896dc44f2d99f1899cea8703f129b8458ab9c896bd0e395`。
+
 该候选通过本地整仓验证，包含 1,108 项 Rust、7 项 Node SDK 和 765 项 Chromium。首次整仓测试在签名扩展宿主就绪阶段超时。正常 Windows 用户会话下使用同一 SHA 的整仓构建产物单项复验通过，完整重跑也通过。聚合日志与 Chromium 日志的 SHA-256 分别为 `34c36e917f1a5171a9e313548570f2f3bc64539c7f5f58402e551b59d203fb47`、`b77ab90e91df4b15e0a156daf25ecb4f52643df9e8aab099bc4085612626d9c6`。15 笔提交逐笔验签后普通快进。同 SHA 的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted CI 各通过整仓、外部 SDK、发行组件、Tauri 构建和 765 项 Chromium。四项 CodeQL 已通过，Hosted 汇总回执的 SHA-256 为 `f12478269adaf4ecd9bdfe375b51ffd3bf7818055398a6f11837df70c25fa5d7`。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46085415285) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46085414983)
 
 Win10 隔离来宾首次设置按所有者意见暂缓。标准账号交互式 UAC 与双向安装范围转换的成功路径继续等候适用的 Windows 客户端环境。macOS 原生验收延期，公开发版继续遵循 A-017。

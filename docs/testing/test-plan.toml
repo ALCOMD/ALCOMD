@@ -1346,7 +1346,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 22.04 用 bffef439 与 41b7a82b 签名 AppImage 在私有 tmpfs 复验替换前暂存和替换后恢复的真实 ENOSPC。核对旧版重开、原资料与镜像、同包重试及原下载缺失后的同事务恢复。仅替换 Bootstrap 的合成签名夹具复验替换后报告磁盘满且能恢复原事务。"
+description = "Ubuntu 22.04 用 807b55b6 同源 AppImage 与 41b7a82b 已验签升级夹具，在私有 tmpfs 复验换位前暂存和换位后登记的真实 ENOSPC。核对旧版重开、原资料与镜像、同包重试及原下载缺失后的同事务恢复。新版通过 FUSE、WebKit、Core，读回原工程。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_update.rs"]
 
 [[test]]
@@ -1409,7 +1409,7 @@ stage = "M12"
 kind = "integration-ui"
 platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
-description = "通过「关于」页的三项 Chromium 用例覆盖检查与下载步骤、取消、安装重启及恢复的独立确认。807b55b6 同源 Inno 实测全用户桌面重启遇到磁盘满时重开旧版 WebView2 并记录失败。释放空间后用相同包重试清除标记，实际新版窗口和原工程可重开。"
+description = "通过「关于」页的三项 Chromium 用例覆盖检查与下载步骤、取消、安装重启及恢复的独立确认。807b55b6 同源 Inno 在全用户重启遇磁盘满时重开旧版 WebView2，释放空间后同包恢复。同源 AppImage 通过真实 WebKit 的检查、下载、取消与确认替换重启，新版 Core 读回原工程。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-gui/tests/browser/product-updates.spec.ts"]
 
 [[test]]
@@ -1445,7 +1445,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Jammy 原生 FUSE 与 IPC 通过八项可选 CLI 检查。e0fc95dc/17088848 与 bffef439/41b7a82b 两对完整工程包已用真实 WebKit 关于页验证启用、移动、修复、分步检查和下载、取消更新、确认重启和移除。"
+description = "Jammy 原生 FUSE 与 IPC 通过八项可选 CLI 检查。807b55b6 同源 AppImage 与 41b7a82b 已验签升级夹具用真实 WebKit 关于页复验启用、移动重绑、修复、分步检查和下载、取消更新、确认重启和移除。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_cli.rs", "crates/alcomd-platform/src/linux_portable_cli.rs"]
 
 [[test]]
