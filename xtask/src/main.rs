@@ -311,6 +311,8 @@ fn check_unsafe_boundary(
         "crates/alcomd-platform/src/windows_security.rs",
         // M11: bounds-checked proc_pidinfo call for kernel IPC peer process creation time.
         "crates/alcomd-platform/src/client_peer_darwin.rs",
+        // Desktop association fallback on macOS 11: one read-only Launch Services lookup.
+        "crates/alcomd-platform/src/macos_launch_services.rs",
         "crates/alcomd-platform/src/windows_known_folder.rs",
         "crates/alcomd-platform/src/windows_file_identity.rs",
         // H3: bounded read-only version.dll adapter; every unsafe block is documented.

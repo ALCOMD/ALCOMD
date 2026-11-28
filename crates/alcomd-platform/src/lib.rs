@@ -12,6 +12,8 @@ mod core_installation;
 mod credential_vault;
 pub mod desktop;
 mod external_path;
+#[cfg(target_os = "macos")]
+mod macos_launch_services;
 mod process;
 mod project_delete;
 mod project_discovery;
