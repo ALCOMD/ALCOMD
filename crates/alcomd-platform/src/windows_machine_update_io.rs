@@ -17,8 +17,8 @@ use tokio::net::windows::named_pipe::{
 use tokio::runtime::{Builder, Runtime};
 use tokio::time::{Instant, sleep, timeout_at};
 use windows_sys::Win32::Foundation::{
-    ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, ERROR_PIPE_BUSY, ERROR_SUCCESS, WAIT_OBJECT_0,
-    WAIT_TIMEOUT,
+    ERROR_BROKEN_PIPE, ERROR_DISK_FULL, ERROR_FILE_NOT_FOUND, ERROR_NO_DATA, ERROR_PATH_NOT_FOUND,
+    ERROR_PIPE_BUSY, ERROR_PIPE_NOT_CONNECTED, ERROR_SUCCESS, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::Security::{
     GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation,
@@ -48,6 +48,8 @@ use super::security::{create_machine_update_pipe, push_quoted_argument, wide_pro
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(180);
+const MAINTENANCE_WAIT_MILLIS: u32 = 720_000;
+const DISCONNECTED_WORKER_WAIT_MILLIS: u32 = 30_000;
 
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain([0]).collect()
@@ -152,6 +154,9 @@ pub fn windows_process_is_elevated() -> io::Result<bool> {
 pub struct WindowsElevatedProcess(OwnedHandle);
 
 impl WindowsElevatedProcess {
+    /// Exit status reserved for storage exhaustion in the signed machine update worker.
+    pub const MACHINE_UPDATE_DISK_FULL_EXIT_CODE: i32 = ERROR_DISK_FULL as i32;
+
     /// Identifies the one process allowed to receive the update payload.
     pub fn id(&self) -> io::Result<u32> {
         // SAFETY: this live process handle came from the successful Shell call.
@@ -164,19 +169,42 @@ impl WindowsElevatedProcess {
 
     /// Waits without terminating a possibly committed update.
     pub fn wait(self) -> io::Result<()> {
+        self.wait_up_to(MAINTENANCE_WAIT_MILLIS)
+    }
+
+    /// Collects the update result even if the worker closed its receive pipe early.
+    pub fn wait_for_machine_update(self, transfer: io::Result<()>) -> io::Result<()> {
+        let Err(error) = transfer else {
+            return self.wait();
+        };
+        // The one-shot pipe is already closed. A worker out of space can close it
+        // during its copy, before returning the reason through its process handle.
+        if matches!(
+            error.raw_os_error().map(|code| code as u32),
+            Some(ERROR_BROKEN_PIPE | ERROR_NO_DATA | ERROR_PIPE_NOT_CONNECTED)
+        ) && let Err(outcome) = self.wait_up_to(DISCONNECTED_WORKER_WAIT_MILLIS)
+            && outcome.raw_os_error() == Some(Self::MACHINE_UPDATE_DISK_FULL_EXIT_CODE)
+        {
+            return Err(outcome);
+        }
+        Err(error)
+    }
+
+    fn wait_up_to(&self, timeout_millis: u32) -> io::Result<()> {
         let handle = self.0.as_raw_handle().cast();
         // SAFETY: the owned process handle remains live until both calls return.
-        match unsafe { WaitForSingleObject(handle, 720_000) } {
+        match unsafe { WaitForSingleObject(handle, timeout_millis) } {
             WAIT_OBJECT_0 => {
                 let mut code = 0;
                 // SAFETY: the handle is a terminated process and code is writable.
                 if unsafe { GetExitCodeProcess(handle, &mut code) } == 0 {
                     return Err(io::Error::last_os_error());
                 }
-                if code != 0 {
-                    return Err(io::Error::other("Windows maintenance did not complete"));
+                match code {
+                    0 => Ok(()),
+                    ERROR_DISK_FULL => Err(io::Error::from_raw_os_error(code as i32)),
+                    _ => Err(io::Error::other("Windows maintenance did not complete")),
                 }
-                Ok(())
             }
             WAIT_TIMEOUT => Err(io::Error::new(
                 io::ErrorKind::TimedOut,

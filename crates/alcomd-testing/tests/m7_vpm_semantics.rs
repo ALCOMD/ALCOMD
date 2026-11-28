@@ -2255,6 +2255,78 @@ async fn single_and_bulk_upgrade_clean_only_unused_old_dependencies() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_checks_version_requirements_only_from_retained_packages() {
+    for batch in [false, true] {
+        for retain_child in [false, true] {
+            let mut graph = json!({
+                "dependencies": { A: {"version": "1.0.0"} },
+                "locked": {
+                    A: {"version": "1.0.0", "dependencies": {B: "^1.0.0"}},
+                    B: {"version": "1.0.0", "dependencies": {C: "^1.0.0"}},
+                    C: {"version": "1.0.0", "dependencies": {}}
+                }
+            });
+            if retain_child {
+                graph["locked"][D] = json!({"version": "1.0.0", "dependencies": {B: "^1.0.0"}});
+            }
+            let f = fixture(
+                "upgrade-retained-requirements",
+                graph.clone(),
+                vec![
+                    package(A, "2.0.0", json!({C: "^2.0.0"})),
+                    package(C, "2.0.0", json!({})),
+                ],
+                None,
+            )
+            .await;
+            let request = if batch {
+                bulk(
+                    &f,
+                    vec![PackageBulkIntent::Upgrade {
+                        package_id: A.into(),
+                        version_range: Some("=2.0.0".into()),
+                        source: None,
+                        include_prerelease: false,
+                    }],
+                )
+            } else {
+                let mut request = request(&f, PlanAction::Upgrade, Some(A));
+                request.version_range = Some("=2.0.0".into());
+                request
+            };
+            let result = f
+                .packages
+                .plan(&AccessContext::local_owner(), request)
+                .await;
+            if retain_child {
+                let error = result.expect_err("a retained package still requires the old version");
+                assert_eq!(error.code(), M4ErrorCode::PackageDependencyConflict);
+                assert_eq!(f.manifest(), graph);
+                continue;
+            }
+
+            let plan = result.expect("a removed package cannot constrain the upgrade");
+            assert_eq!(plan.change_set.mutations.len(), 3);
+            for id in [A, C] {
+                assert!(plan.change_set.mutations.iter().any(|mutation| {
+                    mutation.package_id == id
+                        && mutation.kind == PackageMutationKind::Replace
+                        && mutation.to_version.as_deref() == Some("2.0.0")
+                }));
+            }
+            assert!(plan.change_set.mutations.iter().any(|mutation| {
+                mutation.package_id == B && mutation.kind == PackageMutationKind::Remove
+            }));
+            assert_eq!(apply(&f, plan).await.state, OperationState::Succeeded);
+            assert_eq!(f.manifest()["locked"][A]["version"], "2.0.0");
+            assert_eq!(f.manifest()["locked"][C]["version"], "2.0.0");
+            assert!(f.manifest()["locked"].get(B).is_none());
+            assert!(!f.root.join("Packages").join(B).exists());
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn retained_orphan_dependencies_survive_single_and_bulk_changes() {
     for batch in [false, true] {
         for remove in [false, true] {

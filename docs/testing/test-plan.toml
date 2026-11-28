@@ -598,7 +598,7 @@ stage = "M12"
 kind = "manual-accessibility"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "planned"
-description = "Ubuntu 22.04 的签名 AppImage 310065bf、2a1f93b9 和 bffef439 均用原生 Orca 42 验证 Tab 焦点、三个实际 WebKit 控件的语音和虚拟声卡音频。Win11 的 2a1f93b9 已验证 Tab 焦点与讲述人焦点框，应用和系统对照控件的语音回顾均无记录。Windows 实际朗读、macOS VoiceOver 以及最终发行包复验仍待通过。"
+description = "Ubuntu 22.04 的签名 AppImage 用原生 Orca 验证 Tab 焦点、三个 WebKit 控件的语音和虚拟声卡音频。Win11 验证 Tab 和讲述人焦点框。9eba5b98 原生来宾录到了合成对照音与 Zira 语音，讲述人显式选中远程音频后读取产品和标准 Windows 控件仍未录到朗读。Windows 实际朗读、macOS VoiceOver 和最终发行包仍待验收。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
@@ -617,6 +617,15 @@ kind = "manual-accessibility"
 platforms = ["windows-x86_64"]
 status = "implemented"
 description = "隔离 Windows 11 24H2 用 2a1f93b9 的真实 Inno 工程包验证系统明暗主题。保持同一 WebView2 窗口运行，验证浅色到深色再到浅色的重绘，以及深色下三个项目控件可聚焦。Win10 和最终发行包仍按矩阵复验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
+
+[[test]]
+id = "gui.m12-windows-native-scale"
+stage = "M12"
+kind = "manual-accessibility"
+platforms = ["windows-x86_64"]
+status = "blocked"
+description = "隔离 Win11 中同源 9eba5b98 Inno 工程包的实际 WebView2 窗口为 96 DPI。Sandbox 报告远程会话，直接显示设置与系统导航均未提供缩放入口。待在完整桌面验证窗口切换到 120 DPI、键盘焦点及恢复原比例。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
@@ -1123,7 +1132,8 @@ stage = "M12"
 kind = "snapshot"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
-description = "比较迁移后状态与全新 v4 加等价用户数据，确认 artifacts 清单中已批准旧资源为空。"
+description = "807b55b6 的隔离 DEB 已对比迁移资料与等价的新建 v4 资料。十组公开设置和项目、仓库、模板、Unity 列表一致，v4 资料中未检出选定旧文件名。全系统仍需按平台核对 artifacts 清单中的已批准对象。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "migrations/v3/artifacts.toml"]
 
 [[test]]
 id = "installer.matrix"
@@ -1166,7 +1176,7 @@ stage = "M12"
 kind = "distribution"
 platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
-description = "用同一签名源码提交调用 cargo xtask dist --package，在原生工具上组装并复验 Inno、AppImage 和 DEB 工程包。覆盖 Unicode 路径、成品与载荷摘要、拒绝覆盖、错误打包工具和安装态桌面复验。"
+description = "用 cargo xtask dist --package 在原生平台组装 Inno、AppImage 和 DEB。9eba5b98 和 7b7522b5 均以同一签名源码重建三种实包。覆盖成品与载荷摘要、拒绝覆盖、错误打包工具、Win11 两种安装范围、Core、WebView2 和卸载保全，以及 Linux 原生 FUSE、安装卸载、WebKit 两档缩放、键盘焦点和隔离发行。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/native_package.rs"]
 
 [[test]]
@@ -1255,7 +1265,7 @@ stage = "M12"
 kind = "contract"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "implemented"
-description = "用合成发布密钥核验 v4 声明原始字节、URI、UTC 有效期、频道和平台、反重放序号及本地资产摘要。Windows 通过 6 项 Updater 测试和 7 项实际离线命令场景。"
+description = "用合成发布密钥核验 v4 声明原始字节、URI、UTC 有效期、频道和平台、反重放序号及本地资产摘要。Windows 通过 6 项 Updater 测试和 7 项实际离线命令场景。同源 807b55b6 Updater 与 Inno 实包再通过九项离线复验，涵盖落盘后同请求重试、反重放、版本和频道错误、声明签名和等长资产篡改拒绝。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-updater/src/product_update.rs"]
 
 [[test]]
@@ -1318,7 +1328,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 22.04 以签名源码 b324627e 和合成签名产品 AppImage 验证原生 FUSE、真实 Tauri 首启、独立 SDK 冷启动、移位和链接替换阻断、从新位置重新绑定及未知资料保全。"
+description = "Ubuntu 22.04 以签名源码 b324627e 和合成签名产品 AppImage 验证原生 FUSE、真实 Tauri 首启、独立 SDK 冷启动、移位和链接替换阻断、从新位置重新绑定及未知资料保全。7b7522b5 同源 AppImage 另在 Ubuntu 24.04 通过实际 FUSE、可见 WebKit 窗口、Core 登记与 CLI 冷启动。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable.rs", "crates/alcomd-platform/src/linux_portable_origin.rs"]
 
 [[test]]
@@ -1331,12 +1341,75 @@ description = "Ubuntu 22.04 签名混合夹具通过 10 项原生检查。完整
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_update.rs", "crates/alcomd-platform/src/linux_installation_registration.rs"]
 
 [[test]]
+id = "distribution.appimage.update-disk-exhaustion"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 用 807b55b6 同源 AppImage 与 41b7a82b 已验签升级夹具，在私有 tmpfs 复验换位前暂存和换位后登记的真实 ENOSPC。核对旧版重开、原资料与镜像、同包重试及原下载缺失后的同事务恢复。新版通过 FUSE、WebKit、Core，读回原工程。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_update.rs"]
+
+[[test]]
+id = "distribution.windows.update-disk-exhaustion"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "Win11 当前用户在专用 NTFS 虚拟盘，用 49b25485 同源 Inno、9eba5b98 诊断夹具及 9eba5b98 完整同源 Inno 与 16e5184a 目标包逐轮验收整包更新。修复后的完整同源实包报告可用字节，保全旧程序、原登记、数据库、设置、工程和下载包。释放空间后用同一签名包升级，经原生 IPC 重开工程。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
+
+[[test]]
+id = "distribution.windows.machine-update-disk-exhaustion"
+stage = "M12"
+kind = "fault-injection"
+platforms = ["windows-x86_64"]
+status = "implemented"
+description = "断网 Win11 24H2 Sandbox 用同源 807b55b6 Inno 通过九项全用户更新恢复检查。覆盖保留签名包、解包暂存、桌面重启及提交意图落盘后的真实磁盘满，核对诊断、已存在目标、启动限制、资料保全及原下载移除后的同事务恢复。标准账号的交互 UAC 另验。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/windows_installation/update.rs"]
+
+[[test]]
+id = "distribution.deb.unpack-storage-failures"
+stage = "M12"
+kind = "fault-injection"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "在断网 Ubuntu 22.04 上，用 7b7522b5 同源 DEB 和已验签的 41b7a82b alpha.1 复验 dpkg 解包收到 ENOSPC 和 EROFS。两次均保全旧版、登记和资料，旧 Core 可读原工程。修复存储条件后以同一 DEB 经 APT 升级，新 Core 读回工程和设置，purge 保全资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
+
+[[test]]
+id = "distribution.deb.download-interruption"
+stage = "M12"
+kind = "fault-injection"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "在隔离 Ubuntu 22.04 上从签名回环测试源经 APT 更新 7b7522b5 至 41b7a82b alpha.1。传输在 1 MiB 处中断时 dpkg 保留旧版已安装状态，旧 Core 可读原工程。恢复后用同一签名索引和同摘要 DEB 升级，新 Core 读回工程和设置，purge 保全资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
+
+[[test]]
+id = "distribution.deb.missing-dependency"
+stage = "M12"
+kind = "fault-injection"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "断网 Ubuntu 22.04 的一次性覆盖根实际缺少 WebKitGTK。APT 拒绝安装 49b25485 签名工程 DEB，dpkg 状态和产品路径均未变化。提供 Ubuntu 官方依赖后，同摘要 DEB 安装成功，GUI 可执行文件解析动态库，Core 冷启动并重开工程，purge 保全资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
+
+[[test]]
+id = "distribution.deb.configure-trigger-interruption"
+stage = "M12"
+kind = "fault-injection"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 从 7b7522b5 同源 DEB 升级至 41b7a82b alpha.1 时，在 dpkg 实际进入系统图标触发器后终止配置进程组。图标包半配置，用户状态保全。恢复配置后原生缓存重新生成，新版 Core 冷启动读回工程，purge 保全资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
+
+[[test]]
 id = "distribution.gui.signed-update-consent"
 stage = "M12"
 kind = "integration-ui"
 platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
-description = "通过「关于」页的三项 Chromium 用例覆盖检查与下载步骤、取消、安装重启及恢复的独立确认。"
+description = "通过「关于」页的三项 Chromium 用例覆盖检查与下载步骤、取消、安装重启及恢复的独立确认。807b55b6 同源 Inno 在全用户重启遇磁盘满时重开旧版 WebView2，释放空间后同包恢复。同源 AppImage 通过真实 WebKit 的检查、下载、取消与确认替换重启，新版 Core 读回原工程。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-gui/tests/browser/product-updates.spec.ts"]
 
 [[test]]
@@ -1363,7 +1436,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "implemented"
-description = "签名工程候选 2a1f93b9 通过本机整仓、Chromium 全量复验、三平台 Hosted 整仓、外部 SDK、Release 与 Tauri 构建，各通过 765 项 Chromium。同 SHA 四项 CodeQL 通过。"
+description = "签名工程候选 807b55b6 通过本机整仓和三平台 Hosted CI，各通过 765 项 Chromium。同 SHA 的外部 SDK、发行组件、Tauri 与四项 CodeQL 通过。Windows Inno、Linux AppImage 和 DEB 已复建并进行同源实包复验。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", ".github/workflows/ci.yml"]
 
 [[test]]
@@ -1372,8 +1445,17 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Jammy 原生 FUSE 与 IPC 通过八项可选 CLI 检查。e0fc95dc/17088848 与 bffef439/41b7a82b 两对完整工程包已用真实 WebKit 关于页验证启用、移动、修复、分步检查和下载、取消更新、确认重启和移除。"
+description = "Jammy 原生 FUSE 与 IPC 通过八项可选 CLI 检查。807b55b6 同源 AppImage 与 41b7a82b 已验签升级夹具用真实 WebKit 关于页复验启用、移动重绑、修复、分步检查和下载、取消更新、确认重启和移除。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_portable_cli.rs", "crates/alcomd-platform/src/linux_portable_cli.rs"]
+
+[[test]]
+id = "installer.linux.format-ownership-native"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 用同源 7b7522b5 的 AppImage FUSE/WebKit 与实际 DEB 做七项同机检查。双向拒绝登记覆盖，保留未知同名入口，系统 CLI 可连接已登记便携 Core，DEB purge 保留两份资料并允许便携 CLI 冷启动重开工程。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "crates/alcomd-platform/src/linux_installation_registration.rs", "apps/alcomd-bootstrap/src/linux_portable_cli.rs"]
 
 [[test]]
 id = "installer.deb.exact-release-lifecycle"
@@ -1390,8 +1472,17 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64", "linux-x86_64"]
 status = "implemented"
-description = "同一签名源码 bffef439 的完整 Inno 和 AppImage 在断网 Win11 Sandbox 与隔离 Ubuntu 22.04 各通过九项生产 Updater 回环 HTTPS 检查。核对发布、频道隔离、停推保全和隐藏、过时序号拒绝、同摘要恢复及等长篡改拒绝。最终资产按平台格式重复验证。"
+description = "同一签名源码 bffef439 的完整 Inno 和 AppImage 在断网 Win11 Sandbox 与隔离 Ubuntu 22.04 各通过九项生产 Updater 回环 HTTPS 检查。807b55b6 的同源 AppImage 复验了全部九项。覆盖发布、频道隔离、停推保全和隐藏、过时序号拒绝、同摘要恢复及等长篡改拒绝。最终资产按平台格式重复验证。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "scripts/rehearse-product-publication.mjs", "apps/alcomd-updater/examples/product_publication_rehearsal.rs"]
+
+[[test]]
+id = "distribution.deb.standalone-publication"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "Ubuntu 22.04 回环 HTTPS 用 807b55b6 的同源完整 DEB 通过九项独立下载发行检查。覆盖清单、包摘要和等长篡改拒绝，撤回及原件恢复。撤回前已验签的包通过断网 APT 安装、Core 冷启动和工程重开，purge 保全资料。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
 
 [[test]]
 id = "installer.linux.package-format-ownership"
@@ -1506,7 +1597,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 22.04 用 310065bf、2a1f93b9 和 bffef439 的完整 AppImage 与 DEB，在隔离标准账号核验原生 GUI、Core、CLI、MCP 认证和撤销以及签名第一方扩展，AppImage 实测 FUSE。两个格式分别核验配对的隔离健康证明。bffef439 与 Windows 工程包使用同一源码。"
+description = "Ubuntu 22.04 用 7b7522b5 的完整 AppImage 与 DEB，在隔离标准账号核验原生 GUI、Core、CLI、MCP 认证和撤销以及签名第一方扩展，AppImage 实测 FUSE。两个格式分别核验绑定各自资产、原生回执和配对迁移载荷的隔离健康证明。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
 
 [[test]]
@@ -1524,7 +1615,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "Ubuntu 24.04 的真实冻结 v3.4.0 DEB 与 310065bf、2a1f93b9、bffef439 各自的 v4 DEB 经离线 APT 交接。两个标准账号分别实测预提交启动阻断、撤回重开 v3，以及坏证明拒绝、签名提交、新版 GUI 与 Core 读回和 v3 保全。"
+description = "Ubuntu 24.04 的真实冻结 v3.4.0 DEB 与 807b55b6 的同源 v4 DEB 经离线 APT 交接。两个标准账号分别实测预提交启动阻断、撤回重开 v3，以及坏证明拒绝、签名提交、新版 GUI 与 Core 读回迁移测试偏好和 v3 保全。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/linux_bridge.rs"]
 
 [[test]]
@@ -1533,8 +1624,17 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "implemented"
-description = "310065bf、2a1f93b9 和 bffef439 的同源独立归档在 Ubuntu 24.04 先验证分离签名再解包。标准账号在独立资料目录中分别运行真实冻结 v3.4.0 AppImage 的 FUSE/WebKit 桌面，验证回滚重开、显式提交、同源 v4 FUSE/WebKit/IPC、旧数据保全和隔离挂载清理。"
+description = "807b55b6 的同源独立归档在 Ubuntu 24.04 先验证分离签名再解包。标准账号在独立资料目录中分别运行真实冻结 v3.4.0 AppImage 的 FUSE/WebKit 桌面，验证回滚重开、显式提交、同源 v4 FUSE/WebKit/IPC、旧数据保全和隔离挂载清理。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "apps/alcomd-bootstrap/src/appimage_bridge.rs", "xtask/src/distribution/appimage_bridge.rs"]
+
+[[test]]
+id = "distribution.appimage.bridge-archive-executable-mode"
+stage = "M12"
+kind = "native-installer"
+platforms = ["linux-x86_64"]
+status = "implemented"
+description = "807b55b6 的 Linux xtask 用同源签名输入复验独立桥接归档。实际打包入口拒绝 0600 和 0777，目标归档保持缺失。0700 组装成功并在归档成员中保留该模式。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/appimage_bridge.rs", "crates/alcomd-platform/src/linux_portable_origin.rs"]
 
 [[test]]
 id = "updater.linux.v3-native-appimage-bridge"
@@ -1586,7 +1686,8 @@ stage = "M12"
 kind = "migration"
 platforms = ["windows-x86_64"]
 status = "blocked"
-description = "覆盖当前用户与所有用户双向受控转换、提升取消、文件占用、失败回滚、多用户数据隔离，并断言两个范围不能共存。"
+description = "Win11 Sandbox 已验证双向转换的拒绝和资料保全，并实测默认 UAC 为关闭。待在启用 UAC 的完整客户端补齐成功转换、提升取消、文件占用、失败回滚、多用户数据隔离与单安装范围。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md"]
 
 [[test]]
 id = "installer.windows.same-scope-repair-fixture"
@@ -1594,7 +1695,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "implemented"
-description = "Windows 11 24H2 两种安装范围各通过 15 项原生工程检查。完整签名运行载荷和修订后的 Inno 恢复缺失文件，保留原卸载记录，自有 Shell 入口随后正常移除。已覆盖篡改、活跃租约、待完成维护和重试。整包同 SHA 和 Win10 复验另列。"
+description = "Windows 11 24H2 两种安装范围使用 7b7522b5 的完整同源 Inno 各通过 15 项原生工程检查。恢复缺失组件，保留原卸载记录及 PATH、快捷方式和协议归属，随后精确卸载并保全资料。已覆盖篡改、活跃租约、待完成维护和重试。Win10 与交互 UAC 另验。"
 evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss"]
 
 [[test]]
@@ -1657,7 +1758,17 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "blocked"
-description = "PATH 仅含对应 scope 的 ALCOMD\\bin，更新不重复添加，转换移除旧范围，卸载只精确删除本安装器拥有的条目。"
+description = "807b55b6 同源 Inno 在 Win11 的当前用户和全用户范围各通过自有、既有等效 Unicode PATH 条目升级复验。核对原始值和注册表类型、CLI 重开工程及卸载归属。双向安装范围转换的 PATH 交接待原生验收。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "xtask/src/distribution/inno.iss"]
+
+[[test]]
+id = "distribution.windows-path-candidate-gates"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "implemented"
+description = "签名候选 7b7522b5 通过本地整仓和三平台 Hosted CI。三个 Hosted 平台均通过外部 SDK 消费者、发行组件和 Tauri 构建，本机和各平台均通过 765 项 Chromium。同 SHA 四项 CodeQL 通过。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", ".github/workflows/ci.yml"]
 
 [[test]]
 id = "installer.macos.dmg"
@@ -1680,16 +1791,18 @@ id = "installer.linux.appimage"
 stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
-status = "blocked"
-description = "在 Ubuntu 22.04 构建并验证 AppImage 完整组件、最高 GLIBC_2.35 符号、应用层签名/摘要、便携更新与用户主动 ~/.local/bin/alcomd-cli 集成。"
+status = "implemented"
+description = "Ubuntu 22.04 用同源 7b7522b5 AppImage 验签并逐一扫描 8 个 ELF，最高 GLIBC_2.34，符合 GLIBC_2.35 上限。已验证 FUSE、WebKit、显式 CLI 集成、直接删除后的冷启动拒绝、原资料保全和重新绑定，以及签名整包换位中断和真实磁盘满后的恢复。正式资产继续按 A-017 验收。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
 
 [[test]]
 id = "installer.linux.deb"
 stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
-status = "blocked"
-description = "在 Ubuntu 22.04 构建并验证 DEB 完整组件、最高 GLIBC_2.35 符号、依赖、/usr/bin/alcomd-cli、受管理目录与 package-manager 升级/卸载所有权。"
+status = "implemented"
+description = "Ubuntu 22.04 用同源 7b7522b5 DEB 验签并逐一扫描 8 个 ELF，最高 GLIBC_2.34，符合 GLIBC_2.35 上限。验证 dpkg 和 APT 首装、包管理器拥有稳定 CLI、双账号升级、配置恢复、重装、同数据版本回退、移除与 purge 资料保全。依赖缺失及修复见独立原生验收，正式资产继续按 A-017 验收。"
+evidence = ["docs/exec-plans/M12-full-product-distribution.md", "docs/testing/release-matrix.md"]
 
 [[test]]
 id = "updater.full-product-atomic"

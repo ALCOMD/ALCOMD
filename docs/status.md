@@ -1,12 +1,40 @@
 # 项目状态
 
-最后更新：2026-11-27
+最后更新：2026-11-28
 
 ## 当前阶段
 
 **M12 阶段 0 已批准，正在实施产品安装和更新。** 永久 Windows AppId、安装和登记布局、v4 更新声明及卸载归属已冻结。`cargo xtask dist` 已接通运行组件构建、清单验签以及 Inno、AppImage、DEB 实包组装。首装、整产品更新和客户端生命周期分项验收。macOS 原生验收按所有者决定延期，公开发版仍按 A-017 的三平台四格式条件审批。[M12 实施计划与审批矩阵](exec-plans/M12-full-product-distribution.md) · [阶段 0 冻结合同](exec-plans/M12-stage-0-release-contract.md)
 
-签名工程候选 `a70c181e` 已通过同源 Inno、AppImage 和 DEB 组装及安装态桌面复验。Windows 11 验证 Unicode 目录安装、CLI 冷启动、WebView2 和卸载保全。Ubuntu 22.04 验证 AppImage FUSE、DEB 安装及两档缩放下的键盘焦点。[同源原生资产组装](exec-plans/M12-full-product-distribution.md#2026-11-27-同源原生资产组装)
+主仓候选 `807b55b6` 通过本地整仓检查、三平台 Hosted CI 和四项 CodeQL，本机和各 Hosted 平台均通过 765 项 Chromium。15 笔提交逐笔验签后普通快进。同源 AppImage 和 DEB 完成冻结 v3.4.0 的提交与回滚交接，AppImage 打包入口也通过文件权限拒绝用例。[同源验收记录](exec-plans/M12-full-product-distribution.md#2026-11-28-807b55b6-同源工程包与验收) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46085415285) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46085414983)
+
+同源 Windows Inno 工程包通过载荷验签、Win11 双范围安装、WebView2 和卸载保全。全用户更新在保留签名包、解包暂存、桌面重启和提交意图落盘后均通过磁盘满恢复复验。Win10 首次设置暂缓，标准账号交互式 UAC 和双向安装范围转换仍待原生验收。
+
+`807b55b6` 另通过 Win11 四组同范围 Unicode PATH 升级和九项 Updater 离线检查。同源 AppImage 与 DEB 各通过九项 Ubuntu 22.04 回环 HTTPS 发行演练，覆盖验签、撤回与同摘要恢复。[同源验收记录](exec-plans/M12-full-product-distribution.md#2026-11-28-807b55b6-同源工程包与验收)
+
+同源 AppImage 在 Ubuntu 22.04 的原生 WebKit「关于」页通过检查、下载、取消和确认整包替换重启。换位前后两处磁盘满均通过恢复复验，新版 FUSE 和 Core 读回测试工程。
+
+`807b55b6` 的 DEB 已完成一组隔离迁移与等价新建 v4 的对账。两份独立资料经 Core 读回的十组公开设置及项目、仓库、模板和 Unity 列表一致。全系统零残留验收仍需按批准对象和平台取证。[同源验收记录](exec-plans/M12-full-product-distribution.md#2026-11-28-807b55b6-同源工程包与验收)
+
+主仓候选 `9eba5b98` 的本地整仓、Chromium、三平台 Hosted CI 和四项 CodeQL 均通过。已从同一签名源码重建 Inno、AppImage 和 DEB。Inno 通过 Win11 两种安装范围、WebView2、卸载保全，以及当前用户磁盘满诊断和同包重试。[Windows 同源实包](exec-plans/M12-full-product-distribution.md#2026-11-27-9eba5b98-windows-同源实包复验) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897471) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897091)
+
+同一 `9eba5b98` Inno 另通过 Win11 全用户更新的两处磁盘满验收。保留签名包前和暂存新版时均保全旧版及资料，释放空间后用同包升级，原账号下次启动时登记新版 Core 并重开原工程。`49a3d526` 的 Bootstrap 经同样的隔离 Inno 复验，两处均能报告磁盘空间不足。已有目标目录时仍拒绝更新并保全原件。[全用户磁盘满复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户整包更新磁盘满复验)
+
+全用户磁盘满诊断修复 `49a3d526` 已逐笔验签并快进至主仓 `main`。本机整仓、三平台 Hosted CI 和四项 CodeQL 均通过。本机及各 Hosted 平台各通过 765 项 Chromium。Win11 在桌面启动和提交意图落盘后的故障复验均通过，原下载删除后仍可用保留的签名包恢复并在新版重开同一工程。[原生复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户整包更新磁盘满复验) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326613) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326331)
+
+Windows Inno 的签名修复 `7b7522b5` 已通过 Win11 四组同范围实包复验，覆盖 Unicode PATH、升级保留注册表原值与类型，以及卸载按归属处理。用该候选的生产打包入口组装工程包后，两种安装范围的既有等效条目用例再次通过。六笔提交逐笔验签后快进至主仓 `main`。本地整仓、三平台 Hosted CI 和四项 CodeQL 均通过，本机和三个 Hosted 平台各通过 765 项 Chromium。双向安装范围转换的原生交接仍待验收。[Windows 同范围 PATH 复验](exec-plans/M12-full-product-distribution.md#2026-11-28-windows-同范围-path-升级与卸载) · [Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46040897008) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46040896312)
+
+已从同一 `9eba5b98` 签名源码组装 Ubuntu 22.04 的 AppImage 与 DEB，解包后均重新验签。原生 FUSE、DEB 安装与卸载、两档 WebKit 缩放及键盘焦点均通过。[9eba5b98 Linux 同源实包](exec-plans/M12-full-product-distribution.md#2026-11-27-9eba5b98-linux-同源实包复验)
+
+已从主仓签名候选 `7b7522b5` 重建 Windows Inno、Ubuntu 22.04 AppImage 和 DEB 三种同源工程包。Inno 通过 Win11 两种安装范围、真实 WebView2、卸载保全与同范围 Unicode PATH 升级。Linux 两种包通过解包验签、实际 Core 与 WebKit、GTK 两档缩放及清理，并各通过九项隔离发行演练。[7b7522b5 同源工程实包](exec-plans/M12-full-product-distribution.md#2026-11-28-7b7522b5-同源工程实包)
+
+`7b7522b5` 的 AppImage 与 DEB 均完成逐 ELF 的 `GLIBC_2.34` 核对。AppImage 通过直接移除后的冷启动拒绝、显式重绑、账号资料保全和换位后磁盘满恢复。DEB 通过双账号升级、重装、同数据版本回退、remove 与 purge，以及解包磁盘满、只读卷、下载截断和配置触发器中断恢复。两种格式在同机时均保留对方已登记的 Core，且 DEB purge 后便携 CLI 仍可冷启动并读回工程。同摘要 AppImage 另在 Ubuntu 24.04 通过 FUSE、WebKit 和 CLI 冷启动冒烟。正式候选继续按 A-017 放行。[Linux 生命周期补验](exec-plans/M12-full-product-distribution.md#2026-11-28-7b7522b5-同源工程实包)
+
+`7b7522b5` 的 DEB 与 AppImage 通过合成签名健康证明和实际 v3.4.0 冻结版交接。Ubuntu 24.04 分别复验了回滚重开旧版、提交启动新版、资料保全和测试清理。AppImage 通过分离签名归档交接，DEB 通过离线 APT 交接。[Linux 冻结版交接复验](exec-plans/M12-full-product-distribution.md#2026-11-28-7b7522b5-同源工程实包)
+
+`7b7522b5` 同源 Inno 的全用户更新通过保留签名包前、暂存新版时、桌面重启和提交意图写入后的有界 NTFS 磁盘满复验。复验了旧版重开、签名原件保全、释放空间后恢复同一事务，以及新版 WebView2 和 Core 读回原工程。同源 Updater 用实际工程包通过九项离线验签、反重放和重试检查。两个范围各通过 15 项同版本修复检查，覆盖缺件恢复、保全原卸载记录、故障解除后重试及精确卸载。标准账号交互 UAC 仍待验收。[Windows 故障与修复复验](exec-plans/M12-full-product-distribution.md#2026-11-28-7b7522b5-同源工程实包)
+
+签名工程候选 `a70c181e` 已通过同源 Inno、AppImage 和 DEB 组装及安装态桌面复验。Windows 11 的两种安装范围均验证 Unicode 目录安装、CLI 冷启动、WebView2 和卸载保全。Ubuntu 22.04 验证 AppImage FUSE、DEB 安装、两档缩放与 AppImage 的 Orca 朗读。含同一打包代码的主仓候选 `696953b1` 通过本地整仓、Chromium、三平台 Hosted CI 与四项 CodeQL。[同源原生资产组装](exec-plans/M12-full-product-distribution.md#2026-11-27-同源原生资产组装)
 
 Windows 11 Sandbox 的当前用户和全用户夹具已验证 Core 安装登记、外部 CLI 冷启动、账号隔离和卸载保留状态。Ubuntu 22.04 x86_64 隔离环境已原生编译七个发行组件，产物最高要求 `GLIBC_2.34`。[Windows 登记及 Ubuntu 构建记录](exec-plans/M12-full-product-distribution.md#2026-11-25-windows-core-安装登记)
 
@@ -21,6 +49,14 @@ Windows 签名候选 `72a85893` 的同一个 Inno 实包通过两种安装范围
 Ubuntu 22.04 用签名候选 `25afa078` 复验了原生 AppImage 挂载、DEB 安装和卸载、Tauri 窗口及 Core IPC。[Ubuntu 同候选原生夹具](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-2204-同候选原生夹具)
 
 Ubuntu 22.04 的产品 DEB 已通过原生首装、解包中断恢复、逐账号升级和同数据版本下的 APT 回退。两套签名测试包验证了 CLI、真实 GUI、外部 SDK、坏签名与不安全登记拒绝、双账号设置保全及 purge 后数据库摘要一致。[Ubuntu 产品 DEB 升级与回退](exec-plans/M12-full-product-distribution.md#ubuntu-2204-deb-跨版本登记与回退)
+
+Ubuntu 22.04 的 DEB 另通过实际配置阶段的中断恢复。中断正在运行的系统图标触发器后，原生命令重新生成缓存，Core 冷启动并重开原工程，用户资料保全。[DEB 配置触发器中断复验](exec-plans/M12-full-product-distribution.md#2026-11-27-deb-配置触发器中断复验)
+
+Ubuntu 22.04 的隔离签名 DEB 补验了解包时真实磁盘满和安装卷只读。两次均保留旧版程序、登记和资料，旧 Core 可重开原工程。排除故障后，APT 用同一包升级，新 Core 读回原工程和设置，purge 保全资料。[DEB 解包存储故障复验](exec-plans/M12-full-product-distribution.md#2026-11-27-deb-解包存储故障复验)
+
+同一对 DEB 另通过 Ubuntu 22.04 的 APT 下载中断验收。回环测试源发送 1 MiB 后断开，旧版安装和资料保全。恢复完整响应后，APT 沿用原签名索引升级，新 Core 读回原工程和设置。[DEB 下载中断复验](exec-plans/M12-full-product-distribution.md#2026-11-27-deb-下载中断复验)
+
+Ubuntu 22.04 的 `49b25485` 工程 DEB 通过缺失必需依赖的首装验收。WebKitGTK 实际缺失时，APT 在修改包状态前拒绝安装。提供 Ubuntu 官方依赖后，同摘要 DEB 安装、动态库解析和 Core 冷启动均通过。[DEB 缺失依赖复验](exec-plans/M12-full-product-distribution.md#2026-11-27-deb-缺失依赖复验)
 
 Ubuntu 22.04 的产品 AppImage 使用签名源码 `b324627e` 与隔离测试密钥，验证原生 FUSE、真实桌面首启、独立 SDK 冷启动、移位拒绝与主动重新绑定。可选 CLI 集成继续按发行矩阵验收。[Ubuntu 产品 AppImage 首启](exec-plans/M12-full-product-distribution.md#2026-11-25-ubuntu-产品-appimage-首启)
 
@@ -44,7 +80,7 @@ Win11 当前用户的签名整包升级发现 Inno 与 Bootstrap 的自定义根
 
 Win11 全用户签名完整包在已有管理员会话通过 9 项自定义目录正常升级，文件占用和进程终止恢复各通过 12 项。在同一安装根恢复并由原账号重开，机器入口与资料保全。真实标准账号的交互 UAC 另验。[Windows 全用户自定义目录升级](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-全用户自定义目录整包升级)
 
-`bffef439` 的同一完整包通过双向范围转换的拒绝与源范围保全复验。缺少确认或发起身份已提升时保留原范围、系统入口和账号资料。身份不符的尝试留下未激活的目标预留目录。正向转换仍需原非提升账号发起。[范围转换拒绝复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-安装范围转换拒绝复验)
+`bffef439` 的同一完整包通过双向范围转换的拒绝与源范围保全复验。缺少确认或发起身份已提升时保留原范围、系统入口和账号资料。独立 Win11 Sandbox 的默认 UAC 状态实测为 `EnableLUA=0`。正向转换和标准账号的交互 UAC 仍待在启用 UAC 的完整客户端验收。[范围转换与 UAC 环境核对](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-安装范围转换拒绝复验)
 
 Win11 隔离夹具已通过协议登记和移除的中断恢复，以及七种第三方抢先改写的时序。完整 Inno 候选 `2a1f93b9` 用 Sandbox 登录账号在当前用户和全用户两种范围验证了真实 Shell 冷启动、单窗口转发和卸载清理。标准账号及双向范围转换继续验收。[Windows 协议事务复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-协议事务并发复验)
 
@@ -74,7 +110,7 @@ Ubuntu 22.04 已用 `310065bf` 的签名 AppImage 通过原生 Orca 读屏冒烟
 
 同源 AppImage 与 DEB 在 Ubuntu 22.04 通过 GTK 100% 和 200% 启动缩放。真实 WebKit 窗口像素尺寸翻倍，三个项目控件的 Tab 顺序一致。[Ubuntu 原生 GTK 缩放复验](exec-plans/M12-full-product-distribution.md#2026-11-27-ubuntu-原生-gtk-缩放复验)
 
-`2a1f93b9` 的 Windows Inno 在隔离 Win11 已通过系统高对比切换和三个项目控件的 Tab 焦点复验。Windows 讲述人已观察到焦点框，来宾的语音回顾对应用和系统对照控件均无记录。实际朗读和 125% 原生缩放仍待验收。[Windows 原生辅助功能复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-高对比度与讲述人复验)
+`2a1f93b9` 的 Windows Inno 在隔离 Win11 已通过系统高对比切换和三个项目控件的 Tab 焦点复验。`9eba5b98` 复验确认来宾能录到对照音及 Windows 合成语音。讲述人显式选中远程音频后，读取项目控件和标准按钮仍未取得朗读回执。独立缩放探针确认该远程会话的 WebView2 是 96 DPI，系统设置未提供缩放入口。讲述人实际朗读和 125% 缩放仍待完整桌面验收。[Windows 播放回环与系统缩放复验](exec-plans/M12-full-product-distribution.md#2026-11-28-windows-讲述人播放回环复验)
 
 同一 Windows Inno 工程包也已通过 Win11 的系统浅色、深色和恢复浅色复验，同一个 WebView2 窗口持续运行，深色下三个项目控件仍可聚焦。[Windows 原生明暗主题复验](exec-plans/M12-full-product-distribution.md#2026-11-27-windows-原生明暗主题复验)
 
@@ -100,7 +136,11 @@ M12 首批工程候选 `5d58b43b` 已快进到远端 `main`。本机、Windows H
 
 `bffef439` 与仅递增版本的签名子提交 `41b7a82b` 在 Ubuntu 22.04 通过 AppImage 实际应用内升级、交换后强制终止与恢复、DEB 双账号升级、APT 回退及卸载保全。三次单独记录的 SDK 冷启动均在一秒内。[Linux 同源整包升级](exec-plans/M12-full-product-distribution.md#2026-11-27-主仓候选-bffef439-的-linux-整包升级)
 
+同一对 AppImage 实包通过替换前暂存和替换后恢复两处真实磁盘满检查。分别确认旧版可重开并同包重试，以及释放空间后从保留镜像继续原事务。带修订 Bootstrap 的合成签名夹具已复验替换后的空间不足诊断与恢复。[AppImage 磁盘满复验](exec-plans/M12-full-product-distribution.md#2026-11-27-appimage-整包更新磁盘满复验)
+
 同一 `bffef439` 的完整 Inno 和 AppImage 各通过九项回环 HTTPS 发行演练，覆盖验签下载、频道隔离、停推、恢复和等长篡改拒绝。正式资产继续按同一脚本复验。[同源隔离发行演练](exec-plans/M12-full-product-distribution.md#2026-11-27-主仓候选-bffef439-的隔离发行演练)
+
+`49b25485` 的完整 DEB 通过独立下载发行演练的九项检查。隔离回环 HTTPS 复验清单签名、包摘要、撤回、原件恢复和原生 APT 安装，撤回前已验签的包仍可离线安装并冷启动 Core。[DEB 独立下载发行演练](exec-plans/M12-full-product-distribution.md#2026-11-27-deb-独立下载发行演练)
 
 M11 已实施[三端调用、客户端管理与扩展入口](exec-plans/M11-client-parity.md)，从当前生产注册和[三端操作矩阵](exec-plans/M11-client-operation-matrix.md)核对用户入口。Core 已提供原生客户端发现和连接登记，GUI 从设置页「客户端」管理连接。扩展可分别声明 GUI、CLI 和 MCP 入口，启用后由对应客户端发现，执行时由 Core 核对业务权限。
 

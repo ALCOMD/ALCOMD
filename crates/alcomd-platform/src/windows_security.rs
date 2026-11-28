@@ -29,7 +29,7 @@ use windows_sys::Win32::Security::{
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CREATE_NEW, CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OPEN_REPARSE_POINT,
-    FILE_SHARE_READ, GetDriveTypeW,
+    FILE_SHARE_READ, GetDiskFreeSpaceExW, GetDriveTypeW,
 };
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateMutexW, CreateProcessW, GetCurrentProcess,
@@ -43,6 +43,18 @@ pub(super) fn is_fixed_drive(root: &OsStr) -> bool {
     let root = wide_null(root);
     // SAFETY: the UTF-16 buffer is NUL-terminated and lives across the call.
     (unsafe { GetDriveTypeW(root.as_ptr()) }) == DRIVE_FIXED
+}
+
+pub(crate) fn available_storage(directory: &Path) -> io::Result<u64> {
+    let directory = wide_process_value(directory.as_os_str())?;
+    let mut available = 0;
+    // SAFETY: the NUL-terminated UTF-16 directory and writable output live across the call.
+    if unsafe { GetDiskFreeSpaceExW(directory.as_ptr(), &mut available, null_mut(), null_mut()) }
+        == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(available)
 }
 
 /// Starts the selected Core in the background without inheriting caller handles.

@@ -101,7 +101,11 @@ pub(super) fn package(
         build::copy_component(&health.join(name), &bundle.join(name))?;
     }
     build::copy_component(&offer_path, &bundle.join(OFFER))?;
-    build::copy_component(&image_path, &bundle.join(offer.asset().name()))?;
+    let copied_image = bundle.join(offer.asset().name());
+    build::copy_component(&image_path, &copied_image)?;
+    #[cfg(target_os = "linux")]
+    alcomd_platform::PortableImage::open(&copied_image)
+        .context("the AppImage bridge asset must be a protected executable")?;
     let copied_offer = verify_v3_appimage_offer(&bundle.join(OFFER), channel)?;
     let copied_bridge = verify_staged_payload(&copied_migration, channel)?;
     ensure!(
@@ -114,9 +118,7 @@ pub(super) fn package(
         copied_offer.payload_manifest_sha256(),
         &copied_bridge,
     )?;
-    copied_offer
-        .asset()
-        .verify_file(&bundle.join(offer.asset().name()))?;
+    copied_offer.asset().verify_file(&copied_image)?;
     check_health(&bundle, &copied_bridge)?;
 
     let build_cache = root.join("target");

@@ -14,8 +14,9 @@ use alcomd_platform::{
     publish_path_no_replace, receive_windows_machine_update, resolve_plain_storage_directory,
     start_core_process, start_elevated_windows_program, sync_directory,
     validate_installation_record_parent, validate_windows_machine_installation_record_parent,
-    windows_current_user_installation_root, windows_installation_bootstrap,
-    windows_installation_runtime, windows_machine_installation_root, windows_process_is_elevated,
+    windows_available_storage, windows_current_user_installation_root,
+    windows_installation_bootstrap, windows_installation_runtime,
+    windows_machine_installation_root, windows_process_is_elevated,
 };
 use alcomd_updater::{
     Channel,
@@ -345,12 +346,18 @@ fn request_machine_update(
         ],
     )
     .context("could not elevate Windows all-users update maintenance")?;
-    output
-        .send(&worker, &bytes, input, update.asset().bytes())
-        .context("could not transfer the signed Windows update to machine maintenance")?;
-    worker
-        .wait()
-        .context("the all-users update has not completed")
+    let transfer = output.send(&worker, &bytes, input, update.asset().bytes());
+    let transferred = transfer.is_ok();
+    worker.wait_for_machine_update(transfer).map_err(|error| {
+        let message = if error.kind() == io::ErrorKind::StorageFull {
+            "there is insufficient free space for the all-users Windows update"
+        } else if transferred {
+            "the all-users update has not completed"
+        } else {
+            "could not transfer the signed Windows update to machine maintenance"
+        };
+        anyhow::Error::new(error).context(message)
+    })
 }
 
 /// Receives only bounded signed data from the initiating process in the local session.
@@ -534,6 +541,20 @@ impl Installation {
                 1,
             )
             .context("could not extract the Windows product update")?;
+            if !exists(&staged)? {
+                // Inno's staging-only path uses the same exit status whether it publishes
+                // the payload or stops before publication. Activation also needs to retain
+                // the complete signed installer on this volume.
+                let installer_bytes = update.asset().bytes();
+                if let Ok(available) = windows_available_storage(&self.root)
+                    && available < installer_bytes
+                {
+                    return Err(io::Error::from(io::ErrorKind::StorageFull)).with_context(|| format!(
+                        "could not stage the Windows product update: insufficient free space on the installation volume ({available} bytes available, signed installer is {installer_bytes} bytes)"
+                    ));
+                }
+                anyhow::bail!("the installer did not publish the Windows product update stage");
+            }
         }
         self.verify_staged(&staged, update)?;
         sync_directory(staged.parent().context("Windows update staging parent")?)?;

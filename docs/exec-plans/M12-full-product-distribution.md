@@ -158,7 +158,11 @@ Windows 用实际编译的七个运行程序生成 Inno 测试 EXE。仅向隔�
 
 隔离 Windows 11 24H2 通过当前用户 Unicode 路径安装、已安装 WebView2 渲染、稳定 CLI 冷启动和卸载保全。冷启动耗时 2711 毫秒，回执 SHA-256 为 `eabd25f2d747a9f263595f994d547064578f60f8c16e7b3404501dce8cc6f125`。Ubuntu 22.04 在隔离 WSL2 环境验证 AppImage 原生 FUSE 和实际 DEB 安装。两个包在 1400 × 800 和 2800 × 1600 下均验证项目搜索、列表视图和创建项目的键盘焦点。AppImage、DEB 回执分别为 `cc607e34db86453a273b72a51b42caf359f134a2ad80ac145402c6e66dbf7179` 和 `35c24e8d3e9cc88e097cc9245064525141e0464b4f27ef75a0083155d2882784`。
 
-本轮运行载荷使用隔离测试签名。该 SHA 的整仓、三平台 Hosted CI 和 CodeQL 门禁另验。Windows 10 和 macOS 原生验收延期，公开发行继续按 A-017 放行。
+用同一个 Inno 实包补验 Windows 11 全用户安装。已有来宾会话将产品安装到含 Unicode 的 Program Files 子目录，机器部署结束时仍无账号状态库。稳定 CLI 首次连接 Core 耗时 1981 毫秒。真实 WebView2 渲染通过，卸载后状态库摘要一致。回执 SHA-256 为 `27b526a5c97b07b62d6734d93c802876fa194a0f6f71bac1ede77ebcca5543b7`。
+
+同一 AppImage 补验了 Orca 42 的实际合成朗读。首轮读到项目搜索和列表视图，未取得创建项目的朗读回执，键盘阶段日志 SHA-256 为 `8860483526495264f025832be3110dc946027ed8ba61703c2599fae2886e892b`。用相同条件与同摘要资产复跑，三个控件均有朗读输出，隔离音频装置录得 179,744 个合成样本。通过日志 SHA-256 为 `06a15e30ac5d379b8667d0e62cb88f0c16d1df6e76c9c699135b44ce73b6e094`。
+
+本轮运行载荷使用隔离测试签名。相同打包代码与第一轮验收记录一同纳入主仓候选 `696953b1`。该候选通过本地整仓门禁，Rust 1,108 项、Chromium 765 项和 Node SDK 7 项。十笔新增提交逐笔验签后普通快进。Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均在该 SHA 上通过整仓、外部 SDK、发行组件构建、Tauri 构建和 Chromium。四项 CodeQL 通过。Hosted CI 与 CodeQL 终态回执的 SHA-256 分别为 `d891514a6acba932b8b85438ac0c8b957dc65cace4c579e81471f0ca33af6675` 和 `46e3ab50181ecae4482975519eb0e44df2d38a2b6d536c461be4290e13cd902d`。Windows 10 和 macOS 原生验收延期，公开发行继续按 A-017 放行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45935368535) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45935368135)
 
 ### 2026-11-25 Windows Core 安装登记
 
@@ -435,6 +439,16 @@ Ubuntu 24.04 回环隔离环境用真实冻结 v3.4.0 分别复验两种完整�
 
 同一工程安装包的 WebView2 在来宾初始为 96 DPI。直接打开显示设置和从系统设置导航两次尝试均未取得可用的缩放控件，125% 原生缩放未执行。第二次回执 SHA-256 为 `d07409b0b9c05940430aa6719612d906fa3f18d65a8c268888aa34f8d80b840c`。
 
+### 2026-11-28 Windows 讲述人播放回环复验
+
+三个独立断网 Win11 24H2 来宾分别安装完整同源 `9eba5b98` Inno，安装器 SHA-256 为 `f975c2c47bcd9dedc0bdd8ccc3c6c40d6a9d5d487c43558332baf209d5d20e52`。试验用 WASAPI 回环采集来宾默认播放端点，使用合成资料并关闭麦克风输入。静音对照无有效样本，三轮独立合成音均录到 11,320 个非零样本。第三轮用系统语音合成器和 Zira 朗读对照短语，录到 6,480 个非零样本，确认该采集链路可录到系统合成语音。[Windows 播放回环](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording)
+
+三轮均跟随实际 WebView2 的焦点走到项目搜索、列表视图、新建项目。用讲述人的读取当前项命令测量这三个控件和一个独立 Windows Forms 按钮，默认播放端点均未录到有效样本，最新短语未返回文本。第三轮在讲述人自己的设置明确选择了 Zira，结果一致。该项保留为原生验收缺口，记录了 Windows 标准控件的对照结果。三份回执 SHA-256 依次为 `aea2877732ee9fea2efea1ab7f0dabb67075b6d5e172976cd17d964066eab02b`、`8891db39f65a1f7988e8020c260b13c3e422c8179372f04c956a88a9074ae38f`、`2d1083c992798ce9290effbca98463fd018d12ee4f2a210604b24a3188ba0367`。[讲述人读取当前项](https://support.microsoft.com/en-us/accessibility/windows/narrator/chapter-4-reading-text)
+
+第四轮仍用同摘要工程包，从 Windows 的键盘快捷方式启动讲述人。在系统设置中从「默认音频设备」选为「远程音频」，并核对设置回显。测试捕获了 14,260 个对照音样本和 12,775 个 Zira 合成语音样本。讲述人启动、调高朗读音量、读取三个项目控件和 Windows Forms 对照按钮均未录到非零样本。回执 SHA-256 为 `ffee3687a56bba207d08acc37c6f9a6112cbb003fe4cb476d2f0d7283e0863b0`。实际朗读待在完整桌面环境复验。[讲述人输出设备设置](https://support.microsoft.com/en-au/accessibility/windows/narrator/chapter-7-customizing-narrator)
+
+独立的缩放探针验证同一个签名安装包并打开原生 WebView2 项目页。来宾报告远程会话，产品窗口为 96 DPI。直接打开「显示」设置没有出现缩放控件，从「系统」导航也未找到显示页入口。原生 125% 未执行。回执 SHA-256 为 `49261e117eeadc81f30fa68a602b61d09185aa9aab3aa0505d6442773d542755`。[Windows Sandbox 的远程桌面会话](https://learn.microsoft.com/en-us/windows/security/application-security/application-isolation/windows-sandbox/windows-sandbox-cli)
+
 ### 2026-11-27 Windows 原生明暗主题复验
 
 在新的断网 Windows 11 24H2 来宾安装同一 `2a1f93b9` Inno 工程包并核对运行时清单。保持同一个 WebView2 窗口运行，在关闭高对比度时切换来宾账号的 Windows 应用主题并通知桌面。产品项目页在浅色、深色、恢复浅色时的底色分别为 `#FFFFFF`、`#080F16`、`#FFFFFF`。深色下项目搜索、列表视图和新建项目仍存在于原生可访问性树并可聚焦。来宾主题恢复原值。回执 SHA-256 为 `4fb04fa34c856ca3e1a0815e6d59da104ec5d2bfc3c30ca9eae01dae7e590400`，深色截图 SHA-256 为 `46336e5b6414073a3c3767d4b0b90e257d5b3297071db435670822c8d340f2cf`。Windows 10 和最终发行包的系统主题仍按发行矩阵复验。[Windows 应用主题设置](https://learn.microsoft.com/en-us/windows/apps/develop/settings/settings-common#personalization---colors)
@@ -450,6 +464,12 @@ Ubuntu 24.04 回环隔离环境用真实冻结 v3.4.0 分别复验两种完整�
 从干净签名源码 `bffef43911fe7a0cc990036df8ff453ab9898ed5` 分别构建 Windows 和 Linux Updater 演练探针。Windows 11 24H2 Sandbox 与隔离 Ubuntu 22.04 都使用仅回环的 HTTPS 和合成签名。完整 Inno 与 AppImage 的 SHA-256 分别为 `3f39873e3dd05a197853d4426f5f1ccd59e171f24a1adbaeed46af474466950a` 和 `4fe1a8c82e2d24b0ada4fe3db015aa90c6d09277744ef73a5d1d8725b75b2b75`，与同源原生安装的文件摘要一致。
 
 两种格式各通过九项，从未发布时的 204、发布后验签下载、频道隔离，到停推保全既有下载、让新客户端看不到更新、拒绝旧序号、同摘要恢复、拒绝等长篡改和恢复后的新客户端下载。Windows 首次临时证书装载超时，另一次独立探针缺少其 PE 导入的 Microsoft CRT。复验在来宾内安装并清理专用测试证书，在探针目录放入候选携带的已核验 CRT。原生产 Updater 下载校验保持有效。Windows 与 Linux 回执 SHA-256 分别为 `44e893d0be7f4f11613588df186c6e98662f54ba5d33dc9a37d94d653b05acc8` 和 `e70b55d132c85f7e49528fc44dfd1efc1f8dd8ee0dc608070b32ef03a0f6f8b9`。来宾、回环服务、临时信任和下载暂存随演练清理。正式资产及公开频道继续按 A-017 验收与审批。
+
+### 2026-11-27 DEB 独立下载发行演练
+
+Ubuntu 22.04 的隔离回环 HTTPS 向两个独立下载目录提供 `49b25485` 的完整 DEB。用临时 Ed25519 密钥对既有 `asset.json` 的原始字节生成独立签名，客户端用本次演练的公钥验签后，核对候选、格式、目标、载荷清单和包大小与摘要。工程包及 `asset.json` 的 SHA-256 分别为 `232bc08f634724a188a8dbf33f8a040a64460fbab1ade114a1b510758b3d0bbf` 和 `3079144a9f80621d1922e19bc09b181a931e8319ae0aa34ae1e718256b6eb671`。
+
+九项检查通过。发布前和撤回后，清单、签名和包均返回 404。修改清单会在下载包前触发签名拒绝，修改等长 DEB 会触发摘要拒绝。撤回期间，先前验签的包通过断网 APT 安装，已安装载荷清单摘要一致，普通账号冷启动 Core 并重开合成工程。恢复后新客户端下载的清单、签名和包逐字节一致，purge 保全用户资料。回环服务、临时密钥、证书和暂存均已清理。演练回执与 HTTPS 日志的 SHA-256 分别为 `9f048d2fcf0d3b746790a0bfc8aac670bde1585357ee33a64fd905002fe86757` 和 `ea131b6775042f8ac25ec6c1a7df164621c3cbfdc50320733b1aba886ab414e6`。正式独立发行清单仍按冻结候选和签名审批复验。
 
 ### 2026-11-26 桌面更新候选门禁
 
@@ -509,6 +529,105 @@ AppImage 原生 FUSE 和 WebKit 的「关于」页通过回环 HTTPS 分步检�
 
 DEB 通过离线 APT 首装、停在 `dpkg --unpack` 后的配置恢复、双账号独立启用、同数据版本回退、重装及 remove/purge。坏签名和失效安装登记被拒，两个账号的数据库、设置和工程摘要均通过对账。外部 SDK 单次冷启动为原版 971 毫秒、新版第二账号 973 毫秒。DEB 回执为 `bcf23168a9751e15c54db637c2dc2eb4c4082d390fbd788e1523740619f89c2b`。本轮测试包、临时账号和暂存已清理。工程包继续使用隔离签名，正式资产仍按 A-017 复验。
 
+### 2026-11-27 DEB 配置触发器中断复验
+
+在断网 Ubuntu 22.04 x86_64 复用 `748933d8` alpha.0 和 `bd30aba3` alpha.1 的签名工程包。新版解包后，`dpkg --configure --pending` 实际进入系统 `hicolor-icon-theme` 的图标缓存触发器。私有挂载命名空间在该触发器调用缓存辅助程序的入口暂停本轮进程组，再以 `SIGTERM` 终止。退出值为 143。此时 ALCOMD alpha.1 已标记为已安装，图标包处于 `half-configured`。缓存修改时间、旧账号登记、数据库、设置和工程文件均与中断前一致。
+
+解除暂停用的临时挂载并核对原辅助程序摘要后，以 `dpkg --configure --pending` 恢复。系统图标包回到已安装，原生缓存重新生成，`dpkg --audit` 为空。原标准账号冷启动 alpha.1、更新该账号的登记并读回同一工程，卸载后资料摘要一致。临时测试数据已清理。回执和恢复日志的 SHA-256 分别为 `683919e51738e8bf5a13cbc010fd392ef4c9d9b1596735e1f1610583163f46a1` 和 `5d91d93dce8d8d40ff2fc7afdefc6fd2940e9111e07b78122782dfb241c6f00f`。
+
+### 2026-11-27 DEB 解包存储故障复验
+
+在 Ubuntu 22.04 x86_64 的独立网络和挂载命名空间复用 `748933d8` alpha.0 和 `bd30aba3` alpha.1 的隔离签名工程包。两个包的 SHA-256 分别为 `aa97ee9139577b21e04559cdd4824db546a3764b4c1fc50d76a9763b1fb89c9e` 和 `731b6ceeb70fc5c3d88881442d326e1520db6e586712a4ca1e264e4304154286`。用 384 MiB tmpfs 承载版本化程序目录，合成工程和账号资料使用独立的可写目录。
+
+安装卷仅余 8 MiB 时，`dpkg` 写入新版 Core 实际收到 `ENOSPC`。另一轮将该卷设为只读，实际收到 `EROFS`。两次失败后包管理器均保留 alpha.0 的已安装状态，旧运行时、稳定 CLI、Core 登记、数据库、设置和项目文件摘要一致。普通账号通过 IPC 重开原工程和日语设置。分别释放空间或恢复可写后，断网 APT 用同一 alpha.1 包升级成功，新 Core 读取同一工程和设置。两次 purge 均保全资料，卸载测试挂载后确认程序入口、暂存和测试 Core 均已清理。磁盘满和只读回执的 SHA-256 分别为 `e67bfbe56fb5c03be1f372c79518085fc568d3fef977ecdb0c0cdc51700801ef` 和 `16b37bfa6967f529087d8015a1b8a30556d5e9aa496308c1a7f9b30de1ca6b02`。
+
+### 2026-11-27 DEB 下载中断复验
+
+在 Ubuntu 22.04 复用上节两版隔离签名工程包。独立网络命名空间只开放回环，将临时 Ed25519 公钥仅用于本次 APT 测试源。APT 验证签名索引，从该索引选定 SHA-256 为 `731b6ceeb70fc5c3d88881442d326e1520db6e586712a4ca1e264e4304154286` 的 alpha.1 包。测试源声明 36,796,100 字节，发送 1,048,576 字节后断开。APT 报下载失败，`dpkg` 仍记录 alpha.0 已安装。旧运行时、Core 登记、数据库、设置和合成工程的摘要一致，普通账号经旧 Core 重开原工程并核对日语设置。
+
+恢复完整响应后，APT 沿用同一份签名索引和同一摘要的软件包完成升级。新 Core 打开原工程并读回设置，purge 保全资料。核对隔离来宾的包状态无异常，测试源、密钥、暂存和测试进程均已清理。回执与 HTTP 请求记录的 SHA-256 分别为 `4babfd940bea4a93795b304ba6324bf63d759c9f2a842b5949d3af0607013319` 和 `e6040fcdbaf44e56a703f5e10d6d8eafd7d36412aacbeab929eba0b137ce8de5`。
+
+### 2026-11-27 DEB 缺失依赖复验
+
+在断网 Ubuntu 22.04 x86_64 的一次性覆盖根，使用 `49b25485` 签名工程 DEB，包 SHA-256 为 `232bc08f634724a188a8dbf33f8a040a64460fbab1ade114a1b510758b3d0bbf`。临时系统通过 APT 移除直接依赖 `libwebkit2gtk-4.1-0` 和依赖它的开发包，核对运行库文件确实缺失。使用空 APT 软件源和原 DEB 首装时，APT 明确报告该依赖不可安装。失败前后的 `dpkg` 状态摘要一致，无产品程序、CLI 或桌面入口。
+
+恢复时向断网 APT 同时提供原 DEB 和 Ubuntu 官方 amd64 依赖包 `2.50.4-0ubuntu0.22.04.1`。依赖包 SHA-256 为 `f1836c87c10ae3d0d352d996c63e0bb40a80537533075f688ff4eeb9d50f3952`。安装成功后核对实际 GUI 可执行文件的 WebKitGTK 动态库解析，普通账号冷启动 Core 并重新读取合成工程。Purge 保全工程和数据库。外层 Jammy 的包状态及依赖文件摘要一致，临时覆盖根和下载的依赖副本均已清理。回执与拒绝日志的 SHA-256 分别为 `687e2e8522b00192ce13966aa3b08bd476900c6664e5e5afb68c65e12fab49bb` 和 `d103960462160e8265d340986a475ae8ab22f095d386d6b4829170dfca6c434d`。[Ubuntu 官方包及摘要](https://packages.ubuntu.com/jammy/amd64/libwebkit2gtk-4.1-0/download)
+
+### 2026-11-27 AppImage 整包更新磁盘满复验
+
+在 Ubuntu 22.04 的断网隔离实例用普通测试账号复用 `bffef439` 的 alpha.0 和 `41b7a82b` 的 alpha.1 签名实包。旧 AppImage SHA-256 为 `4fe1a8c82e2d24b0ada4fe3db015aa90c6d09277744ef73a5d1d8725b75b2b75`，目标沿用上节摘要。用独立 tmpfs 限制空间，合成更新声明和下载包均预先校验。
+
+- 替换前，安装文件所在挂载剩余 4 MiB，生产 Bootstrap 在暂存 46,578,168 字节的目标包时返回 `ENOSPC`。旧镜像、登记、数据库、设置和工程摘要一致，暂存和更新意图未留下。通过 FUSE 重开旧版桌面和 Core 并读回工程。释放空间后用原声明和原下载包升级成功，保留旧镜像并从新版读回工程。日志 SHA-256 为 `e2da0c359819520c41edc8a345126096f2ec1b80fcd644f3a8f48cb87b95f6a8`。
+- 替换后、登记前，实际终止更新进程并删除原下载包，再将独立资料卷可用空间压到 0。跟踪确认 AppImage 提取器的写入返回 `ENOSPC`，本轮的 Bootstrap 报告签名解码错误。恢复失败期间，同一意图、原登记、新旧镜像和资料摘要均保持。一次复验在 512 MiB 挂载内释放占位后仍缺少重解包空间。最终复验释放至 550,252,544 字节后用现场保留资产完成同一事务，清除意图并从真实新版 FUSE/WebKit 与 Core 读回原工程。结果和系统调用证据 SHA-256 分别为 `c08aaf2bcbcc4a5d239148d82b536f9f53d4c9c6e7520affb689d557fb8713bc`、`d2a139df4b52ae79ef55a2f0644201969f157286ff774885ded90cb081fa2631`。
+
+固定的 Type 2 提取器在 4 MiB 的私有文件系统上返回成功且不输出诊断，尽管提取文件不完整。Bootstrap 将提取和签名核验作为相邻步骤处理，失败时检查暂存文件系统可供普通账号使用的块和文件项。空间耗尽时返回 `StorageFull`，其他失败仍保留原有原因。正常流程仍核对完整签名、清单摘要及每个组件。
+
+Ubuntu 22.04 定向 Release Clippy 和 63 项 Rust 库测试通过。合成签名夹具在 alpha.0 实包中只替换此次构建的 Bootstrap，alpha.1 资产保持既有摘要。夹具 AppImage 的 SHA-256 为 `de3b9c003ad976ea6b678f745703bce4d9373538792737e29f4641f7725e3cc0`，Bootstrap 为 `3ee4cee3a6669059b837937d518afc68c4a3a1da87f6f0c2ca3eb5c2ab011366`。替换后空间耗尽时，恢复报告 `no storage space`，并保全原意图、镜像和资料。释放空间后用保留资产完成原事务，经 FUSE、WebKit 和 Core IPC 证实 alpha.1 可重开原工程。日志 SHA-256 为 `47a0eba16c0736d0c8c5a14628f48ea2e4042b5ee7839a57fddeeb624f574b65`。本次结果属于定向修复验收，正式整包候选另走发布门禁。
+
+### 2026-11-27 49b25485 同源实包与门禁
+
+在两个平台的干净检出从签名源码 `49b25485a315502ea96767eb12c2afa1401724a3` 构建和组装三种工程实包。运行清单使用隔离签名，Windows 摘要为 `36d67906b4f3686722b8bd92b16b972552f7ac810b68cdf79e5ebf70df330e5f`，Linux 两种格式共用 `65eb2298d05dc905e101a9646a145b077190ffc65f744c190e04f7a449778a2b`。Linux 两包解包后再次验签，三个实包的 SHA-256 如下。
+
+| 格式 | SHA-256 |
+| --- | --- |
+| Inno EXE | `fb9890353f26a8d6c2507e8688ee5a013811aac53edb4a6343ca19e8612f9aef` |
+| AppImage | `f00536323b403e4b7643ff8bcc1d10389c8f0b3a1ab144296f902e08588d5327` |
+| DEB | `232bc08f634724a188a8dbf33f8a040a64460fbab1ade114a1b510758b3d0bbf` |
+
+Ubuntu 22.04 用该 AppImage 和既有 `41b7a82b` alpha.1 资产复验原生磁盘满。替换后再次提取时系统写入返回 `ENOSPC`，签名候选报告空间不足。在原下载不存在的情况下，释放空间后从保留镜像完成原事务，FUSE、WebKit 和 Core IPC 均通过。日志 SHA-256 为 `4a0eccb09dbaff4fdc1b919d1bb0723f316e09a0c5e5238cca634d2dc5af3aa2`。DEB 通过实际安装和 purge，GTK 100% 与 200% 下三个项目控件均能依次 Tab 聚焦。回执为 `e667f9e5601e8d3c9c135ae2d80e140c5a0e2111ab2294569681dadf2fa649a1`。
+
+Win11 24H2 两种安装范围均通过 Unicode 安装目录、WebView2、稳定 CLI 和卸载保全。当前用户冷启动为 2779 毫秒，回执为 `35b94e6d892d05a922f89b993f739bdbe4fb1fb3752f033a94e74b0a9d0ecf5f`。全用户首轮达到 5 秒且未就绪，回执为 `825c71d561b1496180fe55841b26bb7eeb57ea94852d4e7cbf61fc528c303534`。在新来宾按原条件复跑为 2050 毫秒，回执为 `df0045aae2cc323aeefb8fa6a7fbbce34662f18fa84d3b64f9218a182616bf40`。
+
+同一 Win11 Inno 与 `16e5184a` 的 alpha.1 目标包在专用 768 MiB NTFS 虚拟盘补验当前用户整包更新。盘上保留 8 MiB，独立写入确认 Win32 `ERROR_DISK_FULL`（112）。更新在持久提交前失败，原安装、登记、资料与下载包摘要一致，旧 Core 可打开原工程。释放空间后用同一声明和目标包重试成功，新 Core 可读回原工程。当时的 Bootstrap 返回找不到文件（Win32 2）。早期试验的默认虚拟盘 ACL 和非标准下载目录被校验拒绝。通过回执 SHA-256 为 `6278e6bd50b3fb6f0cf03ba6bc9af45e6c27cb462ecdecc13f00aaf18c0221e5`。
+
+签名提交 `aed59608` 修正 Windows 暂存诊断。Inno 返回约定的退出码后，若暂存目录未发布且安装卷可用空间小于已验签安装包的大小，Bootstrap 报告空间不足并显示两个测得值。定向 Clippy 和两包 90 项 Rust 测试通过。隔离签名夹具仅重建 Bootstrap，其余运行组件沿用 `49b25485`。Bootstrap 和 Inno 摘要分别为 `537e1ff0a75fd1049b258bc9843219ed45a1b1d877ee2bd44f3454d665b91633`、`06e96306df0922fd22695a1a6cd85d4bea0eefea2f63de55ea0f7432d019cdd4`。
+
+同一 Win11 NTFS 场景复验通过。Bootstrap 报告安装卷可用 8,388,608 字节，签名目标包为 33,826,183 字节。提交前保全原安装、登记和资料，释放空间后用同一签名包和声明重试，新 Core 经 IPC 打开原工程。回执 SHA-256 为 `d692c95ac2a6782d29f9e56bdcf4837cf260e3e11820f7e843520fd651edbf09`。本轮覆盖 Win11 当前用户的磁盘满诊断与复原。
+
+整仓规则检查要求将 Win32 调用置于现有 Windows 原生模块。签名候选 `9eba5b98` 完成调整，用同样的隔离签名组装方法重新编译 Bootstrap 并复验。暂存失败再次报告 8,388,608 字节可用，旧安装及资料保全，同包重试和新 Core 重开原工程均通过。Bootstrap、Inno 与复验回执的 SHA-256 依次为 `3830d4ec6d721330cad8a9bdd9aa7708154c57696ae7817cea73255472a38bfd`、`cc91e1934f61cadf77264af60fe37422e300881884ddc6d40049c7a2feaf9ec6`、`781e50d882ca606b52e6377de97f0fc72c6045abeb45f300a9f4c6de4a0b88e1`。
+
+同一候选的本机整仓门禁和前端构建通过，含 1,108 项 Rust、7 项 Node SDK 和 765 项 Chromium 测试。四笔提交逐笔验签后普通快进至主仓 `main`。整仓标准输出和 Chromium 回执的 SHA-256 分别为 `bd614ce95b1603724c1a763160af9c1ba7dea95344d754b7d5c7e4a752f15154`、`dc1444448e0c607ca8a46bc53f4e3254dcf322844d50eddafd571a85941677d0`。
+
+Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均在 `9eba5b98` 完成整仓检查、外部 SDK 消费者验收、Release 与 Tauri 构建和 Chromium 回归。四项 CodeQL 作业也在同一 SHA 通过。Hosted CI 和 CodeQL 终态回执的 SHA-256 分别为 `7445937bf041b3f1f0de1919f8f316226b5679579d265eed1ee484d197839365`、`5444ed791ebce091ca6e2442817541aec0998dc9224fe8fd8a9eaaaac2f78824`。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897471) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45974897091)
+
+候选逐笔验签后普通快进至主仓 `main`。本地整仓通过 1,108 项 Rust、765 项 Chromium 和 7 项 Node SDK 测试。Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted 在同一 SHA 通过整仓、外部 SDK、Release、Tauri 与 Chromium，四项 CodeQL 通过。终态回执 SHA-256 依次为 `24c36509717941687641c722d41b9dc90f29cf6cf7575e61feedda64bf6a5a13` 和 `4a49888e01edfc5558847db5a063108f68ab74a234b137fad017f79f7b3782b2`。Windows 10 和 macOS 原生客户端验收继续延期，公开发行仍按 A-017 放行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/45952341316) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/45952341173)
+
+### 2026-11-27 9eba5b98 Linux 同源实包复验
+
+隔离 Ubuntu 22.04 在干净签名检出 `9eba5b982c6a6b7622fad40b001d541f3ce3e333` 构建完整 Release 和 Tauri 组件。用固定摘要的工具组装 AppImage 和 DEB，两个包解出相同的签名载荷清单 `36a3467bd72b6dbcb643ee8da5269ff87ad9373fe2d630afc5ab4295425ecb1f` 并重新验签。最高 ELF 符号要求为 `GLIBC_2.34`。AppImage 和 DEB 的 SHA-256 分别为 `de7134d4db21e41765142a5369df41e384bf63492c1397ae625048f7602c259a` 和 `3b04f0ce711f92be33820f007214a7eb0c0c22ec622c24db60d3f850be742b70`，组装回执同时通过资产摘要、错误工具摘要、拒绝覆盖和打包器失败时的原子发布检查。
+
+断网普通账号用这两份实包复验真实 WebKit。AppImage 在两个缩放档均经原生 FUSE 挂载，DEB 经实际 `dpkg` 安装，并登记 Core 到各自的隔离配置。100% 和 200% 下窗口分别为 `1400 × 800` 和 `2800 × 1600`，项目搜索、列表视图与新建项目的焦点顺序一致。随后清理了临时运行时和 FUSE 挂载，DEB 的 purge 移除程序和系统入口，包数据库无待处理项。AppImage 和 DEB 原生回执的 SHA-256 分别为 `a5d3f0b531f317d1937f05dc98ad9e0102497ea5330e6e2cb6309f00b9784f9f` 和 `23c510787a847ab5d032b99160f23d52c7b67a15680825eb809cfa71e04f2838`。
+
+### 2026-11-27 9eba5b98 Windows 同源实包复验
+
+从与上述两份 Linux 工程包相同的签名源码 `9eba5b982c6a6b7622fad40b001d541f3ce3e333` 重建 Windows 全部 Release 组件与 Tauri GUI。用已固定摘要的 Inno 6.5.4 和 Microsoft WebView2 Bootstrapper 组装完整 Inno。已验签载荷清单 SHA-256 为 `245d34c92003b964efc708adbf694d3f556decd134499abf01c38e8e5f0d4a07`，成品为 `f975c2c47bcd9dedc0bdd8ccc3c6c40d6a9d5d487c43558332baf209d5d20e52`，大小为 33,829,599 字节。该 SHA 对应上文已经通过的本机整仓、Chromium、三平台 Hosted CI 和四项 CodeQL。
+
+两个断网 Win11 24H2 Sandbox 用同一个 EXE 验证当前用户和全用户安装。两种范围均通过 Unicode 目录安装、稳定 CLI 与 Core 冷启动、真实 WebView2 窗口和卸载资料保全。全用户安装阶段保留账号的未初始化状态。两次冷启动分别为 1,539 和 1,566 毫秒，回执分别为 `660170a100a8a2bdeeabe4173dcf33b83925d391fadd9701e1e3814096251c24` 和 `84c8f9ef2d88aacebe0b569aee7c49f8f6338497e0ded1f586d10545a909543c`。
+
+另在当前用户范围用专用 NTFS 卷复验整包更新，从同一 Inno 升级至此前验签的 `16e5184a` alpha.1 包。安装卷仅余 8 MiB 时，Bootstrap 报告空间不足，旧程序、登记和资料保全，旧 Core 仍能打开原工程。释放空间后用同一声明和签名包重试，新 Core 经 IPC 打开原工程。回执 SHA-256 为 `9fd92991151318b940bcfa737e9b36c8705461e33d4bae3a55a183e1e9851aae`。本轮回收 5.32 GiB Windows 编译缓存并清理三份重复测试输入。正式资产及延期的 Win10、macOS 原生验收继续按 A-017 记录。
+
+### 2026-11-27 Windows 全用户整包更新磁盘满复验
+
+在断网 Win11 24H2 Sandbox 的既有管理员会话，用 `9eba5b98` 的完整 Inno 将 alpha.0 全用户安装到独立 NTFS 虚拟卷上的 Unicode 目录。目标用已固定摘要的 `16e5184a` alpha.1 工程包，签名安装器为 33,826,183 字节。用真实 NTFS 分配将可用空间降至 8,388,608 字节。独立写入探针返回 Win32 `112`，机器更新在保留包阶段失败，未留下已发布的事务或残留包。
+
+第二次留出 43,266,048 字节。保留的签名安装器、更新声明和验收凭据已落盘，解包暂存失败后卷剩余 9,433,088 字节。两次均未发布新版、暂存目录或提交意图。更新操作前后的稳定 CLI、旧版 Core、版本选择器、机器与账号登记、数据库、设置和合成 Unity 工程一致。每次都通过 CLI 冷启动旧版 Core 重开工程。
+
+释放空间后用原声明和同摘要安装器重试成功。机器选择器切换到新版，账号登记在该账号首次启动 Core 时更新，原工程可再次读取。入口在两处分别报告向机器维护进程传输失败和全用户维护未完成。三项通过的回执 SHA-256 为 `87583c215e7d64ad614364bf75b482f63858034368e310cb2e8f36d8c6baf38d`。标准账号交互 UAC、Win10 和最终发行包继续按发行矩阵验收。
+
+签名修复 `49a3d526` 让全用户更新调用方从系统维护进程的退出状态识别存储空间耗尽。发送期间接收端已断开时，调用方在限定时间内核对同一进程的结果。仅报告固定错误分类。源文件和暂存路径留在维护进程本机诊断中。正常失败、已有目标和无法确认结果仍按原合同处理。[Microsoft 进程退出状态文档](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess)
+
+Win11 复验使用 `49a3d526` 构建的 Release Bootstrap，其他组件沿用已验签 `9eba5b98` 载荷。Bootstrap SHA-256 为 `190d6461e54d625684ea508506522d5c2fccf7340618e254ff989b94e7a37f6a`，隔离测试签名的 Inno 为 `ac98a4a2a25b2e8f9c4b221fd8764517f3e3c80c0440389021c6187fec5de9eb`。对同一 `16e5184a` 目标实测两处空间不足，调用方均报告 Win32 `112`，旧版与资料保全。已有目标目录时仍返回原来的传输失败，目录内容保全。释放空间后同包重试完成，账号重开后登记新版 Core 并读回工程。四项复验回执为 `a02eb6acdd844568a49be2c2792c8bdf6af0c289aef66e7aba8d27141179ea5f`。
+
+另在全新的断网 Win11 中，复用同一对已验证实包，经 Bootstrap 的桌面重启入口执行磁盘满和重试。专用安装卷剩余 8 MiB 时报告 Win32 `112`，写入本账号的桌面失败标记，重开旧版真实 WebView2 窗口并经旧版 Core 读回原工程。释放空间后用原签名包重试，标记清除，实际新版窗口重开，新版 Core 读回工程，设置与工程文件摘要一致。两项回执 SHA-256 为 `e13559774da9245c5764becdc0f1fc042809b764d4874eae33f9db2e15492ead`。
+
+同一对全用户工程包补验了提交意图落盘以后的空间耗尽。先用原生文件占用保留旧的稳定 CLI，确认提交意图和签名新版已落盘且安装完成回执尚未生成。解除占用，删除原下载的声明和安装器，再将独立 NTFS 卷的可用空间降至 262,144 字节。复制 12,521,984 字节的新 CLI 的独立探针返回 Win32 `112`。恢复入口返回通用维护失败，活动版本和账号登记仍指向旧版，数据库、设置、工程、提交意图和保留资产保持一致。稳定 CLI 与两版 Core 均继续被维护意图阻止启动。
+
+释放空间后用原版 Bootstrap 的恢复入口继续同一事务。系统使用事务内保留的签名声明和安装器生成完成回执，切换稳定 CLI 和活动版本，清除提交意图。账号首次启动新版 Core 后更新登记并读回原工程。三项回执的 SHA-256 为 `6aea8a76765ea03977da9b2c8e738f7a98583106d5d939410c9fc189aeb08d10`。
+
+签名候选 `49a3d52626679c50bde8ce055f0c0c1be5cd0873` 在独立干净检出通过整仓聚合门禁，Rust 1,108 项、Chromium 765 项和外部 Node／Rust SDK 均通过。逐笔核对 11 笔提交的签名后从 `9eba5b98` 普通快进，远端读取确认候选一致。聚合门禁和远端核验回执的 SHA-256 分别为 `d6a53f5c6ba919fab39ba97c9e83b6087a75305684c85eb5323f9a6f7e8f977a` 和 `76dcea8dd63b3f89d66054f513ad43384baec9203f5e0353c521dc26043850b5`。
+
+2026-11-28 核对同一 SHA 的三平台 Hosted CI 与四项 CodeQL 均已通过。Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 的整仓、外部 SDK、发行组件、Tauri 构建及 Chromium 步骤均成功。三平台 Chromium 日志各有 765 项通过。Hosted 与 CodeQL 汇总回执 SHA-256 为 `90f97c3ad51674a9f8ebd2943524b5fc787b53c3ffcaa84b2a829ef27e51801c`，浏览器计数回执为 `1b8f02fec1464d8d967bcfbdeb00c795ba25c8721d8a134b400e356c99c53afd`。macOS 原生验收与 A-017 继续按发布矩阵执行。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326613) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46016326331)
+
 ### 2026-11-27 Windows 全用户自定义目录整包升级
 
 在断网 Windows 11 24H2（`26100.9974`）来宾的既有管理员会话中，用上述 `2a1f93b9` 安装包和修正 Inno 后的 `16e5184a` 目标载荷执行全用户整包升级。安装根的父目录与末级目录均含空格和 Unicode。正常升级通过九项。机器部署不抢先初始化账号资料，机器升级保留旧的逐账号登记，原账号重开后才登记新版 Core。原安装根、机器 PATH 与开始菜单仍指向该实例，真实 WebView2 和稳定 CLI 可读回原工程。CLI 冷启动耗时 1552 毫秒，卸载后数据库、逐账号登记和目录内的无关文件保全。正常回执 SHA-256 为 `96e3ffc15dd320a44b37b85dfb325eacbdda88b6b0ef167b3b714cdf7d595fe0`。
@@ -520,6 +639,8 @@ DEB 通过离线 APT 首装、停在 `dpkg --unpack` 后的配置恢复、双账
 用 `bffef439` 的完整 Inno 工程包，在两个断网 Windows 11 24H2（`26100.9974`）来宾分别测试当前用户转全用户、全用户转当前用户。两个方向各通过七项拒绝和保全检查。缺少业务确认时安装器保留源范围。提供匹配的产品清单确认值后，原生 Bootstrap 拒绝既有提升会话直接作为转换发起人。两个方向的 Inno 安装均在激活前退出，保留源范围的注册表、PATH、开始菜单、`alcomd` 协议、账号登记、数据库、设置和测试工程。两次都从源范围的稳定 CLI 在 496 毫秒内冷启动并读回工程。
 
 已确认但发起身份不符的尝试均留下未激活的目标预留目录。目标范围的活动选择器、稳定 CLI、卸载登记与系统入口均未发布。当前用户转全用户时 Inno 提示从拥有安装的账号发起，全用户转当前用户时 Inno 返回通用载荷准备错误，直接核对已安装 Bootstrap 可取得原非提升账号错误。两方向回执 SHA-256 依次为 `50b9712b950273c65b5eb8223f58628b37c506cb16fa1b01b49b299c7e90c9de`、`429ade2b45b594de5f553fa76c5327a22bf72f1bd2be1053d684a52059ead910`。双向正向切换、交互 UAC 以及最终发行包继续按原矩阵验收。
+
+另启动一个断网 Win11 Sandbox，使用 Windows 自带的 `reg query` 只读核对默认 UAC 状态。独立来宾的 `EnableLUA` 为 `0`，回执 SHA-256 为 `0d67ffad351195e066e44c9f9e029dea22da16c166c8f96c7f3f0c29bead8597`。标准账号的交互 UAC 及依赖该交接的双向正向转换，待在启用 UAC 的完整客户端环境验收。[Windows UAC 设置](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/user-account-control/settings-and-configuration)
 
 ### 2026-11-27 Windows 协议事务并发复验
 
@@ -552,6 +673,103 @@ Win11 Sandbox 夹具通过已装运行时跳过、缺失时拒绝提升环境下
 新建 `ALCOMD-M12-Jammy` 独立 WSL 2 实例。Ubuntu 22.04.5 x86_64 镜像 SHA-256 为 `4499c4fe257f2fc83145b429ce211a0a43fd590e70d6261ede616210947d9f8f`。用普通测试账号和上文同一 AppImage 实测 FUSE 挂载、Xvfb 下的实际窗口、WebKit 渲染进程及 Core IPC。
 
 在同一实例安装此前从签名源码 `748933d8` 构建的 DEB。AppImage 拒绝使用 DEB 登记的资料目录，DEB Bootstrap 也拒绝接管 AppImage 的资料目录。两份登记和数据库摘要在拒绝场景和 `dpkg purge` 后保持一致。验证使用隔离的两套 XDG 资料目录。应用包移除后清理试验样本，保留已配置的隔离实例供后续 AppImage 更新验收。
+
+### 2026-11-28 Windows 同范围 PATH 升级与卸载
+
+在断网 Win11 24H2 Sandbox 用完整 `9eba5b98` 与 `16e5184a` 工程包复验当前用户及全用户范围。正常安装、升级和卸载两组均通过。预先在 PATH 放入带引号、尾部反斜杠且大小写不同的 Unicode 安装目录时，两个范围都误添了一个等效条目。当前用户和全用户失败回执 SHA-256 分别为 `3d70a46b8789dcd240d1d4b8152308c7ada136348f2bf4e4b1233f913609ec53`、`9d24f7469005b0987b695a6a89aa1b1154b260a69e9d380398eee6cc5f9b6c52`。
+
+同版本 Inno 的独立探针执行原生产函数。长度 42 的 Unicode 路径后，分号的字节偏移结果为 51，显式 String 分隔符得到的字符位置为预期的 43。回执摘要为 `56b574aa4a10e1493b02b831759554fe7dda2c9c6206493f44a1432ccf9e1304`。签名修复 `7b7522b5` 使用 String 分隔符，将查找结果用于同一字符单位的切分。[Inno Pascal 脚本函数](https://jrsoftware.org/inno-setup/documentation/topic_scriptfunctions.htm)
+
+在 `bffef439` 和 `16e5184a` 的已验签运行载荷上，用修正的 PATH 函数重新组装隔离 Inno 两版。包 SHA-256 分别为 `d3693820c586efdfd5c1a1fe64f0ef20b584625843fa24469a4dd439e8aba896`、`96d50d79a75597797e570213a4364c5b69f24b524a1eb2b16033241bfedd5813`。两种范围均通过自有条目及既有等效条目，共四组。升级前后均核对两个范围 PATH 的原始值、顺序及 `REG_SZ` 或 `REG_EXPAND_SZ` 类型。含 Unicode 的第三方条目、相似前缀条目、数据及工程均保全。卸载精确去掉自有条目，既有等效条目保全。含引号的既有条目在 Win11 命令提示符可解析并从新版 CLI 读回原工程，Windows PowerShell 5.1 对该条目查找失败。安装器写入的常规条目经 Windows PowerShell 查找成功。双向安装范围转换按原发行矩阵验收。[Windows 命令 PATH](https://learn.microsoft.com/windows-server/administration/windows-commands/path)
+
+| Win11 用例 | 回执 SHA-256 |
+| --- | --- |
+| 当前用户自有条目 | `492be900da6623bdc81c8e139e7741f44be0fae4f506e4c66cd45e5bf249c7cc` |
+| 全用户自有条目 | `2e3bb857e475ba70326e168f2c26b738ffd807717d8a7427effe757bda1a7411` |
+| 当前用户既有等效条目 | `13e78edca52e1985f33c3ed3ce05e16a0678840d0052203be35b1c0def196a97` |
+| 全用户既有等效条目 | `d882a2d76aa0f68afb7d6bda56a9a9b993932fe92eadefd595a9c550dd096a1a` |
+
+从干净签名源码 `7b7522b5` 构建 `xtask`，通过生产 `dist --package --format inno` 组装工程包。夹具复用 `9eba5b98` 的已验签运行组件，候选清单使用隔离密钥重签，发行组件源码仍以 `9eba5b98` 为准。工程 EXE 和候选清单的 SHA-256 分别为 `3dddcaf3df7c441c901b6d07c936633e5aba5b8273dbac064d2a13971428530c` 和 `838fbae8dbe58157f4a951d8bf9adaa8a03e0629b4d929198a57abf980129545`。用该 EXE 首装，再用已验证的 `96d50d79` 工程包升级。在两个断网 Win11 来宾中均保留了既有的等效 Unicode 条目，以及用户与机器 PATH 的注册表原值和类型。升级后的稳定 CLI 读回原工程，卸载保留既有条目。当前用户和全用户回执 SHA-256 分别为 `a54f59ac2c4a0164bc13396ec68e73f17efd8f32d05515e7255343c0063dafcb` 和 `efd60844f60650456c645a14e67af96d8e4c8866a48c6078cd5a75848fb2f14a`。
+
+干净候选 `7b7522b5` 已通过本地整仓检查、1,108 项 Rust 测试、7 项 Node SDK 测试和 765 项 Chromium。六笔提交逐笔验签后普通快进至主仓 `main`。同一 SHA 的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted 均通过整仓、外部 SDK、发行组件构建、Tauri 构建和各 765 项 Chromium。四项 CodeQL 均通过。Hosted 终态回执 SHA-256 为 `a3e567dde49065cd90658c0744433cdbcb46e78452ee1a17b2017677ef82acfd`，三平台 Chromium 日志摘要回执为 `4aea60f3f0f59edfd7e97a62a26588d57c76d011fc13e0f19240f99926e5495c`。双向安装范围转换的原生交接仍待验收。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46040897008) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46040896312)
+
+### 2026-11-28 7b7522b5 同源工程实包
+
+在断网 Ubuntu 22.04 x86_64 从签名提交 `7b7522b599a607fb1fc285f81948c8f216347cb6` 构建 AppImage 和 DEB，运行组件最高要求 `GLIBC_2.34`。两种包解开后的运行清单与签名原件一致，SHA-256 为 `505ef4a7bedc03fe9eef66c21f35982248dcd0715f29a1b39162fd4c6f8b6a92`。AppImage 为 46,574,072 字节，摘要 `fdf944d2f0ad37567b92cb658709a2828a1a99d029727464771a0831bfe0d9ee`。DEB 为 38,681,714 字节，摘要 `9691cc1faf62339574f76c829d8d9ca2575e4f18c897df170c78467912e661ea`。拒绝覆盖现有资产、错误打包器摘要、打包器失败和缺少目标成品的门禁均通过。
+
+同摘要 AppImage 实际经 FUSE 启动，DEB 经 `dpkg` 安装后打开真实 WebKit 窗口，两者均由 CLI 经 IPC 核对 Core 版本和就绪状态。GTK 100% 与 200% 下窗口由 `1400 × 800` 变为 `2800 × 1600`，项目搜索、列表视图和创建项目的 Tab 顺序相同。测试结束时清理 FUSE 挂载与合成资料，并确认 `dpkg --purge` 移除测试软件包及所拥有的入口。AppImage 与 DEB 原生回执 SHA-256 分别为 `2f0351edaf3ec35f4bbbe81c4c5236efcad55b17743d07fcdb10fa5b76856ea3` 和 `2547139f8d639c931a3a41a942a05bd1b4e3b358e18d682d77b12f53e964633e`。
+
+同摘要 DEB 在仅回环 HTTPS 的隔离环境通过九项独立下载演练，覆盖分离签名、篡改拒绝、撤回与同字节恢复。撤回期间使用先前验签的 DEB 离线 APT 安装，普通账号可冷启动 Core 并读回合成工程，purge 保全资料。回执 SHA-256 为 `70b2d10cc91b3ffead56b3d4f599f1ff623aaaf8117a4789bba656526de075f9`。签名和信任材料随本次演练清理。
+
+同摘要 AppImage 使用从 `7b7522b5` 构建的 Updater 演练程序和仅回环 HTTPS，九项检查通过。涵盖 beta 发布及 stable 隔离、停推保留已接收字节、拒绝旧序号和等长篡改，以及同摘要恢复后新旧客户端下载。回执 SHA-256 为 `9bc7fb3440a3ec0bbcd746004f56b06db8b27f54253227869f1903ddc9fae9a8`。临时 TLS 证书及暂存随试验清理。
+
+用这两份同摘要实包逐个扫描包内 ELF，另检查 AppImage 外层加载器与 DEB 的 `/usr/bin/alcomd-cli`。每种格式各有 8 个 x86_64 ELF，最高需求均为 `GLIBC_2.34`。逐文件回执 SHA-256 为 `9acef5f30c79439d3cf448c25d0f0790c901f6e39e03f8e1360a0e20812d6a56`。
+
+断网 Ubuntu 22.04 的新标准账号用同摘要 AppImage 通过八项直接移除检查。真正的 FUSE/WebKit 首启完成 Core 登记，随后显式启用 CLI、冷启动并登记合成工程。关闭 Core 后删除本体，稳定命令提示从现有位置重开 AppImage，运行目录中的 CLI 返回 `daemon_unavailable`。两次拒绝均未启动 Core，登记、数据库、配置和工程内容摘要一致。从新位置显式打开同摘要镜像后，原命令入口未改变，CLI 冷启动读回原工程。显式移除 CLI 集成仅清理其归属入口。回执 SHA-256 为 `f14b8a75bbce4fb132114fbb421a74204546627132938eed2e673df31274bbc2`。
+
+同源 AppImage 用已验签的 `41b7a82b` alpha.1 工程包复验换位后的中断和恢复。实际终止更新进程，删除原下载，随后使独立资料卷剩余空间降至 0；提取时观察到 `ENOSPC`，Bootstrap 报告储存空间不足。更新意图、账号登记、旧镜像和项目资料保全。释放空间后用保留资产恢复同一事务，进入新版 FUSE/WebKit 并读回原工程。过程日志与系统调用证据 SHA-256 分别为 `86327a2da3b25dde688e53a34532cd9674750fec7b514175755d48981e16d614` 和 `3750f03335a4f0931057bb9ba6a9bdaef9f48c94e57ada5ccf24fa4ba4cdb382`。
+
+同源 DEB 用已验签的 `41b7a82b` alpha.1 工程包通过真实 APT 首装、dpkg 解包后恢复配置、首次按账号切换、同数据版本的 APT 回退、重装、remove 和 purge。两个普通账号分别通过 CLI 和实际 WebKit 启用新版，外部 SDK 从重新登记的运行时冷启动。坏签名与失效登记拒绝。最终两个账号的登记、设置、数据和工程摘要一致，系统入口和测试账号已清理。回执 SHA-256 为 `80b058848ae8f49c15813c0b40019f1cd5ffdeca63341520ac5be02f44f505a9`。
+
+同一对 DEB 在 Ubuntu 22.04 的独立网络与挂载命名空间通过四项补验。解包新版时，384 MiB 独立程序卷剩余 8 MiB 触发 `ENOSPC`，另一轮只读挂载触发 `EROFS`。回环 APT 测试源按签名索引声明 38,681,300 字节，发送 1,048,576 字节后断开。三种失败后，`dpkg` 均保留已安装的 alpha.0，原运行时、项目、设置与登记摘要一致，旧 Core 可重开。排除故障后从同一签名包升级，该测试账号重新登记新版并读回原工程与设置。存储空间、只读和下载回执 SHA-256 依次为 `9f270cac18d9c7403ef7caeaee88f08e357809f78ad20cf3e77df003cdaf1440`、`6580af0b80fbf736c9584c02fc71b9df9c06bd667c4ceb090bca01f974b4d2ed`、`a0c06e8c21fe03f92c24bd8bacb3f3d14d632ae4129ac6479131599d51b84fb7`。
+
+独立的配置用例在 `dpkg` 进入系统图标触发器后终止该进程组，退出值为 143，图标包停在 `half-configured`。旧账号资料与登记保全。恢复真正的系统缓存辅助程序后执行 `dpkg --configure --pending`，图标缓存重新生成，alpha.1 的 Core 可冷启动并读回原工程。四轮 purge 均保全合成资料，`dpkg --audit` 均为空。配置回执 SHA-256 为 `af73b96663541e9da7e292819a075fa739021cba8ece56e099ab8a6c05a54bd6`。
+
+同摘要 AppImage 与 DEB 在 Ubuntu 22.04 的仅回环环境通过七项同机归属验证。在两个独立测试资料目录中分别先登记便携及系统安装。AppImage 用真实 FUSE/WebKit 启动，其 CLI 集成启用和移除均保留未知的同名用户入口。已登记便携版时，DEB 的独立 Core 登记请求拒绝覆盖，系统 CLI 仍可连接已登记的便携 Core。已登记 DEB 时，直接打开 AppImage 拒绝接管，也不创建便携运行目录。`dpkg --purge` 之后，两份资料与登记的摘要和便携入口均保持一致。便携 CLI 可再次冷启动并读回工程。回执 SHA-256 为 `bf3a2a6d4252f5f82fd232761d4255cbd101354d8313aac02d50c6b542880551`。
+
+在断网 Ubuntu 24.04 x86_64 以同摘要 AppImage 补验较新发行版。新账号通过 FUSE 2.9.9 启动，打开 `1400 × 800` 的原生 X11 窗口，观察到 WebKitGTK 2.52.6 渲染进程和正确的 Core 安装登记。关闭 GUI 与 Core 后，CLI 经 IPC 冷启动并读到 `4.0.0-alpha.0`。试验后移除挂载和临时账号。回执 SHA-256 为 `73245f36dc1551491ecfbe7dc6a84eb3b932cb779d6ce03d671916cc5d5d7201`。
+
+从同一签名源码生成配对迁移载荷，并用合成密钥验签。迁移清单 SHA-256 为 `e3c9f446561f8aff299a99fc1c3b1df693772daefda1a24adaaa8d51f358e157`。用实际 DEB 和 AppImage 检查 Core RPC、CLI、WebKit、认证 MCP 及撤销和签名第一方扩展。原生健康回执 SHA-256 分别为 `5393c5cd003d2e742d22e02b98225515a7a9061de8d07c6d2d854bd5dd3ea3e5` 和 `5b8d73e754a6932c0643931ead90e44f529e977046c4849eeacf653f8097077f`。两份测试证明签署后独立验签，并核对各自的包、载荷和回执摘要。
+
+Ubuntu 24.04 的实际冻结 v3.4.0 DEB 经离线 APT 与同源 v4 DEB 交接。两个临时账号的资料由真实冻结 GUI 生成，均验证待确认时阻断 v4 普通首启。一个账号回滚并重开冻结版，另一个拒绝坏健康签名后用正确证明提交，随后打开原生 WebKit，Core 读回迁移的测试偏好。试验卸载 v4 测试包并移除临时资料，保全冻结程序与恢复包。回执 SHA-256 为 `fddce2e19f0b004b3756632e4fa107bfa876c06b09f90b5efdc302c59f7956c9`。
+
+同一 Ubuntu 24.04 另用冻结 v3.4.0 AppImage 验证独立归档交接。首轮镜像漏设执行权限，解包后运行端拒绝。按现行模式重新组装并为新摘要签署隔离归档，启动器在两个资料目录分别验证回滚重开冻结 GUI 和显式提交后打开新版 FUSE、WebKit 及 Core。冻结 AppImage 与原资料快照一致，测试挂载和资料已清理。通过的归档 SHA-256 为 `b2f4c061a17ea92e20d87209a0eb6ffe8af7f16896d522ed80c683363a272527`，回执 SHA-256 为 `f0cfe001dca7f02c28961f8690409efb98056f3a59617cdf5bd4a96618a012b8`。
+
+打包入口现对暂存的镜像复用运行时的可执行文件和权限校验。用定向修订后的 Linux `xtask` 和上述签名输入运行实际组装命令，镜像模式 `0600` 与 `0777` 均被拒绝，目标归档保持缺失。模式 `0700` 组装成功，归档内仍保存可执行模式。定向回执 SHA-256 为 `a362958e33679ab8b9435f4c1f94c34d54bcfd46938e2f3377bfb400c42aff9e`，新源码候选的整仓门禁和正式资产仍按 M12 验收。
+
+从同一干净签名提交在 Windows 重建含 Tauri GUI 在内的七个 Release 程序，再用隔离密钥签署运行载荷。使用固定摘要的 Inno 6.5.4 和 Microsoft WebView2 Bootstrapper 组装出 33,823,244 字节的工程 EXE，成品 SHA-256 为 `918ee1cb3cb23c9dd8bb3b860abe792eb99f48fb8670a8e1d07e8a872bffc89b`，载荷清单为 `e0dbfb92633fd655928174761dc01a307ca15c648352c21b33a009dbc3f89457`。验签、错误打包器摘要拒绝与已有输出保全均通过。
+
+两个断网 Win11 Sandbox 用同一 EXE 通过当前用户和全用户安装态复验，核对 Unicode 目录、已安装载荷、稳定 CLI 与 Core 冷启动、实际 WebView2 子进程及卸载资料保全。两次冷启动分别为 1,862 和 2,910 毫秒。全用户安装也确认安装阶段未初始化账号资料。两份原生回执 SHA-256 分别为 `19499b7e09ad39045570bb151b1a13ebc0128b6835c3b795975966bedeff213f` 和 `f8257e42a6ac428f415637b7b140dbdb35ad0642b25e8d168dfaf13afee318c8`。
+
+每个范围另用该同源 EXE 首装，再升级至已验签、摘要为 `96d50d79a75597797e570213a4364c5b69f24b524a1eb2b16033241bfedd5813` 的 alpha.1 工程夹具。两个范围都保留了用户和机器 PATH 的注册表原值与类型，以及原有的等效 Unicode 条目。新版稳定 CLI 读回原工程，卸载保留原有条目。当前用户和全用户回执 SHA-256 依次为 `6cebd2889057cb0b19928aa1800350b0478705e392d659acd1269109592d3d77`、`64928bbbd897aeef3dd1fd6676159de9b120baf5e7ea2652a9394e050c3a8dc9`。生产签名、完整 Windows 交互和延期的 DMG 仍按 A-017 验收。
+
+三台断网 Win11 Sandbox 在既有管理员会话中使用同源 `7b7522b5` Inno 首装全用户范围。使用已验签的 `16e5184a` alpha.1 工程夹具执行故障注入，目标包 SHA-256 为 `e5c4e9462b5bc838985cf4c07bf42e5d439904d597b6da34d4f9ca459117a1d0`。三台各用 804,188,160 字节的独立 NTFS 卷，测试占位文件只写入来宾的专用卷。
+
+保留签名包前剩余 8,388,608 字节，暂存新版时初始剩余 43,266,048 字节。两处均观察到实际 Win32 `112`，界面使用的 Bootstrap 诊断明确报告空间不足且不带安装路径。旧版及工程可重开，已存在的其他目标目录也完整保留。桌面重启用例另验证失败时重开旧版 WebView2、记录错误并在同包重试后清除此标记。两份回执 SHA-256 分别为 `c67fda22b476d82bd7420ddeb48591ed51cf61ee9afa55dc04b3489125db48ef` 和 `7c7af229dbd672ed52daaa17946cd34e268cc0069b3cd696fcbc3982bb523096`。
+
+提交意图写入后用文件占用中断更新，再删除原始下载并将卷可用空间压到 262,144 字节。恢复操作失败并返回通用维护诊断，已落盘意图、签名资产和账号资料保全，事务阻止两版同时启动。释放空间后从保留的事务恢复，新版读回原工程。回执 SHA-256 为 `a4fe5973ce4cc96815877e2ee3faf6ef8b92505323666409739ff4e364f6f785`。本轮覆盖已提升会话，标准账号的交互 UAC 待完整客户端验收。
+
+从同一 `7b7522b5` Inno 运行清单核对 Updater 摘要 `b51ea37391a0cb6895ad3cfe4cf623c7899322081e6a4c16eb0da5cbd6a2be7c` 后，在断网 Win11 的普通 NTFS 目录用合成签名和同源 Inno 实包完成九项离线检查。有效资产通过并落盘，完全相同的请求可重试。旧序号、同序号不同声明、频道不匹配、同版本、签名无效和等长资产篡改均被拒绝。回执 SHA-256 为 `30ea0bc737794825d67bef826f2d4db587eb281728597bcbfa07de90d46d7ebc`。该用例使用 v4 更新声明，冻结 v3 更新器的交接另行记录。
+
+同一 Inno EXE 在两个断网 Win11 24H2 Sandbox 分别通过当前用户和全用户各 15 项同版本修复检查。修复按原始摘要恢复 GUI、Discord 扩展和稳定 CLI，保全活动选择器、原卸载器与卸载日志、PATH 和快捷方式归属文件以及 `alcomd://` 登记。运行库内容变化、待处理维护和活跃程序租约分别阻止写入。解除阻塞后重试，CLI 连接实际 Core，随后卸载精确移除自有入口并保全数据库和无关文件。首次 CLI 冷启动分别耗时 2,215 毫秒和 1,886 毫秒，均观测到实际 WebView2 渲染。两份回执 SHA-256 依次为 `fbf2d82c1e5583064e564d32088545e02fa822a9b8ccd00a9658a1fa28646b5f`、`2b8f68903505d188da2b3f3caecd7d9fc37cd9970a22d2b46a6e3ab288892df3`。
+
+### 2026-11-28 807b55b6 同源工程包与验收
+
+从干净签名候选 `807b55b61e829cf65811641e72257c65345130e1` 在 Ubuntu 22.04 重建 AppImage 和 DEB。两包解包后重新验签。AppImage、DEB 和运行清单的 SHA-256 依次为 `bb6af6758dbf908ff6beb333761fbe838d4e2176ddb1a285cc1beedc55bdd2b9`、`cb67d04e80ad8a02fc497df9f25f6829f448725331cd526e28ecf13a621d83db`、`0d3fa3668c320387f785d7088e3ea47f474c00d4fb481e8a0b8e720859a59db1`。实际桥接打包入口拒绝 `0600` 和 `0777`，保留空的输出位置。模式 `0700` 通过且在归档内保留，归档 SHA-256 为 `a8932f991ae124e60d3a904bbbd3db15af12d7e79d6c6d0010c75d4ed65ce052`。
+
+两个工程包在隔离 Ubuntu 24.04 用冻结 v3.4.0 复验显式提交、回滚重开旧 GUI 和新版 Core。AppImage 运行真实 FUSE 和 WebKit，结束后清理测试挂载和资料。DEB 通过离线 APT 交接，拒绝坏健康证明后签名提交并读回迁移的合成偏好，清理测试账号、资料和 v4 包。AppImage 和 DEB 回执 SHA-256 分别为 `c782f1e12d8a8c54b71a5a09fb552fd9b8e0760a4c0b1e6a03514f80fb19bcfd`、`a6db8270c32dc2ff7d207a1b95a260939a87ff314586c9ecc0228db833b09dd7`。
+
+同一冻结 DEB 交接另在隔离 Ubuntu 24.04 对比迁移资料与独立新建的 v4 资料。两边分别从冻结 GUI 生成的合成资料和当前 `settings update` 设置日语、深色、减少动画、最大备份压缩和关闭预发布包显示。经真实 CLI 与 Core IPC 读取的十组公开设置及项目、仓库、模板和 Unity 列表一致。v4 资料中未检出选定的旧格式文件名，提交日志仍在资料目录之外。回执 SHA-256 为 `88d2ffea231d0e14f3e0aac99348c3dfd33847b098e4d277ef8a22c436747caa`。该回执覆盖合成账号的业务状态比较，全面零残留仍按批准的旧版实例和平台范围核对。
+
+同一干净签名源码在 Windows 重建完整 Release 载荷和 Tauri GUI，并用合成密钥签署运行载荷。Inno 6.5.4 生成的工程包为 33,836,911 字节，SHA-256 为 `b1394805fdc5209b2f32781ae07bdf08ba0c4be534fa6b8da59fdbd47a54bc71`，载荷清单 SHA-256 为 `779d6672f27e6bb78a4f40204a442c4b5f1c57dd7a574e3b20c492490b9cbf1b`。实际打包入口通过验签、错误打包器摘要拒绝以及已有输出保全检查。
+
+两个断网 Win11 24H2 Sandbox 分别通过当前用户 4 项和全用户 5 项检查。两种范围均使用 Unicode 目录安装，稳定 CLI 冷启动 Core 并打开 WebView2，卸载移除 CLI 且保留账号资料。全用户安装也确认安装时不会初始化账号资料。两次 Core 冷启动分别为 1,903 和 1,516 毫秒。
+
+另用三个断网 Win11 Sandbox 的既有管理员会话，以该工程包和 `16e5184a` 的已验签升级夹具通过 9 项更新恢复检查。在各自的 804,188,160 字节 NTFS 测试卷上复验保留签名包、解包暂存、桌面重启和提交意图持久化后的磁盘满。恢复前核对旧资料和签名事务，解除故障后用同包恢复登记及 WebView2。原下载移除后，提交意图和保留的签名包仍可恢复同一事务。五个来宾均已关闭，原生汇总回执的 SHA-256 为 `73470bad090975d7bd7a5419325be1afbff03b6aaec079fdcb153c579ab6023c`。
+
+同源 Inno 在断网 Win11 又验证了四组同范围 Unicode PATH 升级。当前用户和全用户各覆盖自有条目及等效已有条目，核对升级前后的原始值、顺序和注册表值类型，使用稳定 CLI 重开工程，并按归属卸载。四份回执的 SHA-256 依次为 `481d0f3cfdbc417193e9c69fdfb59333e7e408ca4059269b299fb6fb2f6949ba`、`f279b86f809cf54117000be5826027323e3b6fd9c448a6b2355e24f21b89edc8`、`b00a10a8cca92cdd1d47826dbe9cb980a86d0ea916ef447ef992b51327fa8627`、`8fbfbc68bfaffd5859668a108719e52c992e164c97f9ca4e6845046be474cb1c`。
+
+同包 Updater 使用实际 Inno 成品通过九项离线验签、重试、反重放、版本、频道和篡改拒绝检查。首轮夹具预检发现期望的清单摘要沿用了上一候选。按重新验签的载荷清单更新夹具后复验通过，回执 SHA-256 为 `aba3ab116bd419f45b915425786f8c9fcb29a87c2712c4f3b3e2cc17b65cc1a3`。
+
+同源 AppImage 和 DEB 在 Ubuntu 22.04 的独立回环网络各通过九项 HTTPS 发行演练。AppImage 验证签名下载、频道隔离、停推后的缓存保全、过时序号和等长篡改拒绝及同摘要恢复。DEB 验证独立清单签名、撤回、原件恢复、撤回前已验签包的 APT 安装及 Core 重开工程，purge 保全资料。两份回执的 SHA-256 为 `a141c639f3a492f6ace98e0fe88ab19fe9d033cdb7496c0ce218d7ed5b1d741a` 和 `355d3c9abe71779d2436ab233fa069adc85b7ba22503fd2748d5adfe5dd52b97`。
+
+同源 AppImage 与 `41b7a82b` 的签名 alpha.1 工程夹具通过 Ubuntu 22.04 原生 WebKit「关于」页复验。临时 HTTPS 源只在隔离回环网络中提供声明和资产。分别验证检查声明、下载、取消确认时保留旧版，及确认后替换完整镜像并重启新版 FUSE/WebKit。CLI 集成的显式启用、移动后重绑、修复与移除也通过，Core 重新读回原工程。升级夹具 SHA-256 为 `bd13ddf69293b74dd4578e3b58470d24b19e3d4e8e3e926e9f463e1a0bc9294c`，GUI 日志 SHA-256 为 `8920bf43abec30035bc7af56bbfc6222d18e84132b28c3b3312309fee6b0a3bd`。
+
+同一 AppImage 组合在隔离临时卷复验两处真实 ENOSPC。换位前只余 4,194,304 字节时，旧镜像、登记、资料和桌面均可重开。换位后、登记前耗尽运行目录，保留意图、前一镜像和资料，删除原下载仍可在释放空间后从保留签名事务恢复。两次均通过新版 FUSE、WebKit、Core 和原工程重开。两份结果日志的 SHA-256 依次为 `0a30b04d8a0d2585fa48b095e3435240faca270424337c424788b521c32c4c7f`、`bc93b3414081c6bca896dc44f2d99f1899cea8703f129b8458ab9c896bd0e395`。
+
+该候选通过本地整仓验证，包含 1,108 项 Rust、7 项 Node SDK 和 765 项 Chromium。首次整仓测试在签名扩展宿主就绪阶段超时。正常 Windows 用户会话下使用同一 SHA 的整仓构建产物单项复验通过，完整重跑也通过。聚合日志与 Chromium 日志的 SHA-256 分别为 `34c36e917f1a5171a9e313548570f2f3bc64539c7f5f58402e551b59d203fb47`、`b77ab90e91df4b15e0a156daf25ecb4f52643df9e8aab099bc4085612626d9c6`。15 笔提交逐笔验签后普通快进。同 SHA 的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted CI 各通过整仓、外部 SDK、发行组件、Tauri 构建和 765 项 Chromium。四项 CodeQL 已通过，Hosted 汇总回执的 SHA-256 为 `f12478269adaf4ecd9bdfe375b51ffd3bf7818055398a6f11837df70c25fa5d7`。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/46085415285) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/46085414983)
+
+Win10 隔离来宾首次设置按所有者意见暂缓。标准账号交互式 UAC 与双向安装范围转换的成功路径继续等候适用的 Windows 客户端环境。macOS 原生验收延期，公开发版继续遵循 A-017。
 
 ### 2026-11-25 Windows 产品 Inno 双范围
 
