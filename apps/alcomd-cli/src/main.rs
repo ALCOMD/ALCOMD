@@ -800,6 +800,7 @@ enum PackageCommand {
     Install {
         project_id: String,
         package_id: String,
+        /// The contentRevision returned by project get.
         #[arg(long)]
         expected_revision: u64,
         /// Omit to let Core select the recommended compatible version.
@@ -819,6 +820,7 @@ enum PackageCommand {
     Remove {
         project_id: String,
         package_id: String,
+        /// The contentRevision returned by project get.
         #[arg(long)]
         expected_revision: u64,
         #[arg(long, required_unless_present = "dry_run")]
@@ -828,6 +830,7 @@ enum PackageCommand {
     Upgrade {
         project_id: String,
         package_id: String,
+        /// The contentRevision returned by project get.
         #[arg(long)]
         expected_revision: u64,
         /// Omit to let Core select the recommended compatible version.
@@ -851,6 +854,7 @@ enum PackageCommand {
         /// Allow this exact package version despite its Unity requirement.
         #[arg(long)]
         allow_unity_incompatible: bool,
+        /// The contentRevision returned by project get.
         #[arg(long)]
         expected_revision: u64,
         #[command(flatten)]
@@ -861,6 +865,7 @@ enum PackageCommand {
     #[command(name = "resolve")]
     Resolve {
         project_id: String,
+        /// The contentRevision returned by project get.
         #[arg(long)]
         expected_revision: u64,
         #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true")]
@@ -870,6 +875,7 @@ enum PackageCommand {
     },
     ApplyPlan {
         plan_id: String,
+        /// The projectRevision from the reviewed package plan.
         #[arg(long)]
         expected_revision: Option<u64>,
         #[arg(long)]
@@ -1675,7 +1681,6 @@ async fn execute(
                 Ok(apply_or_return_package_plan(
                     &mut client,
                     plan,
-                    expected_revision,
                     idempotency_key,
                     options,
                 )
@@ -1697,7 +1702,6 @@ async fn execute(
                 Ok(apply_or_return_package_plan(
                     &mut client,
                     plan,
-                    expected_revision,
                     idempotency_key,
                     options,
                 )
@@ -1728,7 +1732,6 @@ async fn execute(
                 Ok(apply_or_return_package_plan(
                     &mut client,
                     plan,
-                    expected_revision,
                     idempotency_key,
                     options,
                 )
@@ -1757,7 +1760,6 @@ async fn execute(
                 Ok(apply_or_return_package_plan(
                     &mut client,
                     plan,
-                    expected_revision,
                     idempotency_key,
                     options,
                 )
@@ -1779,7 +1781,6 @@ async fn execute(
                 Ok(apply_or_return_package_plan(
                     &mut client,
                     plan,
-                    expected_revision,
                     idempotency_key,
                     options,
                 )
@@ -2123,7 +2124,6 @@ impl Command {
 async fn apply_or_return_package_plan(
     client: &mut alcomd_client::AlcomdClient,
     plan: alcomd_protocol::PackagePlan,
-    expected_revision: u64,
     idempotency_key: Option<String>,
     options: ExecutionOptions,
 ) -> Result<serde_json::Value, CliError> {
@@ -2138,7 +2138,7 @@ async fn apply_or_return_package_plan(
     let accepted = client
         .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
             plan_id: plan.plan_id,
-            expected_revision,
+            expected_revision: plan.project_revision,
             idempotency_key: idempotency_key
                 .ok_or(CliError::Usage("Apply requires --idempotency-key"))?,
         })

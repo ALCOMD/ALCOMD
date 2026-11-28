@@ -5,12 +5,24 @@ const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 
 test("Duplicate repository versions remain selectable and automatic source choice stays in Core", async ({ page }) => {
     await open(page, "versions=1&paged=1");
-    const trigger = page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3", exact: true });
-    await trigger.click();
-    const version = page.getByRole("option", { name: "1.1.0", exact: true });
-    await expect(version).toHaveCount(1);
-    await expect(version).toBeEnabled();
-    await version.click();
+    const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }) });
+    const picker = row.locator(".package-version-picker");
+    const trigger = picker.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3", exact: true });
+    const selectOlderVersion = async () => {
+        const lifecycle = await packageMenuLifecycle(row, ".package-version-picker");
+        try {
+            await trigger.click();
+            await lifecycle.evaluate((events) => events.opened);
+            const version = picker.getByRole("option", { name: "1.1.0", exact: true });
+            await expect(version).toHaveCount(1);
+            await expect(version).toBeEnabled();
+            await version.click();
+            await lifecycle.evaluate((events) => events.closed);
+        } finally {
+            await lifecycle.dispose();
+        }
+    };
+    await selectOlderVersion();
     const review = page.locator("md-dialog[open]").filter({ hasText: "Apply package changes?" });
     await expect(review).toBeVisible();
     const automatic = await page.evaluate(() => window.packageRequests[0]);
@@ -22,9 +34,8 @@ test("Duplicate repository versions remain selectable and automatic source choic
     await closed.dispose();
     await expect(review).toBeHidden();
     await expect(trigger).toBeFocused();
-    await chooseVersionSource(page, page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }) }), "Local packages");
-    await trigger.click();
-    await page.getByRole("option", { name: "1.1.0", exact: true }).click();
+    await chooseVersionSource(page, row, "Local packages");
+    await selectOlderVersion();
     await expect(review).toBeVisible();
     expect(await page.evaluate(() => window.packageRequests[1])).toMatchObject({ method: "downgrade", params: { source: { kind: "repository", repositoryId: "00000000-0000-4000-8000-000000000112" } } });
 });

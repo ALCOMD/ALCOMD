@@ -888,7 +888,11 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.has("holdPackageProject") && window.resumePackageProject === undefined) {
             await new Promise<void>((resolve) => { window.resumePackageProject = resolve; });
         }
-        const value = this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? { ...project(projectId), unityVersion: this.currentUnityVersion, revision: this.currentProjectRevision };
+        const value = this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? {
+            ...project(projectId, "Sample", query.has("packageFavorite")), unityVersion: this.currentUnityVersion,
+            revision: this.currentProjectRevision + Number(query.has("packageFavorite")),
+            contentRevision: this.currentProjectRevision,
+        };
         if (this.projectLaunchTimes.has(projectId)) value.lastModifiedAtMs = this.projectLaunchTimes.get(projectId)!;
         if (query.get("twoInstalled")) {
             value.lockedDependencies = [...value.lockedDependencies, { packageId: "com.example.remote", value: "1.2.3" }];
@@ -1455,8 +1459,8 @@ class DeterministicGuiClient implements GuiRpcClient {
         plan.changeSet.mutations = params.intents.map((intent) => ({ kind: intent.kind === "remove" ? "remove" : "replace", packageId: intent.packageId, source: null, fromVersion: "1.2.3", toVersion: intent.kind === "remove" ? null : "1.2.3" }));
         return this.value(plan);
     }
-    packageApplyPlan(): ReturnType<GuiRpcClient["packageApplyPlan"]> {
-        window.packageRequests.push({ method: "apply", params: {} });
+    packageApplyPlan(params: Parameters<GuiRpcClient["packageApplyPlan"]>[0]): ReturnType<GuiRpcClient["packageApplyPlan"]> {
+        window.packageRequests.push({ method: "apply", params });
         if (this.mode === "stale") return Promise.reject({ code: "plan_stale" });
         return this.value({ operationId: this.beginOperation(), replayed: false });
     }
@@ -1903,7 +1907,7 @@ function project(projectId = PROJECT_ID, name = "Sample", favorite = false) {
     const directoryState: ProjectSnapshot["directoryState"] = window.omitProjectDirectoryState ? undefined : observed === "available" || observed === "missing" || observed === "unavailable" ? observed : undefined;
     const rootPath = query.has("windows-paths") ? `\\\\?\\C:\\Projects\\${name}` : projectId === PROJECT_ID && name === "Sample" ? "<private-project>" : `C:\\Fixture\\${name}`;
     const displayName = rootPath === "<private-project>" ? rootPath : name;
-    return { projectId, directoryState, registeredAtMs: 1_690_000_000_000, lastModifiedAtMs: 1_700_000_000_000, favorite, rootPath, displayName, projectType: "avatars", unityVersion: query.has("existingUnity6") ? "6000.0.67f1" : "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], revision: 2 };
+    return { projectId, directoryState, registeredAtMs: 1_690_000_000_000, lastModifiedAtMs: 1_700_000_000_000, favorite, rootPath, displayName, projectType: "avatars", unityVersion: query.has("existingUnity6") ? "6000.0.67f1" : "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], revision: 2, contentRevision: 2 };
 }
 function repository() { return { repositoryId: REPOSITORY_ID, source: { kind: "remote" as const, url: "https://packages.example.invalid/index.json" }, actions: { canRemove: true, canEditAuthentication: true }, declaredId: "example", name: "Example packages", declaredUrl: "https://packages.example.invalid/index.json", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function localRepository() { return { repositoryId: LOCAL_REPOSITORY_ID, source: { kind: "local" as const, path: "<private-local-repository>" }, actions: { canRemove: true, canEditAuthentication: false }, declaredId: "local-example", name: "Local packages", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
@@ -1982,6 +1986,41 @@ if (query.has("vcc-settings-fixture")) {
         if (command === "gui_window_state_configure") return undefined;
         throw new Error(`Unexpected native fixture command: ${command}`);
     });
+    Object.defineProperty(window, "isTauri", { value: true });
+}
+const productUpdateFixture = query.get("product-update-fixture");
+if (productUpdateFixture !== null) {
+    const { mockIPC, mockWindows } = await import("@tauri-apps/api/mocks");
+    mockWindows("main");
+    let state: { state: string; version?: string; bytes?: number } = {
+        state: productUpdateFixture === "recovery" ? "recovery" : "idle",
+    };
+    mockIPC((command, args) => {
+        if (command === "gui_portable_cli") return "unsupported";
+        if (command !== "gui_product_update" || typeof args !== "object" || args === null || !("action" in args)) {
+            return undefined;
+        }
+        const action = args.action;
+        window.resourceRequests.push({ method: command, params: { action } });
+        switch (action) {
+            case "check":
+                state = { state: "available", version: "4.0.0-alpha.1", bytes: 20971520 };
+                return { state: "checking" };
+            case "download":
+                state = productUpdateFixture === "cancel"
+                    ? { state: "downloading" }
+                    : { state: "ready", version: "4.0.0-alpha.1" };
+                return { state: "downloading" };
+            case "cancel":
+                state = { state: "idle" };
+                break;
+            case "install":
+            case "resume":
+                state = { state: "restarting" };
+                break;
+        }
+        return state;
+    }, { shouldMockEvents: true });
     Object.defineProperty(window, "isTauri", { value: true });
 }
 const pendingDesktopLinks: DesktopLink[] = [];

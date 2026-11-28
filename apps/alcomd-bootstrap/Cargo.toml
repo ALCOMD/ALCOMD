@@ -7,6 +7,14 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
+default-run = "alcomd-bootstrap"
+
+[features]
+appimage-bridge = []
+
+[[bin]]
+name = "alcomd-v3-appimage-bridge"
+required-features = ["appimage-bridge"]
 
 [dependencies]
 anyhow.workspace = true

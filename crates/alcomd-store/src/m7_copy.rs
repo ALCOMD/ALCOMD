@@ -413,9 +413,9 @@ pub(super) fn complete(
         .execute(
             "INSERT INTO projects (
                 project_id,owner_principal_id,root_path,path_identity_key,project_type,
-                unity_version,unity_revision,snapshot_json,revision,registered_at_ms,
+                unity_version,unity_revision,snapshot_json,revision,content_revision,registered_at_ms,
                 updated_at_ms,last_modified_at_ms
-             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,?9,?9,?9)",
+             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,1,?9,?9,?9)",
             params![
                 plan.draft.target_project_id.to_string(),
                 resource_owner.as_str(),

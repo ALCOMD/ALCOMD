@@ -369,7 +369,7 @@ pub(super) fn commit_project(
         .ok_or_else(internal)?;
     if transaction
         .execute(
-            "UPDATE projects SET snapshot_json=?1,revision=?2,updated_at_ms=?3,
+            "UPDATE projects SET snapshot_json=?1,revision=?2,content_revision=?2,updated_at_ms=?3,
                 last_modified_at_ms=MAX(COALESCE(last_modified_at_ms,0),?3)
          WHERE owner_principal_id=?4 AND project_id=?5 AND revision=?6",
             params![

@@ -79,7 +79,7 @@ async fn live_vrcfury_installs_with_a_locally_pinned_digest() {
         allow_unity_incompatible: false,
         action: PlanAction::Install,
         project_id: project.project_id,
-        expected_revision: project.revision,
+        expected_revision: project.content_revision,
         package_id: Some(PACKAGE_ID.into()),
         version_range: None,
         repository_id: Some(repo.repository_id.to_string()),
@@ -118,7 +118,7 @@ async fn live_vrcfury_installs_with_a_locally_pinned_digest() {
         .apply_plan(
             &access,
             first.plan_id,
-            project.revision,
+            project.content_revision,
             key("cold-install"),
         )
         .await
@@ -142,7 +142,7 @@ async fn live_vrcfury_installs_with_a_locally_pinned_digest() {
     request.action = PlanAction::Reinstall;
     request.package_id = None;
     request.version_range = None;
-    request.expected_revision = project.revision;
+    request.expected_revision = project.content_revision;
     request.reinstall_selection = Some(alcomd_application::ReinstallSelection::Packages(vec![
         PACKAGE_ID.into(),
     ]));
@@ -182,7 +182,12 @@ async fn live_vrcfury_installs_with_a_locally_pinned_digest() {
     let original = std::fs::read(&cached).expect("first download produced cached archive");
     std::fs::write(&cached, b"modified test archive").expect("tamper with isolated cache");
     let rejected = packages
-        .apply_plan(&access, first.plan_id, project.revision, key("tampered"))
+        .apply_plan(
+            &access,
+            first.plan_id,
+            project.content_revision,
+            key("tampered"),
+        )
         .await
         .expect("accepted apply request");
     let rejected = terminal_operation(&operations, &access, rejected.operation_id).await;
@@ -208,7 +213,12 @@ async fn live_vrcfury_installs_with_a_locally_pinned_digest() {
     assert_eq!(second.change_set_fingerprint, first.change_set_fingerprint);
     let apply_start = Instant::now();
     let accepted = packages
-        .apply_plan(&access, second.plan_id, project.revision, key("install"))
+        .apply_plan(
+            &access,
+            second.plan_id,
+            project.content_revision,
+            key("install"),
+        )
         .await
         .expect("accepted install");
     let installed = terminal_operation(&operations, &access, accepted.operation_id).await;

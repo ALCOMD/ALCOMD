@@ -24,6 +24,7 @@ struct Fixture {
     root: PathBuf,
     project: ProjectRecord,
     store: StateStoreHandle,
+    locks: Arc<ResourceLockCoordinator>,
     packages: Packages,
     config: M7OfficialApplication,
     reader: VpmReader,
@@ -183,7 +184,8 @@ async fn fixture(
         .expect("owned VPM regression fixture succeeds");
     let reader =
         VpmReader::with_settings(config.clone()).expect("owned VPM regression fixture succeeds");
-    let registry = M3Application::new(store.clone(), reader.clone());
+    let locks = Arc::new(ResourceLockCoordinator::default());
+    let registry = M3Application::with_locks(store.clone(), reader.clone(), Arc::clone(&locks));
     let access = AccessContext::local_owner();
     let project = registry
         .register_project(
@@ -223,16 +225,18 @@ async fn fixture(
         )
         .await
         .expect("owned VPM regression fixture succeeds");
-    let packages = M4Application::new(
+    let packages = M4Application::with_locks(
         store.clone(),
         PackageEngine::new(store.clone(), reader.clone(), cache_root)
             .expect("owned VPM regression fixture succeeds"),
+        Arc::clone(&locks),
     );
     Fixture {
         directory: dir,
         root,
         project,
         store,
+        locks,
         packages,
         config,
         reader,
@@ -244,7 +248,7 @@ fn request(f: &Fixture, action: PlanAction, target: Option<&str>) -> PackagePlan
         allow_unity_incompatible: false,
         action,
         project_id: f.project.project_id,
-        expected_revision: f.project.revision,
+        expected_revision: f.project.content_revision,
         package_id: target.map(str::to_owned),
         version_range: None,
         repository_id: None,
@@ -1146,7 +1150,7 @@ async fn current_file_plans_still_reject_changes_after_review() {
             .apply_plan(
                 &AccessContext::local_owner(),
                 plan.plan_id,
-                f.project.revision,
+                plan.project_revision,
                 key("stale-review"),
             )
             .await
@@ -1168,7 +1172,7 @@ async fn apply(f: &Fixture, plan: PackagePlanRecord) -> OperationRecord {
         .apply_plan(
             &AccessContext::local_owner(),
             plan.plan_id,
-            f.project.revision,
+            plan.project_revision,
             key("apply-owned-plan"),
         )
         .await
@@ -1265,7 +1269,7 @@ impl Fixture {
             &AccessContext::local_owner(),
             ProjectCandidateRequest {
                 project_id: self.project.project_id.to_string(),
-                expected_revision: self.project.revision.get(),
+                expected_revision: self.project.content_revision.get(),
                 view: CandidateView::Summary {
                     package_ids: None,
                     sources: None,
@@ -1312,7 +1316,6 @@ fn install_intent(id: &str, version: &str) -> PackageBulkIntent {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn closing_a_source_during_confirmed_archive_download_does_not_modify_the_project() {
-    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     let f = fixture(
         "close-during-plan",
         empty(),
@@ -1320,6 +1323,99 @@ async fn closing_a_source_during_confirmed_archive_download_does_not_modify_the_
         None,
     )
     .await;
+    let operation = apply_with_paused_archive(&f, async {
+        f.settings(|settings| settings.hidden_repository_ids = vec![f.repository.to_string()])
+            .await;
+    })
+    .await;
+    assert_eq!(operation.state, OperationState::Failed);
+    assert_eq!(operation.error_code.as_deref(), Some("plan_stale"));
+    assert_eq!(f.manifest(), empty());
+    assert!(!f.root.join("Packages").join(A).exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn favorite_during_confirmed_archive_download_survives_install() {
+    let f = fixture(
+        "favorite-during-apply",
+        empty(),
+        vec![package(A, "1.0.0", json!({}))],
+        None,
+    )
+    .await;
+    let access = AccessContext::local_owner();
+    let registry =
+        M3Application::with_locks(f.store.clone(), f.reader.clone(), Arc::clone(&f.locks));
+    let operation = apply_with_paused_archive(&f, async {
+        let written = registry
+            .set_project_favorite(
+                &access,
+                f.project.project_id,
+                true,
+                f.project.revision,
+                key("favorite-during-apply"),
+            )
+            .await
+            .expect("save favorite while the archive download is paused")
+            .value;
+        assert!(written.favorite);
+        assert_eq!(written.content_revision, f.project.content_revision);
+        assert_eq!(written.revision.get(), f.project.revision.get() + 1);
+    })
+    .await;
+    assert_eq!(operation.state, OperationState::Succeeded);
+    let project = registry
+        .get_project(&access, f.project.project_id)
+        .await
+        .expect("installed project")
+        .project;
+    assert!(project.favorite);
+    assert_eq!(project.revision.get(), f.project.revision.get() + 2);
+    assert_eq!(project.content_revision, project.revision);
+    assert_eq!(f.manifest()["locked"][A]["version"], "1.0.0");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn confirmed_install_reloads_the_content_revision_before_project_writes() {
+    let f = fixture(
+        "refresh-during-apply",
+        empty(),
+        vec![package(A, "1.0.0", json!({}))],
+        None,
+    )
+    .await;
+    let registry =
+        M3Application::with_locks(f.store.clone(), f.reader.clone(), Arc::clone(&f.locks));
+    let operation = apply_with_paused_archive(&f, async {
+        let version_file = f.root.join("ProjectSettings/ProjectVersion.txt");
+        let original_version = fs::read(&version_file).expect("original version");
+        fs::write(&version_file, b"m_EditorVersion: 2022.3.23f1\n").expect("change Unity version");
+        let refreshed = registry
+            .refresh_project(
+                &AccessContext::local_owner(),
+                f.project.project_id,
+                f.project.revision,
+                key("refresh-during-apply"),
+            )
+            .await
+            .expect("refresh project while the archive download is paused")
+            .value;
+        assert!(refreshed.content_revision > f.project.content_revision);
+        // Restore the previewed bytes so the content revision must reject the apply.
+        fs::write(version_file, original_version).expect("restore previewed Unity version");
+    })
+    .await;
+    assert_eq!(operation.state, OperationState::Failed);
+    assert_eq!(operation.error_code.as_deref(), Some("plan_stale"));
+    assert_eq!(f.manifest(), empty());
+    assert!(!f.root.join("Packages").join(A).exists());
+}
+
+async fn apply_with_paused_archive(
+    f: &Fixture,
+    during_download: impl Future<Output = ()>,
+) -> OperationRecord {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     let index_path = f.directory.join("index.json");
     let mut index: Value =
         serde_json::from_slice(&fs::read(&index_path).expect("index")).expect("index JSON");
@@ -1349,7 +1445,7 @@ async fn closing_a_source_during_confirmed_archive_download_does_not_modify_the_
         .get_repository(PrincipalId::local_owner(), f.repository)
         .await
         .expect("source");
-    M3Application::new(f.store.clone(), f.reader.clone())
+    M3Application::with_locks(f.store.clone(), f.reader.clone(), Arc::clone(&f.locks))
         .refresh_repository(
             &AccessContext::local_owner(),
             f.repository,
@@ -1385,7 +1481,7 @@ async fn closing_a_source_during_confirmed_archive_download_does_not_modify_the_
     });
     let plan = f
         .packages
-        .plan(&AccessContext::local_owner(), install(&f, A, "1.0.0"))
+        .plan(&AccessContext::local_owner(), install(f, A, "1.0.0"))
         .await
         .expect("metadata-only plan");
     assert!(
@@ -1395,21 +1491,17 @@ async fn closing_a_source_during_confirmed_archive_download_does_not_modify_the_
         ),
         "planning must not request the archive"
     );
-    let close_during_download = async {
+    let finish_download = async {
         tokio::time::timeout(Duration::from_secs(5), entered_rx)
             .await
             .expect("confirmed Apply reaches download")
             .expect("download signal");
-        f.settings(|settings| settings.hidden_repository_ids = vec![f.repository.to_string()])
-            .await;
+        during_download.await;
         release_tx.send(()).expect("release preparation");
     };
-    let (operation, ()) = tokio::join!(apply(&f, plan), close_during_download);
-    assert_eq!(operation.state, OperationState::Failed);
-    assert_eq!(operation.error_code.as_deref(), Some("plan_stale"));
+    let (operation, ()) = tokio::join!(apply(f, plan), finish_download);
     server.await.expect("owned server");
-    assert_eq!(f.manifest(), empty());
-    assert!(!f.root.join("Packages").join(A).exists());
+    operation
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1449,7 +1541,7 @@ async fn closed_repository_is_absent_from_queries_plans_and_frozen_revalidation(
             .apply_plan(
                 &access,
                 plan.plan_id,
-                f.project.revision,
+                plan.project_revision,
                 key("hidden-apply")
             )
             .await
@@ -1658,7 +1750,7 @@ async fn package_switch_isolates_sources_and_versions_without_hiding_management_
             &access,
             ProjectCandidateRequest {
                 project_id: f.project.project_id.to_string(),
-                expected_revision: f.project.revision.get(),
+                expected_revision: f.project.content_revision.get(),
                 view: CandidateView::Versions {
                     package_id: A.into(),
                     source: None,
@@ -1742,7 +1834,7 @@ async fn closed_local_source_is_excluded_and_invalidates_a_prepared_plan() {
             .apply_plan(
                 &AccessContext::local_owner(),
                 plan.plan_id,
-                f.project.revision,
+                plan.project_revision,
                 key("closed-local-apply")
             )
             .await
@@ -2117,7 +2209,7 @@ async fn closing_prereleases_overrides_request_opt_in_and_invalidates_a_frozen_p
             .apply_plan(
                 &AccessContext::local_owner(),
                 plan.plan_id,
-                f.project.revision,
+                plan.project_revision,
                 key("closed-prerelease-apply")
             )
             .await
@@ -2278,6 +2370,78 @@ async fn single_and_bulk_upgrade_clean_only_unused_old_dependencies() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_checks_version_requirements_only_from_retained_packages() {
+    for batch in [false, true] {
+        for retain_child in [false, true] {
+            let mut graph = json!({
+                "dependencies": { A: {"version": "1.0.0"} },
+                "locked": {
+                    A: {"version": "1.0.0", "dependencies": {B: "^1.0.0"}},
+                    B: {"version": "1.0.0", "dependencies": {C: "^1.0.0"}},
+                    C: {"version": "1.0.0", "dependencies": {}}
+                }
+            });
+            if retain_child {
+                graph["locked"][D] = json!({"version": "1.0.0", "dependencies": {B: "^1.0.0"}});
+            }
+            let f = fixture(
+                "upgrade-retained-requirements",
+                graph.clone(),
+                vec![
+                    package(A, "2.0.0", json!({C: "^2.0.0"})),
+                    package(C, "2.0.0", json!({})),
+                ],
+                None,
+            )
+            .await;
+            let request = if batch {
+                bulk(
+                    &f,
+                    vec![PackageBulkIntent::Upgrade {
+                        package_id: A.into(),
+                        version_range: Some("=2.0.0".into()),
+                        source: None,
+                        include_prerelease: false,
+                    }],
+                )
+            } else {
+                let mut request = request(&f, PlanAction::Upgrade, Some(A));
+                request.version_range = Some("=2.0.0".into());
+                request
+            };
+            let result = f
+                .packages
+                .plan(&AccessContext::local_owner(), request)
+                .await;
+            if retain_child {
+                let error = result.expect_err("a retained package still requires the old version");
+                assert_eq!(error.code(), M4ErrorCode::PackageDependencyConflict);
+                assert_eq!(f.manifest(), graph);
+                continue;
+            }
+
+            let plan = result.expect("a removed package cannot constrain the upgrade");
+            assert_eq!(plan.change_set.mutations.len(), 3);
+            for id in [A, C] {
+                assert!(plan.change_set.mutations.iter().any(|mutation| {
+                    mutation.package_id == id
+                        && mutation.kind == PackageMutationKind::Replace
+                        && mutation.to_version.as_deref() == Some("2.0.0")
+                }));
+            }
+            assert!(plan.change_set.mutations.iter().any(|mutation| {
+                mutation.package_id == B && mutation.kind == PackageMutationKind::Remove
+            }));
+            assert_eq!(apply(&f, plan).await.state, OperationState::Succeeded);
+            assert_eq!(f.manifest()["locked"][A]["version"], "2.0.0");
+            assert_eq!(f.manifest()["locked"][C]["version"], "2.0.0");
+            assert!(f.manifest()["locked"].get(B).is_none());
+            assert!(!f.root.join("Packages").join(B).exists());
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn retained_orphan_dependencies_survive_single_and_bulk_changes() {
     for batch in [false, true] {
         for remove in [false, true] {
@@ -2382,7 +2546,7 @@ async fn user_withdrawal_is_independent_of_optional_presentation_fields() {
             &AccessContext::local_owner(),
             ProjectCandidateRequest {
                 project_id: f.project.project_id.to_string(),
-                expected_revision: f.project.revision.get(),
+                expected_revision: f.project.content_revision.get(),
                 view: CandidateView::Versions {
                     package_id: A.into(),
                     source: None,
@@ -2474,7 +2638,7 @@ async fn reinstall_freezes_actual_directory_presence_and_restores_without_rewrit
                     .apply_plan(
                         &AccessContext::local_owner(),
                         plan.plan_id,
-                        f.project.revision,
+                        plan.project_revision,
                         key("presence-changed")
                     )
                     .await
@@ -2740,7 +2904,7 @@ async fn closed_repository_package_is_absent_from_queries_plans_and_frozen_reval
             .apply_plan(
                 &access,
                 plan.plan_id,
-                f.project.revision,
+                plan.project_revision,
                 key("hidden-apply")
             )
             .await

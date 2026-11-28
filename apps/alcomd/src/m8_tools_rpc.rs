@@ -678,6 +678,7 @@ pub(super) async fn business(
             for field in [
                 "projectId",
                 "revision",
+                "contentRevision",
                 "displayName",
                 "projectType",
                 "unityVersion",

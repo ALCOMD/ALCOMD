@@ -66,7 +66,9 @@ async fn native_sdk_projects_packages_tasks_and_live_events_agree_on_real_core()
             .project;
         identities.push((
             project.project_id.expect("registered project ID"),
-            project.revision.expect("registered project revision"),
+            project
+                .content_revision
+                .expect("registered content revision"),
         ));
     }
     let first = rust.projects_list(None, Some(1)).await.expect("first page");
@@ -89,11 +91,11 @@ async fn native_sdk_projects_packages_tasks_and_live_events_agree_on_real_core()
     expected.sort_unstable();
     assert_eq!(observed, expected);
 
-    let (rust_id, rust_revision) = &identities[0];
+    let (rust_id, content_revision) = &identities[0];
     let plan = rust
         .package_plan_remove(PackagePlanRemoveParams {
             project_id: rust_id.clone(),
-            expected_revision: *rust_revision,
+            expected_revision: *content_revision,
             package_id: PACKAGE.into(),
         })
         .await
@@ -373,6 +375,7 @@ async fn run_node_consumer(root: &Path, consumer: &Path, identities: &[(String, 
             const [projectId, expectedRevision] = input.node;
             const own = await client.request('projects.get', {projectId});
             assert.equal(own.project.projectId, projectId);
+            assert.equal(own.project.contentRevision, expectedRevision);
             const rejectedId = 'm10-invalid-project-id';
             await assert.rejects(client.request('projects.get', {projectId: rejectedId}), error =>
                 error.kind === 'remote' && error.code === 'invalid_request' && !error.message.includes(rejectedId));

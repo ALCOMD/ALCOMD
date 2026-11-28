@@ -15,6 +15,7 @@ fn parse_json<T: serde::de::DeserializeOwned>(input: &str) -> Result<T, String> 
 #[derive(Debug, Args)]
 pub(super) struct Candidates {
     project_id: String,
+    /// The contentRevision returned by project get.
     #[arg(long)]
     expected_revision: u64,
     /// JSON summary or versions view. A summary can request bulk actions.
@@ -45,6 +46,7 @@ impl From<Candidates> for rpc::ProjectCandidateRequest {
 #[derive(Debug, Args)]
 pub(super) struct Bulk {
     project_id: String,
+    /// The contentRevision returned by project get.
     #[arg(long)]
     expected_revision: u64,
     /// Repeat for each JSON install, upgrade, remove or reinstall intent, in request order.
@@ -67,14 +69,7 @@ impl Bulk {
                 intents: self.intents,
             })
             .await?;
-        apply_or_return_package_plan(
-            client,
-            plan,
-            self.expected_revision,
-            self.idempotency_key,
-            options,
-        )
-        .await
+        apply_or_return_package_plan(client, plan, self.idempotency_key, options).await
     }
 }
 
@@ -92,6 +87,7 @@ pub(super) struct Reinstall {
     /// Repeat for each explicit JSON packageId/source override.
     #[arg(long = "source", value_parser = parse_json::<rpc::PackageReinstallSource>)]
     sources: Vec<rpc::PackageReinstallSource>,
+    /// The contentRevision returned by project get.
     #[arg(long)]
     expected_revision: u64,
     #[arg(long, required_unless_present = "dry_run")]
@@ -119,14 +115,7 @@ impl Reinstall {
                 sources: self.sources,
             })
             .await?;
-        apply_or_return_package_plan(
-            client,
-            plan,
-            self.expected_revision,
-            self.idempotency_key,
-            options,
-        )
-        .await
+        apply_or_return_package_plan(client, plan, self.idempotency_key, options).await
     }
 }
 

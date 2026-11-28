@@ -196,7 +196,7 @@
                 "action": {"enum": ["install", "remove", "upgrade", "downgrade", "resolve", "reinstall", "bulk"]},
                 "state": {"enum": ["unapplied", "applied"]},
                 "projectId": {"$ref": "#/$defs/uuid"},
-                "projectRevision": {"$ref": "#/$defs/revision"},
+                "projectRevision": {"$ref": "#/$defs/revision", "description": "The project content revision bound to this plan."},
                 "changeSetFingerprint": {"$ref": "#/$defs/sha256"},
                 "changeSet": {"$ref": "#/$defs/changeSet"}
             }
@@ -206,7 +206,7 @@
             "required": ["projectId", "expectedRevision"],
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
-                "expectedRevision": {"$ref": "#/$defs/revision"}
+                "expectedRevision": {"$ref": "#/$defs/revision", "description": "The registered project's content revision."}
             }
         },
         "planInstallParams": {
@@ -218,7 +218,7 @@
                     "required": ["projectId", "expectedRevision", "packageId"],
                     "properties": {
                         "projectId": {"$ref": "#/$defs/uuid"},
-                        "expectedRevision": {"$ref": "#/$defs/revision"},
+                        "expectedRevision": {"$ref": "#/$defs/revision", "description": "The registered project's content revision."},
                         "packageId": {"$ref": "#/$defs/packageId"},
                         "versionRange": {"oneOf": [{"$ref": "#/$defs/versionText"}, {"type": "null"}]},
                         "repositoryId": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
@@ -235,7 +235,7 @@
             "required": ["projectId", "expectedRevision", "packageId"],
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
-                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "expectedRevision": {"$ref": "#/$defs/revision", "description": "The registered project's content revision."},
                 "packageId": {"$ref": "#/$defs/packageId"}
             }
         },
@@ -248,7 +248,7 @@
             "required": ["projectId", "expectedRevision", "packageId", "version"],
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
-                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "expectedRevision": {"$ref": "#/$defs/revision", "description": "The registered project's content revision."},
                 "packageId": {"$ref": "#/$defs/packageId"},
                 "version": {"$ref": "#/$defs/versionText"},
                 "allowUnityIncompatible": {"type": "boolean", "default": false},
@@ -262,7 +262,7 @@
             "required": ["projectId", "expectedRevision"],
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
-                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "expectedRevision": {"$ref": "#/$defs/revision", "description": "The registered project's content revision."},
                 "includePrerelease": {"type": "boolean", "default": true}
             }
         },
@@ -272,7 +272,7 @@
             "required": ["planId", "expectedRevision", "idempotencyKey"],
             "properties": {
                 "planId": {"$ref": "#/$defs/uuid"},
-                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "expectedRevision": {"$ref": "#/$defs/revision", "description": "The project content revision from the reviewed plan."},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
             }
         },

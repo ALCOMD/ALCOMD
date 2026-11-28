@@ -592,9 +592,10 @@ Apply继续复验原项目身份、修订、清单、包目录身份和包元数
   新添加依赖继续执行普通资格。该例外不采用`allowUnityIncompatible`开关、不放行关闭来源、
   不放宽来源消歧、归档摘要、权限、项目过期和恢复校验。SDK专用Unity规则仍保持此前选择。
 
-普通包元数据指纹域更新，旧未执行包计划需重新生成。无公共DTO、数据库Schema、权限名称或迁移变更。
+该轮更新了普通包元数据指纹域，既有未执行包计划需重新生成。
 
-Plan 的 action 与 method 一一对应，返回 `planId`、`state=unapplied`、project revision、byte-stable
+包 Plan 请求的 `expectedRevision` 取注册项目的 `contentRevision`。Plan 的 action 与 method 一一对应，返回
+`planId`、`state=unapplied`、`projectRevision`（计划绑定的内容修订）和 byte-stable
 ChangeSet 与 SHA-256 fingerprint。ChangeSet 最多 1,024 package mutation 与 4,096 dependency edge，
 同时受 4 MiB RPC frame 限制；超限返回 `plan_too_large`，不得截断。Plan 无 TTL/expiry/自动清理，
 状态只有 `unapplied`/`applied`，一个 Plan 最多绑定一个 Apply Operation。
@@ -609,8 +610,8 @@ ChangeSet 与 SHA-256 fingerprint。ChangeSet 最多 1,024 package mutation 与 
 }
 ```
 
-Apply 需要 `packages.apply.v1`及`packages.manage`能力，并重新验证 read 权限、
-Plan owner、project identity/revision/fingerprint，以及每个 pinned repository ID/revision、source
+Apply 的 `expectedRevision` 取此计划的 `projectRevision`。Apply 需要 `packages.apply.v1` 及
+`packages.manage` 能力，并重新验证 read 权限、Plan owner、项目身份、内容修订和文件指纹，以及每个 pinned repository ID/revision、source
 identity、manifest fingerprint、package version、artifact URL 与 SHA-256。任一前提变化返回
 `plan_stale` 与 `m4-package-transaction.schema.json#/$defs/planStaleReason` 中的稳定 subreason；Apply
 不得重新 resolve、fallback source、改变版本或产生新 ChangeSet。
@@ -936,6 +937,8 @@ Project Favorite 继续使用既有 compatible addition：
 注册 Project 的 `ProjectSnapshot` 兼容增加 `favorite: boolean`；anonymous `projects.inspect` snapshot 省略该字段。
 Favorite 是 registry metadata，不进入 filesystem observation 或 `snapshot_json`。Core list ordering/cursor 不变；真实 mutation
 增加 Project revision并写 `project.favorite_changed`，精确 same-value request 是保存幂等结果的 semantic no-op。
+注册项目还返回 `contentRevision`。登记时两个修订均为 1。刷新提交新的项目观察、包事务成功提交或 Unity 迁移成功提交时，
+`contentRevision` 取本次提交后的 `revision`。收藏继续使用登记 `revision`，仅改变该修订。匿名项目检查省略 `contentRevision`。
 
 项目指定的 Unity 版本决定默认目标，启动参数在 `project_unity_launch_config` 中单独保存。当前 active DTO、CAS、one-shot launch 与
 exact candidate resolution 由 `m5-unity.schema.json` 和 `m7-unity-project-version.proposal.schema.json` 冻结。
@@ -998,7 +1001,7 @@ permission 与稳定错误由 `m7-unity-project-version.proposal.schema.json`、
 项目所有者批准单个只读 `packages.queryProjectCandidates`，协商 capability
 `packages.candidates.v1`；RPC major 仍为 1，复用原读权限。候选列表使用当前项目和来源快照。
 
-候选 summary 新增 `description?`、`installedYanked?` 和必需的 `presentationState`（complete/partial/unobserved）；缺失撤回信息表示未知。provider 新增 `displayName?`、`name?`、`builtin?`、`sourceKind` 和 `displayOrder`，只返回可见来源。所有候选页必需返回 `presentationComplete`。summary 的可选 `requestedRange` 与 installed 均来自本次正常读取的项目清单。关键词/别名仅由 Core 搜索，不下发；完整仓库清单只供管理/筛选。Core 在普通首读直接读取项目文件，分页/筛选使用有界内存快照；没有项目展示数据库副本或 projects.refresh 补采前置步骤。登记 revision 与候选文件指纹分离，Plan/Apply 的既有冻结授权和过期检测保持。规范形状见候选 Schema。
+候选 summary 新增 `description?`、`installedYanked?` 和必需的 `presentationState`（complete/partial/unobserved）；缺失撤回信息表示未知。provider 新增 `displayName?`、`name?`、`builtin?`、`sourceKind` 和 `displayOrder`，只返回可见来源。所有候选页必需返回 `presentationComplete`。summary 的可选 `requestedRange` 与 installed 均来自本次正常读取的项目清单。关键词/别名仅由 Core 搜索，不下发；完整仓库清单只供管理/筛选。Core 在普通首读直接读取项目文件，分页/筛选使用有界内存快照。请求的 `expectedRevision` 与响应 `snapshot.projectRevision` 都是项目内容修订。候选快照绑定项目内容、来源和设置证据，收藏或活动时间变化不使现有游标失效。规范形状见候选 Schema。
 所有调用必须同时满足 `projects.read + repositories.read + packages.read + settings.read`
 及既有 Principal / Project / source scope。此查询与后续 Package Plan 使用同一应用层。
 

@@ -1,9 +1,9 @@
 use super::*;
 
-struct Fixture(PathBuf);
+pub(super) struct Fixture(pub(super) PathBuf);
 
 impl Fixture {
-    fn create() -> Self {
+    pub(super) fn create() -> Self {
         let root = std::env::temp_dir().join(format!("alcomd-migration-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&root).expect("isolated test fixture");
         Self(fs::canonicalize(root).expect("canonical fixture root"))
@@ -260,7 +260,7 @@ fn healthy_publication_recovers_after_interrupt_between_rename_and_receipt() {
     let mut phase = latest_phase(&steps.journal).expect("read durable intent");
     assert_eq!(
         steps
-            .run(&mut phase, None)
+            .run(&mut phase, None, None)
             .expect("recover committed native publication"),
         MigrationOutcome::Committed
     );
@@ -343,7 +343,7 @@ fn process_termination_at_each_durable_phase_preserves_the_recovery_source() {
                 daemon: PathBuf::new(),
             };
             assert_eq!(
-                steps.run(&mut phase, None).expect("recover forward"),
+                steps.run(&mut phase, None, None).expect("recover forward"),
                 MigrationOutcome::Committed
             );
             assert!(matches!(

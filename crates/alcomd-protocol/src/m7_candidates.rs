@@ -186,6 +186,7 @@ pub struct CandidateSourceOverride {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectCandidateRequest {
     pub project_id: String,
+    /// The registered project's content revision.
     pub expected_revision: u64,
     pub view: CandidateView,
     #[serde(
@@ -299,6 +300,7 @@ pub struct CandidateCursor {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CandidateSnapshot {
     pub fingerprint: String,
+    /// Project content revision bound to this snapshot.
     pub project_revision: u64,
     pub config_revision: u64,
 }

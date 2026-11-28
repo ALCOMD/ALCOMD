@@ -2,9 +2,10 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use alcomd_updater::Channel;
 use alcomd_updater::distribution::{
-    Candidate, MANIFEST_NAME, SIGNATURE_DOMAIN, SIGNATURE_NAME, Target, format_digest,
-    prepare_fixture, prepare_release, verify_fixture, verify_release,
+    Candidate, MANIFEST_NAME, SIGNATURE_DOMAIN, SIGNATURE_NAME, Target, WindowsCrtDigests,
+    format_digest, prepare_fixture, prepare_release, verify_fixture, verify_release,
 };
 use anyhow::{Context, ensure};
 use clap::{ArgGroup, Parser};
@@ -12,8 +13,14 @@ use ed25519_dalek::{Signer, SigningKey};
 
 use crate::{ProductConfig, read_toml};
 
+mod appimage_bridge;
+mod bridge;
 mod build;
+mod inno;
+mod native_package;
 mod package;
+mod webview2;
+mod windows_bridge;
 
 const FIXTURE_KEY: [u8; 32] = [37; 32];
 
@@ -21,7 +28,10 @@ const FIXTURE_KEY: [u8; 32] = [37; 32];
 #[command(
     bin_name = "cargo xtask dist",
     about = "Prepare and verify an offline v4 runtime candidate",
-    group(ArgGroup::new("action").args(["build", "prepare", "check", "package_layout"]).required(true))
+    group(ArgGroup::new("action").args(["build", "prepare", "check", "package_layout", "package", "prepare_bridge", "package_windows_bridge", "package_appimage_bridge"]).required(true)),
+    group(ArgGroup::new("package_action").args(["package_layout", "package"])),
+    group(ArgGroup::new("bridge_action").args(["prepare_bridge", "package_windows_bridge", "package_appimage_bridge"])),
+    group(ArgGroup::new("bridge_package").args(["package_windows_bridge", "package_appimage_bridge"]))
 )]
 struct Arguments {
     #[arg(long, value_enum)]
@@ -35,12 +45,67 @@ struct Arguments {
     /// Verify the manifest signature and the entire staged runtime.
     #[arg(long)]
     check: bool,
-    /// Export native packager inputs for a signed local fixture.
-    #[arg(long, requires_all = ["fixture", "staging", "format", "output"])]
+    /// Export signed product packaging inputs or development fixtures.
+    #[arg(long, requires_all = ["staging", "format", "output"])]
     package_layout: bool,
-    #[arg(long, value_enum, requires = "package_layout")]
+    /// Assemble a complete native product asset and an offline build receipt.
+    #[arg(long, requires_all = ["staging", "format", "output", "packager", "packager_sha256"], conflicts_with = "fixture")]
+    package: bool,
+    /// The native ISCC, appimagetool or dpkg-deb executable.
+    #[arg(long, requires = "package")]
+    packager: Option<PathBuf>,
+    /// SHA-256 of the exact native packaging executable.
+    #[arg(long, requires = "package")]
+    packager_sha256: Option<String>,
+    /// The pinned AppImage outer runtime used during offline assembly.
+    #[arg(long, requires_all = ["package", "appimage_runtime_sha256"])]
+    appimage_runtime: Option<PathBuf>,
+    /// SHA-256 of the exact AppImage outer runtime.
+    #[arg(long, requires = "appimage_runtime")]
+    appimage_runtime_sha256: Option<String>,
+    /// Prepare a v3 migration payload from the verified, complete release runtime.
+    #[arg(long, requires_all = ["staging", "bridge_output", "bridge_channel"], conflicts_with = "fixture")]
+    prepare_bridge: bool,
+    /// Assemble a standalone unsigned Windows launcher for the frozen v3 updater.
+    #[arg(long, requires_all = ["staging", "bridge_output", "bridge_channel", "signed_bridge", "bridge_installer", "bridge_installer_sha256", "bridge_current_user_health", "bridge_all_users_health"], conflicts_with = "fixture")]
+    package_windows_bridge: bool,
+    /// Assemble an unsigned standalone Linux AppImage bridge archive.
+    #[arg(long, requires_all = ["staging", "bridge_output", "bridge_channel", "signed_bridge", "bridge_appimage", "bridge_appimage_offer", "bridge_appimage_health"], conflicts_with = "fixture")]
+    package_appimage_bridge: bool,
+    /// New migration staging directory or standalone bridge output.
+    #[arg(long, requires = "bridge_action")]
+    bridge_output: Option<PathBuf>,
+    /// Channel of the existing v1 bridge payload.
+    #[arg(long, value_enum, requires = "bridge_action")]
+    bridge_channel: Option<Channel>,
+    /// Exact signed migration input prepared separately from the ordinary product.
+    #[arg(long, requires = "bridge_package")]
+    signed_bridge: Option<PathBuf>,
+    /// Complete product AppImage authenticated by the v4 update declaration.
+    #[arg(long, requires = "package_appimage_bridge")]
+    bridge_appimage: Option<PathBuf>,
+    /// Live signed v4 update declaration for the complete AppImage.
+    #[arg(long, requires = "package_appimage_bridge")]
+    bridge_appimage_offer: Option<PathBuf>,
+    /// Directory containing signed AppImage-scope health evidence.
+    #[arg(long, requires = "package_appimage_bridge")]
+    bridge_appimage_health: Option<PathBuf>,
+    /// Complete Windows Inno product installer.
+    #[arg(long, requires = "package_windows_bridge")]
+    bridge_installer: Option<PathBuf>,
+    /// Reviewed digest of the complete Inno installer.
+    #[arg(long, requires = "package_windows_bridge")]
+    bridge_installer_sha256: Option<String>,
+    /// Current-user health.json and health.sig directory.
+    #[arg(long, requires = "package_windows_bridge")]
+    bridge_current_user_health: Option<PathBuf>,
+    /// All-users health.json and health.sig directory.
+    #[arg(long, requires = "package_windows_bridge")]
+    bridge_all_users_health: Option<PathBuf>,
+    #[arg(long, value_enum, requires = "package_action")]
     format: Option<package::Format>,
-    #[arg(long, requires = "package_layout")]
+    /// New directory for the layout or for the assembled asset and receipt.
+    #[arg(long, requires = "package_action")]
     output: Option<PathBuf>,
     /// Use development-only trust for a staged or disposable fixture.
     #[arg(long, conflicts_with = "source_sha")]
@@ -55,14 +120,32 @@ struct Arguments {
     #[arg(long, requires = "build")]
     discord_package: Option<PathBuf>,
     /// Pinned SHA-256 of the first-party extension archive.
-    #[arg(long, conflicts_with_all = ["fixture", "check"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_action", "bridge_action"])]
     discord_sha256: Option<String>,
-    /// The x64 VC runtime DLL from a licensed Visual Studio redistributable directory.
+    /// The x64 vcruntime140.dll from a licensed Visual Studio redistributable directory.
     #[arg(long, requires_all = ["build", "windows_crt_sha256"])]
     windows_crt: Option<PathBuf>,
     /// Pinned SHA-256 of the exact app-local Windows VC runtime DLL.
-    #[arg(long, conflicts_with_all = ["fixture", "check"])]
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_action", "bridge_action"])]
     windows_crt_sha256: Option<String>,
+    /// The x64 vcruntime140_1.dll from the same Visual Studio redistributable directory.
+    #[arg(long, requires_all = ["build", "windows_crt_companion_sha256"])]
+    windows_crt_companion: Option<PathBuf>,
+    /// Pinned SHA-256 of the exact app-local Windows VC runtime companion DLL.
+    #[arg(long, conflicts_with_all = ["fixture", "check", "package_action", "bridge_action"])]
+    windows_crt_companion_sha256: Option<String>,
+    /// Microsoft's online Evergreen Bootstrapper for a Windows release Inno layout.
+    #[arg(long, requires_all = ["package_action", "webview2_bootstrapper_sha256"], conflicts_with = "fixture")]
+    webview2_bootstrapper: Option<PathBuf>,
+    /// Pinned SHA-256 of the exact WebView2 Bootstrapper.
+    #[arg(long, requires = "webview2_bootstrapper")]
+    webview2_bootstrapper_sha256: Option<String>,
+    /// Microsoft's x64 Evergreen Standalone installer for offline deployment.
+    #[arg(long, requires_all = ["webview2_bootstrapper", "webview2_standalone_sha256"])]
+    webview2_standalone: Option<PathBuf>,
+    /// Pinned SHA-256 of the exact x64 WebView2 Standalone installer.
+    #[arg(long, requires = "webview2_standalone")]
+    webview2_standalone_sha256: Option<String>,
 }
 
 pub fn run(root: &Path) -> anyhow::Result<()> {
@@ -84,27 +167,137 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
         return Ok(());
     }
     let path = std::path::absolute(args.staging.context("staging directory is required")?)?;
-    let crt_pin = args.windows_crt_sha256.as_deref();
-    if args.package_layout {
-        let output = std::path::absolute(args.output.context("package output is required")?)?;
-        package::export(
+    let crt_digests = match (
+        args.windows_crt_sha256.as_deref(),
+        args.windows_crt_companion_sha256.as_deref(),
+    ) {
+        (Some(primary), Some(companion)) => Some(WindowsCrtDigests { primary, companion }),
+        (None, None) => None,
+        _ => anyhow::bail!("supply both --windows-crt-sha256 and --windows-crt-companion-sha256"),
+    };
+    if args.package_appimage_bridge {
+        let output = std::path::absolute(args.bridge_output.context("bridge output is required")?)?;
+        let paths = appimage_bridge::Inputs {
+            runtime: path,
+            migration: args.signed_bridge.context("signed bridge is required")?,
+            image: args
+                .bridge_appimage
+                .context("complete AppImage is required")?,
+            offer: args
+                .bridge_appimage_offer
+                .context("signed AppImage offer is required")?,
+            health: args
+                .bridge_appimage_health
+                .context("AppImage health is required")?,
+        };
+        appimage_bridge::package(
+            root,
+            &output,
+            &product,
+            &candidate,
+            args.bridge_channel.context("bridge channel is required")?,
+            &paths,
+        )?;
+    } else if args.package_windows_bridge {
+        let output = std::path::absolute(args.bridge_output.context("bridge output is required")?)?;
+        let paths = windows_bridge::Inputs {
+            runtime: path,
+            migration: args.signed_bridge.context("signed bridge is required")?,
+            installer: args
+                .bridge_installer
+                .context("bridge installer is required")?,
+            installer_sha256: args
+                .bridge_installer_sha256
+                .context("reviewed installer digest is required")?,
+            current_user_health: args
+                .bridge_current_user_health
+                .context("current-user health is required")?,
+            all_users_health: args
+                .bridge_all_users_health
+                .context("all-users health is required")?,
+        };
+        windows_bridge::package(
+            root,
+            &output,
+            &product,
+            &candidate,
+            args.bridge_channel.context("bridge channel is required")?,
+            &paths,
+        )?;
+    } else if args.prepare_bridge {
+        let output = std::path::absolute(args.bridge_output.context("bridge output is required")?)?;
+        bridge::export(
             root,
             &path,
             &output,
             &product,
             &candidate,
-            args.format.context("package format is required")?,
+            args.bridge_channel.context("bridge channel is required")?,
         )?;
+    } else if args.package_layout || args.package {
+        let output = std::path::absolute(args.output.context("package output is required")?)?;
+        let webview2 = args
+            .webview2_bootstrapper
+            .zip(args.webview2_bootstrapper_sha256)
+            .map(|(path, sha256)| webview2::Inputs {
+                bootstrapper: webview2::PinnedInstaller { path, sha256 },
+                standalone: args
+                    .webview2_standalone
+                    .zip(args.webview2_standalone_sha256)
+                    .map(|(path, sha256)| webview2::PinnedInstaller { path, sha256 }),
+            });
+        let variant = if args.fixture {
+            package::Variant::Fixture
+        } else {
+            package::Variant::Release(webview2.as_ref())
+        };
+        let format = args.format.context("package format is required")?;
+        if args.package {
+            let inputs = native_package::Inputs {
+                runtime: path,
+                output,
+                format,
+                packager: native_package::PinnedFile {
+                    path: args.packager.context("native packager is required")?,
+                    sha256: args
+                        .packager_sha256
+                        .context("native packager digest is required")?,
+                },
+                appimage_runtime: args
+                    .appimage_runtime
+                    .zip(args.appimage_runtime_sha256)
+                    .map(|(path, sha256)| native_package::PinnedFile { path, sha256 }),
+                webview2: webview2.as_ref(),
+            };
+            native_package::assemble(root, &product, &candidate, &inputs)?;
+        } else {
+            package::export(root, &path, &output, &product, &candidate, format, variant)?;
+        }
     } else if args.build {
         let extension = std::path::absolute(
             args.discord_package
                 .context("Discord package is required")?,
         )?;
-        let crt_source = args.windows_crt.map(std::path::absolute).transpose()?;
-        ensure!(
-            crt_source.is_some() == crt_pin.is_some(),
-            "supply both --windows-crt and --windows-crt-sha256 for the Windows build"
-        );
+        let crt_primary = args.windows_crt.map(std::path::absolute).transpose()?;
+        let crt_companion = args
+            .windows_crt_companion
+            .map(std::path::absolute)
+            .transpose()?;
+        let crt = match (
+            crt_primary.as_deref(),
+            crt_companion.as_deref(),
+            crt_digests,
+        ) {
+            (Some(primary), Some(companion), Some(digests)) => Some(build::WindowsCrtInputs {
+                primary,
+                companion,
+                digests,
+            }),
+            (None, None, None) => None,
+            _ => anyhow::bail!(
+                "supply both --windows-crt and --windows-crt-companion and their SHA-256 pins"
+            ),
+        };
         build::runtime(
             root,
             &path,
@@ -114,7 +307,7 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
             args.discord_sha256
                 .as_deref()
                 .context("Discord digest is required")?,
-            crt_source.as_deref().zip(crt_pin),
+            crt,
         )?;
     } else if args.fixture {
         let key = SigningKey::from_bytes(&FIXTURE_KEY);
@@ -133,7 +326,7 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
             .as_deref()
             .context("Discord digest is required for release preparation")?;
         let (staging, identity) = alcomd_platform::resolve_plain_storage_directory(&path)?;
-        let bytes = prepare_release(&staging, &candidate, digest, crt_pin)?;
+        let bytes = prepare_release(&staging, &candidate, digest, crt_digests)?;
         build::verify_discord_package(
             root,
             &staging.join("extensions/discord.alcomdextension"),
@@ -146,8 +339,11 @@ pub fn run(root: &Path) -> anyhow::Result<()> {
         publish_manifest(&staging, &bytes)?;
         println!("Prepared {MANIFEST_NAME} for {}", candidate.version);
     } else {
-        let digest = verify_release(&path, &candidate)?;
-        println!("Verified runtime manifest {}", format_digest(&digest));
+        let verified = verify_release(&path, &candidate)?;
+        println!(
+            "Verified runtime manifest {}",
+            format_digest(&verified.manifest_sha256)
+        );
     }
     Ok(())
 }
@@ -242,11 +438,81 @@ fn synthetic_executable(target: Target) -> [u8; 90] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alcomd_updater::distribution::WINDOWS_CRT_FILE;
+    use alcomd_updater::distribution::{WINDOWS_CRT_COMPANION_FILE, WINDOWS_CRT_FILE};
+
+    #[test]
+    fn native_package_requires_a_packager_pin_and_preserves_layout_export() {
+        let common = [
+            "dist",
+            "--target",
+            "x86_64-unknown-linux-gnu",
+            "--source-sha",
+            "test-sha",
+            "--staging",
+            "runtime",
+            "--format",
+            "deb",
+            "--output",
+            "new-package",
+        ];
+        let layout = Arguments::try_parse_from(common.into_iter().chain(["--package-layout"]))
+            .expect("existing layout invocation");
+        assert!(layout.package_layout);
+        let assemble = ["--package", "--packager", "native-tool"];
+        assert!(Arguments::try_parse_from(common.into_iter().chain(assemble)).is_err());
+        let args = Arguments::try_parse_from(
+            common
+                .into_iter()
+                .chain(assemble)
+                .chain(["--packager-sha256", "tool-sha"]),
+        )
+        .expect("native package invocation");
+        assert!(args.package && !args.package_layout);
+    }
+
+    #[test]
+    fn windows_bridge_packaging_requires_both_reviewed_health_inputs() -> anyhow::Result<()> {
+        let mut base = vec![
+            "dist",
+            "--target",
+            "x86_64-pc-windows-msvc",
+            "--staging",
+            "runtime",
+            "--source-sha",
+            "source",
+            "--bridge-output",
+            "output",
+            "--bridge-channel",
+            "beta",
+        ];
+        let preparation =
+            Arguments::try_parse_from(base.iter().copied().chain(["--prepare-bridge"]))?;
+        assert!(preparation.prepare_bridge);
+        base.extend([
+            "--package-windows-bridge",
+            "--signed-bridge",
+            "migration",
+            "--bridge-installer",
+            "setup.exe",
+            "--bridge-installer-sha256",
+            "digest",
+            "--bridge-current-user-health",
+            "current-user",
+        ]);
+        assert!(Arguments::try_parse_from(&base).is_err());
+        base.extend(["--bridge-all-users-health", "all-users"]);
+        assert!(Arguments::try_parse_from(&base)?.package_windows_bridge);
+        assert!(Arguments::try_parse_from(base.iter().copied().chain(["--fixture"])).is_err());
+        assert!(
+            Arguments::try_parse_from(base.into_iter().chain(["--discord-sha256", "digest"]))
+                .is_err()
+        );
+        Ok(())
+    }
 
     fn fixture(target: Target) -> anyhow::Result<(tempfile::TempDir, Candidate)> {
         let product: ProductConfig = toml::from_str(include_str!("../../alcomd.product.toml"))?;
-        let root = tempfile::tempdir()?;
+        let root = tempfile::tempdir_in(std::env::temp_dir().canonicalize()?)?;
         let candidate = Candidate {
             target,
             version: product.product.version.parse()?,
@@ -254,6 +520,44 @@ mod tests {
         };
         create_fixture(root.path(), &product, &candidate)?;
         Ok((root, candidate))
+    }
+
+    #[test]
+    fn bridge_manifest_covers_verified_runtime_files_and_the_migration_reader() -> anyhow::Result<()>
+    {
+        use alcomd_updater::bridge::prepare_manifest;
+
+        let (runtime, candidate) = fixture(Target::Windows)?;
+        let key = SigningKey::from_bytes(&FIXTURE_KEY).verifying_key();
+        let verified = verify_fixture(runtime.path(), &candidate, &key)?;
+        let stage = tempfile::tempdir_in(std::env::temp_dir().canonicalize()?)?;
+        bridge::copy_runtime(runtime.path(), stage.path(), &verified)?;
+        let product: ProductConfig = toml::from_str(include_str!("../../alcomd.product.toml"))?;
+        let reader = format!("{}.exe", product.binaries.migration_v3);
+        let reader_path = stage.path().join(&reader);
+        fs::write(&reader_path, synthetic_executable(candidate.target))?;
+        let bytes = prepare_manifest(stage.path(), &candidate, &verified, Channel::Beta)?;
+        assert_eq!(
+            bytes,
+            prepare_manifest(stage.path(), &candidate, &verified, Channel::Beta)?
+        );
+        let manifest: serde_json::Value = serde_json::from_slice(&bytes)?;
+        assert_eq!(manifest["schema"], 1);
+        assert_eq!(manifest["target"], "windows-x86_64");
+        assert_eq!(manifest["channel"], "beta");
+        let files = manifest["files"].as_array().context("bridge files")?;
+        assert_eq!(files.len(), verified.files().count() + 1);
+        assert!(files.iter().any(|file| file["path"] == reader));
+        assert!(!stage.path().join(MANIFEST_NAME).exists());
+        assert!(!stage.path().join(SIGNATURE_NAME).exists());
+
+        let foreign_manifest = stage.path().join(MANIFEST_NAME);
+        fs::write(&foreign_manifest, b"unexpected release metadata")?;
+        assert!(prepare_manifest(stage.path(), &candidate, &verified, Channel::Beta).is_err());
+        fs::remove_file(foreign_manifest)?;
+        fs::write(stage.path().join("LICENSE"), b"changed signed file")?;
+        assert!(prepare_manifest(stage.path(), &candidate, &verified, Channel::Beta).is_err());
+        Ok(())
     }
 
     #[test]
@@ -275,7 +579,8 @@ mod tests {
                 &inno,
                 &product,
                 &candidate,
-                package::Format::Inno
+                package::Format::Inno,
+                package::Variant::Fixture,
             )
             .is_err()
         );
@@ -284,8 +589,27 @@ mod tests {
             (&deb, package::Format::Deb),
             (&appimage, package::Format::Appimage),
         ] {
-            package::export(&root, &stage, name, &product, &candidate, format)?;
-            assert!(package::export(&root, &stage, name, &product, &candidate, format).is_err());
+            package::export(
+                &root,
+                &stage,
+                name,
+                &product,
+                &candidate,
+                format,
+                package::Variant::Fixture,
+            )?;
+            assert!(
+                package::export(
+                    &root,
+                    &stage,
+                    name,
+                    &product,
+                    &candidate,
+                    format,
+                    package::Variant::Fixture
+                )
+                .is_err()
+            );
         }
         assert!(deb.join("deb-root/DEBIAN/control").is_file());
         assert!(appimage.join("AppDir/AppRun").is_file());
@@ -324,7 +648,8 @@ mod tests {
                 &output,
                 &product,
                 &candidate,
-                package::Format::Deb
+                package::Format::Deb,
+                package::Variant::Fixture,
             )
             .is_err()
         );
@@ -345,6 +670,18 @@ mod tests {
         let (root, mut candidate) = fixture(Target::Windows)?;
         let correct = SigningKey::from_bytes(&[37; 32]).verifying_key();
         let wrong = SigningKey::from_bytes(&[38; 32]).verifying_key();
+        let verified = verify_fixture(root.path(), &candidate, &correct)?;
+        verified.verify_copy("LICENSE", &root.path().join("LICENSE"))?;
+        assert!(
+            verified
+                .verify_copy("LICENSE", &root.path().join("THIRD_PARTY_NOTICES.md"))
+                .is_err()
+        );
+        assert!(
+            verified
+                .verify_copy("ABSENT", &root.path().join("LICENSE"))
+                .is_err()
+        );
         assert!(verify_fixture(root.path(), &candidate, &wrong).is_err());
         candidate.version.patch += 1;
         assert!(verify_fixture(root.path(), &candidate, &correct).is_err());
@@ -397,25 +734,93 @@ mod tests {
         let crt = root.path().join(WINDOWS_CRT_FILE);
         fs::write(&crt, dll)?;
         let crt_hash = format_digest(&alcomd_updater::hash_exact(fs::File::open(&crt)?, 90)?);
-        assert!(prepare_release(root.path(), &candidate, &hash, Some(&crt_hash)).is_err());
+        let mut companion_dll = dll;
+        companion_dll[2] = 1;
+        let companion = root.path().join(WINDOWS_CRT_COMPANION_FILE);
+        fs::write(&companion, companion_dll)?;
+        let companion_hash = format_digest(&alcomd_updater::hash_exact(
+            fs::File::open(&companion)?,
+            90,
+        )?);
+        let pins = WindowsCrtDigests {
+            primary: &crt_hash,
+            companion: &companion_hash,
+        };
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(pins)).is_err());
         candidate.source_commit = "1".repeat(40);
-        prepare_release(root.path(), &candidate, &hash, Some(&crt_hash))?;
+        let manifest: serde_json::Value = serde_json::from_slice(&prepare_release(
+            root.path(),
+            &candidate,
+            &hash,
+            Some(pins),
+        )?)?;
+        let files = manifest["files"].as_array().context("release files")?;
+        for (name, digest) in [
+            (WINDOWS_CRT_FILE, &crt_hash),
+            (WINDOWS_CRT_COMPANION_FILE, &companion_hash),
+        ] {
+            assert!(
+                files
+                    .iter()
+                    .any(|entry| entry["path"] == name && entry["sha256"] == digest.as_str())
+            );
+        }
         assert!(prepare_release(root.path(), &candidate, &hash, None).is_err());
-        assert!(prepare_release(root.path(), &candidate, &hash, Some(&"1".repeat(64))).is_err());
-        assert!(
-            prepare_release(root.path(), &candidate, &"1".repeat(64), Some(&crt_hash)).is_err()
-        );
-        fs::remove_file(&crt)?;
-        assert!(prepare_release(root.path(), &candidate, &hash, Some(&crt_hash)).is_err());
-        fs::write(&crt, synthetic_executable(Target::Windows))?;
-        let non_dll = format_digest(&alcomd_updater::hash_exact(fs::File::open(&crt)?, 90)?);
-        assert!(prepare_release(root.path(), &candidate, &hash, Some(&non_dll)).is_err());
-        fs::write(crt, dll)?;
+        let wrong_hash = "1".repeat(64);
+        for wrong_pins in [
+            WindowsCrtDigests {
+                primary: &wrong_hash,
+                ..pins
+            },
+            WindowsCrtDigests {
+                companion: &wrong_hash,
+                ..pins
+            },
+        ] {
+            assert!(prepare_release(root.path(), &candidate, &hash, Some(wrong_pins)).is_err());
+        }
+        fs::write(&companion, dll)?;
+        let identical_pins = WindowsCrtDigests {
+            companion: &crt_hash,
+            ..pins
+        };
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(identical_pins)).is_err());
+        fs::write(&companion, companion_dll)?;
+        assert!(prepare_release(root.path(), &candidate, &wrong_hash, Some(pins)).is_err());
+        for (path, valid, primary) in [(&crt, dll, true), (&companion, companion_dll, false)] {
+            fs::remove_file(path)?;
+            assert!(prepare_release(root.path(), &candidate, &hash, Some(pins)).is_err());
+
+            let mut wrong_architecture = valid;
+            wrong_architecture[68..70].copy_from_slice(&[0x64, 0xaa]);
+            let mut not_a_dll = valid;
+            not_a_dll[87] = 0;
+            for malformed in [wrong_architecture, not_a_dll] {
+                fs::write(path, malformed)?;
+                let malformed_hash =
+                    format_digest(&alcomd_updater::hash_exact(fs::File::open(path)?, 90)?);
+                let malformed_pins = if primary {
+                    WindowsCrtDigests {
+                        primary: &malformed_hash,
+                        ..pins
+                    }
+                } else {
+                    WindowsCrtDigests {
+                        companion: &malformed_hash,
+                        ..pins
+                    }
+                };
+                assert!(
+                    prepare_release(root.path(), &candidate, &hash, Some(malformed_pins)).is_err()
+                );
+            }
+            fs::write(path, valid)?;
+        }
         let cli = root.path().join("alcomd-cli.exe");
         fs::write(&cli, synthetic_executable(Target::Linux))?;
-        assert!(prepare_release(root.path(), &candidate, &hash, Some(&crt_hash)).is_err());
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(pins)).is_err());
         fs::remove_file(cli)?;
-        assert!(prepare_release(root.path(), &candidate, &hash, Some(&crt_hash)).is_err());
+        assert!(prepare_release(root.path(), &candidate, &hash, Some(pins)).is_err());
         Ok(())
     }
 }

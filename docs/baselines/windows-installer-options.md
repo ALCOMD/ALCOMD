@@ -1,8 +1,8 @@
 # Windows 全产品安装器基线
 
-状态：A-024 已接受；实现与永久 AppId 尚未开始
+A-024 与 M12 阶段 0 已冻结 Windows 安装合同。永久 AppId 从产品清单读取，当前用户和所有用户共用该值。[产品清单](../../alcomd.product.toml) · [阶段 0 发行合同](../exec-plans/M12-stage-0-release-contract.md)
 
-最后核验：2026-08-16
+最后核验于 2026-11-25。
 
 ## 产品边界
 
@@ -41,13 +41,15 @@ ALCOMD/
 ├─ bin/
 │  └─ alcomd-cli.exe
 └─ runtime/
-   ├─ alcomd.exe
-   ├─ alcomd-gui.exe
-   ├─ alcomd-mcp.exe
-   ├─ alcomd-extension-host.exe
-   ├─ alcomd-bootstrap.exe
-   ├─ alcomd-updater.exe
-   └─ 其他内部组件与第一方扩展
+   └─ <version>/
+      ├─ alcomd.exe
+      ├─ alcomd-gui.exe
+      ├─ alcomd-cli.exe
+      ├─ alcomd-mcp.exe
+      ├─ alcomd-extension-host.exe
+      ├─ alcomd-bootstrap.exe
+      ├─ alcomd-updater.exe
+      └─ 运行库、第一方扩展与签名清单
 ```
 
 仅 `ALCOMD\bin` 加入 PATH。不得把完整安装目录加入 PATH，也不得把 `alcomd`、GUI、MCP、
@@ -98,12 +100,7 @@ v3 成功启动 EXE 不等于迁移成功；恢复责任直到 v4 Health Check �
 
 ## 正式发行流水线边界
 
-未来 `cargo xtask dist --target x86_64-pc-windows-msvc` 负责构建/收集全部组件、验证统一版本、
-权限和许可证、形成 staging、调用 Inno Setup、生成强制应用层签名/摘要与 update manifest，
-并在未来启用 Authenticode 时执行平台签名。Tauri 只构建 `alcomd-gui.exe`，不能单独定义
-Windows 产品包。
-
-本基线不包含 Inno 脚本、真实 AppId、签名材料或发行实现；这些进入后续全产品发行 ExecPlan。
+`cargo xtask dist --target x86_64-pc-windows-msvc` 已接通组件构建、暂存、载荷验签与 Inno 夹具导出。正式 Inno 打包、资产清单、应用层签名和更新接线按 M12 实施。Tauri 构建提供 `alcomd-gui.exe`，由全产品打包流水线收集。[M12 实施计划](../exec-plans/M12-full-product-distribution.md)
 
 ## 必测合同
 

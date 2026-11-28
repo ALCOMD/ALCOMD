@@ -387,7 +387,29 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
             .await
             .expect("valid isolated Provider fixture")
             .project;
-        let planned=ext(&sa,"plan_remove",json!({"project_id":registered.project_id,"expected_revision":registered.revision,"package_id":"com.example.fixture","idempotency_key":format!("fault-plan-{fault}")})).await.structured_content.expect("valid isolated Provider fixture");
+        let project_id = registered.project_id.expect("registered project ID");
+        let favorited = owner
+            .project_set_favorite(ProjectSetFavoriteParams {
+                project_id: project_id.clone(),
+                favorite: true,
+                expected_revision: registered.revision.expect("registered revision"),
+                idempotency_key: format!("fault-favorite-{fault}"),
+            })
+            .await
+            .expect("favorite the isolated project")
+            .project;
+        let details = ext(&sa, "project", json!({"project_id":project_id}))
+            .await
+            .structured_content
+            .expect("authorized host-operations project detail");
+        let details = &details["data"]["project"];
+        assert_eq!(details["revision"], json!(favorited.revision));
+        assert_eq!(
+            details["contentRevision"],
+            json!(registered.content_revision)
+        );
+        assert!(details.get("rootPath").is_none());
+        let planned=ext(&sa,"plan_remove",json!({"project_id":project_id,"expected_revision":details["contentRevision"],"package_id":"com.example.fixture","idempotency_key":format!("fault-plan-{fault}")})).await.structured_content.expect("valid isolated Provider fixture");
         let plan = &planned["coreEffect"];
         let args = json!({"plan_id":plan["planId"],"expected_revision":plan["projectRevision"],"idempotency_key":format!("fault-apply-{fault}"),"confirm":true});
         let risk_sdk = sdk(&secret_a, None, &core).await;
@@ -473,7 +495,7 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
             .await
             .expect("valid isolated Provider fixture")
             .project;
-        let args = json!({"project_id":record.project_id,"expected_revision":record.revision,"package_id":"com.example.fixture","idempotency_key":format!("plan-{index}")});
+        let args = json!({"project_id":record.project_id,"expected_revision":record.content_revision,"package_id":"com.example.fixture","idempotency_key":format!("plan-{index}")});
         let planned = ext(
             &sa,
             if index == 1 {

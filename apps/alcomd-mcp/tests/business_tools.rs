@@ -1024,8 +1024,9 @@ async fn package_removal_flow(http: bool) {
         "com.example.fixture"
     );
     assert_eq!(read["root_path"], first.root_path);
-    error(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":first.revision.expect("revision"),"package_id":"com.example.absent"})).await.expect("real business failure"),"package_not_found");
-    let old_plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":first.revision.expect("revision"),"package_id":"com.example.fixture"})).await.expect("real plan"));
+    assert_eq!(read["content_revision"], json!(first.content_revision));
+    error(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":first.content_revision.expect("content revision"),"package_id":"com.example.absent"})).await.expect("real business failure"),"package_not_found");
+    let old_plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":first.content_revision.expect("content revision"),"package_id":"com.example.fixture"})).await.expect("real plan"));
     let args = json!({"plan_id":old_plan["plan_id"],"expected_revision":old_plan["project_revision"],"idempotency_key":"apply","confirm":true});
     let mut unconfirmed = args.clone();
     unconfirmed["confirm"] = json!(false);
@@ -1064,12 +1065,12 @@ async fn package_removal_flow(http: bool) {
             .expect("old plan must fail"),
         "plan_stale",
     );
-    let risks=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":rid,"expected_revision":risk_record.revision,"package_id":"com.example.b"})).await.expect("dependency risk plan"));
+    let risks=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":rid,"expected_revision":risk_record.content_revision,"package_id":"com.example.b"})).await.expect("dependency risk plan"));
     assert_eq!(
         risks["change_set"]["removal_conflicts"][0]["package_id"],
         "com.example.b"
     );
-    let plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":refreshed.revision,"package_id":"com.example.fixture"})).await.expect("fresh plan"));
+    let plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":refreshed.content_revision,"package_id":"com.example.fixture"})).await.expect("fresh plan"));
     let apply = json!({"plan_id":plan["plan_id"],"expected_revision":plan["project_revision"],"idempotency_key":"accepted-removal","confirm":true});
     if let Some(url) = url {
         let race = owner
@@ -1089,7 +1090,7 @@ async fn package_removal_flow(http: bool) {
             .expect("race credential");
         let race_sdk = sdk(&issued.credential, Some(url), &core).await;
         let race_plan = data(call(&race_sdk,&mut trace,"plan_package_uninstall",
-            json!({"project_id":id,"expected_revision":refreshed.revision,"package_id":"com.example.fixture"}))
+            json!({"project_id":id,"expected_revision":refreshed.content_revision,"package_id":"com.example.fixture"}))
             .await.expect("race caller's own plan"));
         let race_args = json!({"plan_id":race_plan["plan_id"],"expected_revision":race_plan["project_revision"],
             "idempotency_key":"must-not-accept-race","confirm":true});
@@ -1154,7 +1155,7 @@ async fn package_removal_flow(http: bool) {
         std::fs::read(p.join("Packages/manifest.json")).expect("UPM after"),
         upm_before
     );
-    let cancel_plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":cid,"expected_revision":cancel_record.revision,"package_id":"com.example.fixture"})).await.expect("cancel plan"));
+    let cancel_plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":cid,"expected_revision":cancel_record.content_revision,"package_id":"com.example.fixture"})).await.expect("cancel plan"));
     let cancel_apply=data(call(&sa,&mut trace,"apply_package_changes",json!({"plan_id":cancel_plan["plan_id"],"expected_revision":cancel_plan["project_revision"],"idempotency_key":"cancel-task","confirm":true})).await.expect("cancel candidate"));
     let cancel_id = cancel_apply["operation_id"].as_str().expect("cancel ID");
     let state = data(
@@ -1207,7 +1208,7 @@ async fn package_removal_flow(http: bool) {
         check_status["result"],
         json!({"integrity":"ok","foreign_keys":"ok"})
     );
-    let detached_plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":detached_id,"expected_revision":detached_record.revision,"package_id":"com.example.fixture"})).await.expect("detached plan"));
+    let detached_plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":detached_id,"expected_revision":detached_record.content_revision,"package_id":"com.example.fixture"})).await.expect("detached plan"));
     let detached_op=data(call(&sa,&mut trace,"apply_package_changes",json!({"plan_id":detached_plan["plan_id"],"expected_revision":detached_plan["project_revision"],"idempotency_key":"disconnect-after-accept","confirm":true})).await.expect("accepted before EOF"));
     // Close the actual SDK/STDIO process immediately after acceptance. Query the
     // accepted task using a new independently authenticated SDK connection.
@@ -1510,7 +1511,7 @@ async fn transport_risks(http: bool) {
             (sdk(&token.credential, request_url, &core).await, None)
         };
         let plan = data(call(&sdk_session, &mut trace, "plan_package_uninstall", json!({
-            "project_id":id,"expected_revision":snapshot.revision,"package_id":"com.example.fixture"
+            "project_id":id,"expected_revision":snapshot.content_revision,"package_id":"com.example.fixture"
         })).await.expect("real frozen removal plan"));
         let args = json!({"plan_id":plan["plan_id"],"expected_revision":plan["project_revision"],
             "idempotency_key":format!("risk-apply-{index}"),"confirm":true});

@@ -4,19 +4,27 @@ use std::path::Path;
 
 use alcomd_platform::{publish_path_no_replace, resolve_plain_storage_directory, sync_directory};
 use alcomd_updater::distribution::{
-    Candidate, MANIFEST_NAME, SIGNATURE_NAME, Target, format_digest, verify_fixture,
+    Candidate, MANIFEST_NAME, SIGNATURE_NAME, Target, VerifiedRuntime, WINDOWS_CRT_FILE,
+    format_digest, verify_fixture, verify_release,
 };
 use anyhow::{Context, ensure};
 use clap::ValueEnum;
 use ed25519_dalek::SigningKey;
 
-use super::{FIXTURE_KEY, ProductConfig, build::copy_component, publish_file};
+use super::{FIXTURE_KEY, ProductConfig, build::copy_component, publish_file, webview2};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub(super) enum Format {
     Inno,
     Appimage,
     Deb,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Variant<'a> {
+    Fixture,
+    Release(Option<&'a webview2::Inputs>),
 }
 
 pub(super) fn export(
@@ -26,7 +34,19 @@ pub(super) fn export(
     product: &ProductConfig,
     candidate: &Candidate,
     format: Format,
-) -> anyhow::Result<()> {
+    variant: Variant<'_>,
+) -> anyhow::Result<[u8; 32]> {
+    let for_fixture = matches!(variant, Variant::Fixture);
+    let webview = match (variant, format) {
+        (Variant::Release(Some(inputs)), Format::Inno) => Some(inputs),
+        (Variant::Release(None), Format::Inno) => {
+            anyhow::bail!("Windows release packaging requires a pinned Evergreen Bootstrapper")
+        }
+        (Variant::Release(Some(_)), _) => {
+            anyhow::bail!("WebView2 inputs are only valid for Windows release packaging")
+        }
+        _ => None,
+    };
     let target = match format {
         Format::Inno => Target::Windows,
         Format::Appimage | Format::Deb => Target::Linux,
@@ -35,9 +55,22 @@ pub(super) fn export(
         candidate.target == target,
         "package format does not match target"
     );
+    ensure!(
+        for_fixture
+            || format == Format::Inno
+            || (matches!(format, Format::Appimage | Format::Deb) && cfg!(target_os = "linux")),
+        "release layout export supports Inno and native Linux AppImage and DEB packaging"
+    );
     let (source, _) = resolve_plain_storage_directory(source)?;
-    let key = SigningKey::from_bytes(&FIXTURE_KEY).verifying_key();
-    let verified = verify_fixture(&source, candidate, &key)?;
+    let verify = |path: &Path| {
+        if for_fixture {
+            let key = SigningKey::from_bytes(&FIXTURE_KEY).verifying_key();
+            verify_fixture(path, candidate, &key)
+        } else {
+            verify_release(path, candidate)
+        }
+    };
+    let verified = verify(&source)?;
     let name = output
         .file_name()
         .context("package layout must have a name")?;
@@ -61,7 +94,12 @@ pub(super) fn export(
     let layout = temporary.path();
     let fixture = format!("{}-dist-fixture", product.product.technical_name);
     let version = candidate.version.to_string();
-    let linux_root = format!("usr/lib/{fixture}/runtime/{version}");
+    let package = if for_fixture {
+        fixture.as_str()
+    } else {
+        product.product.technical_name.as_str()
+    };
+    let linux_root = format!("usr/lib/{package}/runtime/{version}");
     let runtime = match format {
         Format::Inno => layout.join("runtime").join(&version),
         Format::Appimage => layout.join("AppDir").join(&linux_root),
@@ -74,14 +112,35 @@ pub(super) fn export(
         copy_component(&source.join(relative), &path)?;
     }
     ensure!(
-        verify_fixture(&runtime, candidate, &key)?.manifest_sha256 == verified.manifest_sha256,
+        verify(&runtime)?.manifest_sha256 == verified.manifest_sha256,
         "package copy does not match verified runtime identity"
     );
     let manifest_digest = format_digest(&verified.manifest_sha256);
-    match format {
-        Format::Inno => export_inno(layout, &fixture, &version)?,
-        Format::Appimage => export_appimage(root, layout, &fixture, &manifest_digest)?,
-        Format::Deb => export_deb(layout, &fixture, &candidate.version)?,
+    if for_fixture {
+        match format {
+            Format::Inno => export_inno(layout, &fixture, &version)?,
+            Format::Appimage => export_fixture_appimage(root, layout, &fixture, &manifest_digest)?,
+            Format::Deb => export_fixture_deb(layout, &fixture, &candidate.version)?,
+        }
+    } else {
+        match format {
+            Format::Inno => {
+                export_windows_bin(layout, &runtime, product, &verified)?;
+                let staged = webview
+                    .context("missing Windows prerequisites")?
+                    .stage(layout)?;
+                super::inno::export(layout, product, candidate, &verified, &staged)?;
+            }
+            Format::Appimage => export_product_appimage(root, layout, product, &linux_root)?,
+            Format::Deb => export_product_deb(
+                root,
+                layout,
+                &runtime,
+                product,
+                &candidate.version,
+                &verified,
+            )?,
+        }
     }
     #[cfg(unix)]
     match format {
@@ -90,7 +149,11 @@ pub(super) fn export(
             let tree = layout.join("AppDir");
             set_unix_package_modes(&tree, &runtime, product, Some(&tree.join("AppRun")))?;
         }
-        Format::Deb => set_unix_package_modes(&layout.join("deb-root"), &runtime, product, None)?,
+        Format::Deb => {
+            let tree = layout.join("deb-root");
+            let launcher = (!for_fixture).then(|| tree.join("usr/bin").join(&product.binaries.cli));
+            set_unix_package_modes(&tree, &runtime, product, launcher.as_deref())?;
+        }
     }
 
     ensure!(
@@ -100,7 +163,30 @@ pub(super) fn export(
     sync_directory(layout)?;
     publish_path_no_replace(layout, &destination)?;
     sync_directory(&parent)?;
-    println!("Prepared {format:?} packing inputs for fixture runtime {manifest_digest}");
+    let purpose = if for_fixture { "fixture" } else { "release" };
+    println!("Prepared {format:?} packing inputs for {purpose} runtime {manifest_digest}");
+    Ok(verified.manifest_sha256)
+}
+
+fn export_windows_bin(
+    layout: &Path,
+    runtime: &Path,
+    product: &ProductConfig,
+    verified: &VerifiedRuntime,
+) -> anyhow::Result<()> {
+    let bin = layout.join("bin");
+    fs::create_dir(&bin)?;
+    let cli = format!(
+        "{}{}",
+        product.binaries.cli,
+        Target::Windows.executable_suffix()
+    );
+    for relative in [cli.as_str(), WINDOWS_CRT_FILE] {
+        let output = bin.join(relative);
+        copy_component(&runtime.join(relative), &output)?;
+        verified.verify_copy(relative, &output)?;
+    }
+    sync_directory(&bin)?;
     Ok(())
 }
 
@@ -167,7 +253,7 @@ end;
     publish_file(layout, "fixture.iss", script.as_bytes())
 }
 
-fn export_appimage(
+fn export_fixture_appimage(
     root: &Path,
     layout: &Path,
     fixture: &str,
@@ -187,16 +273,99 @@ fn export_appimage(
     )
 }
 
-fn export_deb(layout: &Path, fixture: &str, version: &semver::Version) -> anyhow::Result<()> {
+fn export_product_appimage(
+    root: &Path,
+    layout: &Path,
+    product: &ProductConfig,
+    runtime: &str,
+) -> anyhow::Result<()> {
+    let app = layout.join("AppDir");
+    let bootstrap = &product.binaries.bootstrap;
+    let launcher = format!(
+        "#!/bin/sh\nworker=\"${{APPDIR:?AppImage mount is unavailable}}/{runtime}/{bootstrap}\"\nif [ \"${{1-}}\" = --bridge-v3 ]; then\n    shift\n    exec \"$worker\" bridge-linux-v3 --install-scope appimage \"$@\"\nfi\nexec \"$worker\" start-portable -- \"$@\"\n"
+    );
+    publish_file(&app, "AppRun", launcher.as_bytes())?;
+    let id = &product.identity.linux_desktop_id;
+    let name = &product.product.display_name;
+    let scheme = &product.identity.uri_scheme;
+    let desktop = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nExec=AppRun %u\nIcon={id}\nCategories=Development;\nMimeType=x-scheme-handler/{scheme};\n"
+    );
+    publish_file(&app, &format!("{id}.desktop"), desktop.as_bytes())?;
+    copy_component(
+        &root.join("apps/alcomd-gui/src-tauri/icons/icon.png"),
+        &app.join(format!("{id}.png")),
+    )
+}
+
+fn deb_version(version: &semver::Version) -> String {
     let base = format!("{}.{}.{}", version.major, version.minor, version.patch);
-    let version = if version.pre.is_empty() {
+    if version.pre.is_empty() {
         format!("{base}-1")
     } else {
         format!("{base}~{}-1", version.pre)
-    };
+    }
+}
+
+fn export_fixture_deb(
+    layout: &Path,
+    fixture: &str,
+    version: &semver::Version,
+) -> anyhow::Result<()> {
     let control = format!(
-        "Package: {fixture}\nVersion: {version}\nSection: devel\nPriority: optional\nArchitecture: amd64\nMaintainer: ALCOMD Distribution Testing <noreply@vrclearn.com>\nDescription: ALCOMD packaging fixture\n Contains a signed development runtime for archive verification.\n"
+        "Package: {fixture}\nVersion: {}\nSection: devel\nPriority: optional\nArchitecture: amd64\nMaintainer: ALCOMD Distribution Testing <noreply@vrclearn.com>\nDescription: ALCOMD packaging fixture\n Contains a signed development runtime for archive verification.\n",
+        deb_version(version)
     );
+    publish_deb_control(layout, &control)
+}
+
+fn export_product_deb(
+    root: &Path,
+    layout: &Path,
+    runtime: &Path,
+    product: &ProductConfig,
+    version: &semver::Version,
+    verified: &VerifiedRuntime,
+) -> anyhow::Result<()> {
+    let tree = layout.join("deb-root");
+    let bin = tree.join("usr/bin");
+    fs::create_dir_all(&bin)?;
+    let cli = bin.join(&product.binaries.cli);
+    copy_component(&runtime.join(&product.binaries.cli), &cli)?;
+    verified.verify_copy(&product.binaries.cli, &cli)?;
+
+    let package = &product.product.technical_name;
+    let desktop_id = &product.identity.linux_desktop_id;
+    let display = &product.product.display_name;
+    let scheme = &product.identity.uri_scheme;
+    let gui = &product.binaries.gui;
+    let applications = tree.join("usr/share/applications");
+    fs::create_dir_all(&applications)?;
+    let desktop = format!(
+        "[Desktop Entry]\nType=Application\nName={display}\nExec=/usr/lib/{package}/runtime/{version}/{gui} %u\nIcon={desktop_id}\nCategories=Development;\nMimeType=x-scheme-handler/{scheme};\n"
+    );
+    publish_file(
+        &applications,
+        &format!("{desktop_id}.desktop"),
+        desktop.as_bytes(),
+    )?;
+    let icons = tree.join("usr/share/icons/hicolor/256x256/apps");
+    fs::create_dir_all(&icons)?;
+    copy_component(
+        &root.join("apps/alcomd-gui/src-tauri/icons/128x128@2x.png"),
+        &icons.join(format!("{desktop_id}.png")),
+    )?;
+
+    let maintainer = &product.product.publisher_name;
+    let homepage = &product.product.homepage_url;
+    let control = format!(
+        "Package: {package}\nVersion: {}\nSection: utils\nPriority: optional\nArchitecture: amd64\nMaintainer: {maintainer} <noreply@vrclearn.com>\nDepends: libc6 (>= 2.34), libcairo2, libdbus-1-3, libgcc-s1, libgdk-pixbuf-2.0-0, libglib2.0-0, libgtk-3-0, libjavascriptcoregtk-4.1-0, libsoup-3.0-0, libwebkit2gtk-4.1-0\nHomepage: {homepage}\nDescription: {display} project and package management\n Contains the desktop client, Core and command line interface for Unity projects.\n",
+        deb_version(version)
+    );
+    publish_deb_control(layout, &control)
+}
+
+fn publish_deb_control(layout: &Path, control: &str) -> anyhow::Result<()> {
     let metadata = layout.join("deb-root/DEBIAN");
     fs::create_dir(&metadata)?;
     publish_file(&metadata, "control", control.as_bytes())

@@ -1523,7 +1523,7 @@ async fn oauth_package_catalog_and_https_download(protected: bool) {
         .expect("register isolated project")
         .project;
     let project_id = project.project_id.expect("project ID");
-    let revision = project.revision.expect("project revision");
+    let revision = project.content_revision.expect("project content revision");
     let installed = project_root.join("Packages").join(PACKAGE);
     let owner_plan = owner
         .package_plan_install(PackagePlanInstallParams {
@@ -2614,7 +2614,7 @@ async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
             .await
             .is_ok()
     );
-    let plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":selected,"expected_revision":projects[0].1.revision.expect("revision"),"package_id":"com.example.fixture"})).await.expect("real plan"));
+    let plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":selected,"expected_revision":projects[0].1.content_revision.expect("content revision"),"package_id":"com.example.fixture"})).await.expect("real plan"));
     error(call(&sb,&mut trace,"apply_package_changes",json!({"plan_id":plan["plan_id"],"expected_revision":plan["project_revision"],"idempotency_key":"shared-apply-key","confirm":true})).await.expect("other identity rejected"),"plan_not_found");
     let applied=data(call(&sa,&mut trace,"apply_package_changes",json!({"plan_id":plan["plan_id"],"expected_revision":plan["project_revision"],"idempotency_key":"shared-apply-key","confirm":true})).await.expect("original Plan apply"));
     let operation = applied["operation_id"].as_str().expect("operation");
@@ -2641,7 +2641,7 @@ async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
             .project_id
             .as_deref()
             .expect("risk project");
-        let plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":projects[index].1.revision.expect("revision"),"package_id":"com.example.fixture"})).await.expect("risk plan"));
+        let plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":projects[index].1.content_revision.expect("content revision"),"package_id":"com.example.fixture"})).await.expect("risk plan"));
         let key = if cancel {
             "oauth-inflight-cancel"
         } else {
@@ -3040,7 +3040,7 @@ pub(super) async fn extension_provider_oauth(
         .await
         .expect("valid isolated Provider OAuth fixture")
         .project;
-    let plan=super::extension_tools_flow::ext(&sa,"plan_remove",json!({"project_id":registered.project_id,"expected_revision":registered.revision,"package_id":"com.example.fixture","idempotency_key":"oauth-provider-plan"})).await.structured_content.expect("valid isolated Provider OAuth fixture");
+    let plan=super::extension_tools_flow::ext(&sa,"plan_remove",json!({"project_id":registered.project_id,"expected_revision":registered.content_revision,"package_id":"com.example.fixture","idempotency_key":"oauth-provider-plan"})).await.structured_content.expect("valid isolated Provider OAuth fixture");
     let plan = &plan["coreEffect"];
     let applied=super::extension_tools_flow::ext(&sa,"apply",json!({"plan_id":plan["planId"],"expected_revision":plan["projectRevision"],"idempotency_key":"oauth-provider-apply","confirm":true})).await;
     assert_ne!(applied.is_error, Some(true));

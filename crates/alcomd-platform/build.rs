@@ -6,11 +6,13 @@ fn main() {
     let text = std::fs::read_to_string(manifest).expect("product metadata");
     let mut section = "";
     let mut directory = None;
+    let mut installation = None;
     let mut daemon = None;
     let mut bundle = None;
     let mut gui = None;
     let mut cli = None;
     let mut mcp = None;
+    let mut bootstrap = None;
     for line in text.lines().map(str::trim) {
         if line.starts_with('[') {
             section = line;
@@ -21,11 +23,13 @@ fn main() {
         };
         let field = match (section, key.trim()) {
             ("[identity]", "data_directory") => &mut directory,
+            ("[identity]", "install_directory") => &mut installation,
             ("[binaries]", "daemon") => &mut daemon,
             ("[identity]", "bundle_identifier") => &mut bundle,
             ("[binaries]", "gui") => &mut gui,
             ("[binaries]", "cli") => &mut cli,
             ("[binaries]", "mcp") => &mut mcp,
+            ("[binaries]", "bootstrap") => &mut bootstrap,
             _ => continue,
         };
         assert!(field.is_none(), "duplicate product metadata key");
@@ -52,10 +56,12 @@ fn main() {
         daemon.expect("product binaries.daemon")
     );
     for (key, value) in [
+        ("INSTALL_DIRECTORY", installation),
         ("BUNDLE_ID", bundle),
         ("GUI_NAME", gui),
         ("CLI_NAME", cli),
         ("MCP_NAME", mcp),
+        ("BOOTSTRAP_NAME", bootstrap),
     ] {
         println!(
             "cargo:rustc-env=ALCOMD_{key}={}",

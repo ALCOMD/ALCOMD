@@ -9,6 +9,8 @@ import { ProjectInspectionDialog } from "./ProjectInspectionDialog";
 import { FrozenPlanDialog } from "./FrozenPlanDialog";
 import { PackageRequestDialog } from "./PackageRequestDialog";
 import { ProjectInventoryDialog } from "./ProjectInventoryDialog";
+import { ProductUpdateSection } from "./ProductUpdateSection";
+import { PortableCliSection } from "./PortableCliSection";
 import { useCoreEvents, useCoreInvalidation, useViewState, useViewReadingPosition, useWorkspaceInvalidation } from "./core-events-ui";
 import type { ChangeScope, CoreEvents } from "./core-events";
 import type { SupportedLocale, Translate } from "./i18n-types";
@@ -1170,9 +1172,9 @@ function PackageVersionPicker({ client, project, snapshot, source, disabled, can
     const load = (): Promise<void> => {
         const current = generation.current;
         if (pending.current?.generation === current) return pending.current.read;
-        if (traversal.current.complete || !snapshot || project.revision === undefined || project.projectId === undefined) return Promise.resolve();
+        if (traversal.current.complete || !snapshot || project.contentRevision === undefined || project.projectId === undefined) return Promise.resolve();
         const projectId = project.projectId;
-        const projectRevision = project.revision;
+        const projectRevision = project.contentRevision;
         setBusy(true);
         setError(undefined);
         const read = (async () => {
@@ -1524,9 +1526,9 @@ export function primePackageWorkspaceRead(client: GuiRpcClient, events: CoreEven
 async function loadPackageWorkspace(client: GuiRpcClient, projectId: string, canQuery: boolean, sourceSelections: Record<string, string>, deferUntil?: number, signal?: AbortSignal): Promise<PackageWorkspaceValue> {
     const project = (await client.projectGet(projectId)).project;
     checkPreload(signal);
-    if (project.revision === undefined) throw { code: "project_not_registered" };
+    if (project.revision === undefined || project.contentRevision === undefined) throw { code: "project_not_registered" };
     const sources = Object.entries(sourceSelections).filter(([, key]) => key.length > 0).map(([packageId, key]) => ({ packageId, source: key.startsWith("repository:") ? { kind: "repository" as const, repository_id: key.slice(11) } : { kind: "user_package" as const, user_package_id: key.slice(13) } }));
-    const candidateRequest: ProjectCandidateRequest = { projectId, expectedRevision: project.revision, view: { kind: "summary", sources } };
+    const candidateRequest: ProjectCandidateRequest = { projectId, expectedRevision: project.contentRevision, view: { kind: "summary", sources } };
     const [settings, launchOptions] = await Promise.all([
         client.settingsGet(),
         client.unityLaunchOptions(projectId, project.revision, true)
@@ -2406,6 +2408,8 @@ export function AboutPage({ client }: PageProps) {
             <LocalPageReadContext.Provider value={true}>
                 <ResourcePage initialRequest={initialStatus} load={load} loading={<PageLoadingState title={t("Loading page…")} delayed />}>{(status) => <dl className="detail-grid"><Detail label={t("Daemon")} value={status.daemonVersion} /><Detail label="RPC" value={`v${status.rpcVersion}`} /><Detail label={t("State")} value={humanize(t, status.state)} /></dl>}</ResourcePage>
             </LocalPageReadContext.Provider>
+            <ProductUpdateSection />
+            <PortableCliSection />
             <section className="notice-card"><h2>{t("Licenses")}</h2><p>{t("ALCOMD source is licensed under AGPL-3.0-only.")}</p><p><Translated message="The canonical third-party dependency notice source is {file} in the product distribution." values={{ file: <code>THIRD_PARTY_NOTICES.md</code> }} /></p></section>
         </ScrollArea>
     </section>;

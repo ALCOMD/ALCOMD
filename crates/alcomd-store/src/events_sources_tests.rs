@@ -1208,7 +1208,7 @@ fn each_existing_recovery_commits_state_revision_and_event_atomically_and_repeat
         }
         if kind == "packages.apply" {
             let project = ProjectId::new();
-            connection.execute("INSERT INTO projects(project_id,owner_principal_id,root_path,path_identity_key,project_type,unity_version,snapshot_json,revision,registered_at_ms,updated_at_ms) VALUES(?1,?2,'<FIXTURE>',x'01','unknown','2022.3.22f1','{}',1,1,1)", params![project.to_string(),owner.as_str()]).expect("project fixture");
+            connection.execute("INSERT INTO projects(project_id,owner_principal_id,root_path,path_identity_key,project_type,unity_version,snapshot_json,revision,content_revision,registered_at_ms,updated_at_ms) VALUES(?1,?2,'<FIXTURE>',x'01','unknown','2022.3.22f1','{}',1,1,1,1)", params![project.to_string(),owner.as_str()]).expect("project fixture");
             connection.execute("INSERT INTO package_plans(plan_id,owner_principal_id,project_id,action,state,project_revision,project_snapshot_fingerprint,change_set_fingerprint,change_set_json,source_set_json,apply_operation_id,created_at_ms) VALUES(?1,?2,?3,'install','applied',1,zeroblob(32),zeroblob(32),'{\"formatVersion\":1,\"mutations\":[],\"dependencyEdges\":[]}','[]',?4,1)", params![PlanId::new().to_string(), owner.as_str(), project.to_string(), operation.to_string()]).expect("bound plan");
         }
         // Generic recovery must leave every kind owned by a dedicated handler intact.

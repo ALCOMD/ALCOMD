@@ -372,7 +372,12 @@ fn project(value: rpc::ProjectSnapshot) -> Result<Value, Failure> {
         .project_id
         .as_deref()
         .is_none_or(|id| !canonical_id(id))
-        || value.revision.is_none_or(|value| !revision(value))
+        || value
+            .revision
+            .zip(value.content_revision)
+            .is_none_or(|(aggregate, content)| {
+                !revision(aggregate) || !revision(content) || content > aggregate
+            })
         || value.directory_state.is_none()
     {
         return Err(Failure::InvalidCore);

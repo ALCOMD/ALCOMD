@@ -49,9 +49,9 @@ Windows 正式测试 Windows 10 22H2 与 Windows 11，不增加主动拒绝更�
 WebView2 Evergreen Runtime 必须覆盖已安装、缺失后在线 Bootstrapper、离线 Standalone
 Installer、安装取消与失败恢复。
 
-M0 的 Windows Server 2025 hosted 与开发机编译不构成上述客户端运行证据。Windows 10 22H2
-与 Windows 11 的状态仍为 deferred、尚未通过；验证归属 M12，必须使用完整产品覆盖实际安装、
-启动、WebView2 渲染、托盘、注册表、用户数据路径、更新、升级和卸载，不能只重复编译。
+Windows 11 Sandbox 已通过当前用户与全用户夹具的登记和卸载验证，并打开了使用已安装 WebView2 的原生 GUI。正式 Windows 10 22H2 与 Windows 11 矩阵仍需使用完整产品验证安装、启动、WebView2 部署、托盘、注册表、用户数据路径、升级、回滚和卸载。[Windows 登记及夹具验收](../exec-plans/M12-full-product-distribution.md#2026-11-25-windows-core-安装登记)
+
+Windows 11 的完整 Inno 实包 `72a85893` 已通过双范围的 12 项卸载与启动互斥检查。全用户验收使用两个普通账号和实际 SDK 持续连接。[Windows 跨账号卸载](../exec-plans/M12-full-product-distribution.md#2026-11-25-windows-跨账号卸载)
 
 ## macOS 安装与 CLI
 
@@ -74,9 +74,13 @@ M0 的 Windows Server 2025 hosted 与开发机编译不构成上述客户端运�
   入口不得假定 AppImage 永久位于某个固定路径。
 - RPM、Flatpak 与 Snap 不属于 4.0.0 blocker。
 
+Ubuntu 22.04 的签名工程 DEB 已验证缺失依赖时拒绝首装及依赖恢复，并覆盖更新下载中断、解包存储故障和实际配置触发器中断。正式 DEB 按冻结资产摘要复验。[缺失依赖](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-缺失依赖复验) · [下载中断](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-下载中断复验) · [存储故障](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-解包存储故障复验) · [配置触发器中断](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-配置触发器中断复验)
+
+独立下载 DEB 的隔离演练覆盖签名清单、包摘要、撤回、相同字节恢复、离线 APT 安装及 Core 冷启动。[DEB 独立下载发行演练](../exec-plans/M12-full-product-distribution.md#2026-11-27-deb-独立下载发行演练)
+
 ## 统一发行流水线
 
-未来以 `cargo xtask dist --target <target>` 为唯一全产品发行入口，依次完成：
+全产品发行通过 `cargo xtask dist --target <target>` 分阶段完成。
 
 1. 构建目标平台 Rust 组件与 GUI 前端。
 2. 使用 Tauri 编译 `alcomd-gui`，但不把其 bundle 当作最终产品。
@@ -89,6 +93,16 @@ M0 的 Windows Server 2025 hosted 与开发机编译不构成上述客户端运�
 8. 执行安装、升级、卸载、范围转换、更新恢复和残留测试。
 
 `npm run gui:build` 仍可用于 GUI 构建验证，但不是完整产品发行命令。
+
+Windows Inno、Linux AppImage 和 Linux DEB 的原生输入由 `--package-layout` 导出。使用 `--package` 可以在对应系统上直接组装完整资产。该步骤读取经签名的运行目录，核对当前干净检出的 SHA 和 Git 签名，并在新目录中原子发布资产及工程回执 `asset.json`。
+
+```text
+cargo xtask dist --target x86_64-unknown-linux-gnu --package --format deb \
+  --source-sha <signed-commit> --staging <signed-runtime> --output <new-directory> \
+  --packager /usr/bin/dpkg-deb --packager-sha256 <tool-sha256>
+```
+
+Inno 使用 `--format inno`，提供 ISCC 和既有的 `--webview2-bootstrapper`、`--webview2-bootstrapper-sha256`。AppImage 使用 `--format appimage`，提供 appimagetool 及 `--appimage-runtime`、`--appimage-runtime-sha256`。输出目录的父目录须已存在，源码树内的暂存应位于 Git 忽略目录。工程回执记录格式、目标、源码与版本、实际资产字节和摘要、签名运行清单摘要及打包工具摘要。正式发布清单的签署和公开继续按审批矩阵执行。macOS DMG 仍按原计划延期。
 
 ## 迁移入口与更新源
 

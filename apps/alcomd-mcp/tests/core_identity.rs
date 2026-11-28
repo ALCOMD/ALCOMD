@@ -326,7 +326,7 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
     let plan = ca
         .package_plan_remove(PackagePlanRemoveParams {
             project_id: p1id.clone(),
-            expected_revision: first.revision.expect("revision"),
+            expected_revision: first.content_revision.expect("content revision"),
             package_id: "com.example.fixture".into(),
         })
         .await

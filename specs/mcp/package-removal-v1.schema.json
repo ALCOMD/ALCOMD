@@ -458,6 +458,10 @@
                 "revision": {
                     "$ref": "#/$defs/revision"
                 },
+                "content_revision": {
+                    "$ref": "#/$defs/revision",
+                    "description": "Use this value as expected_revision when preparing package changes."
+                },
                 "project_type": {
                     "type": "string",
                     "maxLength": 64
@@ -564,6 +568,7 @@
                 "project_id",
                 "root_path",
                 "revision",
+                "content_revision",
                 "project_type",
                 "unity_version",
                 "directory_state",
@@ -594,7 +599,8 @@
                     "$ref": "#/$defs/id"
                 },
                 "project_revision": {
-                    "$ref": "#/$defs/revision"
+                    "$ref": "#/$defs/revision",
+                    "description": "The project content revision bound to this plan."
                 },
                 "change_set_fingerprint": {
                     "type": "string",
@@ -1281,7 +1287,8 @@
                     "$ref": "#/$defs/id"
                 },
                 "expected_revision": {
-                    "$ref": "#/$defs/revision"
+                    "$ref": "#/$defs/revision",
+                    "description": "Use content_revision from alcomd_get_project."
                 },
                 "package_id": {
                     "$ref": "#/$defs/packageId"
@@ -1320,7 +1327,8 @@
                     "$ref": "#/$defs/id"
                 },
                 "expected_revision": {
-                    "$ref": "#/$defs/revision"
+                    "$ref": "#/$defs/revision",
+                    "description": "Use project_revision from the reviewed package plan."
                 },
                 "idempotency_key": {
                     "$ref": "#/$defs/key"

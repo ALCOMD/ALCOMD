@@ -2,10 +2,11 @@ export type MotionPreference = "system" | "full" | "reduced";
 
 const systemMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const listeners = new Set<() => void>();
+let systemReduced = systemMotion.matches;
 let preference: MotionPreference = "system";
 
 export function reducedMotion(): boolean {
-    return preference === "reduced" || (preference === "system" && systemMotion.matches);
+    return preference === "reduced" || (preference === "system" && systemReduced);
 }
 
 export function subscribeMotion(listener: () => void): () => void {
@@ -24,7 +25,11 @@ export function applyMotion(value: MotionPreference): void {
     notifyMotion();
 }
 
-systemMotion.addEventListener("change", notifyMotion);
+systemMotion.addEventListener("change", (event) => {
+    // Keep every subscriber on the same browser-reported snapshot.
+    systemReduced = event.matches;
+    notifyMotion();
+});
 notifyMotion();
 
 interface MaterialHost extends HTMLElement {

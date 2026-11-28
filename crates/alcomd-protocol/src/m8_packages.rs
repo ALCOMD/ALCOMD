@@ -13,6 +13,7 @@ pub const CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1: &str = "mcp.packages.catalog-
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct McpPackageProject {
     pub project_id: String,
+    /// The registered project's content revision.
     pub expected_revision: u64,
 }
 

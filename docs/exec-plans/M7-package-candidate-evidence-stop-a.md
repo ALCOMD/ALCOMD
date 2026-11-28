@@ -99,7 +99,7 @@ uniqueness by packageId and the cross-field invariants below remains mandatory i
 to JSON Schema. Examples/vectors are in the neighboring `.contract-vectors.json` file.
 
 `ProjectCandidateRequest`:
-- `projectId`, `expectedRevision`: existing Project identity and revision; required.
+- `projectId` and `expectedRevision` are required. Use the registered project's `contentRevision` for `expectedRevision`.
 - `view`: `CandidateSummaryView` or `CandidateVersionsView`.
 - `limit`: optional integer 1..128, default 64.
 - `expectedSnapshot`: optional 64-character lowercase SHA-256 equality fingerprint.
@@ -333,9 +333,10 @@ Plan → one explicit Apply → one Operation; not a claim of stronger transacti
 
 ## 5. Snapshot, quotas and errors
 
-Fingerprint binds current principal, normalized Project observation/revision/fingerprints,
+Fingerprint binds current principal, normalized Project observation, content revision and file fingerprints,
 registered repository and user-source inventory, their existing revisions/fingerprints,
-repository priorities/readiness, and existing ConfigSnapshot revision plus relevant settings.
+repository priorities/readiness, and existing ConfigSnapshot revision plus relevant settings. The snapshot's `projectRevision`
+is the content revision. A favorite change leaves the snapshot and cursor usable.
 Use length-delimited canonical sorted records and SHA-256; revision/fingerprint materials
 already exist. No persistent global catalog revision, snapshot table or token cache. Fingerprint
 is an equality token, not authorization, and cannot be passed to Apply. It covers all sources

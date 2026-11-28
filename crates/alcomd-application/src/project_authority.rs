@@ -7,7 +7,7 @@ use crate::{
     ReadIssue, Revision,
 };
 
-/// Frozen fingerprint projection, independent of presentation metadata added to project records.
+/// Frozen Unity migration fingerprint projection.
 ///
 /// Field names and declaration order preserve the existing serialized authority bytes. In
 /// particular, favorite and registration time remain part of that authority; activity time does
@@ -29,6 +29,24 @@ impl<'a> From<&'a ProjectRecord> for ProjectAuthorityFingerprint<'a> {
             revision: project.revision,
             registered_at_ms: project.registered_at_ms,
             favorite: project.favorite,
+        }
+    }
+}
+
+/// Project inputs used to resolve and paginate package candidates.
+#[derive(Serialize)]
+pub struct CandidateProjectAuthority<'a> {
+    project_id: ProjectId,
+    observation: ProjectObservationAuthority<'a>,
+    content_revision: Revision,
+}
+
+impl<'a> From<&'a ProjectRecord> for CandidateProjectAuthority<'a> {
+    fn from(project: &'a ProjectRecord) -> Self {
+        Self {
+            project_id: project.project_id,
+            observation: ProjectObservationAuthority::from(&project.observation),
+            content_revision: project.content_revision,
         }
     }
 }

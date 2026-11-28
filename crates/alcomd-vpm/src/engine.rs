@@ -8,7 +8,7 @@ use alcomd_application::{
     PackageMutationKind, PackagePlanDraft, PackagePlanRecord, PackagePlanRequest,
     PackageSourceSelector, PlanAction, PrincipalId, ProjectDiscoveryMode, ProjectRecord,
     ReinstallSelection, RepositoryArchivePinStore, RepositoryPackageSourcePin, ResolverCatalog,
-    ResourceKey, ResourceLockCoordinator, StateStore,
+    ResourceKey, ResourceLockCoordinator, ResourceLockGuards, StateStore,
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -194,7 +194,7 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
         project: ProjectRecord,
         plan: PackagePlanRecord,
         locks: Arc<ResourceLockCoordinator>,
-    ) -> Result<PackageApplyCompletion, M4Error> {
+    ) -> Result<(PackageApplyCompletion, ResourceLockGuards), M4Error> {
         let path = project.observation.root_path.clone();
         self.execute(operation_id, project, plan, locks)
             .await
@@ -425,6 +425,7 @@ async fn prepare_bulk(
         let mut rules = snapshot.resolution_rules(explicit, true)?;
         rules.locked.retain(|id, _| !removed.contains(id));
         rules.direct.retain(|id, _| !removed.contains(id));
+        rules.removed.clone_from(&removed);
         resolve_migrating_packages(
             cache,
             &candidates,
@@ -542,17 +543,13 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         project: ProjectRecord,
         plan: PackagePlanRecord,
         locks: Arc<ResourceLockCoordinator>,
-    ) -> Result<PackageApplyCompletion, M4Error> {
+    ) -> Result<(PackageApplyCompletion, ResourceLockGuards), M4Error> {
         let root = PathBuf::from(&project.observation.root_path);
-        let (_, actual_identity) = alcomd_platform::resolve_directory_identity(&root)
-            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
-        if actual_identity != project.observation.path_identity_key {
-            return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
-        }
+        verify_recovery_root(&root, &project.observation.path_identity_key)?;
         let project_identity_key = project.observation.path_identity_key.clone();
         let transaction_root = prepare_transaction_root(&root, operation_id)?;
         if let Some(completion) = self
-            .recover_attempts(operation_id, &project, &plan, &transaction_root, &locks)
+            .recover_attempts(operation_id, &root, &plan, &transaction_root, &locks)
             .await?
         {
             return Ok(completion);
@@ -654,12 +651,9 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             return Err(M4Error::new(M4ErrorCode::OperationCancelled));
         }
 
-        let _project_guard = locks
-            .acquire(vec![
-                ResourceKey::Project(plan.project_id),
-                ResourceKey::Operation(operation_id),
-            ])
-            .await;
+        let (project, commit_guards) = self
+            .lock_operation_project(operation_id, &plan, &root, &locks)
+            .await?;
         let catalog = if plan.source_set.is_empty() {
             ResolverCatalog {
                 prefer_prerelease: false,
@@ -926,17 +920,41 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         )
         .await
         .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
-        self.completion(&root, &plan).await
+        let completion = self.completion(&root, &plan).await?;
+        Ok((completion, commit_guards))
+    }
+
+    async fn lock_operation_project(
+        &self,
+        operation_id: OperationId,
+        plan: &PackagePlanRecord,
+        root: &Path,
+        locks: &ResourceLockCoordinator,
+    ) -> Result<(ProjectRecord, ResourceLockGuards), M4Error> {
+        let guards = locks
+            .acquire(vec![
+                ResourceKey::Project(plan.project_id),
+                ResourceKey::Operation(operation_id),
+            ])
+            .await;
+        let project = self
+            .store
+            .get_package_operation_project(operation_id)
+            .await?;
+        if Path::new(&project.observation.root_path) != root {
+            return stale("project_identity_changed");
+        }
+        Ok((project, guards))
     }
 
     async fn recover_attempts(
         &self,
         operation_id: OperationId,
-        project: &ProjectRecord,
+        root: &Path,
         plan: &PackagePlanRecord,
         transaction_root: &Path,
         locks: &Arc<ResourceLockCoordinator>,
-    ) -> Result<Option<PackageApplyCompletion>, M4Error> {
+    ) -> Result<Option<(PackageApplyCompletion, ResourceLockGuards)>, M4Error> {
         let mut attempts = std::fs::read_dir(transaction_root)
             .map_err(|cause| {
                 M4Error::new(M4ErrorCode::RecoveryRequired)
@@ -960,44 +978,40 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             {
                 return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
             }
+            if !matches!(
+                marker.phase,
+                FilesystemPhase::FilesystemCommitted
+                    | FilesystemPhase::PackagesReplaced
+                    | FilesystemPhase::VpmManifestCommitted
+            ) {
+                continue;
+            }
+            let (project, commit_guards) = self
+                .lock_operation_project(operation_id, plan, root, locks)
+                .await
+                .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
+            verify_recovery_root(root, &project.observation.path_identity_key)?;
             if marker.phase == FilesystemPhase::FilesystemCommitted {
-                let _guard = locks
-                    .acquire(vec![
-                        ResourceKey::Project(plan.project_id),
-                        ResourceKey::Operation(operation_id),
-                    ])
-                    .await;
-                let root = Path::new(&project.observation.root_path);
+                if project.content_revision != plan.project_revision {
+                    return Err(M4Error::new(M4ErrorCode::RecoveryRequired)
+                        .with_reason("project_revision_changed"));
+                }
                 verify_final_state(root, &attempt, plan)?;
                 cleanup_legacy(root, &attempt, plan)?;
-                return self
-                    .completion(Path::new(&project.observation.root_path), plan)
-                    .await
-                    .map(Some);
+                let completion = self.completion(root, plan).await?;
+                return Ok(Some((completion, commit_guards)));
             }
-            if matches!(
-                marker.phase,
-                FilesystemPhase::PackagesReplaced | FilesystemPhase::VpmManifestCommitted
-            ) {
-                let _guard = locks
-                    .acquire(vec![
-                        ResourceKey::Project(plan.project_id),
-                        ResourceKey::Operation(operation_id),
-                    ])
-                    .await;
-                let root = Path::new(&project.observation.root_path);
-                rollback_attempt(
-                    &root.join("Packages"),
-                    &root.join("Packages/vpm-manifest.json"),
-                    &attempt,
-                    plan,
-                )?;
-                write_marker(
-                    &attempt,
-                    &AttemptMarker::new(plan, FilesystemPhase::RolledBack, JournalState::Completed),
-                    u64::MAX,
-                )?;
-            }
+            rollback_attempt(
+                &root.join("Packages"),
+                &root.join("Packages/vpm-manifest.json"),
+                &attempt,
+                plan,
+            )?;
+            write_marker(
+                &attempt,
+                &AttemptMarker::new(plan, FilesystemPhase::RolledBack, JournalState::Completed),
+                u64::MAX,
+            )?;
         }
         Ok(None)
     }
@@ -1030,7 +1044,16 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
     }
 }
 
-// Registration owns project identity and revision. Package inputs come from the
+fn verify_recovery_root(root: &Path, expected_identity: &[u8]) -> Result<(), M4Error> {
+    let (_, actual_identity) = alcomd_platform::resolve_directory_identity(root)
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
+    if actual_identity != expected_identity {
+        return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
+    }
+    Ok(())
+}
+
+// Registration owns project identity and content revision. Package inputs come from the
 // current files, just as they do for candidate reads, without refreshing the registry.
 async fn inspect_current_package_project(
     reader: &VpmReader,
@@ -1069,7 +1092,7 @@ async fn revalidate(
     catalog: &ResolverCatalog,
     plan: &PackagePlanRecord,
 ) -> Result<crate::ProjectPackageSnapshot, M4Error> {
-    if project.revision != plan.project_revision {
+    if project.content_revision != plan.project_revision {
         return Err(M4Error::with_subreason(
             M4ErrorCode::PlanStale,
             "project_revision_changed",
@@ -3236,6 +3259,7 @@ mod tests {
                 issues: Vec::new(),
             },
             revision: Revision::INITIAL,
+            content_revision: Revision::INITIAL,
             registered_at_ms: 1,
             last_modified_at_ms: None,
             favorite: false,
@@ -3365,6 +3389,7 @@ mod tests {
                 issues: Vec::new(),
             },
             revision: Revision::INITIAL,
+            content_revision: Revision::INITIAL,
             registered_at_ms: 1,
             last_modified_at_ms: None,
             favorite: false,

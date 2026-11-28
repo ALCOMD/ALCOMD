@@ -368,9 +368,11 @@ pub(super) struct ProjectResolutionRules {
     pub locked: BTreeMap<String, LockedPackage>,
     pub direct: BTreeMap<String, VpmRange>,
     pub explicit: BTreeSet<String>,
-    // Complete bulk resolution already checks the selected graph itself.
+    // Resolve restores the locked graph without cleaning up dependencies.
     pub preserve_unselected: bool,
     pub unlocked: BTreeMap<String, LockedPackage>,
+    pub previous_edges: Vec<PackageDependencyEdge>,
+    pub removed: BTreeSet<String>,
 }
 
 impl ProjectResolutionRules {
@@ -382,6 +384,7 @@ impl ProjectResolutionRules {
         if !self.preserve_unselected {
             return Ok(());
         }
+        let unused = self.unused_after_selection(selected);
         for (id, choice) in selected {
             let version = choice.version();
             if self
@@ -403,9 +406,10 @@ impl ProjectResolutionRules {
                 return Err(conflict());
             }
             for (dependent, locked) in &self.locked {
-                if selected
-                    .get(dependent)
-                    .is_some_and(|selected| selected.version() != &locked.version)
+                if unused.contains(dependent)
+                    || selected
+                        .get(dependent)
+                        .is_some_and(|selected| selected.version() != &locked.version)
                 {
                     continue;
                 }
@@ -440,6 +444,53 @@ impl ProjectResolutionRules {
             }
         }
         Ok(())
+    }
+
+    fn unused_after_selection(
+        &self,
+        selected: &BTreeMap<String, Selection<'_>>,
+    ) -> BTreeSet<String> {
+        let catalog_selections = selected.iter().filter_map(|(id, choice)| match choice {
+            Selection::Catalog(candidate) => Some((id, *candidate)),
+            Selection::Installed(_) => None,
+        });
+        let changed = catalog_selections
+            .clone()
+            .filter(|(id, candidate)| {
+                self.locked
+                    .get(*id)
+                    .is_none_or(|old| old.version != candidate.version)
+            })
+            .map(|(id, _)| id.clone())
+            .collect::<BTreeSet<_>>();
+        let mut graph = crate::plan::graph_from_edges(self.previous_edges.iter().filter(|edge| {
+            !changed.contains(&edge.from_package_id)
+                && !self.removed.contains(&edge.from_package_id)
+        }));
+        for (id, candidate) in catalog_selections
+            .clone()
+            .filter(|(id, _)| changed.contains(*id))
+        {
+            graph.insert(
+                id,
+                candidate
+                    .dependencies
+                    .iter()
+                    .map(|dependency| dependency.package_id.as_str())
+                    .collect(),
+            );
+        }
+        crate::plan::unused_locked_packages(
+            &self.previous_edges,
+            &graph,
+            self.locked.keys(),
+            self.direct
+                .keys()
+                .chain(self.unlocked.keys())
+                .chain(catalog_selections.map(|(id, _)| id)),
+            &changed,
+            &self.removed,
+        )
     }
 }
 

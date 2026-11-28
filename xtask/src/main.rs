@@ -74,7 +74,12 @@ const MEMBERS: &[Member] = &[
     (
         "apps/alcomd-gui/src-tauri",
         "alcomd-gui",
-        &["alcomd-client", "alcomd-platform", "alcomd-protocol"],
+        &[
+            "alcomd-client",
+            "alcomd-platform",
+            "alcomd-protocol",
+            "alcomd-updater",
+        ],
     ),
     ("crates/alcomd-domain", "alcomd-domain", &[]),
     (
@@ -148,6 +153,8 @@ struct Identity {
     windows_app_id: String,
     uri_scheme: String,
     data_directory: String,
+    install_directory: String,
+    linux_desktop_id: String,
 }
 
 #[derive(Deserialize)]
@@ -306,6 +313,7 @@ fn check_unsafe_boundary(
     const APPROVED: &[&str] = &[
         // App Model: application identity, bounded package presence, registered activation.
         "crates/alcomd-platform/src/windows_app_identity.rs",
+        "crates/alcomd-platform/src/windows_machine_update_io.rs",
         // Registry: read-only registration lookup and ownership-checked VCC opt-out.
         "crates/alcomd-platform/src/windows_url_handler.rs",
         "crates/alcomd-platform/src/windows_security.rs",
@@ -321,7 +329,7 @@ fn check_unsafe_boundary(
         "crates/alcomd-platform/src/windows_unity_window.rs",
         // M9: outbound named-pipe peer, process token, and Authenticode inspection.
         "crates/alcomd-platform/src/windows_local_ipc.rs",
-        // Storage directories use one documented MoveFileExW(flags=0) call; never replaces a destination.
+        // Windows file publication, deletion through a verified handle, and maintenance leases.
         "crates/alcomd-platform/src/windows_file_publish.rs",
         "crates/alcomd-platform/src/credential_vault/windows.rs",
     ];

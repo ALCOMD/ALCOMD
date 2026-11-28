@@ -1,10 +1,11 @@
 //! Offline validation for a complete v4 runtime on a supported release target.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
+use alcomd_platform::WINDOWS_PRODUCT_SIDECARS as WINDOWS_SIDECARS;
 use anyhow::{Context, ensure};
 use ed25519_dalek::{Signature, VerifyingKey};
 use semver::Version;
@@ -17,16 +18,18 @@ use super::{
     verify_files,
 };
 
-pub const MANIFEST_NAME: &str = "product-payload.json";
+pub use alcomd_platform::{PRODUCT_PAYLOAD_MANIFEST_NAME as MANIFEST_NAME, WINDOWS_CRT_FILE};
 pub const SIGNATURE_NAME: &str = "product-payload.sig";
 pub const SIGNATURE_DOMAIN: &[u8] = b"ALCOMD product payload v1\0";
-pub const WINDOWS_CRT_FILE: &str = "vcruntime140.dll";
+pub const WINDOWS_CRT_COMPANION_FILE: &str = "vcruntime140_1.dll";
+pub const WINDOWS_UPDATE_STAGE_PREFIX: &str = ".update-";
+/// Installation-root sibling used by a verified, inactive Windows bridge.
+pub const WINDOWS_FRESH_STAGE_PREFIX: &str = "-bridge-";
 const LICENSE: &str = "LICENSE";
 const NOTICES: &str = "THIRD_PARTY_NOTICES.md";
 const DISCORD_PACKAGE: &str = "extensions/discord.alcomdextension";
 const FIXTURE_COMMIT: &str = "0000000000000000000000000000000000000000";
 const DIRECTORIES: &[&str] = &["extensions", "licenses"];
-const WINDOWS_SIDECARS: &[&str] = &[WINDOWS_CRT_FILE, "vcruntime140_1.dll", "WebView2Loader.dll"];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, clap::ValueEnum)]
 pub enum Target {
@@ -62,14 +65,18 @@ impl Candidate {
             self.version.major == 4 && self.version.build.is_empty(),
             "product payload version must be in the v4 release series without build metadata"
         );
-        ensure!(
-            self.source_commit.len() == 40
-                && self.source_commit.bytes().all(is_lower_hex)
-                && (self.source_commit == FIXTURE_COMMIT) == (purpose == Purpose::Fixture),
-            "invalid product payload source commit"
-        );
-        Ok(())
+        validate_source_commit(&self.source_commit, purpose)
     }
+}
+
+fn validate_source_commit(source_commit: &str, purpose: Purpose) -> anyhow::Result<()> {
+    ensure!(
+        source_commit.len() == 40
+            && source_commit.bytes().all(is_lower_hex)
+            && (source_commit == FIXTURE_COMMIT) == (purpose == Purpose::Fixture),
+        "invalid product payload source commit"
+    );
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -91,49 +98,156 @@ struct Payload {
     files: Vec<SignedFile>,
 }
 
+/// Independently pinned digests for the two app-local Windows VC runtime DLLs.
+#[derive(Clone, Copy)]
+pub struct WindowsCrtDigests<'a> {
+    pub primary: &'a str,
+    pub companion: &'a str,
+}
+
+impl WindowsCrtDigests<'_> {
+    /// Rejects missing identity information and duplicate digest pins.
+    pub fn validate(self) -> anyhow::Result<()> {
+        ensure!(
+            self.primary != self.companion
+                && [self.primary, self.companion]
+                    .into_iter()
+                    .all(|digest| digest.len() == 64 && digest.bytes().all(is_lower_hex)),
+            "Windows release requires distinct pinned lowercase SHA-256 values for {WINDOWS_CRT_FILE} and {WINDOWS_CRT_COMPANION_FILE}"
+        );
+        Ok(())
+    }
+}
+
 /// Produces the exact bytes to validate and sign for an already populated runtime directory.
 pub fn prepare_release(
     root: &Path,
     candidate: &Candidate,
     discord_sha256: &str,
-    windows_crt_sha256: Option<&str>,
+    windows_crt: Option<WindowsCrtDigests<'_>>,
 ) -> anyhow::Result<Vec<u8>> {
     ensure!(
         discord_sha256.len() == 64 && discord_sha256.bytes().all(is_lower_hex),
         "pinned Discord package digest must be a lowercase SHA-256"
     );
     ensure!(
-        match windows_crt_sha256 {
-            Some(digest) =>
-                candidate.target == Target::Windows
-                    && digest.len() == 64
-                    && digest.bytes().all(is_lower_hex),
-            None => candidate.target != Target::Windows,
-        },
-        "Windows release requires a pinned lowercase SHA-256 for {WINDOWS_CRT_FILE}"
+        (candidate.target == Target::Windows) == windows_crt.is_some(),
+        "only Windows releases require pinned SHA-256 values for {WINDOWS_CRT_FILE} and {WINDOWS_CRT_COMPANION_FILE}"
     );
+    if let Some(digests) = windows_crt {
+        digests.validate()?;
+    }
     prepare(
         root,
         candidate,
         Purpose::Release,
         Some(discord_sha256),
-        windows_crt_sha256,
+        windows_crt,
     )
 }
 
 /// Verifies a complete runtime against the public trust compiled into the release tooling.
-pub fn verify_release(root: &Path, candidate: &Candidate) -> anyhow::Result<[u8; 32]> {
-    Ok(verify(root, candidate, Purpose::Release, &release_trust()?)?.manifest_sha256)
+pub fn verify_release(root: &Path, candidate: &Candidate) -> anyhow::Result<VerifiedRuntime> {
+    candidate.validate(Purpose::Release)?;
+    verify(
+        root,
+        candidate.target,
+        &candidate.version,
+        Some(&candidate.source_commit),
+        Purpose::Release,
+        &release_trust()?,
+        None,
+    )
+}
+
+/// Verifies the installed version, taking the source commit from the authenticated manifest.
+#[cfg(any(windows, target_os = "linux"))]
+pub fn verify_installed_release(
+    root: &Path,
+    target: Target,
+    version: &Version,
+) -> anyhow::Result<VerifiedRuntime> {
+    verify(
+        root,
+        target,
+        version,
+        None,
+        Purpose::Release,
+        &release_trust()?,
+        None,
+    )
+}
+
+/// Verifies the signed payload and its origin record in a persistent AppImage runtime.
+#[cfg(target_os = "linux")]
+pub fn verify_portable_runtime(root: &Path, version: &Version) -> anyhow::Result<VerifiedRuntime> {
+    let origin = alcomd_platform::PortableOrigin::read(root)?;
+    let verified = verify(
+        root,
+        Target::Linux,
+        version,
+        None,
+        Purpose::Release,
+        &release_trust()?,
+        Some(alcomd_platform::PORTABLE_ORIGIN_FILE),
+    )?;
+    ensure!(
+        format_digest(&verified.manifest_sha256) == origin.payload_manifest_sha256(),
+        "portable origin does not belong to the verified runtime"
+    );
+    Ok(verified)
 }
 
 pub struct VerifiedRuntime {
     pub manifest_sha256: [u8; 32],
-    files: BTreeSet<String>,
+    file_digests: BTreeMap<String, [u8; 32]>,
 }
 
 impl VerifiedRuntime {
     pub fn files(&self) -> impl Iterator<Item = &str> {
-        self.files.iter().map(String::as_str)
+        self.file_digests.keys().map(String::as_str)
+    }
+
+    /// Returns a component digest from the verified signed manifest.
+    pub fn file_sha256(&self, relative: &str) -> Option<&[u8; 32]> {
+        self.file_digests.get(relative)
+    }
+
+    /// Checks that the independently verified bridge has this exact runtime
+    /// and that its only additional file is the temporary migration reader.
+    pub fn verify_bridge_pair(&self, bridge: &crate::VerifiedPayload) -> anyhow::Result<()> {
+        let reader = bridge
+            .binaries
+            .get("migration_v3")
+            .and_then(|path| path.to_str())
+            .context("verified bridge has no migration reader")?;
+        ensure!(
+            bridge.file_digests.contains_key(reader)
+                && !self.file_digests.contains_key(reader)
+                && bridge.file_digests.len() == self.file_digests.len() + 1
+                && self
+                    .file_digests
+                    .iter()
+                    .all(|(path, digest)| bridge.file_digests.get(path) == Some(digest)),
+            "the verified bridge does not pair with the product runtime"
+        );
+        Ok(())
+    }
+
+    /// Verifies a regular file copied to a separate entry point against the signed runtime file.
+    pub fn verify_copy(&self, relative: &str, path: &Path) -> anyhow::Result<()> {
+        let expected = self
+            .file_sha256(relative)
+            .context("file is not in the verified product payload")?;
+        let (file, _) = alcomd_platform::open_plain_file(path)?;
+        let size = file.metadata()?.len();
+        let mut total = 0;
+        check_payload_size(&mut total, size)?;
+        ensure!(
+            hash_exact(file, size)? == *expected,
+            "file copy does not match the signed product payload"
+        );
+        Ok(())
     }
 }
 
@@ -143,7 +257,16 @@ pub fn verify_fixture(
     candidate: &Candidate,
     key: &VerifyingKey,
 ) -> anyhow::Result<VerifiedRuntime> {
-    verify(root, candidate, Purpose::Fixture, key)
+    candidate.validate(Purpose::Fixture)?;
+    verify(
+        root,
+        candidate.target,
+        &candidate.version,
+        Some(&candidate.source_commit),
+        Purpose::Fixture,
+        key,
+        None,
+    )
 }
 
 /// Produces a synthetic manifest. The release verifier rejects this purpose.
@@ -156,7 +279,7 @@ fn prepare(
     candidate: &Candidate,
     purpose: Purpose,
     discord_sha256: Option<&str>,
-    windows_crt_sha256: Option<&str>,
+    windows_crt: Option<WindowsCrtDigests<'_>>,
 ) -> anyhow::Result<Vec<u8>> {
     candidate.validate(purpose)?;
     let (root, identity) = alcomd_platform::resolve_plain_storage_directory(root)?;
@@ -186,10 +309,14 @@ fn prepare(
             path != DISCORD_PACKAGE || discord_sha256.is_none_or(|expected| sha256 == expected),
             "staged Discord package does not match the pinned digest"
         );
+        let crt_digest = match (path.as_str(), windows_crt) {
+            (WINDOWS_CRT_FILE, Some(digests)) => Some(digests.primary),
+            (WINDOWS_CRT_COMPANION_FILE, Some(digests)) => Some(digests.companion),
+            _ => None,
+        };
         ensure!(
-            path != WINDOWS_CRT_FILE
-                || windows_crt_sha256.is_none_or(|expected| sha256 == expected),
-            "staged {WINDOWS_CRT_FILE} does not match the pinned digest"
+            crt_digest.is_none_or(|expected| sha256 == expected),
+            "staged {path} does not match the pinned digest"
         );
         files.push(SignedFile { path, size, sha256 });
     }
@@ -217,33 +344,91 @@ fn prepare(
 
 fn verify(
     root: &Path,
-    candidate: &Candidate,
+    target: Target,
+    version: &Version,
+    source_commit: Option<&str>,
     purpose: Purpose,
     key: &VerifyingKey,
+    local_record: Option<&str>,
 ) -> anyhow::Result<VerifiedRuntime> {
-    candidate.validate(purpose)?;
     let (root, identity) = alcomd_platform::resolve_plain_storage_directory(root)?;
     let bytes = read_limited(&root.join(MANIFEST_NAME), MANIFEST_LIMIT)?;
     let signature = read_limited(&root.join(SIGNATURE_NAME), 128)?;
-    let signature = std::str::from_utf8(&signature)?;
+    let payload = signed_manifest(
+        &bytes,
+        &signature,
+        target,
+        version,
+        source_commit,
+        purpose,
+        key,
+    )?;
+    let product: Product = toml::from_str(PRODUCT)?;
+    let mut observed = observe(&root)?;
+    if let Some(record) = local_record {
+        ensure!(observed.remove(record), "missing local installation record");
+    }
+    let content_paths = observed
+        .iter()
+        .filter(|path| ![MANIFEST_NAME, SIGNATURE_NAME].contains(&path.as_str()))
+        .cloned()
+        .collect();
+    let executables = validate_layout(&product, target, purpose, &content_paths)?;
+    let file_digests = verify_files(
+        &root,
+        payload.files,
+        observed,
+        [MANIFEST_NAME, SIGNATURE_NAME],
+        |path, file| {
+            if executables.contains(path) {
+                check_executable_header(file, target, WINDOWS_SIDECARS.contains(&path))?;
+            }
+            Ok(())
+        },
+    )?;
+    ensure!(
+        alcomd_platform::resolve_plain_storage_directory(&root)?.1 == identity,
+        "product payload directory changed during verification"
+    );
+    Ok(VerifiedRuntime {
+        manifest_sha256: Sha256::digest(bytes).into(),
+        file_digests,
+    })
+}
+
+fn signed_manifest(
+    bytes: &[u8],
+    signature: &[u8],
+    target: Target,
+    version: &Version,
+    source_commit: Option<&str>,
+    purpose: Purpose,
+    key: &VerifyingKey,
+) -> anyhow::Result<Payload> {
+    ensure!(
+        version.major == 4 && version.build.is_empty(),
+        "invalid product version"
+    );
+    let signature = std::str::from_utf8(signature)?;
     ensure!(
         signature.bytes().all(is_lower_hex),
         "invalid product payload signature encoding"
     );
     let signature = Signature::from_bytes(&decode_hex(signature)?);
     let mut message = SIGNATURE_DOMAIN.to_vec();
-    message.extend_from_slice(&bytes);
+    message.extend_from_slice(bytes);
     key.verify_strict(&message, &signature)
         .context("product payload signature is invalid")?;
 
-    let payload: Payload = serde_json::from_slice(&bytes)?;
+    let payload: Payload = serde_json::from_slice(bytes)?;
+    validate_source_commit(&payload.source_commit, purpose)?;
     let product: Product = toml::from_str(PRODUCT)?;
     ensure!(
         payload.schema == 1
             && payload.product_id == product.identity.bundle_identifier
-            && payload.target == candidate.target
-            && payload.version == candidate.version
-            && payload.source_commit == candidate.source_commit
+            && payload.target == target
+            && &payload.version == version
+            && source_commit.is_none_or(|source_commit| payload.source_commit == source_commit)
             && payload.purpose == purpose,
         "product payload does not match the candidate"
     );
@@ -255,33 +440,63 @@ fn verify(
         "invalid product payload file metadata"
     );
 
-    let observed = observe(&root)?;
-    let content_paths = observed
-        .iter()
-        .filter(|path| ![MANIFEST_NAME, SIGNATURE_NAME].contains(&path.as_str()))
-        .cloned()
-        .collect();
-    let executables = validate_layout(&product, candidate.target, purpose, &content_paths)?;
-    verify_files(
-        &root,
-        payload.files,
-        observed,
-        [MANIFEST_NAME, SIGNATURE_NAME],
-        |path, file| {
-            if executables.contains(path) {
-                check_executable_header(file, candidate.target, WINDOWS_SIDECARS.contains(&path))?;
-            }
-            Ok(())
-        },
+    Ok(payload)
+}
+
+/// Checks that the AppImage offer's product manifest and an authenticated bridge agree before launch.
+pub fn verify_appimage_bridge_release(
+    manifest_directory: &Path,
+    expected_digest: [u8; 32],
+    bridge: &crate::VerifiedPayload,
+) -> anyhow::Result<()> {
+    let (root, identity) = alcomd_platform::resolve_plain_storage_directory(manifest_directory)?;
+    let bytes = read_limited(&root.join(MANIFEST_NAME), MANIFEST_LIMIT)?;
+    let signature = read_limited(&root.join(SIGNATURE_NAME), 128)?;
+    let manifest_sha256: [u8; 32] = Sha256::digest(&bytes).into();
+    ensure!(
+        manifest_sha256 == expected_digest,
+        "the AppImage release binds a different product manifest"
+    );
+    let payload = signed_manifest(
+        &bytes,
+        &signature,
+        Target::Linux,
+        bridge.version(),
+        None,
+        Purpose::Release,
+        &release_trust()?,
+    )?;
+    let product = toml::from_str(PRODUCT)?;
+    let mut file_digests = BTreeMap::new();
+    let mut total = 0;
+    ensure!(
+        payload.files.len() <= MAX_FILES,
+        "the product manifest contains too many files"
+    );
+    for file in payload.files {
+        check_payload_size(&mut total, file.size)?;
+        ensure!(
+            file_digests
+                .insert(file.path, decode_hex(&file.sha256)?)
+                .is_none(),
+            "duplicate product manifest file"
+        );
+    }
+    validate_layout(
+        &product,
+        Target::Linux,
+        Purpose::Release,
+        &file_digests.keys().cloned().collect(),
     )?;
     ensure!(
         alcomd_platform::resolve_plain_storage_directory(&root)?.1 == identity,
-        "product payload directory changed during verification"
+        "product manifest directory changed"
     );
-    Ok(VerifiedRuntime {
-        manifest_sha256: Sha256::digest(bytes).into(),
-        files: content_paths,
-    })
+    VerifiedRuntime {
+        manifest_sha256,
+        file_digests,
+    }
+    .verify_bridge_pair(bridge)
 }
 
 fn observe(root: &Path) -> anyhow::Result<BTreeSet<String>> {
@@ -311,12 +526,14 @@ fn validate_layout(
             && paths.contains(DISCORD_PACKAGE),
         "missing required product component"
     );
-    ensure!(
-        target != Target::Windows
-            || purpose != Purpose::Release
-            || paths.contains(WINDOWS_CRT_FILE),
-        "missing required {WINDOWS_CRT_FILE} in the Windows release"
-    );
+    if target == Target::Windows && purpose == Purpose::Release {
+        for filename in [WINDOWS_CRT_FILE, WINDOWS_CRT_COMPANION_FILE] {
+            ensure!(
+                paths.contains(filename),
+                "missing required {filename} in the Windows release"
+            );
+        }
+    }
     ensure!(paths.len() <= MAX_FILES, "too many product payload files");
     let mut names = BTreeSet::new();
     for path in paths {
@@ -360,7 +577,11 @@ fn is_license_path(path: &str) -> bool {
         })
 }
 
-fn check_executable_header(file: &mut File, target: Target, dll: bool) -> anyhow::Result<()> {
+pub(super) fn check_executable_header(
+    file: &mut File,
+    target: Target,
+    dll: bool,
+) -> anyhow::Result<()> {
     #[cfg(unix)]
     if target != Target::Windows {
         use std::os::unix::fs::PermissionsExt as _;
@@ -411,4 +632,43 @@ pub fn format_digest(bytes: &[u8]) -> String {
         write!(formatted, "{byte:02x}").expect("writing to a String cannot fail");
     }
     formatted
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bridge_pair_accepts_only_the_exact_runtime_and_reader() {
+        let runtime = VerifiedRuntime {
+            manifest_sha256: [0; 32],
+            file_digests: BTreeMap::from([("runtime".to_owned(), [1; 32])]),
+        };
+        let mut bridge = crate::VerifiedPayload {
+            root: "unused".into(),
+            identity: vec![],
+            manifest_sha256: [0; 32],
+            version: Version::new(4, 0, 0),
+            binaries: BTreeMap::from([("migration_v3".to_owned(), "reader".into())]),
+            file_digests: BTreeMap::from([
+                ("runtime".to_owned(), [1; 32]),
+                ("reader".to_owned(), [2; 32]),
+            ]),
+        };
+        runtime
+            .verify_bridge_pair(&bridge)
+            .expect("identical runtime paired with the migration reader");
+
+        bridge.file_digests.insert("extra".to_owned(), [3; 32]);
+        assert!(runtime.verify_bridge_pair(&bridge).is_err());
+        bridge.file_digests.remove("extra");
+
+        bridge.file_digests.insert("runtime".to_owned(), [3; 32]);
+        assert!(runtime.verify_bridge_pair(&bridge).is_err());
+        bridge.file_digests.insert("runtime".to_owned(), [1; 32]);
+
+        bridge.file_digests.remove("reader");
+        bridge.file_digests.insert("extra".to_owned(), [2; 32]);
+        assert!(runtime.verify_bridge_pair(&bridge).is_err());
+    }
 }

@@ -675,10 +675,7 @@ alcomd-updater
 release-blocker 第一方扩展
 ```
 
-组件不能分别更新到不兼容版本。正式更新由 `alcomd-updater` 下载并验证 ALCOMD 应用层签名
-与摘要覆盖的完整产品包，
-`alcomd-bootstrap` 协调停止、替换、健康检查和回滚；失败时恢复上一整套程序。Tauri Updater
-不是完整产品的权威更新系统。
+组件以完整产品包更新。GUI 的「关于」页通过 `alcomd-updater` 工作区库检查签名声明并下载选定的资产。Updater 核对 ALCOMD 应用层签名和完整产品摘要。用户确认后，`alcomd-bootstrap` 协调停止、替换、只读健康检查和恢复。操作系统安装事务由 Bootstrap 执行，账号资料仍由该账号的 Core 打开。
 
 4.0.0 的三个发布平台和四种主要用户发行格式全部是 Release Blocker：
 

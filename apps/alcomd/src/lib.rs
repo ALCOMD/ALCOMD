@@ -58,6 +58,10 @@ fn preflight_data_layout(database: &Path) -> io::Result<()> {
                 alcomd_platform::resolve_plain_storage_directory(&entry.path())?;
                 continue;
             }
+            #[cfg(target_os = "linux")]
+            if alcomd_platform::linux_portable_runtime_is_known(&data, &entry.path())? {
+                continue;
+            }
             if entry.path() == registration
                 && alcomd_platform::registered_core_executable(&data)?.is_some()
             {
@@ -78,6 +82,12 @@ fn preflight_data_layout(database: &Path) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Checks the current user's persistent data before selecting a new runtime.
+#[cfg(any(windows, target_os = "linux"))]
+pub fn check_installation_data(data: &DataConfig) -> io::Result<()> {
+    preflight_data_layout(&alcomd_platform::state_database_location(data)?)
 }
 
 mod builtin_repositories;
@@ -231,13 +241,24 @@ pub async fn serve_with_data_until<F>(
 where
     F: Future<Output = ()>,
 {
-    let (mut listener, applications) = initialize_daemon_with_directories(
+    let (listener, applications) = initialize_daemon_with_directories(
         ipc,
         data,
         Arc::new(storage_platform::PlatformStorageDirectories),
     )
     .await?;
     recover_startup_credentials(&applications).await?;
+    run_initialized_daemon(listener, applications, shutdown).await
+}
+
+async fn run_initialized_daemon<F>(
+    mut listener: IpcListener,
+    applications: Arc<Applications>,
+    shutdown: F,
+) -> Result<(), BindError>
+where
+    F: Future<Output = ()>,
+{
     let mut initial_repository_sync =
         builtin_repositories::start(&applications.store, &applications.m3).await?;
     let result = run_listener(
@@ -251,21 +272,47 @@ where
     result.map_err(BindError::Io)
 }
 
-/// Initializes and checks the selected user's store before publishing the Windows install.
-#[cfg(windows)]
-pub async fn register_windows_installation(data: DataConfig) -> Result<(), BindError> {
-    let runtime = alcomd_platform::windows_installation_runtime(&std::env::current_exe()?)?;
-    if alcomd_platform::check_windows_core_registration(&data, &runtime)? {
+/// Initializes the selected user's store and optionally serves IPC after publishing the install.
+#[cfg(any(windows, target_os = "linux"))]
+pub async fn register_installation<F>(
+    data: DataConfig,
+    serve_until: Option<F>,
+) -> Result<(), BindError>
+where
+    F: Future<Output = ()>,
+{
+    #[cfg(target_os = "linux")]
+    use alcomd_platform::{
+        check_linux_core_registration as check_registration,
+        publish_linux_core_registration as publish_registration,
+    };
+    #[cfg(windows)]
+    use alcomd_platform::{
+        check_windows_core_registration as check_registration,
+        publish_windows_core_registration as publish_registration,
+        windows_installation_runtime as installation_runtime,
+    };
+
+    let executable = std::env::current_exe()?;
+    #[cfg(target_os = "linux")]
+    let runtime = alcomd_platform::linux_installation_runtime(&executable, &data)?;
+    #[cfg(windows)]
+    let runtime = installation_runtime(&executable)?;
+    let already_registered = check_registration(&data, &runtime)?;
+    if already_registered && serve_until.is_none() {
         return Ok(());
     }
-    let (_listener, applications) = initialize_daemon_with_directories(
+    let (listener, applications) = initialize_daemon_with_directories(
         IpcConfig::default(),
         data.clone(),
         Arc::new(storage_platform::PlatformStorageDirectories),
     )
     .await?;
     recover_startup_credentials(&applications).await?;
-    alcomd_platform::publish_windows_core_registration(&data, &runtime)?;
+    publish_registration(&data, &runtime)?;
+    if let Some(shutdown) = serve_until {
+        return run_initialized_daemon(listener, applications, shutdown).await;
+    }
     Ok(())
 }
 
@@ -306,6 +353,8 @@ async fn initialize_daemon_with_adapters(
     #[cfg(feature = "test-kill-gates")] vpm_reader: Option<alcomd_vpm::VpmReader>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
+    #[cfg(windows)]
+    alcomd_platform::check_windows_bridge_profile_for_startup(&std::env::current_exe()?, &data)?;
     let candidate = alcomd_platform::state_database_location(&data)?;
     preflight_data_layout(&candidate)?;
     let database = alcomd_platform::state_database_path(&data)?;
@@ -479,7 +528,7 @@ async fn initialize_daemon_with_adapters(
         official_gui.clone(),
     )
     .with_locks(Arc::clone(&locks));
-    let m3 = M3ReadApplication::new(store.clone(), reader.clone());
+    let m3 = M3ReadApplication::with_locks(store.clone(), reader.clone(), Arc::clone(&locks));
     let repository_auto_refresh =
         alcomd_application::RepositoryAutoRefresh::new(m3.clone(), official_gui.clone());
     let mut oauth_cursor_key = [0u8; 32];

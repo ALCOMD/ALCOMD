@@ -217,7 +217,7 @@ pub fn state_database_path(config: &DataConfig) -> io::Result<PathBuf> {
     Ok(join_data_components(base_path, components).join("state.db"))
 }
 
-fn home_directory() -> io::Result<PathBuf> {
+pub(super) fn home_directory() -> io::Result<PathBuf> {
     let home = env::var_os("HOME").ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
@@ -429,6 +429,20 @@ pub(super) fn open_protected_directory_chain(path: &Path) -> io::Result<OwnedFd>
                 "untrusted directory permissions",
             ))
         }
+    })
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn open_system_directory_chain(path: &Path) -> io::Result<OwnedFd> {
+    open_directory_chain_with(path, |directory| {
+        let stat = fstat(directory).map_err(io::Error::from)?;
+        if stat.st_uid != 0 || stat.st_mode & 0o022 != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "untrusted system installation directory",
+            ));
+        }
+        Ok(())
     })
 }
 

@@ -8,6 +8,16 @@ use crate::DataConfig;
 const REGISTRATION_FILE: &str = "core-installation-v1";
 const MAX_RUNTIME_PATH_BYTES: usize = 4096;
 
+/// Filename of the signed manifest for a complete installed product runtime.
+pub const PRODUCT_PAYLOAD_MANIFEST_NAME: &str = "product-payload.json";
+/// Required app-local runtime DLL on Windows.
+pub const WINDOWS_CRT_FILE: &str = "vcruntime140.dll";
+/// Machine-owned record that leaves account initialization to the bridge.
+pub const WINDOWS_BRIDGE_ACCOUNT_RECORD: &str = "account-migration-v1";
+/// App-local DLL names permitted by the Windows product layout.
+pub const WINDOWS_PRODUCT_SIDECARS: &[&str] =
+    &[WINDOWS_CRT_FILE, "vcruntime140_1.dll", "WebView2Loader.dll"];
+
 /// Basename of the Core executable from the product manifest.
 #[cfg(unix)]
 pub const CORE_EXECUTABLE_NAME: &str = env!("ALCOMD_DAEMON_NAME");
@@ -48,6 +58,10 @@ pub fn registered_core_executable(config: &DataConfig) -> io::Result<Option<Path
     let runtime = read_runtime_directory(&file)?;
     #[cfg(unix)]
     let runtime = crate::unix::validate_absolute_runtime_path(&runtime)?;
+    #[cfg(target_os = "linux")]
+    if linux_registration::is_portable_runtime_path(config, &runtime)? {
+        crate::PortableOrigin::read(&runtime)?.revalidate()?;
+    }
     let candidate = runtime.join(CORE_EXECUTABLE_NAME);
     validate_core_executable(&candidate).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
@@ -56,6 +70,8 @@ pub fn registered_core_executable(config: &DataConfig) -> io::Result<Option<Path
             error
         }
     })?;
+    #[cfg(windows)]
+    registration::check_registered_runtime_is_active(&runtime)?;
     Ok(Some(candidate))
 }
 
@@ -71,8 +87,41 @@ fn read_runtime_directory(file: &std::fs::File) -> io::Result<PathBuf> {
 mod registration;
 #[cfg(windows)]
 pub use registration::{
-    check_windows_core_registration, publish_windows_core_registration,
-    remove_windows_core_registration, windows_installation_runtime,
+    WINDOWS_ACTIVE_RUNTIME_RECORD, WINDOWS_BOOTSTRAP_EXECUTABLE_NAME, WINDOWS_CLI_EXECUTABLE_NAME,
+    WINDOWS_GUI_EXECUTABLE_NAME, WINDOWS_INSTALLATION_ROOT_RECORD, WINDOWS_SCOPE_TRANSITION_RECORD,
+    WINDOWS_UPDATE_INTENT_RECORD, WindowsInstallationUpdate, WindowsScopeRegistrationTransfer,
+    WindowsScopeTransitionSource, check_windows_core_registration,
+    create_windows_machine_installation_directory, create_windows_machine_installation_record,
+    hold_windows_installation, open_windows_machine_installation_record,
+    publish_windows_core_registration, release_windows_installation_root,
+    remove_windows_core_registration, reserve_windows_installation_root,
+    validate_windows_installation_root, validate_windows_machine_installation_record_parent,
+    windows_current_user_installation_root, windows_installation_bootstrap,
+    windows_installation_runtime, windows_machine_installation_root,
+    windows_machine_runtime_bootstrap, windows_retired_machine_installation_bootstrap,
+};
+#[cfg(windows)]
+pub use registration::{
+    WINDOWS_BRIDGE_EMPTY_PROFILE_PROOF, approve_windows_empty_bridge_profile,
+    check_windows_bridge_profile_for_startup, windows_empty_bridge_activation_proof,
+};
+#[cfg(windows)]
+pub use registration::{
+    WINDOWS_SCOPE_DESTINATION_COMMIT_RECORD, WINDOWS_SCOPE_DESTINATION_RECORD,
+    WindowsScopeTransitionDestination,
+};
+
+#[cfg(target_os = "linux")]
+#[path = "linux_installation_registration.rs"]
+mod linux_registration;
+#[cfg(target_os = "linux")]
+pub use linux_registration::{
+    LINUX_BOOTSTRAP_EXECUTABLE_NAME, LINUX_GUI_EXECUTABLE_NAME, check_linux_core_registration,
+    check_linux_portable_update_registration, linux_installation_bootstrap,
+    linux_installation_runtime, linux_portable_runtime, linux_portable_runtime_for_version,
+    linux_portable_runtime_is_known, linux_portable_update_bootstrap,
+    linux_retired_deb_installation_bootstrap, publish_linux_core_registration,
+    publish_linux_portable_update_registration, require_unprivileged_linux_installation,
 };
 
 fn parse_runtime_directory(data: &[u8]) -> io::Result<PathBuf> {
@@ -100,6 +149,31 @@ fn invalid_registration() -> io::Error {
         io::ErrorKind::InvalidData,
         "invalid Core installation registration",
     )
+}
+
+/// Checks that an installation record's parent can't be modified by other accounts.
+pub fn validate_installation_record_parent(path: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    return crate::windows::core_installation::validate_registration_parent(path);
+    #[cfg(unix)]
+    {
+        use rustix::fs::fstat;
+        use rustix::process::geteuid;
+        let parent = path.parent().ok_or_else(invalid_registration)?;
+        let parent = crate::unix::validate_absolute_runtime_path(parent)?;
+        let directory = crate::unix::open_protected_directory_chain(&parent)?;
+        let stat = fstat(&directory).map_err(io::Error::from)?;
+        if stat.st_uid != geteuid().as_raw() || stat.st_mode & 0o077 != 0 {
+            return Err(invalid_registration());
+        }
+        Ok(())
+    }
+}
+
+/// Opens an existing protected local record without following a link.
+pub fn open_owned_installation_record(path: &Path) -> io::Result<std::fs::File> {
+    validate_installation_record_parent(path)?;
+    open_registration(path)
 }
 
 #[cfg(windows)]
@@ -331,6 +405,69 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn windows_first_use_finds_bootstrap_only_from_protected_official_entry_points() {
+        use std::fs;
+
+        let root = crate::local_app_data_directory()
+            .expect("test profile")
+            .join(format!(
+                "alcomd-bootstrap-{}-{}",
+                std::process::id(),
+                timestamp()
+            ));
+        let runtime = root.join("runtime").join(env!("CARGO_PKG_VERSION"));
+        let bin = root.join("bin");
+        let gui = runtime.join(concat!(env!("ALCOMD_GUI_NAME"), ".exe"));
+        let cli = bin.join(concat!(env!("ALCOMD_CLI_NAME"), ".exe"));
+        let helper = bin.join("sdk-helper.exe");
+        let bootstrap = runtime.join(concat!(env!("ALCOMD_BOOTSTRAP_NAME"), ".exe"));
+        fs::create_dir_all(&bin).expect("test bin");
+        assert_eq!(windows_installation_bootstrap(&cli).expect("dev CLI"), None);
+        fs::create_dir_all(&runtime).expect("test runtime");
+        for file in [&gui, &cli, &helper, &runtime.join(CORE_EXECUTABLE_NAME)] {
+            fs::write(file, b"fixture").expect("test executable");
+        }
+        assert!(windows_installation_bootstrap(&cli).is_err());
+        fs::write(&bootstrap, b"fixture").expect("test bootstrap");
+        fs::write(
+            root.join(WINDOWS_ACTIVE_RUNTIME_RECORD),
+            concat!(env!("CARGO_PKG_VERSION"), "\n"),
+        )
+        .expect("test active runtime");
+        let expected = bootstrap.canonicalize().expect("canonical bootstrap");
+        for entry in [&gui, &cli] {
+            assert_eq!(
+                windows_installation_bootstrap(entry).expect("official entry"),
+                Some(expected.clone())
+            );
+        }
+        assert_eq!(windows_installation_bootstrap(&helper).expect("SDK"), None);
+        let alias = runtime.join("bootstrap-link");
+        fs::hard_link(&bootstrap, alias).expect("test hard link");
+        assert_eq!(
+            windows_installation_bootstrap(&cli)
+                .expect_err("linked bootstrap")
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        let next = root.join("runtime").join("99.9.9-test");
+        fs::create_dir_all(&next).expect("next runtime");
+        let next_bootstrap = next.join(WINDOWS_BOOTSTRAP_EXECUTABLE_NAME);
+        for file in [&next_bootstrap, &next.join(CORE_EXECUTABLE_NAME)] {
+            fs::write(file, b"fixture").expect("next executable");
+        }
+        fs::write(root.join(WINDOWS_ACTIVE_RUNTIME_RECORD), "99.9.9-test\n")
+            .expect("switch active runtime");
+        assert_eq!(
+            windows_installation_bootstrap(&cli).expect("stable CLI"),
+            Some(next_bootstrap.canonicalize().expect("active bootstrap"))
+        );
+        assert!(windows_installation_bootstrap(&gui).is_err());
+        fs::remove_dir_all(root).expect("remove isolated fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn windows_install_registration_is_idempotent_and_preserves_other_owners_and_data() {
         use std::fs;
 
@@ -352,6 +489,11 @@ mod tests {
         }
         let preserved = data.join("state.db");
         fs::write(&preserved, "synthetic state").expect("fixture");
+        fs::write(
+            root.join(WINDOWS_ACTIVE_RUNTIME_RECORD),
+            concat!(env!("CARGO_PKG_VERSION"), "\n"),
+        )
+        .expect("test active runtime");
         let runtime = windows_installation_runtime(&pending.join(CORE_EXECUTABLE_NAME))
             .expect("trusted versioned runtime");
         let other_runtime = fs::canonicalize(other_runtime).expect("other canonical path");

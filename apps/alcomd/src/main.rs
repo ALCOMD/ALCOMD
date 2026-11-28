@@ -22,9 +22,15 @@ enum Command {
     ImportNativeState(NativeStage),
     #[command(hide = true)]
     CheckNativeState(NativeStage),
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     #[command(hide = true)]
-    RegisterInstallation,
+    CheckInstallationData,
+    #[cfg(any(windows, target_os = "linux"))]
+    #[command(hide = true)]
+    RegisterInstallation {
+        #[arg(long)]
+        serve: bool,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -57,6 +63,9 @@ impl NativeStage {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let arguments = Arguments::parse();
+    #[cfg(windows)]
+    let _installation = alcomd_platform::hold_windows_installation(&std::env::current_exe()?)
+        .context("installed product is unavailable or undergoing maintenance")?;
     if let Some(command) = arguments.command {
         let receipt = match command {
             Command::ImportNativeState(stage) => {
@@ -67,17 +76,22 @@ async fn main() -> anyhow::Result<()> {
                 alcomd::check_native_state(&stage.bundle, &stage.data_dir, stage.discord_options())
                     .await?
             }
-            #[cfg(windows)]
-            Command::RegisterInstallation => {
+            #[cfg(any(windows, target_os = "linux"))]
+            Command::CheckInstallationData => {
+                alcomd::check_installation_data(&alcomd_platform::DataConfig::default())?;
+                return Ok(());
+            }
+            #[cfg(any(windows, target_os = "linux"))]
+            Command::RegisterInstallation { serve } => {
                 anyhow::ensure!(
                     arguments.runtime_dir.is_none(),
-                    "invalid Windows installation endpoint"
+                    "invalid installation endpoint"
                 );
                 let data = arguments
                     .data_dir
                     .map(alcomd_platform::DataConfig::isolated)
                     .unwrap_or_default();
-                alcomd::register_windows_installation(data).await?;
+                alcomd::register_installation(data, serve.then(shutdown_signal)).await?;
                 return Ok(());
             }
         };
@@ -92,12 +106,14 @@ async fn main() -> anyhow::Result<()> {
         .data_dir
         .map(alcomd_platform::DataConfig::isolated)
         .unwrap_or_default();
-    alcomd::serve_with_data_until(config, data, async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to wait for Ctrl+C");
-    })
-    .await
-    .context("daemon stopped")?;
+    alcomd::serve_with_data_until(config, data, shutdown_signal())
+        .await
+        .context("daemon stopped")?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to wait for Ctrl+C");
 }
