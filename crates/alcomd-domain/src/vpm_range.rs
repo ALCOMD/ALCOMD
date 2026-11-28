@@ -398,7 +398,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stored_intersections_preserve_releases_and_compatible_prerelease_permissions() {
+    fn stored_intersections_preserve_releases_and_compatible_prerelease_permissions()
+    -> Result<(), Box<dyn std::error::Error>> {
         for (first, second) in [
             ("^1.0.0", ">=1.1.0 <1.2.0"),
             (">=1.1.0-alpha.1 <2.0.0", ">=1.1.0-beta.1 <1.2.0"),
@@ -408,10 +409,10 @@ mod tests {
                 ">=1.1.0-beta.1 <1.1.0",
             ),
         ] {
-            let left = VpmRange::parse(first).unwrap();
-            let right = VpmRange::parse(second).unwrap();
-            let intersection = left.intersect(&right).unwrap();
-            let stored = VpmRange::parse(&intersection.canonical()).unwrap();
+            let left = VpmRange::parse(first)?;
+            let right = VpmRange::parse(second)?;
+            let intersection = left.intersect(&right)?;
+            let stored = VpmRange::parse(&intersection.canonical())?;
             for version in [
                 "1.0.0",
                 "1.1.0-0",
@@ -422,7 +423,7 @@ mod tests {
                 "1.2.0",
                 "2.0.0",
             ] {
-                let version = Version::parse(version).unwrap();
+                let version = Version::parse(version)?;
                 for include_prerelease in [false, true] {
                     assert_eq!(
                         stored.matches(&version, include_prerelease),
@@ -433,14 +434,16 @@ mod tests {
                 }
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn intersection_rejects_prerelease_admission_from_only_one_operand() {
-        let stable = VpmRange::parse(">=1.0.0 <2.0.0").unwrap();
+    fn intersection_rejects_prerelease_admission_from_only_one_operand() -> Result<(), RangeError> {
+        let stable = VpmRange::parse(">=1.0.0 <2.0.0")?;
         for range in ["=1.1.0-beta.1", ">1.1.0-beta.1 <1.1.0"] {
-            let explicit = VpmRange::parse(range).unwrap();
+            let explicit = VpmRange::parse(range)?;
             assert_eq!(stable.intersect(&explicit), Err(RangeError::Invalid));
         }
+        Ok(())
     }
 }

@@ -2034,7 +2034,7 @@ async fn alcom_template_import_resolves_bases_and_persists_native_templates() {
             .iter()
             .find(|template| template.declaration.name == name);
         if result == OperationState::Failed {
-            assert_eq!(completed.error_code.as_deref(), Some("invalid_input"));
+            assert_eq!(completed.error_code.as_deref(), Some("invalid_request"));
             assert!(saved.is_none());
             continue;
         }
